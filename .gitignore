@@ -1,0 +1,10 @@
+# 运行时数据与备份（不入库）
+data/
+.bak/
+*.db
+*.db-journal
+*.log
+
+# 根目录遗留的旧前端（不参与构建，以 web/ 下版本为准，后者被 //go:embed web 嵌入）
+/app.js
+/index.html

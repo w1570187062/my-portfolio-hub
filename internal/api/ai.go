@@ -1,0 +1,433 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"math"
+	"net/http"
+	"strings"
+	"time"
+
+	"portfolio/internal/db"
+	"portfolio/internal/market"
+
+	"github.com/gin-gonic/gin"
+)
+
+// ---- AI summary feature (DeepSeek / OpenAI-compatible chat completions) ----
+//
+// The prompt template contains the placeholder {{DATA}}. At request time we replace
+// it with the live portfolio statistics. Two default templates ship with the app:
+// a witty one and a professional one. Users can add / edit / delete their own.
+
+type aiTemplate struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+type aiConfig struct {
+	APIKey    string       `json:"api_key"`
+	Model     string       `json:"model"`
+	BaseURL   string       `json:"base_url"`
+	Templates []aiTemplate `json:"templates"`
+}
+
+var defaultTemplates = []aiTemplate{
+	{
+		Name: "诙谐幽默",
+		Content: `你是一位喜欢拿用户持仓开涮、但数据从不乱编的财经段子手。请基于下面「我的持仓数据」，用诙谐、幽默、带点调侃（可以适度玩梗、使用表情符号）的口吻，给我写一份专属的「持仓体检报告」。
+要求：
+1. 先来一句风趣的总体定调（赚麻了还是绿油油）；
+2. 挑几个有代表性的持仓点评一下，夸就夸到位，亏就损到位，但数字必须准确；
+3. 用轻松的方式点出风险或槽点；
+4. 结尾给一句毒舌又实在的寄语。
+不要说教，多用口语，篇幅适中（300~500字）。
+
+我的持仓数据如下：
+{{DATA}}`,
+	},
+	{
+		Name: "专业视角",
+		Content: `你是一名严谨、客观、专业的投资顾问。请基于下面的「我的持仓数据」，用专业、结构化、条理清晰的视角，做一份持仓分析报告。
+要求：
+1. 组合概览：总资产、总盈亏及收益率、RMB/USD 市值分布；
+2. 结构分析：股票与基金的占比、各市场分布、单一标的集中度风险；
+3. 当日表现：当日盈亏与当日盈亏率的整体与个股情况；
+4. 风险提示：结合回撤、集中度、币种敞口给出客观判断；
+5. 配置建议：基于以上数据给出 2~3 条可执行的优化建议。
+语言专业克制，避免夸张表述，可适度使用分点与小标题，篇幅 400~600字。
+
+我的持仓数据如下：
+{{DATA}}`,
+	},
+}
+
+const dataPlaceholder = "{{DATA}}"
+
+// loadAIConfig reads the persisted config and fills in defaults where missing.
+func loadAIConfig() (aiConfig, error) {
+	raw, err := db.GetAIConfig()
+	if err != nil {
+		return aiConfig{}, err
+	}
+	var cfg aiConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return aiConfig{}, err
+	}
+	if len(cfg.Templates) == 0 {
+		cfg.Templates = defaultTemplates
+	}
+	if cfg.Model == "" {
+		cfg.Model = "deepseek-v4-pro"
+	}
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = "https://api.deepseek.com"
+	}
+	return cfg, nil
+}
+
+func aiSettingsGet(c *gin.Context) {
+	cfg, err := loadAIConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
+}
+
+func aiSettingsPost(c *gin.Context) {
+	var b aiConfig
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if b.Model == "" {
+		b.Model = "deepseek-v4-pro"
+	}
+	if b.BaseURL == "" {
+		b.BaseURL = "https://api.deepseek.com"
+	}
+	raw, _ := json.Marshal(b)
+	if err := db.SaveAIConfig(string(raw)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+type aiSummaryReq struct {
+	APIKey   string `json:"api_key"`
+	Model    string `json:"model"`
+	BaseURL  string `json:"base_url"`
+	Template string `json:"template"`
+}
+
+func aiSummary(c *gin.Context) {
+	var b aiSummaryReq
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	// Prefer the API key supplied by the client (the key box in the frontend) so a
+	// freshly entered or updated key takes effect immediately without a separate save
+	// — otherwise a stale/invalid saved key makes every summary 401. Fall back to the
+	// saved config key only when the client leaves the field blank. Model/base_url/
+	// template still fall back to saved values when the client leaves them blank.
+	cfg, cfgErr := loadAIConfig()
+	if b.APIKey == "" {
+		b.APIKey = cfg.APIKey
+	}
+	if b.Model == "" {
+		b.Model = cfg.Model
+	}
+	if b.BaseURL == "" {
+		b.BaseURL = cfg.BaseURL
+	}
+	if b.Template == "" {
+		if len(cfg.Templates) > 0 {
+			b.Template = cfg.Templates[0].Content
+		} else {
+			b.Template = defaultTemplates[0].Content
+		}
+	}
+	if b.APIKey == "" || b.BaseURL == "" || b.Model == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请先在「AI 设置」中填写 API Key、模型名称与模型地址"})
+		return
+	}
+	stats, err := buildPortfolioStats()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计失败: " + err.Error()})
+		return
+	}
+	prompt := injectData(b.Template, stats)
+	content, err := callChatCompletions(b.BaseURL, b.APIKey, b.Model, prompt)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	// Persist to history (keep latest 10). Failure is non-fatal.
+	if err := db.SaveAISummary(content, b.Model); err != nil {
+		log.Printf("warn: save ai summary history failed: %v", err)
+	}
+	// If the key actually used differs from the saved one (e.g. the user typed a
+	// fresh key and generated without clicking "保存设置"), persist it so it
+	// survives a page refresh. Non-fatal; only when the config loaded cleanly.
+	if cfgErr == nil && b.APIKey != "" && b.APIKey != cfg.APIKey {
+		cfg.APIKey = b.APIKey
+		if raw, e := json.Marshal(cfg); e == nil {
+			if e2 := db.SaveAIConfig(string(raw)); e2 != nil {
+				log.Printf("warn: persist api key from summary failed: %v", e2)
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"content": content})
+}
+
+// injectData replaces the {{DATA}} placeholder with the live stats. If the template
+// has no placeholder we append the stats so the model still receives the data.
+func injectData(tmpl, data string) string {
+	if strings.Contains(tmpl, dataPlaceholder) {
+		return strings.ReplaceAll(tmpl, dataPlaceholder, data)
+	}
+	return tmpl + "\n\n【我的持仓数据】\n" + data
+}
+
+// callChatCompletions calls an OpenAI-compatible /chat/completions endpoint
+// (DeepSeek by default) and returns the assistant message content.
+func callChatCompletions(baseURL, apiKey, model, prompt string) (string, error) {
+	base := strings.TrimRight(baseURL, "/")
+	url := base + "/chat/completions"
+	payload := map[string]interface{}{
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"temperature": 0.7,
+		"stream":      false,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	client := &http.Client{Timeout: 180 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("调用模型失败: %w", err)
+	}
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("模型返回 %d: %s", resp.StatusCode, truncate(string(rb), 600))
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rb, &out); err != nil {
+		return "", fmt.Errorf("解析响应失败: %s", truncate(string(rb), 400))
+	}
+	if len(out.Choices) == 0 {
+		if out.Error != nil {
+			return "", fmt.Errorf("模型错误: %s", out.Error.Message)
+		}
+		return "", fmt.Errorf("模型未返回内容")
+	}
+	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+}
+
+// buildPortfolioStats assembles a human- and model-readable text snapshot of the
+// whole portfolio (all holdings, unfiltered) including summary + per-holding detail.
+func buildPortfolioStats() (string, error) {
+	hs, err := db.List()
+	if err != nil {
+		return "", err
+	}
+	rate, hkdRate, _ := market.FetchFXRates()
+	today := time.Now().Format("2006-01-02")
+
+	hkdToCny := 1.0
+	if hkdRate > 0 {
+		hkdToCny = rate / hkdRate
+	}
+	var (
+		cnyMV, cnyPnl         float64
+		usdMV, usdPnl         float64
+		hkdMV, hkdPnl         float64
+		totalCNY, totalCostCNY float64
+		totalDayCNY           float64
+	)
+	catMV := map[string]float64{}
+	mktMV := map[string]float64{}
+	views := make([]HoldingView, 0, len(hs))
+	for _, h := range hs {
+		v := enrich(h)
+		views = append(views, v)
+		mv := v.MarketValue
+		cv := v.CostValue
+		pnl := v.Pnl
+		switch h.Currency {
+		case "USD":
+			usdMV += mv
+			usdPnl += pnl
+			totalCNY += mv * rate
+			totalCostCNY += cv * rate
+		case "HKD":
+			hkdMV += mv
+			hkdPnl += pnl
+			totalCNY += mv * hkdToCny
+			totalCostCNY += cv * hkdToCny
+		default:
+			cnyMV += mv
+			cnyPnl += pnl
+			totalCNY += mv
+			totalCostCNY += cv
+		}
+		cmv := mv * rateChoice(h.Currency, rate, hkdRate)
+		catMV[h.Category] += cmv
+		mktMV[h.Market] += cmv
+		totalDayCNY += v.DayPnl * rateChoice(h.Currency, rate, hkdRate)
+	}
+	totalPnl := totalCNY - totalCostCNY
+	totalPct := 0.0
+	if totalCostCNY > 0 {
+		totalPct = totalPnl / totalCostCNY * 100
+	}
+
+	var b strings.Builder
+	b.WriteString("统计日期：" + today + "\n")
+	if rate > 0 {
+		b.WriteString("汇率：1 USD ≈ " + nf(rate) + " CNY\n")
+	}
+	b.WriteString("\n【组合总览】\n")
+	b.WriteString("持仓总数：" + fmt.Sprintf("%d", len(hs)) + " 条\n")
+	b.WriteString("总资产(CNY)：" + nf(totalCNY) + "\n")
+	b.WriteString("总成本(CNY)：" + nf(totalCostCNY) + "\n")
+	b.WriteString("总盈亏(CNY)：" + sf(totalPnl) + "（总收益率 " + pf(totalPct) + "）\n")
+	b.WriteString("当日盈亏(CNY)：" + sf(totalDayCNY) + "\n")
+	b.WriteString("RMB 市值(CNY)：" + nf(cnyMV) + "（盈亏 " + sf(cnyPnl) + "）\n")
+	b.WriteString("USD 市值折合(CNY)：" + nf(usdMV*rate) + "（盈亏 " + sf(usdPnl*rate) + "）\n")
+	b.WriteString("HKD 市值折合(CNY)：" + nf(hkdMV*hkdToCny) + "（盈亏 " + sf(hkdPnl*hkdToCny) + "）\n")
+
+	b.WriteString("\n【资产结构（按 CNY 折算市值）】\n")
+	for _, k := range []string{"stock", "fund"} {
+		if v, ok := catMV[k]; ok && totalCNY > 0 {
+			b.WriteString(catLabel(k) + "：" + nf(v) + "（占比 " + pf(v/totalCNY) + "）\n")
+		}
+	}
+	if len(mktMV) > 0 {
+		b.WriteString("市场分布：")
+		parts := make([]string, 0, len(mktMV))
+		for m, v := range mktMV {
+			parts = append(parts, m+" "+nf(v))
+		}
+		b.WriteString(strings.Join(parts, " | ") + "\n")
+	}
+
+	b.WriteString("\n【持仓明细】\n")
+	for i, v := range views {
+		h := v.Holding
+		line := fmt.Sprintf("%d. %s(%s) %s/%s/%s 份额%s 成本价%s 现价%s 市值(CNY)%s",
+			i+1, h.Name, h.Symbol, catLabel(h.Category), h.Market, h.Currency,
+			nf(h.Quantity), nf(h.CostPrice), nf(h.CurrentPrice), nf(v.MarketValue*(rateChoice(h.Currency, rate, hkdRate))))
+		line += " 当日盈亏" + sf(v.DayPnl*(rateChoice(h.Currency, rate, hkdRate))) + "(" + pf(v.DayPnlPct) + ")"
+		line += " 总盈亏" + sf(v.Pnl*(rateChoice(h.Currency, rate, hkdRate))) + "(" + pf(v.PnlPct) + ")"
+		b.WriteString(line + "\n")
+	}
+	return b.String(), nil
+}
+
+// rateChoice returns the multiplier to convert a holding's value into CNY.
+// USD->CNY uses cnyRate; HKD->CNY uses cnyRate/hkdRate (both USD-based rates
+// from FetchFXRates). Other currencies are treated as CNY (multiplier 1).
+func rateChoice(cur string, cnyRate, hkdRate float64) float64 {
+	switch cur {
+	case "USD":
+		if cnyRate <= 0 {
+			return 1
+		}
+		return cnyRate
+	case "HKD":
+		if hkdRate > 0 {
+			return cnyRate / hkdRate
+		}
+		return 1
+	default:
+		return 1
+	}
+}
+
+func catLabel(c string) string {
+	if c == "fund" {
+		return "基金"
+	}
+	return "股票"
+}
+
+// ---- number formatting helpers ----
+
+func nf(f float64) string {
+	neg := f < 0
+	a := math.Abs(f)
+	s := fmt.Sprintf("%.2f", a)
+	dot := strings.IndexByte(s, '.')
+	intp := s[:dot]
+	var sb strings.Builder
+	for i, ch := range intp {
+		if i > 0 && (len(intp)-i)%3 == 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteRune(ch)
+	}
+	out := sb.String() + s[dot:]
+	if neg {
+		out = "-" + out
+	}
+	return out
+}
+
+func sf(f float64) string {
+	if f > 0 {
+		return "+" + nf(f)
+	}
+	return nf(f)
+}
+
+func pf(f float64) string {
+	if f > 0 {
+		return "+" + fmt.Sprintf("%.2f", f) + "%"
+	}
+	return fmt.Sprintf("%.2f", f) + "%"
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
+// aiHistoryGet returns the most recent AI summary history (newest first, max 10).
+func aiHistoryGet(c *gin.Context) {
+	rows, err := db.GetAISummaryHistory(10)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"history": rows})
+}

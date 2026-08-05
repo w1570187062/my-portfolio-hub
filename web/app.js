@@ -1,0 +1,3010 @@
+const $ = (s) => document.querySelector(s);
+
+// ===== 主题切换（日间/夜间） =====
+// 默认夜间模式；读取 localStorage 持久化偏好。
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+}
+applyTheme(localStorage.getItem('pf_theme') || 'dark');
+document.addEventListener('DOMContentLoaded', () => {
+  applyTheme(localStorage.getItem('pf_theme') || 'dark');
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.onclick = () => {
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    localStorage.setItem('pf_theme', next);
+    applyTheme(next);
+  };
+});
+
+// ===== 导航下拉菜单 =====
+const navDropdown = document.getElementById('navDropdown');
+const navToggleBtn = document.getElementById('navToggle');
+
+function setNavActive(name) {
+  if (!navDropdown) return;
+  navDropdown.querySelectorAll('.nav-item').forEach((it) => {
+    it.classList.toggle('active', it.dataset.nav === name);
+  });
+}
+function closeNavDropdown() {
+  if (!navDropdown || navDropdown.hidden) return;
+  navDropdown.hidden = true;
+  navToggleBtn.setAttribute('aria-expanded', 'false');
+  navToggleBtn.classList.remove('open');
+}
+if (navToggleBtn && navDropdown) {
+  navToggleBtn.onclick = (e) => {
+    e.stopPropagation();
+    const isOpen = !navDropdown.hidden;
+    navDropdown.hidden = isOpen;
+    navToggleBtn.setAttribute('aria-expanded', String(!isOpen));
+    navToggleBtn.classList.toggle('open', !isOpen);
+  };
+  document.addEventListener('click', (e) => {
+    if (!navDropdown.hidden && !e.target.closest('.brand-nav')) closeNavDropdown();
+  });
+  navDropdown.querySelectorAll('.nav-item').forEach((item) => {
+    item.onclick = () => {
+      const nav = item.dataset.nav;
+      closeNavDropdown();
+      switch (nav) {
+        case 'home':
+          showHoldingsView();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          break;
+        case 'pie':   renderPie();   break;
+        case 'trend': renderTrend(); break;
+        case 'calendar':
+          if ($('#calendarView').hidden) {
+            $('#holdingsView').hidden = true;
+            $('#assetView').hidden = true;
+            $('#toolsView').hidden = true;
+            $('#calendarView').hidden = false;
+            calViewDate = new Date();
+            renderCalendar();
+            setNavActive('calendar');
+          } else {
+            showHoldingsView();
+          }
+          break;
+        case 'asset': showAssetView(); break;
+        case 'tools': showToolsView(); break;
+      }
+    };
+  });
+}
+
+const api = (path, opts = {}) => {
+  const token = localStorage.getItem('pf_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(path, { ...opts, headers });
+};
+
+const fmt = (n) => (n == null ? '' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }));
+const pct = (n) => (n > 0 ? '+' : '') + (n == null ? '' : n.toFixed(2)) + '%';
+const cls = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat');
+const cat = (c) => (c === 'fund' ? '基金' : '股票');
+// 净值/成本价按类别精度显示：基金净值保留 4 位小数，股票保持 2 位。
+const fmtNav = (n, category) => {
+  if (n == null) return '';
+  if (category === 'fund') return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  return fmt(n);
+};
+
+let allHoldings = [];
+let curPage = 1;
+let pageSize = 10;
+let catFilter = new Set(); // selected categories; empty = all
+let mktFilter = new Set(); // selected markets; empty = all
+let usdRate = 1;
+let hkdRate = 1;
+let dayDate = ''; // 当日盈亏所基于的快照日期（YYYY-MM-DD）
+
+// Two-level category -> market association (二级筛选).
+const CAT_MARKETS = {
+  stock: ['A股', '美股'],
+  fund: ['QDII', '债券', '股票', '商品'],
+};
+const ALL_MARKETS = [...CAT_MARKETS.stock, ...CAT_MARKETS.fund];
+
+// 静默自动登录：用默认凭据向后端换取 token，全程不展示登录界面
+async function silentLogin() {
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: 'admin', pass: 'asd2335979545' }),
+    });
+    if (r.ok) { const d = await r.json(); localStorage.setItem('pf_token', d.token); }
+  } catch (_) {}
+}
+
+// 用本地 token 试探一次，有效则无需重新登录
+async function tokenValid() {
+  const t = localStorage.getItem('pf_token');
+  if (!t) return false;
+  try {
+    const r = await fetch('/api/summary', { headers: { Authorization: 'Bearer ' + t } });
+    return r.ok;
+  } catch (_) { return false; }
+}
+
+async function boot() {
+  if (!(await tokenValid())) await silentLogin();
+  showApp();
+}
+
+function showApp() { $('#app').hidden = false; load(); loadAISettings(); }
+
+function toast(msg, type = 'info') {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = 'toast'; }, 5000);
+}
+
+async function load() {
+  try {
+    const [h, s, f] = await Promise.all([api('/api/holdings'), api('/api/summary'), api('/api/fx')]);
+    if (!h.ok) { toast('加载持仓失败 (HTTP ' + h.status + ')', 'err'); return; }
+    if (!s.ok) { toast('加载汇总失败 (HTTP ' + s.status + ')', 'err'); return; }
+    const hd = await h.json();
+    const sd = await s.json();
+    usdRate = sd.rate || 1;
+    hkdRate = sd.hkd_rate || 1;
+    // 汇率条：解析 /api/fx 结果并渲染（漏调用会导致汇率条一直 hidden）
+    const fd = await f.json().catch(() => null);
+    renderFx(fd);
+    allHoldings = hd.holdings || [];
+    dayDate = hd.day_date || '';
+    const ddl = document.getElementById('dayDateLbl');
+    if (ddl) ddl.textContent = dayDate;
+    buildFilters();
+    renderFiltered();
+  } catch (e) {
+    toast('加载异常：' + e.message, 'err');
+  }
+}
+
+// 渲染顶部汇率条：USD/HKD/RMB 三者汇率 + 更新时间 + 数据状态
+let fxTickTimer = null;
+let fxUpdatedTs = 0;
+let fxRawUpdated = '';
+
+function parseFxTs(s) {
+  if (!s) return 0;
+  const t = new Date(String(s).replace(' ', 'T')).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+// 每秒刷新"更新于 X 秒前"，制造持续动感
+function fxTick() {
+  const el = document.getElementById('fxUpdated');
+  if (!el) return;
+  if (!fxUpdatedTs) { el.textContent = '更新于 ' + (fxRawUpdated || '—'); return; }
+  const sec = Math.max(0, Math.floor((Date.now() - fxUpdatedTs) / 1000));
+  let rel;
+  if (sec < 60) rel = sec + ' 秒前';
+  else if (sec < 3600) rel = Math.floor(sec / 60) + ' 分钟前';
+  else rel = Math.floor(sec / 3600) + ' 小时前';
+  el.textContent = '更新于 ' + rel;
+}
+
+// 数字滚动动画：从旧值平滑滚动到新值（首次从 0 开始）
+function animateFxNum(el, target, dec) {
+  const start = parseFloat(el.dataset.cur || '0') || 0;
+  el.dataset.cur = String(target);
+  const dur = 650;
+  const t0 = performance.now();
+  function step(now) {
+    const p = Math.min(1, (now - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3); // easeOutCubic
+    const v = start + (target - start) * e;
+    el.textContent = v.toFixed(dec);
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = target.toFixed(dec);
+  }
+  requestAnimationFrame(step);
+}
+
+let fxIndex = 0;
+let fxCycleTimer = null;
+
+function renderFx(d) {
+  const bar = document.getElementById('fxbar');
+  if (!bar) return;
+  if (!d) { bar.hidden = true; stopFxCycle(); return; }
+  bar.hidden = false;
+  const status = d.healthy ? (d.stale ? '缓存' : '实时') : '离线兜底';
+  const statusCls = d.healthy ? (d.stale ? 'warn' : 'ok') : 'err';
+
+  // Per-item day-over-day comparison (red=up/涨，green=down/跌，Chinese convention)
+  let usdChg = null, hkdChg = null, cnyChg = null;
+  if (d.has_yesterday && d.yesterday_cny > 0 && d.yesterday_hkd > 0) {
+    const yHkdCny = d.yesterday_cny / d.yesterday_hkd;
+    const yCnyUsd = 1 / d.yesterday_cny;
+    const cHkd = d.hkd_cny || (d.usd_cny / d.usd_hkd);
+    const cCny = d.cny_usd || (1 / d.usd_cny);
+    if (d.usd_cny > 0) usdChg = { pct: (d.usd_cny - d.yesterday_cny) / d.yesterday_cny * 100 };
+    if (cHkd > 0 && yHkdCny > 0) hkdChg = { pct: (cHkd - yHkdCny) / yHkdCny * 100 };
+    if (cCny > 0 && yCnyUsd > 0) cnyChg = { pct: (cCny - yCnyUsd) / yCnyUsd * 100 };
+  }
+
+  function chgStr(chg, dec) {
+    if (!chg) return '';
+    const abs = Math.abs(chg.pct);
+    const sign = chg.pct >= 0 ? '+' : '';
+    const dir = chg.pct > 0.01 ? '▲' : (chg.pct < -0.01 ? '▼' : '');
+    return ' <span class="fx-chg" style="color:' + (chg.pct > 0.01 ? 'var(--up)' : (chg.pct < -0.01 ? 'var(--down)' : 'var(--text-muted)')) + '">(' + sign + abs.toFixed(dec) + '% ' + dir + ')</span>';
+  }
+
+  const items = [
+    { label: '美元', val: d.usd_cny || 0, dec: 4, unit: '¥', code: 'USD', chg: chgStr(usdChg, 2) },
+    { label: '港币', val: d.hkd_cny || 0, dec: 4, unit: '¥', code: 'HKD', chg: chgStr(hkdChg, 2) },
+    { label: '人民币', val: d.cny_usd || 0, dec: 6, unit: '$', code: 'CNY', chg: chgStr(cnyChg, 4) },
+  ];
+
+  // Render all items in a scroll container; overflow:hidden + translateY cycles through them
+  const itemsHtml = items.map((it) =>
+    '<div class="fx-scroll-item">' + it.label + ' <b>1 ' + it.code +
+    ' = <span class="fx-num" data-val="' + it.val + '" data-dec="' + it.dec + '">' +
+    it.val.toFixed(it.dec) + '</span> ' + it.unit + '</b>' + it.chg + '</div>'
+  ).join('');
+
+  bar.innerHTML =
+    '<div class="fx-scroll-wrap"><div class="fx-scroll-inner" id="fxScrollInner">' +
+    itemsHtml + '</div></div>' +
+    '<span class="fx-sep"></span>' +
+    '<span class="fx-updated" id="fxUpdated"></span>' +
+    '<span class="fx-status ' + statusCls + '">' + status + '</span>';
+
+  // Number animation
+  bar.querySelectorAll('.fx-num').forEach((el) => {
+    animateFxNum(el, parseFloat(el.dataset.val) || 0, parseInt(el.dataset.dec, 10) || 4);
+  });
+
+  // Start vertical scroll cycle
+  fxIndex = 0;
+  stopFxCycle();
+  fxCycleTimer = setInterval(fxStep, 3500);
+
+  // Relative time tick
+  fxRawUpdated = d.updated || '';
+  fxUpdatedTs = parseFxTs(fxRawUpdated);
+  if (fxTickTimer) clearInterval(fxTickTimer);
+  fxTick();
+  fxTickTimer = setInterval(fxTick, 1000);
+}
+
+function fxStep() {
+  const inner = document.getElementById('fxScrollInner');
+  if (!inner) return;
+  fxIndex = (fxIndex + 1) % 3;
+  inner.style.transform = 'translateY(-' + (fxIndex * 22) + 'px)';
+}
+
+function stopFxCycle() {
+  if (fxCycleTimer) { clearInterval(fxCycleTimer); fxCycleTimer = null; }
+}
+
+// Holdings after applying the two-level (category + market) filter.
+function filteredHoldings() {
+  return allHoldings.filter((h) =>
+    (catFilter.size === 0 || catFilter.has(h.category)) &&
+    (mktFilter.size === 0 || mktFilter.has(h.market))
+  );
+}
+
+// Render both the summary cards and the table from the currently filtered set,
+// so statistics follow the category + market filter.
+let sortKey = null;        // null | 'market_value' | 'pnl' | 'pnl_pct'
+let sortDir = 'desc';      // 'asc' | 'desc'
+
+// Convert a holding's CNY-equivalent value (USD/HKD holdings scaled by exchange rate).
+function toRmb(h, v) {
+  if (h.currency === 'USD') return (v || 0) * usdRate;
+  if (h.currency === 'HKD') return (v || 0) * hkdRate;
+  return v || 0;
+}
+
+// Apply the active column sort to a filtered holding list.
+// 市值/盈亏按 RMB 折算后比较，与列表展示口径一致；盈亏率按原值。
+function sortedHoldings(hs) {
+  if (!sortKey) return hs;
+  const dir = sortDir === 'asc' ? 1 : -1;
+  const val = (h) => (sortKey === 'pnl_pct' ? (h.pnl_pct || 0) : toRmb(h, h[sortKey]));
+  return [...hs].sort((a, b) => (val(a) - val(b)) * dir);
+}
+
+// Toggle/reverse sort when a sortable header is clicked.
+function setSort(key) {
+  if (sortKey === key) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortKey = key;
+    sortDir = 'desc';
+  }
+  updateSortIndicators();
+  curPage = 1;
+  renderFiltered();
+}
+
+// Reflect the current sort state on the table headers.
+function updateSortIndicators() {
+  document.querySelectorAll('th.sortable').forEach((th) => {
+    const k = th.dataset.sort;
+    const ind = th.querySelector('.sort-ind');
+    if (ind) ind.textContent = k === sortKey ? (sortDir === 'asc' ? '▲' : '▼') : '';
+    th.classList.toggle('active', k === sortKey);
+  });
+}
+
+function renderFiltered() {
+  const hs = filteredHoldings();
+  renderSummary(hs);
+  renderRows(sortedHoldings(hs));
+}
+
+function renderSummary(hs) {
+  let cnyMV = 0, cnyCV = 0, cnyPnl = 0, usdMV = 0, usdCV = 0, usdPnl = 0, hkdMV = 0, hkdCV = 0, hkdPnl = 0, totalCNY = 0, totalCostCNY = 0;
+  hs.forEach((h) => {
+    const mv = h.market_value || 0, cv = h.cost_value || 0, pnl = h.pnl || 0;
+    if (h.currency === 'USD') {
+      usdMV += mv; usdCV += cv; usdPnl += pnl;
+      totalCNY += mv * usdRate; totalCostCNY += cv * usdRate;
+    } else if (h.currency === 'HKD') {
+      hkdMV += mv; hkdCV += cv; hkdPnl += pnl;
+      totalCNY += mv * hkdRate; totalCostCNY += cv * hkdRate;
+    } else {
+      cnyMV += mv; cnyCV += cv; cnyPnl += pnl;
+      totalCNY += mv; totalCostCNY += cv;
+    }
+  });
+  const totalPnl = totalCNY - totalCostCNY;
+  const totalPct = totalCostCNY > 0 ? totalPnl / totalCostCNY * 100 : 0;
+  const rateTxt = (usdRate ? ('1 USD ≈ ' + usdRate.toFixed(4) + ' CNY') : 'USD汇率失败') + (hkdRate ? (' ｜ 1 HKD ≈ ' + hkdRate.toFixed(4) + ' CNY') : '');
+  const pCls = cls(totalPnl);
+  const today = new Date();
+  const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  let upCount = 0, downCount = 0, flatCount = 0, dayPnlCNY = 0;
+  hs.forEach((h) => {
+    const d = h.day_pnl_pct || 0;
+    if (d > 0) upCount++;
+    else if (d < 0) downCount++;
+    else flatCount++;
+    dayPnlCNY += toRmb(h, h.day_pnl || 0);
+  });
+  const dpCls = cls(dayPnlCNY);
+  const ICON = {
+    total: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1"/><path d="M3 8v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2z"/><circle cx="16.5" cy="13" r="1.2"/></svg>',
+    up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>',
+    down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 7 9 13 13 9 21 17"/><polyline points="15 17 21 17 21 11"/></svg>',
+    rmb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 9.5h7M12 6v12M9.3 13.5h5.4"/></svg>',
+    exchange: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 8 18 8"/><polyline points="14 4 18 8 14 12"/><polyline points="20 16 6 16"/><polyline points="10 12 6 16 10 20"/></svg>',
+    updown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 6 9 2 13"/><line x1="6" y1="9" x2="6" y2="15"/><polyline points="18 9 18 15 22 11"/><line x1="18" y1="9" x2="18" y2="15"/></svg>',
+  };
+  $('#summary').innerHTML = `
+   <div class="card"><div class="card-icon">${ICON.total}</div><div class="card-body"><div class="label">总资产 (CNY)</div><div class="value">${fmt(totalCNY)}</div></div></div>
+   <div class="card"><div class="card-icon ${pCls}">${pCls === 'down' ? ICON.down : ICON.up}</div><div class="card-body"><div class="label">总盈亏 (CNY)</div><div class="value ${pCls}">${fmt(totalPnl)} (${pct(totalPct)})</div></div></div>
+   <div class="card"><div class="card-icon">${ICON.rmb}</div><div class="card-body"><div class="label">RMB 市值</div><div class="value">${fmt(cnyMV)}</div></div></div>
+   <div class="card"><div class="card-icon">${ICON.exchange}</div><div class="card-body"><div class="label">USD 市值 (CNY)</div><div class="value">${fmt(usdMV * usdRate)}</div></div></div>
+   <div class="card card-updown"><div class="card-icon">${ICON.updown}</div><div class="card-body"><div class="label">今日涨跌平家数 (${todayStr})</div><div class="value updown-value"><span class="up">▲ ${upCount}</span><span class="ud-sep">/</span><span class="down">▼ ${downCount}</span><span class="ud-sep">/</span><span class="flat">— ${flatCount}</span></div><div class="updown-pnl ${dpCls}">当日盈亏 ¥${fmt(dayPnlCNY)}</div></div></div>`;
+}
+
+// Build the two-level filter UI: a category slider (left-right swipeable, single
+// select) and a market row (multi-select chips) whose options depend on the
+// selected category (二级筛选).
+function buildFilters() {
+  const box = $('#filters');
+  box.innerHTML = '';
+
+  // 类别：左右滑动滑块（单选：全部 / 股票 / 基金）
+  const catRow = document.createElement('div');
+  catRow.className = 'filter-row';
+  catRow.innerHTML = '<span class="filters-label">类别：</span>';
+  const catSlider = document.createElement('div');
+  catSlider.id = 'catSlider';
+  catSlider.className = 'slider';
+  [['', '全部'], ['stock', '股票'], ['fund', '基金']].forEach(([val, txt]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'slider-item' + (val === '' ? ' active' : '');
+    b.dataset.cat = val;
+    b.textContent = txt;
+    b.onclick = () => onCatSelect(val, catSlider);
+    catSlider.appendChild(b);
+  });
+  catRow.appendChild(catSlider);
+  box.appendChild(catRow);
+  catFilter = new Set(); // 默认：全部
+
+  // 市场：多选 chips（横向可滑动，避免换行）
+  const mktRow = document.createElement('div');
+  mktRow.id = 'mktRow';
+  mktRow.className = 'filter-row scroll-row';
+  mktRow.innerHTML = '<span class="filters-label">市场：</span>';
+  box.appendChild(mktRow);
+  mktRow.style.display = 'none'; // 默认全部时隐藏市场行
+  mktFilter = new Set(ALL_MARKETS);
+  rebuildMarketChips();
+}
+
+// Markets offered depend on which categories are selected.
+function availableMarkets() {
+  if (catFilter.size === 0) return ALL_MARKETS;
+  let ms = [];
+  catFilter.forEach((c) => { ms = ms.concat(CAT_MARKETS[c] || []); });
+  return ms;
+}
+
+function rebuildMarketChips() {
+  const mktRow = $('#mktRow');
+  mktRow.querySelectorAll('.chip').forEach((el) => el.remove());
+  const avail = availableMarkets();
+  const valid = new Set(avail);
+  [...mktFilter].forEach((m) => { if (!valid.has(m)) mktFilter.delete(m); });
+  if (mktFilter.size === 0) avail.forEach((m) => mktFilter.add(m)); // default: all
+  avail.forEach((m) => {
+    const label = document.createElement('label');
+    label.className = 'chip';
+    label.innerHTML = `<input type="checkbox" value="${m}" ${mktFilter.has(m) ? 'checked' : ''}> ${m}`;
+    label.querySelector('input').onchange = onMktChange;
+    mktRow.appendChild(label);
+  });
+}
+
+function onCatSelect(val, slider) {
+  [...slider.children].forEach((el) => el.classList.toggle('active', el.dataset.cat === val));
+  catFilter = (val === '') ? new Set() : new Set([val]);
+  mktFilter = new Set(availableMarkets()); // 切换类别时把市场重置为该类全部
+  rebuildMarketChips();
+  // 选"全部"时隐藏市场筛选行
+  const mktRow = document.getElementById('mktRow');
+  if (mktRow) mktRow.style.display = (val === '') ? 'none' : '';
+  applyFilter();
+}
+
+function onMktChange() {
+  mktFilter = new Set([...document.querySelectorAll('#mktRow input:checked')].map((i) => i.value));
+  applyFilter();
+}
+
+function applyFilter() {
+  curPage = 1;
+  renderFiltered();
+}
+
+function renderRows(hs) {
+  const total = hs.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (curPage > totalPages) curPage = totalPages;
+  if (curPage < 1) curPage = 1;
+  const start = (curPage - 1) * pageSize;
+  const pageItems = hs.slice(start, start + pageSize);
+  const tb = $('#rows');
+  tb.innerHTML = '';
+  pageItems.forEach((h, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+     <td class="num idx">${start + i + 1}</td>
+     <td class="name-clickable ${h.day_pnl_pct > 0 ? 'name-up' : (h.day_pnl_pct < 0 ? 'name-down' : '')}" data-analysis="${h.id}" data-category="${h.category}" data-linked-symbol="${esc(h.linked_symbol || '')}" title="${h.category === 'fund' && h.linked_symbol ? '点击查看关联股票 ' + esc(h.linked_symbol) + ' 技术分析' : (h.category === 'fund' ? '基金未关联股票代码，不支持技术分析' : '点击查看技术分析')}">${esc(h.name)}${h.day_pnl_pct > 0 ? ' <span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? ' <span class="name-arrow-down">▼</span>' : '')}${h.category === 'fund' && h.linked_symbol ? ' <span class="linked-badge" title="关联 ' + esc(h.linked_symbol) + '">🔗</span>' : ''}</td><td>${h.symbol}</td><td class="hide-col">${cat(h.category)}</td><td class="hide-col">${h.market}</td><td class="hide-col">${h.currency}</td>
+     <td class="num">${fmt(h.quantity)}</td>
+     <td class="num">${fmtNav(h.cost_price, h.category)}</td>
+     <td class="num">${fmtNav(h.current_price, h.category)}</td>
+     <td class="num">${fmt(toRmb(h, h.market_value))}</td>
+     <td class="num ${cls(h.day_pnl)}">${fmt(toRmb(h, h.day_pnl))} <span class="dp-pct">(${pct(h.day_pnl_pct)})</span></td>
+     <td class="num ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
+     <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
+     <td class="num" style="font-size:12px;color:var(--text-muted)">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
+     <td style="font-size:12px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
+     <td style="font-size:12px;color:#8a8f99">${h.updated_at || ''}</td>
+     <td class="row-actions"><button class="btn act-refresh" data-refresh="${h.id}" title="刷新">🔄</button><button class="btn act-adjust" data-adjust="${h.id}" title="加减仓">📊</button><button class="btn act-edit" data-edit="${h.id}" title="编辑">✏️</button><button class="btn act-hist" data-hist="${h.id}" title="历史">📈</button><button class="btn act-del danger" data-del="${h.id}" title="删除">🗑️</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('[data-refresh]').forEach((b) => (b.onclick = () => { console.log('[click] 刷新持仓', b.dataset.refresh); refreshHolding(b.dataset.refresh, b); }));
+  tb.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { console.log('[click] 编辑持仓', b.dataset.edit); editHolding(b.dataset.edit); }));
+  tb.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => { console.log('[click] 删除持仓', b.dataset.del); delHolding(b.dataset.del); }));
+  tb.querySelectorAll('[data-adjust]').forEach((b) => (b.onclick = () => { console.log('[click] 加减仓', b.dataset.adjust); openAdjust(b.dataset.adjust); }));
+  tb.querySelectorAll('[data-hist]').forEach((b) => (b.onclick = () => { console.log('[click] 历史持仓', b.dataset.hist); openHoldingHistory(b.dataset.hist); }));
+  tb.querySelectorAll('.name-clickable').forEach((td) => (td.onclick = () => { const id = td.dataset.analysis; const cat = td.dataset.category; const linked = td.dataset.linkedSymbol; if (cat === 'fund' && !linked) { toast('该基金未设置关联股票代码，不支持技术分析', 'info'); return; } console.log('[click] 技术分析', id, linked || ''); openAnalysis(id); }));
+  renderPager(total, totalPages);
+}
+
+// 分页栏：每页 pageSize 条，底部分页控件，样式与现有 slider/tab 一致。
+function renderPager(total, totalPages) {
+  const el = $('#pager');
+  if (!el) return;
+  if (totalPages <= 1) { el.innerHTML = ''; return; } // 单页不显示分页栏
+  // 页码窗口：始终含首/尾/当前±1，超出用「…」省略
+  const raw = new Set([1, totalPages, curPage, curPage - 1, curPage + 1].filter((p) => p >= 1 && p <= totalPages));
+  const sorted = [...raw].sort((a, b) => a - b);
+  let nums = [];
+  let prev = 0;
+  sorted.forEach((p) => {
+    if (p - prev > 1) nums.push('…');
+    nums.push(p);
+    prev = p;
+  });
+  let html = `<span class="pg-info">共 ${total} 条</span>`;
+  html += `<button class="btn pg-btn pg-prev" data-pg="${curPage - 1}" ${curPage <= 1 ? 'disabled' : ''}>‹ 上一页</button>`;
+  nums.forEach((n) => {
+    if (n === '…') html += `<span class="pg-ellipsis">…</span>`;
+    else html += `<button class="btn pg-num ${n === curPage ? 'active' : ''}" data-pg="${n}">${n}</button>`;
+  });
+  html += `<button class="btn pg-btn pg-next" data-pg="${curPage + 1}" ${curPage >= totalPages ? 'disabled' : ''}>下一页 ›</button>`;
+  html += `<span class="pg-info">第 ${curPage} / ${totalPages} 页</span>`;
+  const sizes = [5, 10, 20];
+  const sizeOpts = sizes.map((s) => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}</option>`).join('');
+  html += `<label class="pg-size">每页<select id="pgSize">${sizeOpts}</select>条</label>`;
+  el.innerHTML = html;
+  el.querySelectorAll('[data-pg]').forEach((b) => {
+    b.onclick = () => {
+      const p = parseInt(b.dataset.pg, 10);
+      if (p >= 1 && p <= totalPages) { curPage = p; renderFiltered(); }
+    };
+  });
+  const sz = $('#pgSize');
+  if (sz) sz.onchange = () => { pageSize = parseInt(sz.value, 10) || 10; curPage = 1; renderFiltered(); };
+}
+
+// refreshHolding refreshes the latest quote for a single holding, persists it,
+// and reloads the table. Shows a toast with the new market value.
+async function refreshHolding(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  const url = '/api/holdings/' + id + '/refresh';
+  console.log('[refresh] 请求 POST', url);
+  try {
+    const r = await api(url, { method: 'POST' });
+    if (r.ok) {
+      const d = await r.json();
+      const h = d.holding;
+      const mv = fmt(toRmb(h, h.market_value));
+      const dp = fmt(toRmb(h, h.day_pnl));
+      console.log('[refresh] 结果', { name: h.name, symbol: h.symbol, current_price: h.current_price, prev_close: h.prev_close, market_value: h.market_value, day_pnl: h.day_pnl, day_pnl_pct: h.day_pnl_pct, pnl: h.pnl });
+      toast(`${h.name} 已刷新：现价 ${fmtNav(h.current_price, h.category)}｜市值 ¥${mv}｜当日盈亏 ${dp}`, 'ok');
+      await load();
+    } else {
+      let msg = '刷新失败 (HTTP ' + r.status + ')';
+      try { const e = await r.json(); if (e.error) msg += '：' + e.error; } catch (_) {}
+      toast(msg, 'err');
+      if (btn) { btn.disabled = false; btn.textContent = '🔄'; }
+    }
+  } catch (e) {
+    toast('刷新异常：' + e.message, 'err');
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 刷新'; }
+  }
+}
+
+// Populate the market <select> with options valid for the chosen category.
+function fillMarketOptions(catVal) {
+  const sel = $('#f_market');
+  const opts = CAT_MARKETS[catVal] || [];
+  sel.innerHTML = opts.map((m) => `<option value="${m}">${m}</option>`).join('');
+}
+
+function openModal(h) {
+  $('#modalTitle').textContent = h ? '编辑持仓' : '添加持仓';
+  $('#f_id').value = h ? h.id : '';
+  $('#f_name').value = h ? h.name : '';
+  $('#f_symbol').value = h ? h.symbol : '';
+  $('#f_category').value = h ? h.category : 'stock';
+  fillMarketOptions($('#f_category').value);
+  $('#f_market').value = h ? h.market : CAT_MARKETS['stock'][0];
+  $('#f_currency').value = h ? h.currency : 'CNY';
+  $('#f_quantity').value = h ? h.quantity : '';
+  $('#f_cost_price').value = h ? h.cost_price : '';
+  $('#f_current_price').value = h ? h.current_price : '';
+  $('#f_prev_close').value = h ? h.prev_close : '';
+  $('#f_note').value = h ? (h.note || '') : '';
+  $('#f_buy_date').value = h ? (h.buy_date || '') : '';
+  $('#f_linked_symbol').value = h ? (h.linked_symbol || '') : '';
+  toggleLinkedSymbol($('#f_category').value);
+  $('#formErr').textContent = '';
+  $('#modal').hidden = false;
+}
+
+function toggleLinkedSymbol(catVal) {
+  const row = $('#linked_symbol_row');
+  if (row) row.style.display = catVal === 'fund' ? '' : 'none';
+}
+
+async function editHolding(id) {
+  try {
+    const r = await api('/api/holdings');
+    if (!r.ok) { toast('加载持仓失败 (HTTP ' + r.status + ')', 'err'); return; }
+    const d = await r.json();
+    const h = (d.holdings || []).find((x) => x.id == id);
+    if (!h) { toast('未找到该持仓', 'err'); return; }
+    openModal(h);
+  } catch (e) {
+    toast('编辑异常：' + e.message, 'err');
+  }
+}
+
+// ---------------- 加减仓 ----------------
+let adjType = 'BUY';
+function openAdjust(id) {
+  const h = allHoldings.find((x) => String(x.id) === String(id));
+  if (!h) { toast('未找到该持仓', 'err'); return; }
+  $('#adj_id').value = h.id;
+  adjType = 'BUY';
+  syncAdjSeg();
+  $('#adjustTitle').textContent = '加减仓 · ' + (h.name || h.symbol);
+  $('#adj_quantity').value = '';
+  $('#adj_price').value = h.current_price ? h.current_price : '';
+  $('#adj_fee').value = 0;
+  $('#adj_note').value = '';
+  $('#adjErr').textContent = '';
+  computeAdjPreview();
+  renderAdjHistory(h.id);
+  $('#adjustModal').hidden = false;
+  $('#adj_quantity').focus();
+}
+function syncAdjSeg() {
+  document.querySelectorAll('#adjTypeSeg .seg-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.type === adjType);
+  });
+}
+function computeAdjPreview() {
+  const h = allHoldings.find((x) => String(x.id) === String($('#adj_id').value));
+  const qty = parseFloat($('#adj_quantity').value) || 0;
+  const price = parseFloat($('#adj_price').value);
+  const fee = parseFloat($('#adj_fee').value) || 0;
+  const priceVal = isNaN(price) ? (h ? h.current_price : 0) : price;
+  const amount = qty * priceVal;
+  $('#adj_amount').value = amount ? amount.toFixed(4) : '';
+  const box = $('#adjPreview');
+  if (!h) { box.innerHTML = ''; return; }
+  if (adjType === 'BUY') {
+    const newQty = h.quantity + qty;
+    if (qty <= 0) { box.innerHTML = ''; return; }
+    if (newQty <= 0) { box.innerHTML = '<span class="warn">加仓后份额需大于 0</span>'; return; }
+    const newCost = (h.quantity * h.cost_price + qty * priceVal + fee) / newQty;
+    box.innerHTML = `加仓后：份额 <b>${fmt(newQty)}</b>｜摊薄成本价 <b>${fmtNav(newCost, h.category)}</b>` +
+      (h.cost_price > 0 ? `（原 ${fmtNav(h.cost_price, h.category)}）` : '');
+  } else {
+    if (qty <= 0) { box.innerHTML = ''; return; }
+    if (qty > h.quantity) { box.innerHTML = '<span class="warn">减仓数量不能超过当前份额 ' + fmt(h.quantity) + '</span>'; return; }
+    const realized = (priceVal - h.cost_price) * qty - fee;
+    const remainQty = h.quantity - qty;
+    box.innerHTML = `减仓后：剩余份额 <b>${fmt(remainQty)}</b>｜本次实现盈亏 <b class="${cls(realized)}">${fmt(realized)}</b>` +
+      (realized < 0 ? '（亏本）' : (realized > 0 ? '（盈利）' : ''));
+  }
+}
+async function renderAdjHistory(id) {
+  const list = $('#adjHistoryList');
+  try {
+    const r = await api('/api/holdings/' + id + '/transactions');
+    if (!r.ok) { list.innerHTML = '<div class="adj-empty">记录加载失败</div>'; return; }
+    const d = await r.json();
+    const txs = d.transactions || [];
+    if (!txs.length) { list.innerHTML = '<div class="adj-empty">暂无记录</div>'; return; }
+    let html = '<div class="adj-realized">累计实现盈亏：<b>' + fmt(d.realized_total || 0) + '</b></div>';
+    html += txs.map((t) => {
+      const tag = t.tx_type === 'BUY'
+        ? '<span class="adj-tag buy">加仓</span>'
+        : '<span class="adj-tag sell">减仓</span>';
+      const rl = t.tx_type === 'SELL'
+        ? `<span class="adj-rl ${cls(t.realized_pnl)}">盈亏 ${fmt(t.realized_pnl)}</span>`
+        : '';
+      return `<div class="adj-tx">${tag}<span class="adj-meta">${t.created_at}</span>${rl}` +
+        `<div class="adj-detail">数量 ${fmt(t.quantity)}｜价 ${fmt(t.price)}｜金额 ${fmt(t.amount)}｜成本 ${fmt(t.fee)}${t.note ? '｜' + esc(t.note) : ''}</div></div>`;
+    }).join('');
+    list.innerHTML = html;
+  } catch (e) {
+    list.innerHTML = '<div class="adj-empty">记录加载异常</div>';
+  }
+}
+$('#adjTypeSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  adjType = b.dataset.type;
+  syncAdjSeg();
+  computeAdjPreview();
+});
+['adj_quantity', 'adj_price', 'adj_fee'].forEach((fid) => {
+  const el = document.getElementById(fid);
+  if (el) el.addEventListener('input', computeAdjPreview);
+});
+$('#adjCancel').onclick = () => { $('#adjustModal').hidden = true; };
+$('#adjustForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const id = $('#adj_id').value;
+  const h = allHoldings.find((x) => String(x.id) === String(id));
+  const qty = parseFloat($('#adj_quantity').value);
+  if (!qty || qty <= 0) { $('#adjErr').textContent = '请输入大于 0 的数量'; return; }
+  let price = parseFloat($('#adj_price').value);
+  if (isNaN(price) && h) price = h.current_price;
+  if (isNaN(price) || price < 0) { $('#adjErr').textContent = '价格无效'; return; }
+  const fee = parseFloat($('#adj_fee').value) || 0;
+  const note = $('#adj_note').value.trim();
+  $('#adjErr').textContent = '';
+  try {
+    const r = await api('/api/holdings/' + id + '/adjust', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: adjType, quantity: qty, price: price, fee: fee, note: note }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $('#adjErr').textContent = d.error || ('操作失败 (HTTP ' + r.status + ')'); return; }
+    const hh = d.holding;
+    const op = adjType === 'BUY' ? '加仓' : '减仓';
+    let msg = `${op}成功：${hh.name} 现份额 ${fmt(hh.quantity)}｜成本价 ${fmtNav(hh.cost_price, hh.category)}`;
+    if (adjType === 'SELL') {
+      msg += `｜本次实现盈亏 ${fmt(d.realized_pnl || 0)}（累计 ${fmt(d.realized_total || 0)}）`;
+    }
+    toast(msg, 'ok');
+    $('#adjustModal').hidden = true;
+    await load();
+  } catch (err) {
+    $('#adjErr').textContent = '操作异常：' + err.message;
+  }
+};
+
+let pendingDelId = null;
+let pendingExport = false;
+let pendingAiAll = false;
+let pendingAiEquity = false;
+function delHolding(id) {
+  pendingDelId = id;
+  $('#confirmMsg').textContent = '确认删除该持仓？删除后不可恢复。';
+  $('#confirmModal').hidden = false;
+}
+function confirmExport() {
+  pendingExport = true;
+  const btn = $('#confirmOk');
+  btn.textContent = '导出';
+  btn.classList.remove('danger');
+  $('#confirmTitle').textContent = '确认导出';
+  $('#confirmMsg').textContent = '将导出全部资产数据（持仓 / 理财 / 现金 / 负债 / 消费）为 JSON 文件，是否继续？';
+  $('#confirmModal').hidden = false;
+}
+function resetConfirm() {
+  $('#confirmModal').hidden = true;
+  pendingDelId = null;
+  pendingAssetDel = null;
+  pendingExport = false;
+  pendingAiAll = false;
+  pendingAiEquity = false;
+  const btn = $('#confirmOk');
+  btn.textContent = '删除';
+  btn.classList.add('danger');
+  $('#confirmTitle').textContent = '确认删除';
+}
+function confirmAssetAi() {
+  pendingAiAll = true;
+  const btn = $('#confirmOk');
+  btn.textContent = '生成';
+  btn.classList.remove('danger');
+  $('#confirmTitle').textContent = '确认生成 AI 总结';
+  $('#confirmMsg').textContent = '将汇总全部资产（理财 / 现金 / 负债 / 消费 / 持仓）并调用 AI 生成总结，是否继续？';
+  $('#confirmModal').hidden = false;
+}
+function confirmEquityAi() {
+  pendingAiEquity = true;
+  const btn = $('#confirmOk');
+  btn.textContent = '生成';
+  btn.classList.remove('danger');
+  $('#confirmTitle').textContent = '确认生成权益类总结';
+  $('#confirmMsg').textContent = '将汇总权益类持仓（股票 / 基金）并调用 AI 生成总结，是否继续？';
+  $('#confirmModal').hidden = false;
+}
+$('#confirmCancel').onclick = resetConfirm;
+$('#confirmOk').onclick = async () => {
+  if (pendingExport) {
+    pendingExport = false;
+    resetConfirm();
+    exportHoldingsJSON();
+    return;
+  }
+  if (pendingAiAll) {
+    pendingAiAll = false;
+    resetConfirm();
+    assetAiSummarize();
+    return;
+  }
+  if (pendingAiEquity) {
+    pendingAiEquity = false;
+    resetConfirm();
+    aiSummarize();
+    return;
+  }
+  if (pendingAssetDel) {
+    const { type, id } = pendingAssetDel;
+    $('#confirmModal').hidden = true;
+    pendingAssetDel = null;
+    const paths = { source: '/api/asset/sources/', wealth: '/api/asset/wealth/', liability: '/api/asset/liabilities/', consumption: '/api/asset/consumptions/' };
+    try {
+      const r = await api(paths[type] + id, { method: 'DELETE' });
+      if (!r.ok) { let m = '删除失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m + ' (HTTP ' + r.status + ')', 'err'); return; }
+    } catch (e) { toast('删除异常：' + e.message, 'err'); return; }
+    toast('已删除', 'ok');
+    loadAsset();
+    return;
+  }
+  const id = pendingDelId;
+  $('#confirmModal').hidden = true;
+  pendingDelId = null;
+  if (!id) return;
+  try {
+    const r = await api('/api/holdings/' + id, { method: 'DELETE' });
+    if (!r.ok) {
+      let msg = '删除失败';
+      try { const d = await r.json(); if (d && d.error) msg = d.error; } catch (_) {}
+      toast(msg + ' (HTTP ' + r.status + ')', 'err');
+      return;
+    }
+  } catch (e) {
+    toast('删除异常：' + e.message, 'err');
+    return;
+  }
+  toast('已删除', 'ok');
+  load();
+};
+
+// 登录界面已移除：初始化时由 boot() 静默自动登录，无需手动输入
+$('#addBtn').onclick = () => openModal(null);
+$('#guideBtn').onclick = () => openGuide();
+$('#cancelBtn').onclick = () => ($('#modal').hidden = true);
+$('#f_category').onchange = () => {
+  fillMarketOptions($('#f_category').value);
+  const opts = CAT_MARKETS[$('#f_category').value] || [];
+  $('#f_market').value = opts[0] || '';
+  toggleLinkedSymbol($('#f_category').value);
+};
+$('#refreshBtn').onclick = async () => {
+  $('#refreshBtn').textContent = '⏳ 刷新中…';
+  try {
+    const r = await api('/api/refresh', { method: 'POST' });
+    $('#refreshBtn').textContent = '🔄 刷新行情';
+    if (r.ok) {
+      const d = await r.json();
+      if (d.failed && d.failed.length) {
+        toast('以下持仓未刷新成功：\n' + d.failed.join('\n'), 'err');
+      } else {
+        toast('行情已刷新', 'ok');
+      }
+    } else {
+      toast('刷新请求失败 (HTTP ' + r.status + ')', 'err');
+    }
+  } catch (e) {
+    $('#refreshBtn').textContent = '🔄 刷新行情';
+    toast('刷新异常：' + e.message, 'err');
+  }
+  load();
+};
+$('#form').onsubmit = async (e) => {
+  e.preventDefault();
+  $('#formErr').textContent = '';
+  const id = $('#f_id').value;
+  const payload = {
+    name: $('#f_name').value,
+    symbol: $('#f_symbol').value,
+    category: $('#f_category').value,
+    market: $('#f_market').value,
+    currency: $('#f_currency').value,
+    quantity: parseFloat($('#f_quantity').value),
+    cost_price: parseFloat($('#f_cost_price').value),
+    current_price: parseFloat($('#f_current_price').value || '0'),
+    prev_close: parseFloat($('#f_prev_close').value || '0') || 0,
+    note: $('#f_note').value || '',
+    buy_date: $('#f_buy_date').value || '',
+    linked_symbol: $('#f_linked_symbol').value || '',
+  };
+  let r;
+  if (id) {
+    r = await api('/api/holdings/' + id, { method: 'PUT', body: JSON.stringify(payload) });
+  } else {
+    r = await api('/api/holdings', { method: 'POST', body: JSON.stringify(payload) });
+  }
+  if (!r.ok) {
+    let msg = '保存失败，请重试';
+    try { const d = await r.json(); if (d && d.error) msg = d.error; } catch (_) {}
+    $('#formErr').textContent = msg;
+    return;
+  }
+  $('#modal').hidden = true;
+  toast(id ? '已更新' : '已添加', 'ok');
+  load();
+};
+
+// ---- Charts ----
+
+function openChart() {
+  $('#chartModal').hidden = false;
+}
+function closeChart() {
+  $('#chartModal').hidden = true;
+}
+
+// Asset composition pie: 现金 / 股票 / 基金 / 理财 across the WHOLE portfolio,
+// with click-to-drill second-level breakdown (e.g. 股票 -> each sub-stock's share).
+const PIE_BASE = { 现金: '#E6DDD4', 理财: '#87C9C0', 基金: '#C39FC2', 股票: '#E6957A' };
+
+// Blend hex color a toward b by ratio t∈[0,1] (used for sub-segment shades).
+function mixHex(a, b, t) {
+  const pa = [parseInt(a.slice(1, 3), 16), parseInt(a.slice(3, 5), 16), parseInt(a.slice(5, 7), 16)];
+  const pb = [parseInt(b.slice(1, 3), 16), parseInt(b.slice(3, 5), 16), parseInt(b.slice(5, 7), 16)];
+  const c = pa.map((v, i) => Math.round(v + (pb[i] - v) * t));
+  return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
+// Parse "#rrggbb" to {r,g,b} for building rgba() strings.
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+}
+
+// Top-level segments (现金/股票/基金/理财), values already in CNY.
+function getTopSegs(d) {
+  const eq = d.equity || {};
+  let stock = 0, fund = 0;
+  (eq.items || []).forEach((h) => {
+    const mv = h.market_value || 0; // 后端已折算为 CNY
+    if (h.category === 'stock') stock += mv;
+    else if (h.category === 'fund') fund += mv;
+  });
+  const wealth = (d.wealth && d.wealth.total) || 0; // CNY
+  const cash = (d.cash && d.cash.total) || 0;       // CNY
+  const seg = { 现金: cash, 股票: stock, 基金: fund, 理财: wealth };
+  return Object.keys(seg)
+    .map((k) => ({ label: k, value: seg[k], color: PIE_BASE[k] }))
+    .filter((s) => s.value > 0);
+}
+
+// Second-level items within a top-level category, values converted to CNY.
+function getSubSegs(d, key) {
+  let items = [];
+  if (key === '股票' || key === '基金') {
+    const cat = key === '股票' ? 'stock' : 'fund';
+    items = (d.equity ? d.equity.items : []).filter((h) => h.category === cat)
+      .map((h) => ({ label: h.name || h.symbol || '未命名', value: h.market_value || 0, _item: h }));
+  } else if (key === '现金') {
+    items = (d.cash ? d.cash.items : []).map((c) => ({ label: c.name || '现金', value: toRmb(c, c.amount || 0), _item: c }));
+  } else if (key === '理财') {
+    items = (d.wealth ? d.wealth.products : []).map((p) => ({ label: p.name || p.code || '理财', value: toRmb(p, p.amount || 0), _item: p }));
+  }
+  // 仅保留正值，并按总金额从小到大排序（饼图扇区与图例均按此顺序）
+  items = items.filter((s) => s.value > 0).sort((a, b) => a.value - b.value);
+  const base = PIE_BASE[key];
+  const rgb = hexToRgb(base);
+  const n = items.length;
+  // 透明度按 10% 递减：占比越大越不透明（最大=1.0），最小不低于 0.4 以保证可见。
+  // 用「同色相 + 透明度阶梯」替代原来的「向白色渐变」——相邻子项因透明度等差而区分度更高。
+  return items.map((it, i) => {
+    const op = Math.max(0.4, 1 - (n - 1 - i) * 0.1);
+    return { ...it, color: `rgba(${rgb.r},${rgb.g},${rgb.b},${op.toFixed(2)})` };
+  });
+}
+
+// Draw a pie (single-level) + legend into #chartBody.
+function drawPie(segs, total, title, opts) {
+  opts = opts || {};
+  $('#chartTitle').textContent = title;
+  if (total <= 0 || segs.length === 0) { $('#chartBody').innerHTML = '<p style="color:#8a8f99">暂无数据</p>'; openChart(); return; }
+  const cx = 110, cy = 110, r = 90;
+  let paths;
+  const segClick = opts.onSeg
+    ? ` data-label="${esc(segs[0].label)}" style="cursor:pointer"`
+    : '';
+  if (segs.length === 1) {
+    paths = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${segs[0].color}" stroke="#fff" stroke-width="2"${segClick}/>`;
+  } else {
+    let angle = -Math.PI / 2;
+    paths = '';
+    segs.forEach((s) => {
+      const frac = s.value / total;
+      const a2 = angle + frac * 2 * Math.PI;
+      const large = frac > 0.5 ? 1 : 0;
+      const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+      const x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2);
+      paths += `<path d="M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z" fill="${s.color}" stroke="#fff" stroke-width="2"${opts.onSeg ? ` data-label="${esc(s.label)}" style="cursor:pointer"` : ''}/>`;
+      angle = a2;
+    });
+  }
+  const legend = segs.map((s) => {
+    const p = (s.value / total * 100).toFixed(1);
+    return `<div data-label="${esc(s.label)}" style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:14px${opts.onSeg ? ';cursor:pointer' : ''}">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${s.color}"></span>
+      <span>${esc(s.label)}</span><span style="margin-left:auto;font-weight:600">¥${fmt(s.value)} (${p}%)</span></div>`;
+  }).join('');
+  const back = opts.onBack
+    ? `<div class="pie-back" data-back="1">← 返回总览</div>`
+    : '';
+  const hint = opts.onSeg ? `<div class="pie-hint">${opts.hint || '点击区块可查看二级细分'}</div>` : '';
+  $('#chartBody').innerHTML = `${back}${hint}<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">
+    <svg width="220" height="220" viewBox="0 0 220 220">${paths}</svg>
+    <div style="min-width:200px">${legend}</div></div>`;
+  if (opts.onSeg) {
+    $('#chartBody').querySelectorAll('[data-label]').forEach((el) => (el.onclick = () => opts.onSeg(el.dataset.label)));
+  }
+  if (opts.onBack) {
+    const b = $('#chartBody').querySelector('[data-back]');
+    if (b) b.onclick = opts.onBack;
+  }
+  openChart();
+}
+
+async function renderPie() {
+  let d = assetData;
+  if (!d || !d.equity) {
+    try {
+      const r = await api('/api/asset/overview');
+      if (!r.ok) { toast('资产总览加载失败 (HTTP ' + r.status + ')', 'err'); return; }
+      d = await r.json();
+    } catch (e) {
+      toast('资产总览加载异常：' + e.message, 'err'); return;
+    }
+  }
+  pieData = d; // 缓存本次总览数据，供二级下钻 showPieDrill 使用，避免下钻时数据为空导致「暂无数据」
+  const segs = getTopSegs(d);
+  const total = segs.reduce((a, s) => a + s.value, 0);
+  drawPie(segs, total, '资产构成（现金 / 股票 / 基金 / 理财）', {
+    onSeg: (label) => showPieDrill(label),
+  });
+}
+
+// Drill into a top-level category: show each sub-item's share of that category.
+function showPieDrill(key) {
+  const d = pieData || assetData || {};
+  const sub = getSubSegs(d, key);
+  const total = sub.reduce((a, s) => a + s.value, 0);
+  drawPie(sub, total, `资产构成 › ${key}（二级细分占比）`, {
+    onBack: () => renderPie(),
+    onSeg: (label) => showItemDetail(key, label),
+    hint: '点击区块查看该标的明细',
+  });
+}
+
+// Second-level click: show a single sub-item's full details (same modal layout as level-1).
+function showItemDetail(key, label) {
+  const d = pieData || assetData || {};
+  const sub = getSubSegs(d, key);
+  const total = sub.reduce((a, s) => a + s.value, 0);
+  const it = sub.find((x) => x.label === label);
+  if (!it) { toast('未找到该明细', 'err'); return; }
+  const raw = it._item || {};
+  const cat = key === '股票' ? 'stock' : key === '基金' ? 'fund' : key;
+  $('#chartTitle').textContent = `资产构成 › ${key} › ${esc(label)}`;
+  const rows = [];
+  if (cat === 'stock' || cat === 'fund') {
+    const h = raw;
+    rows.push(['分类', key]);
+    if (h.symbol) rows.push(['代码', h.symbol]);
+    rows.push(['占本类', (it.value / total * 100).toFixed(1) + '%']);
+    rows.push(['市值 (CNY)', '¥' + fmt(toRmb(h, h.market_value || 0))]);
+    rows.push(['成本 (CNY)', '¥' + fmt(toRmb(h, h.cost_value || 0))]);
+    rows.push(['累计盈亏', `${fmt(toRmb(h, h.pnl || 0))}（${pct(h.pnl_pct || 0)}）`, cls(h.pnl || 0)]);
+    rows.push(['数量', fmt(h.quantity || 0)]);
+    rows.push(['成本价', fmtNav(h.cost_price, h.category)]);
+    rows.push(['现价 / 净值', fmtNav(h.current_price, h.category)]);
+    rows.push(['当日盈亏', `${fmt(toRmb(h, h.day_pnl || 0))}（${pct(h.day_pnl_pct || 0)}）`, cls(h.day_pnl || 0)]);
+  } else if (cat === 'cash') {
+    rows.push(['分类', '现金']);
+    if (raw.currency) rows.push(['币种', raw.currency]);
+    rows.push(['金额 (CNY)', '¥' + fmt(it.value)]);
+  } else if (cat === 'wealth') {
+    rows.push(['分类', '理财']);
+    if (raw.code) rows.push(['代码', raw.code]);
+    rows.push(['金额 (CNY)', '¥' + fmt(it.value)]);
+  }
+  const back = `<div class="pie-back" data-back="1">← 返回${key}明细</div>`;
+  const body = rows.map(([k, v, c]) => `<div style="display:flex;justify-content:space-between;gap:16px;padding:9px 4px;border-bottom:1px solid rgba(0,0,0,.06)"><span style="color:#8a8f99">${k}</span><span style="font-weight:600${c ? ' class="' + c + '"' : ''}">${v}</span></div>`).join('');
+  $('#chartBody').innerHTML = back + `<div style="max-width:440px;margin:14px auto 0">${body}</div>`;
+  const b = $('#chartBody').querySelector('[data-back]');
+  if (b) b.onclick = () => showPieDrill(key);
+  openChart();
+}
+
+// Daily P&L history: bar (daily P&L) + overlaid line (cumulative P&L).
+// 支持左右翻页（每页 15 天），导航时复用缓存数据不重复请求接口。
+let trendHist = null;    // 缓存的盈亏历史
+let trendEndDate = null; // null=最新(今天)；否则为当前查看页的结束日期 YYYY-MM-DD
+
+async function renderTrend() {
+  $('#chartTitle').textContent = '盈亏走势（每日盈亏柱状 + 累计折线）';
+  const r = await api('/api/pnl/history');
+  if (!r.ok) { toast('加载盈亏历史失败 (HTTP ' + r.status + ')', 'err'); return; }
+  const d = await r.json();
+  trendHist = d.history || [];
+  trendEndDate = null; // 每次打开回到最新
+  drawTrend();
+}
+
+// 翻页：dir=-1 前 15 天，dir=+1 后 15 天；不超过今天
+function shiftTrend(dir) {
+  const PAGE = 15;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cur = trendEndDate ? parseYmd(trendEndDate) : new Date(today);
+  cur.setHours(0, 0, 0, 0);
+  let nxt = addDays(cur, dir * PAGE);
+  if (nxt > today) nxt = new Date(today);
+  trendEndDate = ymd(nxt);
+  drawTrend();
+}
+
+function drawTrend() {
+  const hist = trendHist || [];
+  if (hist.length === 0) {
+    $('#chartBody').innerHTML = '<p style="color:#8a8f99;line-height:1.6">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；之后此处显示每日盈亏柱状图与累计折线。<br>从记录之日起，每个交易日会生成一个数据点。</p>';
+    openChart();
+    return;
+  }
+  // 始终以 trendEndDate（默认今天）为终点展示最近 15 个日期槽位；无快照的日期用浅色占位柱补齐，
+  // 保证一页固定 15 条、柱宽一致，缺失数据一目了然。
+  const PAGE = 15;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const end = trendEndDate ? parseYmd(trendEndDate) : new Date(today);
+  end.setHours(0, 0, 0, 0);
+  if (end > today) end.setTime(today.getTime());
+  const byDate = {};
+  hist.forEach((h) => { byDate[h.date] = h; });
+  const slots = [];
+  for (let i = PAGE - 1; i >= 0; i--) {
+    const ds = ymd(addDays(end, -i));
+    const rec = byDate[ds];
+    slots.push(rec ? { ...rec, hasData: true } : { date: ds, total_cny: 0, hasData: false });
+  }
+  let cum = 0;
+  const data = slots.map((s) => { if (s.hasData) cum += s.total_cny; return { ...s, cum }; });
+  const W = 720, H = 360, mL = 60, mR = 60, mT = 20, mB = 40;
+  const plotW = W - mL - mR, plotH = H - mT - mB;
+  const n = data.length;
+  const maxBar = Math.max(1, ...data.map((x) => Math.abs(x.total_cny)));
+  const cVals = data.map((x) => x.cum);
+  let cMin = Math.min(0, ...cVals), cMax = Math.max(0, ...cVals);
+  if (cMax === cMin) cMax = cMin + 1;
+  const zeroY = mT + plotH / 2;
+  const yBar = (v) => zeroY - (v / maxBar) * (plotH / 2);
+  const yLine = (v) => mT + plotH - ((v - cMin) / (cMax - cMin)) * plotH;
+  const slot = plotW / n;
+  const bw = Math.max(2, slot * 0.6);
+  let bars = '', line = '', hotspots = '';
+  data.forEach((x, i) => {
+    const cx = mL + (i + 0.5) * slot;
+    // 交互热区：覆盖整列，hover 显示金额
+    hotspots += `<rect class="trend-hot" data-i="${i}" x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
+    if (!x.hasData) {
+      // 占位：浅色细柱，表示当日无快照数据
+      bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${(zeroY - 1).toFixed(2)}" width="${bw.toFixed(2)}" height="2" fill="#e9ebf0"/>`;
+      line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${yLine(x.cum).toFixed(2)} `;
+      return;
+    }
+    const yv = yBar(x.total_cny);
+    const y0 = zeroY;
+    const top = Math.min(y0, yv), hgt = Math.abs(yv - y0);
+    const color = x.total_cny > 0 ? '#f5222d' : x.total_cny < 0 ? '#00a854' : '#c9ced6';
+    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" fill="${color}"/>`;
+    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${yLine(x.cum).toFixed(2)} `;
+  });
+  // axes & grid
+  const xLabelStep = Math.max(1, Math.ceil(n / 10));
+  let xlabels = '';
+  data.forEach((x, i) => {
+    if (i % xLabelStep === 0 || i === n - 1) {
+      const cx = mL + (i + 0.5) * slot;
+      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="10" fill="#8a8f99" text-anchor="middle">${x.date.slice(5)}</text>`;
+    }
+  });
+  const yLabels = `
+    <text x="${mL - 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#f5222d" text-anchor="end">+${fmt(maxBar)}</text>
+    <text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="end">0</text>
+    <text x="${mL - 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#00a854" text-anchor="end">-${fmt(maxBar)}</text>
+    <text x="${W - mR + 6}" y="${(mT + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">${fmt(cMax)}</text>
+    <text x="${W - mR + 6}" y="${(mT + plotH).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">${fmt(cMin)}</text>`;
+  const grid = `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" stroke="#e5e6eb" stroke-width="1"/>`;
+  const legend = `
+    <div style="display:flex;gap:18px;margin-top:10px;font-size:13px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:12px;height:12px;background:#f5222d;border-radius:2px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (左轴, 红涨绿跌)</span>
+      <span><span style="display:inline-block;width:18px;height:3px;background:#722ed1;margin-right:6px;vertical-align:middle"></span>累计盈亏 (右轴)</span>
+      <span><span style="display:inline-block;width:12px;height:3px;background:#e9ebf0;margin-right:6px;vertical-align:middle"></span>无数据日 (占位)</span>
+    </div>`;
+  // 翻页导航：‹ 前15天 | 日期范围 | 后15天 › | 回最新
+  const startLabel = data[0].date, endLabel = data[n - 1].date;
+  const atLatest = end.getTime() >= today.getTime();
+  const nav = `<div class="trend-nav">
+    <button type="button" id="trendPrev" class="btn cal-nav-btn" title="前 15 天">‹</button>
+    <span class="trend-range">${startLabel} ~ ${endLabel}</span>
+    <button type="button" id="trendNext" class="btn cal-nav-btn" title="后 15 天"${atLatest ? ' disabled' : ''}>›</button>
+    ${atLatest ? '' : '<button type="button" id="trendLatest" class="btn btn-sm" title="回到最新">最新</button>'}
+  </div>`;
+  $('#chartBody').innerHTML = `
+    ${nav}<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+      ${grid}${bars}${hotspots}
+      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2"/>
+      ${yLabels}${xlabels}
+    </svg>${legend}`;
+  // 绑定柱子交互热区 tooltip
+  document.querySelectorAll('#chartBody .trend-hot').forEach((r) => {
+    const i = +r.dataset.i;
+    r.addEventListener('mouseenter', (e) => showTrendTip(e, data[i]));
+    r.addEventListener('mousemove', moveTrendTip);
+    r.addEventListener('mouseleave', hideTrendTip);
+  });
+  // 绑定翻页按钮
+  const p = document.getElementById('trendPrev'); if (p) p.onclick = () => shiftTrend(-1);
+  const nx = document.getElementById('trendNext'); if (nx) nx.onclick = () => shiftTrend(1);
+  const lt = document.getElementById('trendLatest'); if (lt) lt.onclick = () => { trendEndDate = null; drawTrend(); };
+  openChart();
+}
+
+// 盈亏走势 tooltip：hover 柱子显示当日/累计盈亏
+function showTrendTip(e, x) {
+  let tip = document.getElementById('trendTip');
+  if (!tip) { tip = document.createElement('div'); tip.id = 'trendTip'; tip.className = 'trend-tip'; document.body.appendChild(tip); }
+  const cls = x.total_cny > 0 ? 't-up' : x.total_cny < 0 ? 't-down' : 't-muted';
+  const sign = x.total_cny > 0 ? '+' : '';
+  const dayStr = x.hasData ? sign + fmt(x.total_cny) : '—';
+  const cumCls = x.cum > 0 ? 't-up' : x.cum < 0 ? 't-down' : 't-muted';
+  tip.innerHTML = '<div class="t-date">' + x.date + (x.hasData ? '' : '（无数据）') + '</div>'
+    + '<div class="t-row"><span>当日盈亏</span><span class="' + cls + '">' + dayStr + '</span></div>'
+    + '<div class="t-row"><span>累计盈亏</span><span class="' + cumCls + '">' + fmt(x.cum) + '</span></div>';
+  tip.classList.add('show');
+  moveTrendTip(e);
+}
+function moveTrendTip(e) {
+  const tip = document.getElementById('trendTip'); if (!tip) return;
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + r.width > window.innerWidth) x = e.clientX - r.width - 14;
+  if (y + r.height > window.innerHeight) y = e.clientY - r.height - 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+function hideTrendTip() { const tip = document.getElementById('trendTip'); if (tip) tip.classList.remove('show'); }
+
+$('#pieBtn').onclick = () => { renderPie(); };
+$('#trendBtn').onclick = renderTrend;
+$('#chartCloseBtn').onclick = closeChart;
+
+// ---- P&L Calendar ----
+const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const sundayOf = (d) => addDays(new Date(d), -d.getDay());
+const saturdayOf = (d) => addDays(new Date(d), 6 - d.getDay());
+
+let calData = {};
+
+$('#calendarBtn').onclick = async () => {
+  if ($('#calendarView').hidden) {
+    $('#holdingsView').hidden = true;
+    $('#assetView').hidden = true;
+    $('#toolsView').hidden = true;
+    $('#calendarView').hidden = false;
+    $('#calendarBtn').classList.add('active');
+    $('#calendarBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
+    calViewDate = new Date();   // 打开时回到当月
+    await renderCalendar();
+  } else {
+    showHoldingsView();
+  }
+};
+
+function showHoldingsView() {
+  $('#calendarView').hidden = true;
+  $('#assetView').hidden = true;
+  $('#toolsView').hidden = true;
+  $('#holdingsView').hidden = false;
+  $('#calendarBtn').classList.remove('active');
+  setNavActive('home');
+}
+
+// 主页按钮：回到一级页面（持仓列表）并滚到顶部
+$('#homeBtn').onclick = () => {
+  showHoldingsView();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+// ESC 键：从任意二级页（资产/速算/日历）返回主页
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  // 优先关闭导航下拉菜单
+  if (navDropdown && !navDropdown.hidden) { closeNavDropdown(); return; }
+  // 弹框优先（已有各自的关闭按钮，但 ESC 顺手关弹框更友好）
+  const openModals = document.querySelectorAll('.modal:not([hidden])');
+  if (openModals.length) return; // 让弹框内的 ESC 由各弹框自行处理
+  const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#calendarView').hidden;
+  if (inSubView) {
+    showHoldingsView();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+});
+$('#calPrev').onclick = () => { calViewDate = new Date(calViewDate.getFullYear(), calViewDate.getMonth() - 1, 1); drawCalMonth(); };
+$('#calNext').onclick = () => { calViewDate = new Date(calViewDate.getFullYear(), calViewDate.getMonth() + 1, 1); drawCalMonth(); };
+
+$('#calModalClose').onclick = () => { $('#calModal').hidden = true; };
+$('#mergeClose').onclick = () => { $('#mergeModal').hidden = true; };
+// 日历弹框：前一天 / 后一天（跳到有快照数据的前/后一个日期，便于连续浏览盈亏）
+$('#calModalPrev').onclick = () => shiftCalDay(-1);
+$('#calModalNext').onclick = () => shiftCalDay(1);
+$('#calGrid').addEventListener('click', (e) => {
+  const cell = e.target.closest('.cal-cell');
+  if (cell && cell.dataset.date) openCalDay(cell.dataset.date);
+});
+
+// 当前日历弹框打开的日期
+let calModalCurDate = null;
+// 在 calData 中向前/向后跳到相邻的有数据日期；无相邻数据则按日历 ±1 天（仍可浏览空档）
+function shiftCalDay(dir) {
+  if (!calModalCurDate) return;
+  const dates = Object.keys(calData).sort();
+  if (dates.length) {
+    const idx = dates.indexOf(calModalCurDate);
+    if (idx >= 0) {
+      const ni = idx + dir;
+      if (ni >= 0 && ni < dates.length) { openCalDay(dates[ni]); return; }
+    }
+  }
+  // 回退：纯日历 ±1 天
+  const d = new Date(calModalCurDate + 'T00:00:00');
+  d.setDate(d.getDate() + dir);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  openCalDay(y + '-' + m + '-' + day);
+}
+
+// 盈亏日历：仅显示当前查看月份，支持上/下月切换
+let calViewDate = new Date();   // 当前查看的月份
+let calMaxAbs = 1;              // 盈亏着色归一化最大值
+
+async function renderCalendar() {
+  const r = await api('/api/pnl/history');
+  if (!r.ok) { toast('加载盈亏历史失败 (HTTP ' + r.status + ')', 'err'); return; }
+  const d = await r.json();
+  const hist = d.history || [];
+  calData = {};
+  hist.forEach((h) => { calData[h.date] = h; });
+  calMaxAbs = 1;
+  hist.forEach((h) => { const a = Math.abs(h.total_cny); if (a > calMaxAbs) calMaxAbs = a; });
+  drawCalMonth();
+}
+
+// 绘制 calViewDate 所在月份的网格（7 列：日 一 二 三 四 五 六）
+function drawCalMonth() {
+  const y = calViewDate.getFullYear();
+  const m = calViewDate.getMonth();
+  $('#calTitle').textContent = y + '年' + (m + 1) + '月';
+
+  const first = new Date(y, m, 1);
+  const start = sundayOf(first);                       // 该月1号所在周的周日
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const last = new Date(y, m, daysInMonth);
+  const end = saturdayOf(last);                        // 该月最后一天所在周的周六
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const cur = new Date(start);
+  let cells = '';
+  while (cur <= end) {
+    for (let i = 0; i < 7; i++) {
+      const inMonth = cur.getMonth() === m;
+      const ds = ymd(cur);
+      if (!inMonth) {
+        cells += '<div class="cal-cell cal-out"></div>';
+      } else if (cur > today) {
+        // 未来日期尚未发生，无数据
+        cells += '<div class="cal-cell cal-future" data-date="' + ds + '"><span class="cal-day">' + cur.getDate() + '</span></div>';
+      } else {
+        const rec = calData[ds];
+        let color, emoji = '';
+        if (!rec) color = 'lg-none';
+        else {
+          const v = rec.total_cny;
+          if (Math.abs(v) < 1e-9) { color = 'lg-zero'; emoji = '😐'; }
+          else {
+            const t = Math.min(1, Math.abs(v) / calMaxAbs);
+            const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
+            color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
+            // 情绪脸方案：盈/亏各 4 档，从微笑😊到狂喜😍、从皱眉🙁到惊恐😱，风格统一且直觉
+            emoji = v > 0 ? ['😊', '😄', '😁', '😍'][lvl - 1] : ['🙁', '😟', '😣', '😱'][lvl - 1];
+          }
+        }
+        const isToday = cur.getTime() === today.getTime();
+        const pnlTxt = rec ? fmt(rec.total_cny) : '—';
+        const title = ds + (rec ? ('：当日盈亏 ' + pnlTxt + ' CNY') : '：无快照数据');
+        const dayNum = cur.getDate();
+        const valHtml = '<span class="cal-val">' + pnlTxt + '</span>';
+        cells += '<div class="cal-cell ' + color + ' has-amt' + (isToday ? ' cal-today' : '') + '" data-date="' + ds + '" title="' + title + '"><span class="cal-day">' + dayNum + '</span><span class="cal-emoji">' + emoji + '</span>' + valHtml + '</div>';
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+  const grid = $('#calGrid');
+  grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
+  grid.innerHTML = cells;
+}
+
+function openCalDay(date) {
+  calModalCurDate = date;
+  const rec = calData[date];
+  $('#calModalDate').textContent = date + ' 盈亏明细';
+  if (!rec) {
+    $('#calModalBody').innerHTML = '<p style="color:#8a8f99">当日无快照数据。</p>';
+    $('#calModal').hidden = false;
+    return;
+  }
+  const v = rec.total_cny;
+  let rows = '';
+  try {
+    const det = JSON.parse(rec.detail || '{}');
+    const syms = det.by_symbol || [];
+    if (syms.length) {
+      rows = '<table class="cal-detail-tbl"><thead><tr><th>代码</th><th>名称</th><th>币种</th><th class="num">当日盈亏 (CNY)</th></tr></thead><tbody>' +
+        syms.map((s) => {
+          // 优先用快照时折算的 CNY 值；旧快照无该字段则用当前汇率回退折算
+          const cny = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl);
+          return '<tr><td>' + s.symbol + '</td><td>' + (s.name || '') + '</td><td>' + (s.currency || '') + '</td><td class="num ' + cls(cny) + '">' + fmt(cny) + '</td></tr>';
+        }).join('') +
+        '</tbody></table>';
+    } else rows = '<p style="color:#8a8f99">无个股明细。</p>';
+  } catch (e) { rows = '<p style="color:#f5222d">明细解析失败</p>'; }
+  // USD 盈亏也折算为 CNY 展示，保证弹框内全部统一为人民币口径
+  const usdCNY = (typeof rec.total_usd === 'number' ? rec.total_usd : 0) * usdRate;
+  $('#calModalBody').innerHTML = `
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px">
+      <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${cls(v)}">${fmt(v)}</div></div>
+      <div><div class="cal-sub">USD 盈亏</div><div class="value">${fmt(rec.total_usd)} <span style="color:#8a8f99;font-size:13px">≈ ${fmt(usdCNY)} CNY</span></div></div>
+      <div><div class="cal-sub">汇率</div><div class="value">${(rec.rate || 0).toFixed(4)}</div></div>
+    </div>${rows}`;
+  $('#calModal').hidden = false;
+}
+
+// ---- AI 总结历史 ----
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+async function loadAIHistory() {
+  try {
+    const r = await api('/api/ai/history');
+    if (!r.ok) { toast('加载历史失败 (HTTP ' + r.status + ')', 'err'); return; }
+    const d = await r.json();
+    const list = d.history || [];
+    const box = $('#aiHistoryList');
+    if (!list.length) {
+      box.innerHTML = '<p style="color:#8a8f99">暂无历史记录。生成 AI 总结后会自动保存。</p>';
+      return;
+    }
+    box.innerHTML = list.map((it) => `
+      <div class="ai-history-item" data-id="${it.id}">
+        <div class="ai-history-meta"><span>${it.created_at}</span><span>${it.model || ''}</span></div>
+        <div class="ai-history-preview">${escapeHtml(it.content)}</div>
+      </div>`).join('');
+    box.querySelectorAll('.ai-history-item').forEach((el) => {
+      el.onclick = () => {
+        const rec = list.find((x) => String(x.id) === el.dataset.id);
+        if (rec) openAIResultModal(rec.content);
+      };
+    });
+  } catch (e) { toast('加载历史异常：' + e.message, 'err'); }
+}
+
+// Export a full snapshot of ALL asset data (持仓/股票/基金/理财/现金/负债/消费) to JSON.
+async function exportHoldingsJSON() {
+  // 并行拉取：持仓明细（股票+基金，字段最全）与全量资产快照（各分类汇总 + 明细）
+  const [hResp, oResp] = await Promise.all([
+    api('/api/holdings'),
+    api('/api/asset/overview'),
+  ]);
+  let holdings = allHoldings || [];
+  if (hResp.ok) { try { const d = await hResp.json(); if (d && d.holdings) holdings = d.holdings; } catch (_) {} }
+  let overview = null;
+  if (oResp.ok) { try { overview = await oResp.json(); } catch (_) {} }
+
+  const eq = (overview && overview.equity && overview.equity.items) || [];
+  const wealth = (overview && overview.wealth && overview.wealth.products) || [];
+  const cash = (overview && overview.cash && overview.cash.items) || [];
+  const liability = (overview && overview.liability && overview.liability.items) || [];
+  const consumption = (overview && overview.consumption && overview.consumption.items) || [];
+  const total = holdings.length + wealth.length + cash.length + liability.length + consumption.length;
+  if (!total) { toast('暂无可导出的数据', 'err'); return; }
+
+  const payload = {
+    exported_at: new Date().toISOString(),
+    rates: { usd_cny: usdRate, hkd_cny: hkdRate },
+    summary: {
+      holding_count: holdings.length,        // 股票 + 基金
+      wealth_count: wealth.length,           // 理财
+      cash_count: cash.length,               // 现金
+      liability_count: liability.length,     // 负债
+      consumption_count: consumption.length, // 消费
+    },
+    holdings: holdings,     // 股票 + 基金完整明细
+    wealth: wealth,         // 理财
+    cash: cash,             // 现金
+    liability: liability,   // 负债
+    consumption: consumption, // 消费
+    asset_overview: overview, // 全量快照（含各分类汇总与净资产），确保不丢任何字段
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '持仓与资产数据_' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast('数据已导出：持仓 ' + holdings.length + ' / 理财 ' + wealth.length + ' / 现金 ' + cash.length + ' 条', 'ok');
+}
+
+// ---- AI 持仓总结 ----
+let aiCfg = { api_key: '', model: 'deepseek-v4-pro', base_url: 'https://api.deepseek.com', templates: [] };
+let aiSelIdx = 0;
+
+function defaultAITemplates() {
+  return [
+    { name: '诙谐幽默', content: '你是一位喜欢拿用户持仓开涮、但数据从不乱编的财经段子手。请基于下面「我的持仓数据」，用诙谐、幽默、带点调侃（可以适度玩梗、使用表情符号）的口吻，给我写一份专属的「持仓体检报告」。\n要求：\n1. 先来一句风趣的总体定调（赚麻了还是绿油油）；\n2. 挑几个有代表性的持仓点评一下，夸就夸到位，亏就损到位，但数字必须准确；\n3. 用轻松的方式点出风险或槽点；\n4. 结尾给一句毒舌又实在的寄语。\n不要说教，多用口语，篇幅适中（300~500字）。\n\n我的持仓数据如下：\n{{DATA}}' },
+    { name: '专业视角', content: '你是一名严谨、客观、专业的投资顾问。请基于下面的「我的持仓数据」，用专业、结构化、条理清晰的视角，做一份持仓分析报告。\n要求：\n1. 组合概览：总资产、总盈亏及收益率、RMB/USD 市值分布；\n2. 结构分析：股票与基金的占比、各市场分布、单一标的集中度风险；\n3. 当日表现：当日盈亏与当日盈亏率的整体与个股情况；\n4. 风险提示：结合回撤、集中度、币种敞口给出客观判断；\n5. 配置建议：基于以上数据给出 2~3 条可执行的优化建议。\n语言专业克制，避免夸张表述，可适度使用分点与小标题，篇幅 400~600字。\n\n我的持仓数据如下：\n{{DATA}}' },
+  ];
+}
+
+async function loadAISettings() {
+  try {
+    const r = await api('/api/ai/settings');
+    if (!r.ok) return;
+    const d = await r.json();
+    aiCfg = Object.assign({ api_key: '', model: 'deepseek-v4-pro', base_url: 'https://api.deepseek.com', templates: [] }, d);
+    // Fall back to the locally saved key if the DB config has none (e.g. key lost
+    // after a backend reset), so the user doesn't have to retype it.
+    if (!aiCfg.api_key) {
+      const lk = (localStorage.getItem('pf_ai_key') || '').trim();
+      if (lk) aiCfg.api_key = lk;
+    }
+    if (!aiCfg.templates || !aiCfg.templates.length) aiCfg.templates = defaultAITemplates();
+  } catch (e) { /* 忽略，使用默认值 */ }
+  $('#ai_apikey').value = aiCfg.api_key || '';
+  $('#ai_model').value = aiCfg.model || 'deepseek-v4-pro';
+  $('#ai_baseurl').value = aiCfg.base_url || 'https://api.deepseek.com';
+}
+
+function renderTplSelect() {
+  const sel = $('#ai_tpl_sel');
+  if (!aiCfg.templates.length) aiCfg.templates = defaultAITemplates();
+  if (aiSelIdx >= aiCfg.templates.length) aiSelIdx = 0;
+  sel.innerHTML = aiCfg.templates.map((t, i) => `<option value="${i}">${t.name}</option>`).join('');
+  sel.value = String(aiSelIdx);
+  selectTpl(aiSelIdx);
+}
+
+function selectTpl(i) {
+  aiSelIdx = i;
+  const t = aiCfg.templates[i];
+  if (!t) return;
+  $('#ai_tpl_name').value = t.name;
+  $('#ai_tpl_content').value = t.content;
+}
+
+function openAIModal() {
+  renderTplSelect();
+  $('#aiModal').hidden = false;
+}
+
+function openAIResultModal(text) {
+  $('#aiResultBody').textContent = text;
+  $('#aiResultModal').hidden = false;
+}
+
+async function aiSaveSettings() {
+  $('#aiErr').textContent = '';
+  const boxKey = $('#ai_apikey').value.trim();
+  if (boxKey) {
+    // 框内有值：用框内 key 并写入 localStorage
+    aiCfg.api_key = boxKey;
+    localStorage.setItem('pf_ai_key', boxKey);
+  } else {
+    // 框为空：绝不清成空串。优先沿用 localStorage，再沿用已加载的原值（库里的 key）
+    const lsKey = (localStorage.getItem('pf_ai_key') || '').trim();
+    if (lsKey) aiCfg.api_key = lsKey;
+    // 否则保持 aiCfg.api_key 不变（来自库的旧值），避免覆盖成空导致下次生成 401
+  }
+  aiCfg.model = $('#ai_model').value.trim() || 'deepseek-v4-pro';
+  aiCfg.base_url = $('#ai_baseurl').value.trim() || 'https://api.deepseek.com';
+  if (aiCfg.templates[aiSelIdx]) {
+    aiCfg.templates[aiSelIdx].name = $('#ai_tpl_name').value.trim() || ('模板' + (aiSelIdx + 1));
+    aiCfg.templates[aiSelIdx].content = $('#ai_tpl_content').value;
+  }
+  try {
+    const r = await api('/api/ai/settings', { method: 'POST', body: JSON.stringify(aiCfg) });
+    if (!r.ok) {
+      let m = '保存失败';
+      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
+      $('#aiErr').textContent = m;
+      return;
+    }
+    toast('AI 设置已保存', 'ok');
+    $('#aiModal').hidden = true;
+  } catch (e) {
+    $('#aiErr').textContent = '保存异常：' + e.message;
+  }
+}
+
+async function aiSummarize() {
+  // Prefer the key currently typed in the box; fall back to the locally saved key
+  // (localStorage) and then the config key. The frontend now sends the key so a
+  // freshly entered/updated key takes effect immediately without a separate save —
+  // otherwise a stale/invalid saved key makes every summary 401.
+  const boxKey = ($('#ai_apikey') ? $('#ai_apikey').value : '').trim();
+  const lsKey = (localStorage.getItem('pf_ai_key') || '').trim();
+  const api_key = boxKey || lsKey || (aiCfg.api_key || '').trim();
+  const model = ($('#ai_model').value || '').trim() || 'deepseek-v4-pro';
+  const base_url = ($('#ai_baseurl').value || '').trim() || 'https://api.deepseek.com';
+  const edited = $('#ai_tpl_content').value;
+  const content = (edited && edited.trim()) ? edited : (aiCfg.templates[aiSelIdx] ? aiCfg.templates[aiSelIdx].content : '');
+  if (!api_key) { toast('请先在「AI 设置」填写 API Key', 'err'); openAIModal(); return; }
+  if (api_key) localStorage.setItem('pf_ai_key', api_key);
+  if (!content) { toast('提示词模板为空', 'err'); return; }
+  openAIResultModal('生成中…（模型思考中，请稍候，最长约 3 分钟）');
+  $('#aiSummarizeBtn').disabled = true;
+  try {
+    const r = await api('/api/ai/summary', { method: 'POST', body: JSON.stringify({ api_key, model, base_url, template: content }) });
+    if (!r.ok) {
+      let m = '生成失败';
+      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
+      $('#aiResultBody').textContent = m;
+      return;
+    }
+    const d = await r.json();
+    $('#aiResultBody').textContent = d.content || '（模型返回为空）';
+    toast('AI 总结已生成并保存到历史', 'ok');
+  } catch (e) {
+    $('#aiResultBody').textContent = '请求异常：' + e.message;
+  } finally {
+    $('#aiSummarizeBtn').disabled = false;
+  }
+}
+
+function copyText(txt) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(txt).then(() => toast('已复制', 'ok'), () => fallbackCopy(txt));
+  } else {
+    fallbackCopy(txt);
+  }
+}
+function fallbackCopy(txt) {
+  const ta = document.createElement('textarea');
+  ta.value = txt;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); toast('已复制', 'ok'); }
+  catch (e) { toast('复制失败，请手动选择', 'err'); }
+  document.body.removeChild(ta);
+}
+
+// AI 事件绑定
+$('#aiSettingsBtn').onclick = openAIModal;
+$('#aiSummarizeBtn').onclick = confirmEquityAi;
+$('#ai_cancel').onclick = () => { $('#aiModal').hidden = true; };
+$('#ai_save').onclick = aiSaveSettings;
+$('#ai_tpl_sel').onchange = (e) => selectTpl(parseInt(e.target.value, 10));
+$('#ai_tpl_new').onclick = () => {
+  aiCfg.templates.push({ name: '新模板' + (aiCfg.templates.length + 1), content: '请基于以下我的持仓数据，给出总结：\n{{DATA}}' });
+  aiSelIdx = aiCfg.templates.length - 1;
+  renderTplSelect();
+  $('#ai_tpl_name').focus();
+};
+$('#ai_tpl_del').onclick = () => {
+  if (aiCfg.templates.length <= 1) { toast('至少保留一个模板', 'err'); return; }
+  aiCfg.templates.splice(aiSelIdx, 1);
+  aiSelIdx = Math.max(0, aiSelIdx - 1);
+  renderTplSelect();
+};
+$('#ai_toggleKey').onclick = () => {
+  const inp = $('#ai_apikey');
+  if (inp.type === 'password') { inp.type = 'text'; $('#ai_toggleKey').textContent = '隐藏'; }
+  else { inp.type = 'password'; $('#ai_toggleKey').textContent = '显示'; }
+};
+$('#ai_copy').onclick = () => copyText($('#aiResultBody').textContent);
+$('#ai_result_close').onclick = () => { $('#aiResultModal').hidden = true; };
+$('#aiHistoryBtn').onclick = () => { loadAIHistory(); $('#aiHistoryModal').hidden = false; };
+$('#ai_history_close').onclick = () => { $('#aiHistoryModal').hidden = true; };
+$('#ai_export_json').onclick = confirmExport;
+
+// ---- 持仓历史盈亏（每日表格 + 盈亏曲线，tab 切换） ----
+$('#histCloseBtn').onclick = () => { $('#histModal').hidden = true; };
+$('#histTabTable').onclick = () => switchHistTab('table');
+$('#histTabChart').onclick = () => switchHistTab('chart');
+
+// ===== 调试：统一按钮点击日志（addEventListener 追加，不干扰原有 onclick） =====
+['addBtn','guideBtn','refreshBtn','aiSummarizeBtn','aiSettingsBtn','aiHistoryBtn','calendarBtn','confirmOk','confirmCancel','pieBtn','trendBtn','chartCloseBtn','calModalClose','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','navToggle','ai_cancel','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','ai_result_close','ai_history_close','histCloseBtn','histTabTable','histTabChart','cancelBtn'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('click', () => console.log('[click]', id));
+});
+
+let histData = null; // 当前持仓历史原始返回
+
+async function openHoldingHistory(id) {
+  $('#histModal').hidden = false;
+  switchHistTab('table');
+  $('#histTable').innerHTML = '<p style="color:#8a8f99;padding:8px 2px">加载中…</p>';
+  $('#histChartBody').innerHTML = '';
+  const r = await api('/api/holdings/' + id + '/pnl-history');
+  if (!r.ok) { $('#histTable').innerHTML = '<p style="color:#f5222d">加载失败 (HTTP ' + r.status + ')</p>'; return; }
+  const d = await r.json();
+  histData = d;
+  const h = d.holding || {};
+  const cur = (d.currency === 'USD' ? 'USD ' : d.currency === 'HKD' ? 'HK$ ' : '¥');
+  $('#histTitle').textContent = (h.name || '') + '（' + (h.symbol || '') + '）历史盈亏';
+  renderHistTable(d, cur);
+  renderHistChart(d, cur);
+}
+
+function switchHistTab(which) {
+  const isTable = which === 'table';
+  $('#histTableWrap').hidden = !isTable;
+  $('#histChartWrap').hidden = isTable;
+  $('#histTabTable').classList.toggle('active', isTable);
+  $('#histTabChart').classList.toggle('active', !isTable);
+}
+
+function renderHistTable(d, cur) {
+  const s = d.series || [];
+  if (s.length === 0) {
+    $('#histTable').innerHTML = '<p style="color:#8a8f99;line-height:1.6;padding:8px 2px">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；从记录之日起每个交易日生成一个数据点。</p>';
+    return;
+  }
+  const rows = s.map((x, i) => `
+    <tr>
+      <td>${x.date}</td>
+      <td class="num">${fmtNav(x.close, (d.holding || {}).category)}</td>
+      <td class="num ${cls(x.day_pnl)}">${i === 0 ? '—' : fmt(x.day_pnl)}</td>
+      <td class="num ${cls(x.day_pnl_pct)}">${i === 0 ? '—' : pct(x.day_pnl_pct)}</td>
+      <td class="num ${cls(x.total_pnl)}">${fmt(x.total_pnl)}</td>
+      <td class="num ${cls(x.total_pnl_pct)}">${pct(x.total_pnl_pct)}</td>
+      <td class="num">${fmt(x.market_value)}</td>
+    </tr>`).join('');
+  $('#histTable').innerHTML = `
+    <table class="hist-tbl">
+      <thead><tr>
+        <th>日期</th><th>收盘价</th><th>当日盈亏</th><th>当日%</th><th>累计盈亏</th><th>累计%</th><th>市值</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="color:#8a8f99;font-size:12px;margin-top:6px">金额单位 ${cur}（USD 持仓已按汇率折算人民币口径，红涨绿跌）</div>`;
+}
+
+// 复用全局盈亏走势的 SVG 双轴风格：当日盈亏柱状（左轴，红涨绿跌）+ 累计盈亏折线（右轴）
+function renderHistChart(d, cur) {
+  const s = d.series || [];
+  if (s.length === 0) { $('#histChartBody').innerHTML = '<p style="color:#8a8f99">暂无历史数据。</p>'; return; }
+  const W = 720, H = 360, mL = 60, mR = 60, mT = 20, mB = 40;
+  const plotW = W - mL - mR, plotH = H - mT - mB;
+  const n = s.length;
+  const maxBar = Math.max(1, ...s.map((x) => Math.abs(x.day_pnl)));
+  const cVals = s.map((x) => x.total_pnl);
+  let cMin = Math.min(0, ...cVals), cMax = Math.max(0, ...cVals);
+  if (cMax === cMin) cMax = cMin + 1;
+  const zeroY = mT + plotH / 2;
+  const yBar = (v) => zeroY - (v / maxBar) * (plotH / 2);
+  const yLine = (v) => mT + plotH - ((v - cMin) / (cMax - cMin)) * plotH;
+  const slot = plotW / n;
+  const bw = Math.max(2, slot * 0.6);
+  let bars = '', line = '', hotspots = '';
+  s.forEach((x, i) => {
+    const cx = mL + (i + 0.5) * slot;
+    // 交互热区：覆盖整列，hover 显示金额
+    hotspots += `<rect class="trend-hot" data-i="${i}" x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
+    const yv = yBar(x.day_pnl);
+    const top = Math.min(zeroY, yv), hgt = Math.abs(yv - zeroY);
+    const color = x.day_pnl > 0 ? '#f5222d' : x.day_pnl < 0 ? '#00a854' : '#c9ced6';
+    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" fill="${color}"/>`;
+    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${yLine(x.total_pnl).toFixed(2)} `;
+  });
+  const xLabelStep = Math.max(1, Math.ceil(n / 10));
+  let xlabels = '';
+  s.forEach((x, i) => {
+    if (i % xLabelStep === 0 || i === n - 1) {
+      const cx = mL + (i + 0.5) * slot;
+      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="10" fill="#8a8f99" text-anchor="middle">${x.date.slice(5)}</text>`;
+    }
+  });
+  const yLabels = `
+    <text x="${mL - 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#f5222d" text-anchor="end">+${fmt(maxBar)}</text>
+    <text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="end">0</text>
+    <text x="${mL - 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#00a854" text-anchor="end">-${fmt(maxBar)}</text>
+    <text x="${W - mR + 6}" y="${(mT + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">${fmt(cMax)}</text>
+    <text x="${W - mR + 6}" y="${(mT + plotH).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">${fmt(cMin)}</text>`;
+  const grid = `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" stroke="#e5e6eb" stroke-width="1"/>`;
+  const legend = `
+    <div style="display:flex;gap:18px;margin-top:10px;font-size:13px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:12px;height:12px;background:#f5222d;border-radius:2px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (左轴, 红涨绿跌)</span>
+      <span><span style="display:inline-block;width:18px;height:3px;background:#722ed1;margin-right:6px;vertical-align:middle"></span>累计盈亏 (右轴)</span>
+    </div>`;
+  $('#histChartBody').innerHTML = `
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+      ${grid}${bars}${hotspots}
+      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2"/>
+      ${yLabels}${xlabels}
+    </svg>${legend}`;
+  // 绑定柱子交互热区 tooltip
+  document.querySelectorAll('#histChartBody .trend-hot').forEach((r) => {
+    const i = +r.dataset.i;
+    r.addEventListener('mouseenter', (e) => showHistTip(e, s[i]));
+    r.addEventListener('mousemove', moveTrendTip);
+    r.addEventListener('mouseleave', hideTrendTip);
+  });
+}
+
+// 历史盈亏曲线 tooltip：hover 柱子显示当日/累计盈亏
+function showHistTip(e, x) {
+  let tip = document.getElementById('trendTip');
+  if (!tip) { tip = document.createElement('div'); tip.id = 'trendTip'; tip.className = 'trend-tip'; document.body.appendChild(tip); }
+  const cls = x.day_pnl > 0 ? 't-up' : x.day_pnl < 0 ? 't-down' : 't-muted';
+  const sign = x.day_pnl > 0 ? '+' : '';
+  const dayStr = sign + fmt(x.day_pnl);
+  const cumCls = x.total_pnl > 0 ? 't-up' : x.total_pnl < 0 ? 't-down' : 't-muted';
+  tip.innerHTML = '<div class="t-date">' + x.date + '</div>'
+    + '<div class="t-row"><span>当日盈亏</span><span class="' + cls + '">' + dayStr + '</span></div>'
+    + '<div class="t-row"><span>累计盈亏</span><span class="' + cumCls + '">' + fmt(x.total_pnl) + '</span></div>';
+  tip.classList.add('show');
+  moveTrendTip(e);
+}
+
+// 应用入口：静默自动登录后直接进入（登录界面已移除）
+boot();
+
+// ===================== 资产全景模块 =====================
+let assetData = null;       // /api/asset/overview 响应
+let pieData = null;          // 最近一次绘制「资产构成」饼图所用的总览数据，供二级下钻使用
+let assetSources = [];       // 资产来源缓存（供下拉）
+let assetTab = 'wealth';     // 当前 tab: wealth/cash/liability/consume/sources
+let pendingAssetDel = null;   // { type, id }
+
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = (n) => '¥' + fmt(n == null ? 0 : n);
+const pnlCls = (n) => (n >= 0 ? 'up' : 'down');
+const pnlTxt = (n) => (n >= 0 ? '+' : '') + money(n);
+function curSymbolJS(cur) {
+  cur = (cur || '').toLowerCase();
+  if (cur === 'usd' || cur === '$') return '$';
+  if (cur === 'hkd' || cur === 'hk$') return 'HK$';
+  return '¥';
+}
+const moneyCur = (n, cur) => curSymbolJS(cur) + fmt(n == null ? 0 : n);
+
+$('#assetBtn').onclick = () => showAssetView();
+
+function showAssetView() {
+  $('#holdingsView').hidden = true;
+  $('#calendarView').hidden = true;
+  $('#toolsView').hidden = true;
+  $('#assetView').hidden = false;
+  $('#calendarBtn').classList.remove('active');
+  $('#assetBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
+  setNavActive('asset');
+  loadAsset();
+}
+
+// ===== 小工具：权益/美元资产盈亏计算器 =====
+let fxUsdCny = 1, fxHkdCny = 1;
+let lastEqRmb = null, lastEqBreakdown = [];
+let lastUsdRmb = null, lastUsdDetail = null;
+let lastUsdKindAggRmb = { stock: 0, fund: 0, wealth: 0, cash: 0 };
+
+$('#toolsBtn').onclick = () => showToolsView();
+async function showToolsView() {
+  $('#holdingsView').hidden = true;
+  $('#calendarView').hidden = true;
+  $('#assetView').hidden = true;
+  $('#toolsView').hidden = false;
+  $('#calendarBtn').classList.remove('active');
+  $('#toolsBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
+  setNavActive('tools');
+  await loadToolsFx();
+  const eqOk = await loadEqRows();
+  if (!eqOk) addEqRow();
+  const usdOk = await loadUsdRows();
+  if (!usdOk) { addUsdBuy(); addUsdPnl(); }
+}
+
+async function loadToolsFx() {
+  try {
+    const r = await api('/api/fx');
+    if (r.ok) {
+      const d = await r.json();
+      fxUsdCny = d.usd_cny || fxUsdCny;
+      fxHkdCny = d.hkd_cny || fxHkdCny;
+      const rate = $('#usdRate');
+      if (rate && !rate.value) rate.value = fxUsdCny;
+      const h = $('#eqFxHint');
+      if (h) h.textContent = `当前汇率：1 USD = ${fxUsdCny.toFixed(4)} ¥，1 HKD = ${fxHkdCny.toFixed(4)} ¥`;
+    }
+  } catch (_) {}
+}
+
+function addEqRow(init) {
+  const row = document.createElement('div');
+  row.className = 'trow';
+  row.innerHTML = `
+    <select class="eq-kind">
+      <option value="stock">股票</option>
+      <option value="fund">基金</option>
+      <option value="wealth">理财</option>
+    </select>
+    <input class="eq-amt" type="number" step="any" placeholder="盈亏金额（正盈利/负亏损）">
+    <select class="eq-cur">
+      <option value="USD">USD 美元</option>
+      <option value="HKD">HKD 港币</option>
+      <option value="RMB" selected>RMB 人民币</option>
+    </select>
+    <input class="eq-note" type="text" placeholder="备注（可选）">
+    <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
+  if (init) {
+    if (init.kind) row.querySelector('.eq-kind').value = init.kind;
+    if (init.amt != null) row.querySelector('.eq-amt').value = init.amt;
+    if (init.cur) row.querySelector('.eq-cur').value = init.cur;
+    if (init.note != null) row.querySelector('.eq-note').value = init.note;
+  }
+  row.querySelector('.trow-del').onclick = () => row.remove();
+  $('#eqRows').appendChild(row);
+}
+
+function addUsdBuy(init) {
+  const row = document.createElement('div');
+  row.className = 'trow';
+  row.innerHTML = `
+    <input class="usd-buy" type="number" step="any" placeholder="买入 USD 金额">
+    <input class="usd-brate" type="number" step="any" placeholder="买入汇率 RMB/USD">
+    <span class="usd-cost" title="买入花费（RMB）">—</span>
+    <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
+  const buyEl = row.querySelector('.usd-buy');
+  const brateEl = row.querySelector('.usd-brate');
+  const costEl = row.querySelector('.usd-cost');
+  const recalc = () => {
+    const b = parseFloat(buyEl.value), r = parseFloat(brateEl.value);
+    if (isFinite(b) && b > 0 && isFinite(r) && r > 0) costEl.textContent = '¥ ' + fmt(b * r);
+    else costEl.textContent = '—';
+  };
+  buyEl.addEventListener('input', recalc);
+  brateEl.addEventListener('input', recalc);
+  if (init) {
+    if (init.buy != null) buyEl.value = init.buy;
+    if (init.brate != null) brateEl.value = init.brate;
+  }
+  recalc();
+  row.querySelector('.trow-del').onclick = () => row.remove();
+  $('#usdBuyRows').appendChild(row);
+}
+
+function addUsdPnl(init) {
+  const row = document.createElement('div');
+  row.className = 'trow';
+  row.innerHTML = `
+    <select class="usd-kind">
+      <option value="stock">股票</option>
+      <option value="fund">基金</option>
+      <option value="wealth">理财</option>
+      <option value="cash">现金</option>
+    </select>
+    <input class="usd-pnl" type="number" step="any" placeholder="盈亏 USD 金额（正盈利/负亏损）">
+    <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
+  if (init) {
+    if (init.kind) row.querySelector('.usd-kind').value = init.kind;
+    if (init.pnl != null) row.querySelector('.usd-pnl').value = init.pnl;
+  }
+  row.querySelector('.trow-del').onclick = () => row.remove();
+  $('#usdPnlRows').appendChild(row);
+}
+
+/* ---- 录入持久化（后端 SQLite，全局单份） ---- */
+async function saveEq() {
+  try {
+    const rows = [...document.querySelectorAll('#eqRows .trow')].map(r => ({
+      kind: r.querySelector('.eq-kind').value,
+      amt: r.querySelector('.eq-amt').value,
+      cur: r.querySelector('.eq-cur').value,
+      note: r.querySelector('.eq-note').value
+    }));
+    const r = await api('/api/calc/inputs', { method: 'PUT', body: JSON.stringify({ kind: 'equity', payload: rows }) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('已保存权益盈亏录入', 'ok');
+  } catch (e) { toast('保存失败：' + e.message, 'err'); }
+}
+async function loadEqRows() {
+  try {
+    const r = await api('/api/calc/inputs?kind=equity');
+    if (!r.ok) return false;
+    const d = await r.json();
+    const arr = (typeof d.payload === 'string' ? JSON.parse(d.payload) : d.payload) || [];
+    if (!Array.isArray(arr) || !arr.length) return false;
+    $('#eqRows').innerHTML = '';
+    arr.forEach(x => addEqRow(x));
+    return true;
+  } catch (e) { return false; }
+}
+async function saveUsd() {
+  try {
+    const buys = [...document.querySelectorAll('#usdBuyRows .trow')].map(r => ({
+      buy: r.querySelector('.usd-buy').value,
+      brate: r.querySelector('.usd-brate').value
+    }));
+    const pnls = [...document.querySelectorAll('#usdPnlRows .trow')].map(r => ({
+      kind: r.querySelector('.usd-kind').value,
+      pnl: r.querySelector('.usd-pnl').value
+    }));
+    const rate = $('#usdRate').value;
+    const r = await api('/api/calc/inputs', { method: 'PUT', body: JSON.stringify({ kind: 'usd', payload: { rate, buys, pnls } }) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('已保存美元计算器录入', 'ok');
+  } catch (e) { toast('保存失败：' + e.message, 'err'); }
+}
+async function loadUsdRows() {
+  try {
+    const r = await api('/api/calc/inputs?kind=usd');
+    if (!r.ok) return false;
+    const d = await r.json();
+    const obj = (typeof d.payload === 'string' ? JSON.parse(d.payload) : d.payload) || {};
+    const buys = obj.buys, pnls = obj.pnls;
+    if ((!Array.isArray(buys) || !buys.length) && (!Array.isArray(pnls) || !pnls.length)) return false;
+    $('#usdBuyRows').innerHTML = '';
+    $('#usdPnlRows').innerHTML = '';
+    (buys || []).forEach(x => addUsdBuy(x));
+    (pnls || []).forEach(x => addUsdPnl(x));
+    if (obj.rate != null && obj.rate !== '') $('#usdRate').value = obj.rate;
+    return true;
+  } catch (e) { return false; }
+}
+
+function calcEq() {
+  const rows = [...document.querySelectorAll('#eqRows .trow')];
+  const breakdown = [];
+  let total = 0;
+  rows.forEach(r => {
+    const amt = parseFloat(r.querySelector('.eq-amt').value);
+    const cur = r.querySelector('.eq-cur').value;
+    if (!isFinite(amt) || amt === 0) return;
+    const rate = cur === 'USD' ? fxUsdCny : cur === 'HKD' ? fxHkdCny : 1;
+    const rmb = amt * rate;
+    total += rmb;
+    const kind = r.querySelector('.eq-kind').value;
+    breakdown.push({ kind, cur, amt, rmb, note: (r.querySelector('.eq-note').value || '').trim() });
+  });
+  const el = $('#eqResult');
+  if (!breakdown.length) { el.innerHTML = '<span class="tool-empty">请先录入至少一笔非零盈亏</span>'; lastEqRmb = null; lastEqBreakdown = []; return; }
+  const sign = total >= 0 ? 'up' : 'down';
+  lastEqRmb = total;
+  lastEqBreakdown = breakdown;
+  const order = [['stock', '股票'], ['fund', '基金'], ['wealth', '理财']];
+  const groups = {};
+  breakdown.forEach(b => { (groups[b.kind] = groups[b.kind] || []).push(b); });
+  let html = `<div class="res-main ${sign}">合计盈亏（RMB）：¥ ${fmt(Math.abs(total))} <span>${total >= 0 ? '盈利' : '亏损'}</span></div>`;
+  order.forEach(([k, lbl]) => {
+    const items = groups[k];
+    if (!items || !items.length) return;
+    const sub = items.reduce((s, b) => s + b.rmb, 0);
+    const subSign = sub >= 0 ? 'up' : 'down';
+    const lines = items.map(b => {
+      const tag = b.note ? ` <span class="res-note">(${esc(b.note)})</span>` : '';
+      return `${b.cur} ${b.amt > 0 ? '+' : ''}${fmt(b.amt)} → ¥${fmt(b.rmb)}${tag}`;
+    }).join('　｜　');
+    html += `<div class="res-group"><div class="res-group-head ${subSign}">${lbl} 小计：<b>${sub >= 0 ? '+' : '−'}¥${fmt(Math.abs(sub))}</b></div><div class="res-detail">${lines}</div></div>`;
+  });
+  el.innerHTML = html;
+}
+
+function calcUsd() {
+  const Rcur = parseFloat($('#usdRate').value);
+  const el = $('#usdResult');
+  if (!isFinite(Rcur) || Rcur <= 0) { el.innerHTML = '<span class="tool-empty">请填写有效的当前汇率（RMB/USD）</span>'; lastUsdRmb = null; return; }
+  const buys = [...document.querySelectorAll('#usdBuyRows .trow')];
+  const pnls = [...document.querySelectorAll('#usdPnlRows .trow')];
+  let totalBuy = 0, weighted = 0, costRmb = 0;
+  buys.forEach(r => {
+    const buy = parseFloat(r.querySelector('.usd-buy').value);
+    if (!isFinite(buy) || buy <= 0) return;
+    const b = parseFloat(r.querySelector('.usd-brate').value);
+    const brate = isFinite(b) ? b : Rcur;
+    totalBuy += buy;
+    weighted += buy * brate;
+    costRmb += buy * brate;
+  });
+  let totalPnl = 0;
+  const kindAggUsd = { stock: 0, fund: 0, wealth: 0, cash: 0 };
+  pnls.forEach(r => {
+    const p = parseFloat(r.querySelector('.usd-pnl').value);
+    if (!isFinite(p)) return;
+    totalPnl += p;
+    const k = r.querySelector('.usd-kind').value;
+    if (k in kindAggUsd) kindAggUsd[k] += p;
+  });
+  if (totalBuy <= 0) { el.innerHTML = '<span class="tool-empty">请先在「① 买入美元记录」录入至少一笔有效买入（金额 &gt; 0）</span>'; lastUsdRmb = null; return; }
+  const avgRate = weighted / totalBuy;
+  const assetValueRmb = (totalBuy + totalPnl) * Rcur;
+  const netPnlRmb = assetValueRmb - costRmb;
+  const pnlRmb = totalPnl * Rcur;
+  const fxGainRmb = totalBuy * (Rcur - avgRate);
+  const fxAppr = (Rcur - avgRate) / avgRate * 100;
+  const assetRet = totalPnl / totalBuy * 100;
+  const beat = assetRet > fxAppr;
+  lastUsdRmb = netPnlRmb;
+  lastUsdDetail = { totalBuy, avgRate, totalPnl, pnlRmb, fxGainRmb, fxAppr, assetRet, beat, Rcur };
+  const kindAggRmb = {
+    stock: kindAggUsd.stock * Rcur,
+    fund: kindAggUsd.fund * Rcur,
+    wealth: kindAggUsd.wealth * Rcur,
+    cash: kindAggUsd.cash * Rcur
+  };
+  lastUsdKindAggRmb = kindAggRmb;
+  let html = '';
+  html += `<div class="res-row">买入 USD 合计：<b>${fmt(totalBuy)}</b>　｜　平均买入汇率：<b>${avgRate.toFixed(4)}</b> ¥/USD　｜　总花费 RMB：<b>¥${fmt(costRmb)}</b></div>`;
+  html += `<div class="res-main ${netPnlRmb >= 0 ? 'up' : 'down'}">最终盈亏金额（RMB）：¥ ${fmt(Math.abs(netPnlRmb))} ${netPnlRmb >= 0 ? '盈利' : '亏损'}</div>`;
+  html += `<div class="res-row">盈亏（USD）：<b>${totalPnl > 0 ? '+' : ''}${fmt(totalPnl)}</b> USD　＝　¥ ${fmt(pnlRmb)}</div>`;
+  html += `<div class="res-row">其中汇率收益（仅持有美元现金）：¥ ${fmt(fxGainRmb)}（美元升值 ${pct(fxAppr)}）</div>`;
+  html += `<div class="res-row">资产美元收益率：<b>${pct(assetRet)}</b>　｜　是否跑赢汇率贬值：<span class="${beat ? 'up' : 'down'}">${beat ? '是 ✅（资产收益跑赢单纯持有美元）' : '否 ❌（未跑赢，不如直接持美元现金）'}</span></div>`;
+  const kindParts = ['stock', 'fund', 'wealth', 'cash'].map(k => {
+    const lbl = k === 'fund' ? '基金' : k === 'wealth' ? '理财' : k === 'cash' ? '现金' : '股票';
+    const v = kindAggRmb[k];
+    return Math.abs(v) < 1e-9 ? null : `${lbl} ¥${fmt(v)}`;
+  }).filter(Boolean);
+  if (kindParts.length) html += `<div class="res-row">分类盈亏统计（RMB）：<b>${kindParts.join('　｜　')}</b></div>`;
+  el.innerHTML = html;
+}
+
+$('#eqAddRow').onclick = addEqRow;
+$('#usdAddBuy').onclick = addUsdBuy;
+$('#usdAddPnl').onclick = addUsdPnl;
+$('#eqCalc').onclick = calcEq;
+$('#usdCalc').onclick = calcUsd;
+$('#eqSave').onclick = saveEq;
+$('#usdSave').onclick = saveUsd;
+$('#eqClear').onclick = () => { $('#eqRows').innerHTML = ''; addEqRow(); $('#eqResult').innerHTML = ''; lastEqRmb = null; lastEqBreakdown = []; $('#mergeModal').hidden = true; api('/api/calc/inputs?kind=equity', { method: 'DELETE' }); };
+$('#usdClear').onclick = () => { $('#usdBuyRows').innerHTML = ''; $('#usdPnlRows').innerHTML = ''; addUsdBuy(); addUsdPnl(); $('#usdResult').innerHTML = ''; lastUsdRmb = null; lastUsdDetail = null; $('#mergeModal').hidden = true; api('/api/calc/inputs?kind=usd', { method: 'DELETE' }); };
+$('#mergeBtn').onclick = mergeSummary;
+$('#addMode').onchange = () => {
+  const isAmt = $('#addMode').value === 'amount';
+  $('#addQtyWrap').style.display = isAmt ? 'none' : '';
+  $('#addAmtWrap').style.display = isAmt ? '' : 'none';
+};
+$('#addCalc').onclick = calcAdd;
+$('#addClear').onclick = () => {
+  ['addOldPrice','addOldQty','addNewQty','addAmount','addFee','addNewPrice'].forEach(id => { $('#'+id).value = ''; });
+  $('#addMode').value = 'qty';
+  $('#addQtyWrap').style.display = '';
+  $('#addAmtWrap').style.display = 'none';
+  $('#addResult').innerHTML = '';
+};
+
+// 计算器卡片关闭 / 恢复
+function updateRestore() {
+  const hidden = document.querySelectorAll('.tool-card[hidden]').length;
+  const box = $('#toolsRestore');
+  if (!box) return;
+  if (hidden > 0) {
+    box.hidden = false;
+    $('#restoreCount').textContent = hidden;
+  } else {
+    box.hidden = true;
+  }
+}
+document.querySelectorAll('.tool-card .card-close').forEach(btn => {
+  btn.onclick = () => {
+    const card = btn.closest('.tool-card');
+    if (card) card.hidden = true;
+    updateRestore();
+  };
+});
+const toolsRestoreBtn = $('#toolsRestoreBtn');
+if (toolsRestoreBtn) {
+  toolsRestoreBtn.onclick = () => {
+    document.querySelectorAll('.tool-card[hidden]').forEach(c => { c.hidden = false; });
+    updateRestore();
+  };
+}
+
+// 补仓成本计算器：补仓现价同时作为买入价与盈亏参考价；手续费买卖各一笔（买费进成本、卖费扣盈亏）
+function calcAdd() {
+  const P0 = parseFloat($('#addOldPrice').value);
+  const Q0 = parseFloat($('#addOldQty').value);
+  const f  = parseFloat($('#addFee').value);
+  const P1 = parseFloat($('#addNewPrice').value);
+  const el = $('#addResult');
+  const mode = $('#addMode').value;
+  const fee = Number.isFinite(f) ? f : 0;
+  if (![P0, Q0, P1].every(Number.isFinite)) {
+    el.innerHTML = '<span class="tool-empty">请填写：原成交价、原持仓数量、补仓现价（手续费可填 0）</span>';
+    return;
+  }
+  if (Q0 <= 0) {
+    el.innerHTML = '<span class="tool-empty">原持仓数量需大于 0</span>';
+    return;
+  }
+  let Q1, costAdd, addDesc;
+  if (mode === 'amount') {
+    const X = parseFloat($('#addAmount').value);
+    if (!Number.isFinite(X) || X <= 0) {
+      el.innerHTML = '<span class="tool-empty">请填写有效的补仓金额（大于 0）</span>';
+      return;
+    }
+    if (X <= fee) {
+      el.innerHTML = '<span class="tool-empty">补仓金额需大于买入手续费</span>';
+      return;
+    }
+    Q1 = (X - fee) / P1;          // 买入费从金额中扣除 → 实际买入份额
+    costAdd = X;                    // 合并成本按实际投入金额计
+    addDesc = `按金额补仓 ¥${fmt(X)} → 买入 ${fmt(Q1)} 份（已扣买入费 ¥${fmt(fee)}）`;
+  } else {
+    Q1 = parseFloat($('#addNewQty').value);
+    if (!Number.isFinite(Q1) || Q1 <= 0) {
+      el.innerHTML = '<span class="tool-empty">请填写有效的补仓数量（大于 0）</span>';
+      return;
+    }
+    costAdd = Q1 * P1 + fee;       // 买入费计入合并成本
+    addDesc = `按数量补仓 ${fmt(Q1)} 份 × ¥${fmt(P1)} + 买入费 ¥${fmt(fee)}`;
+  }
+  const Q = Q0 + Q1;                           // 合并持仓数量
+  const costBasis = Q0 * P0 + costAdd;          // 合并总成本（costAdd 已含买入费或按投入金额计）
+  const avgCost = costBasis / Q;                // 合并持仓成本（每份）
+  const marketValue = Q * P1;                   // 以补仓现价为盈亏基准
+  const pnl = marketValue - costBasis - fee;    // 再扣卖出费 → 净盈亏
+  const pctVal = costBasis > 0 ? pnl / costBasis * 100 : 0;
+  const sign = pnl >= 0 ? 'up' : 'down';
+  let html = '';
+  html += `<div class="res-row">合并持仓数量：<b>${fmt(Q)}</b>　｜　合并持仓成本：<b>${fmt(avgCost)}</b> / 份</div>`;
+  html += `<div class="res-row">补仓明细：${addDesc}</div>`;
+  html += `<div class="res-main ${sign}">补仓后盈亏（净，已扣双费）：¥ ${fmt(Math.abs(pnl))} ${pnl >= 0 ? '盈利' : '亏损'}（${pct(pctVal)}）</div>`;
+  html += `<div class="res-detail">口径拆解：原仓 (现价−原价)×原数量 = ¥${fmt(Q0 * (P1 - P0))}；买卖双费 = ¥${fmt(2 * fee)}；补仓份数按现价计为平。盈亏比例以合并成本 ¥${fmt(costBasis)} 为分母。</div>`;
+  el.innerHTML = html;
+}
+
+function mergeSummary() {
+  const el = $('#mergeResult');
+  $('#mergeModal').hidden = false;
+  const eq = lastEqRmb == null ? 0 : lastEqRmb;
+  const usd = lastUsdRmb == null ? 0 : lastUsdRmb;
+  const total = eq + usd;
+  const eqMissing = lastEqRmb == null;
+  const usdMissing = lastUsdRmb == null;
+  const sign = total >= 0 ? 'up' : 'down';
+  let html = '';
+  html += `<div class="res-row">权益资产盈亏（RMB）：<b class="${eq >= 0 ? 'up' : 'down'}">${eq >= 0 ? '+' : '−'}¥ ${fmt(Math.abs(eq))}</b>${eqMissing ? ' <span class="res-note">（未计算，按 0 计）</span>' : ''}</div>`;
+  html += `<div class="res-row">美元资产盈亏（RMB）：<b class="${usd >= 0 ? 'up' : 'down'}">${usd >= 0 ? '+' : '−'}¥ ${fmt(Math.abs(usd))}</b>${usdMissing ? ' <span class="res-note">（未计算，按 0 计）</span>' : ''}</div>`;
+  html += `<div class="res-main ${sign}">合计盈亏（RMB）：¥ ${fmt(Math.abs(total))} ${total >= 0 ? '盈利' : '亏损'}</div>`;
+  const kindAggRmb = { stock: 0, fund: 0, wealth: 0, cash: 0 };
+  if (!eqMissing && lastEqBreakdown.length) {
+    lastEqBreakdown.forEach(b => { if (b.kind in kindAggRmb) kindAggRmb[b.kind] += b.rmb; });
+  }
+  if (!usdMissing) {
+    ['stock', 'fund', 'wealth', 'cash'].forEach(k => { kindAggRmb[k] += lastUsdKindAggRmb[k] || 0; });
+  }
+  const mKindParts = ['stock', 'fund', 'wealth', 'cash'].map(k => {
+    const lbl = k === 'fund' ? '基金' : k === 'wealth' ? '理财' : k === 'cash' ? '现金' : '股票';
+    const v = kindAggRmb[k];
+    return Math.abs(v) < 1e-9 ? null : `${lbl} ¥${fmt(v)}`;
+  }).filter(Boolean);
+  if (mKindParts.length) html += `<div class="res-row">分类汇总（股票/基金/理财/现金，RMB）：<b>${mKindParts.join('　｜　')}</b></div>`;
+  if (!usdMissing && lastUsdDetail) {
+    const d = lastUsdDetail;
+    html += `<div class="res-detail">美元拆解：盈亏 ${d.totalPnl > 0 ? '+' : ''}${fmt(d.totalPnl)} USD ＝ ¥${fmt(d.pnlRmb)}　｜　汇率收益 ¥${fmt(d.fxGainRmb)}（美元升值 ${pct(d.fxAppr)}）　｜　${d.beat ? '跑赢汇率 ✅' : '未跑赢 ❌'}</div>`;
+  }
+  if (!eqMissing && lastEqBreakdown.length) {
+    html += '<div class="res-detail">权益明细：' + lastEqBreakdown.map(b => {
+      const tag = b.note ? ` <span class="res-note">(${esc(b.note)})</span>` : '';
+      return `${b.cur} ${b.amt > 0 ? '+' : ''}${fmt(b.amt)} → ¥${fmt(b.rmb)}${tag}`;
+    }).join('　｜　') + '</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function loadAsset() {
+  try {
+    const r = await api('/api/asset/overview');
+    if (!r.ok) { toast('资产总览加载失败 (HTTP ' + r.status + ')', 'err'); return; }
+    assetData = await r.json();
+    renderAssetSummary();
+    await loadSourcesCache();
+    renderAssetTab();
+  } catch (e) {
+    toast('资产加载异常：' + e.message, 'err');
+  }
+}
+
+async function loadSourcesCache() {
+  try {
+    const r = await api('/api/asset/sources');
+    if (r.ok) { const d = await r.json(); assetSources = d.sources || []; }
+  } catch (_) {}
+}
+
+function renderAssetSummary() {
+  const d = assetData; if (!d) return;
+  const eq = d.equity || {}, w = d.wealth || {}, l = d.liability || {}, c = d.consumption || {}, cash = d.cash || {};
+  const wBy = w.by_currency || {};
+  const cBy = cash.by_currency || {};
+  const byCurHtml = (m) => Object.keys(m).map((k) => `${curSymbolJS(k)}${fmt(m[k] || 0)}`).join(' ｜ ');
+  const cards = [
+    ['总资产', (eq.market_value || 0) + (w.total || 0) + (cash.total || 0), '', ''],
+    ['总负债', l.total || 0, '月供 ' + money(l.monthly_payment || 0), ''],
+    ['现金', cash.total || 0, byCurHtml(cBy) || '', ''],
+    ['权益市值', eq.market_value || 0, '当日 ' + pnlTxt(eq.day_pnl || 0), pnlCls(eq.day_pnl || 0)],
+    ['理财持仓', w.total || 0, (byCurHtml(wBy) ? '理财分类 ' + byCurHtml(wBy) + '<br>' : '') + (w.snap_date && w.snap_date !== new Date().toLocaleDateString('en-CA') ? '今日未录入' : '今日收益 ' + pnlTxt(w.today_pnl || 0)), pnlCls(w.today_pnl || 0)],
+  ];
+  $('#assetSummary').innerHTML = cards.map(([label, val, sub, cls]) =>
+    `<div class="card ${cls}"><div class="c-label">${label}</div><div class="c-value">${money(val)}</div>${sub ? `<div class="c-sub">${sub}</div>` : ''}</div>`
+  ).join('');
+}
+
+function renderAssetTab() {
+  const body = $('#assetTabBody');
+  if (assetTab === 'sources') return renderSources(body);
+  if (assetTab === 'wealth') return renderWealth(body);
+  if (assetTab === 'cash') return renderCash(body);
+  if (assetTab === 'liability') return renderLiability(body);
+  if (assetTab === 'consume') return renderConsume(body);
+}
+
+document.querySelectorAll('#assetTabs .atab').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('#assetTabs .atab').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    assetTab = b.dataset.tab;
+    renderAssetTab();
+    // 切 tab 后滚动到标签栏位置，避免内容高度变化导致页面跳动
+    $('#assetTabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+});
+
+function assetDel(type, id) {
+  const msg = {
+    source: '确认删除该资产来源？关联记录会保留来源名快照，但来源本身不可恢复。',
+    wealth: '确认删除该理财？其每日录入记录一并删除，不可恢复。',
+    cash: '确认删除该现金记录？不可恢复。',
+    liability: '确认删除该负债？不可恢复。',
+    consumption: '确认删除该消费记录？不可恢复。',
+  }[type] || '确认删除？';
+  pendingAssetDel = { type, id };
+  $('#confirmMsg').textContent = msg;
+  $('#confirmModal').hidden = false;
+}
+
+// ---- 资产来源 ----
+function renderSources(body) {
+  const list = assetSources;
+  let html = `<div class="asset-section-head"><h3>资产来源（${list.length}）</h3><button class="btn asset-add" id="addSourceBtn">＋ 添加来源</button></div>`;
+  if (!list.length) html += `<p class="empty">还没有资产来源，先添加一个银行或平台吧。</p>`;
+  else {
+    html += `<table class="asset-table"><thead><tr><th>名称</th><th>类型</th><th>备注</th><th></th></tr></thead><tbody>`;
+    for (const s of list) {
+      html += `<tr><td>${esc(s.name)}</td><td>${s.type === 'platform' ? '平台' : '银行'}</td><td>${esc(s.note || '')}</td>
+        <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-source" data-id="${s.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-source" data-id="${s.id}">🗑️ 删除</button></td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  body.innerHTML = html;
+  $('#addSourceBtn').onclick = () => openAssetSourceModal(null);
+  body.querySelectorAll('[data-act="edit-source"]').forEach((b) => b.onclick = () => openAssetSourceModal(Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="del-source"]').forEach((b) => b.onclick = () => assetDel('source', Number(b.dataset.id)));
+}
+
+function openAssetSourceModal(id) {
+  const s = id ? assetSources.find((x) => x.id === id) : null;
+  $('#assetSourceTitle').textContent = s ? '编辑资产来源' : '添加资产来源';
+  $('#as_id').value = s ? s.id : '';
+  $('#as_name').value = s ? s.name : '';
+  $('#as_type').value = s ? s.type : 'bank';
+  $('#as_note').value = s ? (s.note || '') : '';
+  $('#assetSourceErr').textContent = '';
+  $('#assetSourceModal').hidden = false;
+}
+$('#assetSourceForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const id = $('#as_id').value ? Number($('#as_id').value) : 0;
+  const payload = { name: $('#as_name').value.trim(), type: $('#as_type').value, note: $('#as_note').value.trim() };
+  if (!payload.name) { $('#assetSourceErr').textContent = '名称不能为空'; return; }
+  try {
+    const r = id ? await api('/api/asset/sources/' + id, { method: 'PUT', body: JSON.stringify(payload) })
+                 : await api('/api/asset/sources', { method: 'POST', body: JSON.stringify(payload) });
+    if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#assetSourceErr').textContent = m; return; }
+    $('#assetSourceModal').hidden = true;
+    await loadAsset();
+  } catch (err) { $('#assetSourceErr').textContent = '异常：' + err.message; }
+};
+$('#assetSourceCancel').onclick = () => ($('#assetSourceModal').hidden = true);
+
+// ---- 理财 ----
+// 统一折算成 RMB 金额用于排序（不同币种可比较"总金额"）
+function wealthAmount(p) {
+  const a = Number(p.amount) || 0;
+  const c = (p.currency || 'rmb').toLowerCase();
+  if (c === 'usd') return a * (usdRate || 1);
+  if (c === 'hkd') return a * (hkdRate || 1);
+  return a;
+}
+
+function renderWealth(body) {
+  const raw = (assetData.wealth || {}).products || [];
+  const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount)); // 按卡片显示的原币金额从大到小（与卡片展示口径一致）
+  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><button class="btn asset-add" id="addWealthBtn">＋ 添加理财</button></div>`;
+  if (!w.length) html += `<p class="empty">还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p>`;
+  else {
+    html += `<div class="asset-list wealth-list">`;
+    w.forEach((p, i) => {
+      const pnl = p.today_pnl || 0;
+      const cum = p.cum_pnl || 0;
+      html += `<div class="asset-card wealth-card"><div class="ac-head">
+          <div class="ac-idx">${i + 1}</div>
+          <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span></div>
+            <div class="ac-sub">${esc(p.code || '')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
+        <div class="ac-sub">总金额：<span class="ac-amount">${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}">${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}">${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
+        <div class="ac-actions">
+          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">📈 每日盈亏</button>
+          <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">✏️ 编辑</button>
+          <button class="btn btn-icon danger" data-act="del-wealth" data-id="${p.id}">🗑️ 删除</button>
+        </div></div>`;
+    });
+    html += `</div>`;
+  }
+  body.innerHTML = html;
+  $('#addWealthBtn').onclick = () => openWealthModal(null);
+  body.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="del-wealth"]').forEach((b) => b.onclick = () => assetDel('wealth', Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHist(Number(b.dataset.id)));
+}
+
+async function openWealthModal(id) {
+  await loadSourcesCache();
+  const sel = $('#w_source');
+  sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加来源）</option>';
+  let w = null;
+  if (id) { const r = await api('/api/asset/wealth'); if (r.ok) { const d = await r.json(); w = (d.wealth || []).find((x) => x.id === id); } }
+  $('#wealthTitle').textContent = w ? '编辑理财' : '添加理财';
+  $('#w_id').value = w ? w.id : '';
+  $('#w_name').value = w ? w.name : '';
+  $('#w_code').value = w ? (w.code || '') : '';
+  $('#w_source').value = w ? w.source_id : (assetSources[0] ? assetSources[0].id : '');
+  $('#w_currency').value = w ? (w.currency || 'rmb') : 'rmb';
+  $('#w_note').value = w ? (w.note || '') : '';
+  $('#wealthErr').textContent = '';
+  $('#wealthModal').hidden = false;
+}
+$('#wealthForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const id = $('#w_id').value ? Number($('#w_id').value) : 0;
+  const payload = { name: $('#w_name').value.trim(), code: $('#w_code').value.trim(), source_id: Number($('#w_source').value) || 0, currency: $('#w_currency').value, note: $('#w_note').value.trim() };
+  if (!payload.name) { $('#wealthErr').textContent = '名称不能为空'; return; }
+  try {
+    const r = id ? await api('/api/asset/wealth/' + id, { method: 'PUT', body: JSON.stringify(payload) })
+                 : await api('/api/asset/wealth', { method: 'POST', body: JSON.stringify(payload) });
+    if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#wealthErr').textContent = m; return; }
+    $('#wealthModal').hidden = true;
+    await loadAsset();
+  } catch (err) { $('#wealthErr').textContent = '异常：' + err.message; }
+};
+$('#wealthCancel').onclick = () => ($('#wealthModal').hidden = true);
+
+// ---- 现金 ----
+function renderCash(body) {
+  const list = (assetData.cash || {}).items || [];
+  let html = `<div class="asset-section-head"><h3>现金（${list.length}）</h3><button class="btn asset-add" id="addCashBtn">＋ 添加现金</button></div>`;
+  if (!list.length) html += `<p class="empty">还没有现金记录，添加各账户的现金余额即可纳入总资产。</p>`;
+  else {
+    html += `<table class="asset-table"><thead><tr><th>名称</th><th class="num">余额</th><th>币种</th><th>来源</th><th>备注</th><th></th></tr></thead><tbody>`;
+    for (const c of list) {
+      html += `<tr><td>${esc(c.name)}</td><td class="num">${moneyCur(c.amount || 0, c.currency)}</td><td>${curSymbolJS(c.currency)}</td><td>${esc(c.source_name || '')}</td><td>${esc(c.note || '')}</td>
+        <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-cash" data-id="${c.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-cash" data-id="${c.id}">🗑️ 删除</button></td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  body.innerHTML = html;
+  $('#addCashBtn').onclick = () => openCashModal(null);
+  body.querySelectorAll('[data-act="edit-cash"]').forEach((b) => b.onclick = () => openCashModal(Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="del-cash"]').forEach((b) => b.onclick = () => assetDel('cash', Number(b.dataset.id)));
+}
+
+async function openCashModal(id) {
+  await loadSourcesCache();
+  const sel = $('#c_source');
+  sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加来源）</option>';
+  let c = null;
+  if (id) { const r = await api('/api/asset/cash'); if (r.ok) { const d = await r.json(); c = (d.cash || []).find((x) => x.id === id); } }
+  $('#cashTitle').textContent = c ? '编辑现金' : '添加现金';
+  $('#c_id').value = c ? c.id : '';
+  $('#c_name').value = c ? c.name : '';
+  $('#c_currency').value = c ? (c.currency || 'rmb') : 'rmb';
+  $('#c_amount').value = c ? c.amount : '';
+  $('#c_source').value = c ? c.source_id : (assetSources[0] ? assetSources[0].id : '');
+  $('#c_note').value = c ? (c.note || '') : '';
+  $('#cashErr').textContent = '';
+  $('#cashModal').hidden = false;
+}
+$('#cashForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const id = $('#c_id').value ? Number($('#c_id').value) : 0;
+  const payload = {
+    name: $('#c_name').value.trim(), currency: $('#c_currency').value,
+    amount: Number($('#c_amount').value || 0), source_id: Number($('#c_source').value) || 0, note: $('#c_note').value.trim(),
+  };
+  if (!payload.name) { $('#cashErr').textContent = '名称不能为空'; return; }
+  if (!payload.amount) { $('#cashErr').textContent = '余额不能为空'; return; }
+  try {
+    const r = id ? await api('/api/asset/cash/' + id, { method: 'PUT', body: JSON.stringify(payload) })
+                 : await api('/api/asset/cash', { method: 'POST', body: JSON.stringify(payload) });
+    if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
+    $('#cashModal').hidden = true;
+    await loadAsset();
+  } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
+};
+$('#cashCancel').onclick = () => ($('#cashModal').hidden = true);
+
+async function openWealthHist(id) {
+  try {
+    const r = await api('/api/asset/wealth/' + id + '/history');
+    if (!r.ok) { toast('加载失败 (HTTP ' + r.status + ')', 'err'); return; }
+    const d = await r.json();
+    const rows = d.rows || [];
+    if (!rows.length) { $('#wealthHistBody').innerHTML = '<p class="empty">暂无录入记录。</p>'; }
+    else {
+      let html = '<table class="asset-table"><thead><tr><th>日期</th><th class="num">持仓金额</th><th class="num">净存入</th><th class="num">当日盈亏</th><th class="num">累计盈亏</th></tr></thead><tbody>';
+      for (const r2 of rows) {
+        const p = r2.pnl || 0, cum = r2.cum_pnl || 0;
+        html += `<tr><td>${r2.date}</td><td class="num">${money(r2.amount || 0)}</td><td class="num">${money(r2.cashflow || 0)}</td>
+          <td class="num ${pnlCls(p)}">${pnlTxt(p)}</td><td class="num ${pnlCls(cum)}">${pnlTxt(cum)}</td></tr>`;
+      }
+      html += '</tbody></table>';
+      $('#wealthHistBody').innerHTML = html;
+    }
+    $('#wealthHistModal').hidden = false;
+  } catch (err) { toast('异常：' + err.message, 'err'); }
+}
+$('#wealthHistClose').onclick = () => ($('#wealthHistModal').hidden = true);
+
+// ---- 负债 ----
+function renderLiability(body) {
+  const list = (assetData.liability || {}).items || [];
+  let html = `<div class="asset-section-head"><h3>负债（${list.length}）</h3><button class="btn asset-add" id="addLbBtn">＋ 添加负债</button></div>`;
+  if (!list.length) html += `<p class="empty">暂无负债记录。</p>`;
+  else {
+    html += `<table class="asset-table"><thead><tr><th>名称</th><th>类型</th><th>来源</th><th class="num">欠款</th><th class="num">年利率</th><th class="num">月供</th><th>备注</th><th></th></tr></thead><tbody>`;
+    for (const l of list) {
+      html += `<tr><td>${esc(l.name)}</td><td>${esc(l.type || '')}</td><td>${esc(l.source_name || '')}</td>
+        <td class="num">${money(l.amount || 0)}</td><td class="num">${l.rate ? l.rate + '%' : ''}</td><td class="num">${money(l.monthly_payment || 0)}</td>
+        <td>${esc(l.note || '')}</td>
+        <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-lb" data-id="${l.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-lb" data-id="${l.id}">🗑️ 删除</button></td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  body.innerHTML = html;
+  $('#addLbBtn').onclick = () => openLiabilityModal(null);
+  body.querySelectorAll('[data-act="edit-lb"]').forEach((b) => b.onclick = () => openLiabilityModal(Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="del-lb"]').forEach((b) => b.onclick = () => assetDel('liability', Number(b.dataset.id)));
+}
+
+async function openLiabilityModal(id) {
+  await loadSourcesCache();
+  const sel = $('#lb_source');
+  sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加来源）</option>';
+  let l = null;
+  if (id) { const r = await api('/api/asset/liabilities'); if (r.ok) { const d = await r.json(); l = (d.liabilities || []).find((x) => x.id === id); } }
+  $('#liabilityTitle').textContent = l ? '编辑负债' : '添加负债';
+  $('#lb_id').value = l ? l.id : '';
+  $('#lb_name').value = l ? l.name : '';
+  $('#lb_type').value = l ? (l.type || '') : '';
+  $('#lb_source').value = l ? l.source_id : (assetSources[0] ? assetSources[0].id : '');
+  $('#lb_amount').value = l ? l.amount : '';
+  $('#lb_rate').value = l ? (l.rate || '') : '';
+  $('#lb_monthly').value = l ? (l.monthly_payment || '') : '';
+  $('#lb_note').value = l ? (l.note || '') : '';
+  $('#liabilityErr').textContent = '';
+  $('#liabilityModal').hidden = false;
+}
+$('#liabilityForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const id = $('#lb_id').value ? Number($('#lb_id').value) : 0;
+  const payload = {
+    name: $('#lb_name').value.trim(), type: $('#lb_type').value.trim(), source_id: Number($('#lb_source').value) || 0,
+    amount: Number($('#lb_amount').value || 0), rate: Number($('#lb_rate').value || 0),
+    monthly_payment: Number($('#lb_monthly').value || 0), note: $('#lb_note').value.trim(),
+  };
+  if (!payload.name) { $('#liabilityErr').textContent = '名称不能为空'; return; }
+  if (!payload.amount) { $('#liabilityErr').textContent = '欠款余额不能为空'; return; }
+  try {
+    const r = id ? await api('/api/asset/liabilities/' + id, { method: 'PUT', body: JSON.stringify(payload) })
+                 : await api('/api/asset/liabilities', { method: 'POST', body: JSON.stringify(payload) });
+    if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#liabilityErr').textContent = m; return; }
+    $('#liabilityModal').hidden = true;
+    await loadAsset();
+  } catch (err) { $('#liabilityErr').textContent = '异常：' + err.message; }
+};
+$('#liabilityCancel').onclick = () => ($('#liabilityModal').hidden = true);
+
+// ---- 消费 ----
+function renderConsume(body) {
+  const list = (assetData.consumption || {}).items || [];
+  let html = `<div class="asset-section-head"><h3>消费（最近 ${list.length}）</h3><button class="btn asset-add" id="addCsBtn">＋ 添加消费</button></div>`;
+  if (!list.length) html += `<p class="empty">还没有消费记录。</p>`;
+  else {
+    html += `<table class="asset-table"><thead><tr><th>日期</th><th>类别</th><th>来源</th><th class="num">金额</th><th>备注</th><th></th></tr></thead><tbody>`;
+    for (const c of list) {
+      html += `<tr><td>${esc(c.date)}</td><td>${esc(c.category || '')}</td><td>${esc(c.source_name || '')}</td>
+        <td class="num">${money(c.amount || 0)}</td><td>${esc(c.note || '')}</td>
+        <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-cs" data-id="${c.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-cs" data-id="${c.id}">🗑️ 删除</button></td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  body.innerHTML = html;
+  $('#addCsBtn').onclick = () => openConsumeModal(null);
+  body.querySelectorAll('[data-act="edit-cs"]').forEach((b) => b.onclick = () => openConsumeModal(Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="del-cs"]').forEach((b) => b.onclick = () => assetDel('consumption', Number(b.dataset.id)));
+}
+
+async function openConsumeModal(id) {
+  await loadSourcesCache();
+  const sel = $('#cs_source');
+  sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加来源）</option>';
+  let c = null;
+  if (id) { const r = await api('/api/asset/consumptions'); if (r.ok) { const d = await r.json(); c = (d.consumptions || []).find((x) => x.id === id); } }
+  $('#consumeTitle').textContent = c ? '编辑消费' : '添加消费';
+  $('#cs_id').value = c ? c.id : '';
+  $('#cs_date').value = c ? c.date : ymd(new Date());
+  $('#cs_category').value = c ? (c.category || '') : '';
+  $('#cs_amount').value = c ? c.amount : '';
+  $('#cs_source').value = c ? c.source_id : (assetSources[0] ? assetSources[0].id : '');
+  $('#cs_note').value = c ? (c.note || '') : '';
+  $('#consumeErr').textContent = '';
+  $('#consumeModal').hidden = false;
+}
+$('#consumeForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const id = $('#cs_id').value ? Number($('#cs_id').value) : 0;
+  const payload = {
+    date: $('#cs_date').value || ymd(new Date()), category: $('#cs_category').value.trim(),
+    amount: Number($('#cs_amount').value || 0), source_id: Number($('#cs_source').value) || 0, note: $('#cs_note').value.trim(),
+  };
+  if (!payload.category) { $('#consumeErr').textContent = '类别不能为空'; return; }
+  if (!payload.amount) { $('#consumeErr').textContent = '金额不能为空'; return; }
+  try {
+    const r = id ? await api('/api/asset/consumptions/' + id, { method: 'PUT', body: JSON.stringify(payload) })
+                 : await api('/api/asset/consumptions', { method: 'POST', body: JSON.stringify(payload) });
+    if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#consumeErr').textContent = m; return; }
+    $('#consumeModal').hidden = true;
+    await loadAsset();
+  } catch (err) { $('#consumeErr').textContent = '异常：' + err.message; }
+};
+$('#consumeCancel').onclick = () => ($('#consumeModal').hidden = true);
+
+// ---- 每日持仓金额录入（自动算每日盈亏） ----
+$('#assetSnapBtn').onclick = openSnapModal;
+$('#assetRefreshBtn').onclick = () => loadAsset();
+
+async function openSnapModal() {
+  await loadAsset();
+  // 与理财卡片列表保持相同顺序（按原币持仓金额从大到小）
+  const raw = (assetData.wealth || {}).products || [];
+  const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount));
+  if (!w.length) { toast('请先在「理财」里添加一个产品', 'err'); return; }
+  const today = ymd(new Date());
+  const body = $('#snapBody');
+  body.innerHTML = w.map((p) => `
+    <div class="snap-row">
+      <div class="sr-name">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span><small>${esc(p.source_name || '')} ｜ 上次持仓 ${moneyCur(p.amount || 0, p.currency)}</small></div>
+      <div class="sr-fields">
+        <div class="sr-field">
+          <label class="sr-label" for="amt-${p.id}">① 今日持仓金额 ${curSymbolJS(p.currency)}</label>
+          <input type="number" step="any" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" value="${p.amount || 0}" placeholder="如 105000（今天收盘后的总市值）">
+          <div class="sr-hint">该理财今天的总持仓金额（本金+收益）。默认带出上次录入值，留空则不更新此项。</div>
+        </div>
+        <div class="sr-field">
+          <label class="sr-label" for="cf-${p.id}">② 当日净存入 ${curSymbolJS(p.currency)}</label>
+          <input type="number" step="any" class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0" placeholder="转入为正，转出为负，无变动填 0">
+          <div class="sr-hint">今天新存入(+)或取出(−)的本金。用于剔除本金变动：当日盈亏 = 今日金额 − 昨日金额 − 当日净存入。</div>
+        </div>
+      </div>
+    </div>`).join('');
+  $('#snapModal').dataset.date = today;
+  $('#snapModal').hidden = false;
+}
+$('#snapCancel').onclick = () => ($('#snapModal').hidden = true);
+$('#snapSave').onclick = async () => {
+  const date = $('#snapModal').dataset.date || ymd(new Date());
+  const items = [];
+  $('#snapBody').querySelectorAll('.snap-row').forEach((row) => {
+    const amtInput = row.querySelector('.sr-amt');
+    if (amtInput.value === '') return;
+    items.push({ wealth_id: Number(amtInput.dataset.id), amount: Number(amtInput.value), cashflow: Number(row.querySelector('.sr-cf').value || 0) });
+  });
+  if (!items.length) { toast('没有可保存的数据', 'err'); return; }
+  try {
+    const r = await api('/api/asset/wealth/snapshots', { method: 'POST', body: JSON.stringify({ date, items }) });
+    if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m, 'err'); return; }
+    $('#snapModal').hidden = true;
+    toast('今日持仓已保存', 'ok');
+    await loadAsset();
+  } catch (err) { toast('保存异常：' + err.message, 'err'); }
+};
+
+// ---- 一键 AI 总结（汇总全部资产） ----
+$('#assetAiBtn').onclick = confirmAssetAi;
+async function assetAiSummarize() {
+  const boxKey = ($('#ai_apikey') ? $('#ai_apikey').value : '').trim();
+  const lsKey = (localStorage.getItem('pf_ai_key') || '').trim();
+  const api_key = boxKey || lsKey || (aiCfg.api_key || '').trim();
+  const model = ($('#ai_model').value || '').trim() || 'deepseek-v4-pro';
+  const base_url = ($('#ai_baseurl').value || '').trim() || 'https://api.deepseek.com';
+  // 与权益类一致：优先使用 AI 设置弹框中当前编辑/选中的模板，避免静默回退到第一条或默认模板
+  const edited = ($('#ai_tpl_content') ? $('#ai_tpl_content').value : '');
+  const content = (edited && edited.trim()) ? edited : (aiCfg.templates[aiSelIdx] ? aiCfg.templates[aiSelIdx].content : '');
+  if (!api_key) { toast('请先在「AI 设置」填写 API Key', 'err'); openAIModal(); return; }
+  if (!content) { toast('提示词模板为空，请先在「AI 设置」选择或填写模板', 'err'); openAIModal(); return; }
+  if (api_key) localStorage.setItem('pf_ai_key', api_key);
+  openAIResultModal('生成中…（正在汇总全部资产并调用模型，请稍候）');
+  $('#assetAiBtn').disabled = true;
+  try {
+    const r = await api('/api/asset/summary', { method: 'POST', body: JSON.stringify({ model, base_url, api_key, template: content }) });
+    if (!r.ok) { let m = '生成失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#aiResultBody').textContent = m; return; }
+    const d = await r.json();
+    $('#aiResultBody').textContent = d.content || '（空）';
+  } catch (err) {
+    $('#aiResultBody').textContent = '异常：' + err.message;
+  } finally {
+    $('#assetAiBtn').disabled = false;
+  }
+}
+
+// ── 技术分析 ──────────────────────────────────────────
+async function openAnalysis(id) {
+  const modal = $('#analysisModal');
+  const body = $('#analysisBody');
+  body.innerHTML = '<div class="analysis-loading">⏳ 正在获取技术分析数据…</div>';
+  modal.hidden = false;
+  try {
+    const r = await api('/api/holdings/' + id + '/analysis');
+    if (!r.ok) {
+      let msg = '获取技术分析失败 (HTTP ' + r.status + ')';
+      try { const e = await r.json(); if (e.error) msg += '：' + e.error; } catch (_) {}
+      body.innerHTML = '<div class="analysis-err">' + msg + '</div>';
+      return;
+    }
+    const d = await r.json();
+    const a = d.analysis;
+    if (a.error) {
+      body.innerHTML = '<div class="analysis-err">' + a.error + '</div>';
+      return;
+    }
+    // 基金：仅当后端未返回指标（未关联股票代码/数据不足）时才提示不支持；
+    // 有关联代码且分析成功的基金应正常渲染。
+    if (a.category === 'fund' && !a.indicators) {
+      body.innerHTML = '<div class="analysis-err">该基金未设置关联股票代码，不支持技术分析</div>';
+      return;
+    }
+    $('#analysisTitle').textContent = '📊 ' + a.name + (a.category === 'fund' ? ' (关联 ' + a.symbol + ' 分析)' : ' (' + a.symbol + ') 技术分析');
+    renderAnalysis(a);
+    const tsEl = document.getElementById('analysisTime');
+    if (tsEl) tsEl.textContent = a.generated_at ? '分析时间：' + a.generated_at : '';
+  } catch (e) {
+    body.innerHTML = '<div class="analysis-err">异常：' + e.message + '</div>';
+  }
+}
+
+function renderAnalysis(a) {
+  const ind = a.indicators;
+  const prob = a.probability;
+  if (!ind || !prob) {
+    $('#analysisBody').innerHTML = '<div class="analysis-err">数据不足</div>';
+    return;
+  }
+
+  const upColor = '#ff4757', downColor = '#2ed573';
+
+  let html = '';
+
+  // Probability card
+  const upPct = prob.up_pct || 50;
+  html += '<div class="prob-card">';
+  html += '<div class="prob-bar-wrap"><div class="prob-bar"><div class="prob-up" style="width:' + upPct + '%">▲ ' + upPct.toFixed(1) + '%</div><div class="prob-down" style="width:' + (100-upPct) + '%">▼ ' + (100-upPct).toFixed(1) + '%</div></div></div>';
+  html += '<div class="prob-summary">' + esc(prob.summary) + '</div>';
+  html += '<div class="prob-conf">置信度：' + '★'.repeat(prob.confidence || 0) + '☆'.repeat(5 - (prob.confidence || 0)) + '</div>';
+  html += '</div>';
+
+  // Indicators table
+  html += '<div class="ind-table-wrap"><table class="ind-table">';
+  html += '<thead><tr><th>指标</th><th>数值</th><th>信号</th><th>依据</th></tr></thead><tbody>';
+
+  // Price vs MA
+  html += '<tr><td>最新价</td><td>' + ind.price.toFixed(2) + '</td><td colspan="2"></td></tr>';
+  html += '<tr><td>MA5</td><td>' + (ind.ma5 ? ind.ma5.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma5 ? 'up' : 'down') + '">' + (ind.price > ind.ma5 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
+  html += '<tr><td>MA10</td><td>' + (ind.ma10 ? ind.ma10.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma10 ? 'up' : 'down') + '">' + (ind.price > ind.ma10 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
+  html += '<tr><td>MA20</td><td>' + (ind.ma20 ? ind.ma20.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma20 ? 'up' : 'down') + '">' + (ind.price > ind.ma20 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
+  html += '<tr><td>MA60</td><td>' + (ind.ma60 ? ind.ma60.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma60 ? 'up' : 'down') + '">' + (ind.price > ind.ma60 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
+
+  // MACD
+  const macd = ind.macd || {};
+  const macdDir = macd.hist > 0 ? 'up' : 'down';
+  html += '<tr><td>MACD DIF</td><td>' + (macd.dif ? macd.dif.toFixed(4) : '—') + '</td><td rowspan="3" class="' + macdDir + '">' + (macd.hist > 0 ? '金叉 ↑' : '死叉 ↓') + '</td><td rowspan="3" style="font-size:12px">DIF=' + (macd.dif ? macd.dif.toFixed(4) : '—') + ' DEA=' + (macd.dea ? macd.dea.toFixed(4) : '—') + ' HIST=' + (macd.hist ? macd.hist.toFixed(4) : '—') + '</td></tr>';
+  html += '<tr><td>MACD DEA</td><td>' + (macd.dea ? macd.dea.toFixed(4) : '—') + '</td></tr>';
+  html += '<tr><td>MACD HIST</td><td>' + (macd.hist ? macd.hist.toFixed(4) : '—') + '</td></tr>';
+
+  // RSI
+  const rsi = ind.rsi || 50;
+  const rsiState = rsi > 70 ? '超买↓' : rsi > 50 ? '偏强↑' : rsi > 30 ? '偏弱↓' : '超卖↑';
+  html += '<tr><td>RSI(14)</td><td>' + rsi.toFixed(1) + '</td><td class="' + (rsi > 50 ? 'up' : 'down') + '">' + rsiState + '</td><td style="font-size:12px">' + (rsi > 70 ? '超买区域，回调风险高' : rsi > 50 ? '偏强区域，趋势向好' : rsi > 30 ? '偏弱区域，趋势偏空' : '超卖区域，反弹概率高') + '</td></tr>';
+
+  // KDJ
+  const kdj = ind.kdj || {};
+  html += '<tr><td>KDJ K</td><td>' + (kdj.k ? kdj.k.toFixed(2) : '—') + '</td><td rowspan="3" class="' + (kdj.k > kdj.d ? 'up' : 'down') + '">' + (kdj.k > kdj.d ? '金叉 ↑' : '死叉 ↓') + '</td><td rowspan="3" style="font-size:12px">J=' + (kdj.j ? kdj.j.toFixed(2) : '—') + ' ' + (kdj.j > 100 ? '超买' : kdj.j < 0 ? '超卖' : '') + '</td></tr>';
+  html += '<tr><td>KDJ D</td><td>' + (kdj.d ? kdj.d.toFixed(2) : '—') + '</td></tr>';
+  html += '<tr><td>KDJ J</td><td>' + (kdj.j ? kdj.j.toFixed(2) : '—') + '</td></tr>';
+
+  // BOLL
+  const boll = ind.boll || {};
+  const bollPos = boll.mid > 0 ? ((ind.price - boll.lower) / (boll.upper - boll.lower) * 100) : 50;
+  html += '<tr><td>BOLL 上轨</td><td>' + (boll.upper ? boll.upper.toFixed(2) : '—') + '</td><td rowspan="3" class="' + (bollPos > 50 ? 'up' : 'down') + '">' + (bollPos > 80 ? '上轨压力↓' : bollPos > 50 ? '中上轨↑' : bollPos > 20 ? '中下轨↓' : '下轨支撑↑') + '</td><td rowspan="3" style="font-size:12px">带宽：' + (boll.width ? boll.width.toFixed(1) + '%' : '—') + ' ' + (boll.width > 20 ? '宽幅震荡' : boll.width < 5 ? '即将变盘' : '') + '</td></tr>';
+  html += '<tr><td>BOLL 中轨</td><td>' + (boll.mid ? boll.mid.toFixed(2) : '—') + '</td></tr>';
+  html += '<tr><td>BOLL 下轨</td><td>' + (boll.lower ? boll.lower.toFixed(2) : '—') + '</td></tr>';
+
+  html += '</tbody></table></div>';
+
+  // Signal breakdown
+  if (prob.signals && prob.signals.length) {
+    html += '<div class="sig-list"><h4>信号分解</h4>';
+    prob.signals.forEach(s => {
+      const cls = s.direction === 'bullish' ? 'sig-up' : s.direction === 'bearish' ? 'sig-down' : 'sig-neutral';
+      const arrow = s.direction === 'bullish' ? '▲' : s.direction === 'bearish' ? '▼' : '—';
+      html += '<div class="sig-item ' + cls + '"><span class="sig-ind">' + esc(s.indicator) + '</span><span class="sig-arrow">' + arrow + '</span><span class="sig-reason">' + esc(s.reason) + '</span><span class="sig-score">' + (s.score > 0 ? '+' : '') + (s.score || 0).toFixed(2) + '</span></div>';
+    });
+    html += '</div>';
+  }
+
+  $('#analysisBody').innerHTML = html;
+}
+
+// ── 弹框关闭 ──────────────────────────────────────────
+$('#analysisClose').onclick = () => { $('#analysisModal').hidden = true; };
+
+// ── 操作指南 ──────────────────────────────────────────
+
+let allGuides = [];
+
+async function openGuide() {
+  $('#guideModal').hidden = false;
+  $('#guideForm').hidden = true;
+  $('#guideActions').hidden = false;
+  // 预加载持仓列表（供表单下拉选择）
+  await loadGuides();
+}
+
+async function loadGuides() {
+  try {
+    const r = await api('/api/guides');
+    if (!r.ok) { toast('加载操作指南失败', 'err'); return; }
+    const d = await r.json();
+    allGuides = d.guides || [];
+    renderGuideList();
+  } catch (e) { toast('加载异常：' + e.message, 'err'); }
+}
+
+function renderGuideList() {
+  const el = $('#guideList');
+  if (!allGuides.length) {
+    el.innerHTML = '<div class="guide-empty">暂无操作记录，点击「新增记录」开始</div>';
+    return;
+  }
+  let h = '';
+  allGuides.forEach((g) => {
+    const tagsHtml = g.tags ? g.tags.split(',').filter(Boolean).map((t) => `<span class="guide-tag">${esc(t.trim())}</span>`).join('') : '';
+    const holdingName = g.holding_id ? `关联: #${g.holding_id}` : '';
+    const contentHtml = g.content ? `<div class="guide-item-content">${esc(g.content)}</div>` : '';
+    h += `<div class="guide-item">
+      <div class="guide-item-body">
+        <div class="guide-item-title">${esc(g.title)}</div>
+        ${tagsHtml ? `<div class="guide-item-tags">${tagsHtml}</div>` : ''}
+        ${contentHtml}
+        <div class="guide-item-info">
+          <span>${g.created_at ? g.created_at.slice(0,10) : ''}</span>
+          ${holdingName ? `<span>${holdingName}</span>` : ''}
+        </div>
+      </div>
+      <div class="guide-item-actions">
+        <button class="btn" data-guide-edit="${g.id}" title="编辑">✏️</button>
+        <button class="btn danger" data-guide-del="${g.id}" title="删除">🗑️</button>
+      </div>
+    </div>`;
+  });
+  el.innerHTML = h;
+  // 绑定编辑/删除事件
+  el.querySelectorAll('[data-guide-edit]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); editGuide(parseInt(b.dataset.guideEdit)); };
+  });
+  el.querySelectorAll('[data-guide-del]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); deleteGuide(parseInt(b.dataset.guideDel)); };
+  });
+}
+
+async function openGuideForm(guide) {
+  // 先加载持仓列表
+  const sel = $('#guide_holding');
+  let holdingsHtml = '<option value="0">不关联</option>';
+  try {
+    const r = await api('/api/holdings');
+    if (r.ok) {
+      const d = await r.json();
+      (d.holdings || []).forEach((h) => {
+        holdingsHtml += `<option value="${h.id}">${esc(h.name || h.symbol || '#'+h.id)}</option>`;
+      });
+    }
+  } catch (_) {}
+  sel.innerHTML = holdingsHtml;
+
+  if (guide) {
+    $('#guide_id').value = guide.id;
+    $('#guide_title').value = guide.title || '';
+    $('#guide_content').value = guide.content || '';
+    $('#guide_tags').value = guide.tags || '';
+    $('#guide_holding').value = guide.holding_id || 0;
+  } else {
+    $('#guide_id').value = '';
+    $('#guide_title').value = '';
+    $('#guide_content').value = '';
+    $('#guide_tags').value = '';
+    $('#guide_holding').value = '0';
+  }
+  $('#guideErr').textContent = '';
+  $('#guideForm').hidden = false;
+  $('#guideActions').hidden = true;
+  $('#guideList').hidden = true;
+}
+
+function closeGuideForm() {
+  $('#guideForm').hidden = true;
+  $('#guideActions').hidden = false;
+  $('#guideList').hidden = false;
+}
+
+function editGuide(id) {
+  const g = allGuides.find((x) => x.id === id);
+  if (g) openGuideForm(g);
+}
+
+async function deleteGuide(id) {
+  if (!confirm('确定删除这条操作记录？')) return;
+  try {
+    const r = await api('/api/guides/' + id, { method: 'DELETE' });
+    if (!r.ok) { toast('删除失败', 'err'); return; }
+    toast('已删除', 'ok');
+    loadGuides();
+  } catch (e) { toast('删除异常：' + e.message, 'err'); }
+}
+
+// 表单提交
+$('#guideForm').onsubmit = async (e) => {
+  e.preventDefault();
+  $('#guideErr').textContent = '';
+  const id = $('#guide_id').value;
+  const payload = {
+    holding_id: parseInt($('#guide_holding').value) || 0,
+    title: $('#guide_title').value.trim(),
+    content: $('#guide_content').value.trim(),
+    tags: $('#guide_tags').value.trim(),
+  };
+  if (!payload.title) { $('#guideErr').textContent = '标题不能为空'; return; }
+  try {
+    const url = id ? '/api/guides/' + id : '/api/guides';
+    const method = id ? 'PUT' : 'POST';
+    const r = await api(url, { method, body: JSON.stringify(payload) });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      $('#guideErr').textContent = err.error || '保存失败';
+      return;
+    }
+    toast(id ? '已更新' : '已添加', 'ok');
+    closeGuideForm();
+    loadGuides();
+  } catch (err) { $('#guideErr').textContent = '异常：' + err.message; }
+};
+
+$('#guideNew').onclick = () => openGuideForm(null);
+$('#guideCancel').onclick = () => closeGuideForm();
+$('#guideClose').onclick = () => { $('#guideModal').hidden = true; };
+
+// ESC 关闭指南弹窗（扩展原有 ESC 逻辑：弹框层优先）
+document.addEventListener('keydown', function _guideEsc(e) {
+  if (e.key !== 'Escape') return;
+  if (!$('#guideModal').hidden && $('#guideForm').hidden) {
+    // 列表视图：ESC 关闭整个 modal
+    $('#guideModal').hidden = true;
+  }
+}, true); // capture phase, 比现有的 ESC handler 先触发
+$('#analysisModal').addEventListener('click', (e) => { if (e.target === $('#analysisModal')) { $('#analysisModal').hidden = true; } });

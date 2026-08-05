@@ -1,0 +1,21 @@
+services:
+  portfolio:
+    build:
+      context: .
+      args:
+        - HTTP_PROXY=http://192.168.31.254:1082
+        - HTTPS_PROXY=http://192.168.31.254:1082
+        - http_proxy=http://192.168.31.254:1082
+        - https_proxy=http://192.168.31.254:1082
+    container_name: portfolio
+    ports:
+      - "9989:9989"
+    environment:
+      - PORT=9989
+      - DATA_DIR=/data/portfolio.db
+      - ADMIN_USER=admin
+      - ADMIN_PASS=asd2335979545
+      - TZ=Asia/Shanghai
+    volumes:
+      - /mnt/nvme0n1-4/portfolio/data:/data
+    restart: unless-stopped
