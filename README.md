@@ -176,11 +176,3 @@ docker compose up -d --build        # 多阶段构建，前端经 //go:embed 内
 ### 目录约定
 - 实际前端入口：`web/`（`//go:embed web`）。
 - 运行时数据：`data/`（SQLite + 上传等），已在 `.gitignore` 中排除，不入库。
-
----
-
-## 五、Git 仓库
-
-- 远程：`http://192.168.31.254:3000/admin/portfolio.git`（分支 `main`）。
-- 本地仓库：`portfolio/`（从部署服务器打包拉取，排除运行时数据 `data/`、备份 `.bak`、`*.db` 及根目录遗留旧前端）。
-- 提交规范：在仓库根 `git add -A && git commit && git push origin main`。
