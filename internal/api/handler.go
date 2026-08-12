@@ -146,6 +146,11 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/ai/summary", aiSummary)
 		g.GET("/ai/history", aiHistoryGet)
 
+		// 通知渠道：配置读写 + 测试发送
+		g.GET("/notify/settings", notifySettingsGet)
+		g.POST("/notify/settings", notifySettingsPost)
+		g.POST("/notify/test", notifyTest)
+
 		// 资产全景：来源 / 理财 / 负债 / 消费 / 汇总 / AI 总结
 		g.GET("/asset/overview", assetOverview)
 		g.GET("/asset/sources", listSources)
@@ -366,6 +371,7 @@ func refresh(c *gin.Context) {
 		out = append(out, enrich(h))
 	}
 	_ = doSnapshot()
+	NotifyNetValueUpdated("手动刷新行情")
 	c.JSON(http.StatusOK, gin.H{"holdings": out, "rate": rate, "rate_degraded": degraded, "rate_error": rateErr, "failed": failed})
 }
 
@@ -394,6 +400,7 @@ func refreshOne(c *gin.Context) {
 				h.PrevClose = q.PrevClose
 				_ = db.UpdatePrice(h.ID, q.CurrentPrice, q.PrevClose)
 				log.Printf("[refreshOne] %s(%s) 类型=港股基金 现价=%.4f 昨收=%.4f 已落库", h.Name, h.Symbol, q.CurrentPrice, q.PrevClose)
+				recomputeBuyPlan(h)
 			}
 		} else {
 			q, e = market.GetFundQuote(h.Symbol)
@@ -402,6 +409,7 @@ func refreshOne(c *gin.Context) {
 				h.PrevClose = q.PrevClose
 				_ = db.UpdatePrice(h.ID, q.CurrentPrice, q.PrevClose)
 				log.Printf("[refreshOne] %s(%s) 类型=fund 现价=%.4f 昨收=%.4f 已落库", h.Name, h.Symbol, q.CurrentPrice, q.PrevClose)
+				recomputeBuyPlan(h)
 			}
 		}
 		if e != nil {
@@ -433,7 +441,31 @@ func refreshOne(c *gin.Context) {
 		}
 	}
 	_ = doSnapshot()
+	NotifyNetValueUpdated("手动刷新单只持仓")
 	c.JSON(http.StatusOK, gin.H{"holding": enrich(*h)})
+}
+
+// recomputeBuyPlan recomputes the 补仓计划 for a fund holding that has a
+// linked_symbol set, and persists it into holdings.buy_plan. It is triggered by
+// both the manual net-value refresh and the scheduled 21:00 snapshot (via
+// refreshAllQuotes / refreshOne). Results are NOT written into the note column;
+// the 操作指南弹框 reads holdings.buy_plan to display them.
+func recomputeBuyPlan(h *db.Holding) {
+	if h.Category != "fund" || h.LinkedSymbol == "" {
+		return
+	}
+	plan := market.ComputeLinkedETFBuyPlan(h.LinkedSymbol, h.Symbol, h.Market, h.CostPrice, h.CurrentPrice, h.Quantity)
+	b, err := json.Marshal(plan)
+	if err != nil {
+		log.Printf("[buyplan] %s 序列化失败: %s", h.Symbol, err.Error())
+		return
+	}
+	if err := db.SaveBuyPlan(h.ID, string(b)); err != nil {
+		log.Printf("[buyplan] %s 落库失败: %s", h.Symbol, err.Error())
+		return
+	}
+	log.Printf("[buyplan] %s 已重算补仓计划并落库（held=%.0f 亏损=%.0f 弹药上限=%.0f）",
+		h.Symbol, plan.HeldValue, plan.LossAmt, plan.AmmoCap)
 }
 
 func rate(c *gin.Context) {
@@ -549,11 +581,13 @@ func errMsg(err error) string {
 // ---- Daily P&L snapshot ----
 
 type symPnl struct {
-	Symbol   string  `json:"symbol"`
-	Name     string  `json:"name"`
-	Pnl      float64 `json:"pnl"`
-	PnlCNY   float64 `json:"pnl_cny"`
-	Currency string  `json:"currency"`
+	Symbol       string  `json:"symbol"`
+	Name         string  `json:"name"`
+	Pnl          float64 `json:"pnl"`
+	PnlCNY       float64 `json:"pnl_cny"`
+	Currency     string  `json:"currency"`
+	CurrentPrice float64 `json:"current_price"`
+	ChangePct    float64 `json:"change_pct"`
 }
 
 func mustJSON(v interface{}) string {
@@ -633,6 +667,7 @@ func refreshAllQuotes() ([]db.Holding, []string, error) {
 						hs[i].Name = q.Name
 					}
 				}
+				recomputeBuyPlan(&hs[i])
 			} else {
 				failed = append(failed, fmt.Sprintf("%s: %s", hs[i].Symbol, e.Error()))
 			}
@@ -751,7 +786,18 @@ func doSnapshot() error {
 			dpCNY = dp
 			totalCNY += dp
 		}
-		bySym = append(bySym, symPnl{Symbol: h.Symbol, Name: h.Name, Pnl: dp, PnlCNY: dpCNY, Currency: h.Currency})
+		// 涨跌幅：现价相对昨收，昨收优先持仓字段，兜底查历史
+		chgPct := 0.0
+		prevClose := h.PrevClose
+		if prevClose <= 0 {
+			if p, ok2, e2 := db.GetPrevClose(h.Symbol, today); e2 == nil && ok2 {
+				prevClose = p
+			}
+		}
+		if prevClose > 0 {
+			chgPct = (h.CurrentPrice - prevClose) / prevClose * 100
+		}
+		bySym = append(bySym, symPnl{Symbol: h.Symbol, Name: h.Name, Pnl: dp, PnlCNY: dpCNY, Currency: h.Currency, CurrentPrice: h.CurrentPrice, ChangePct: chgPct})
 	}
 	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
@@ -819,6 +865,7 @@ func runScheduledSnapshot(label string) {
 		log.Printf("[snapshot] %s 快照失败: %v", label, err)
 	} else {
 		log.Printf("[snapshot] %s 定时盈亏记录完成", label)
+		NotifyNetValueUpdated("定时快照(" + label + ")")
 	}
 }
 
@@ -981,6 +1028,7 @@ func snapshotHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	NotifyNetValueUpdated("手动快照")
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

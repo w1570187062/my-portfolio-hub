@@ -27,6 +27,7 @@ type Holding struct {
 	Note         string  `json:"note"`
 	LinkedSymbol string  `json:"linked_symbol"` // 基金关��的股票代码，非空时点击基金可做技术分析
 	BuyDate      string  `json:"buy_date"`       // 买入日期，YYYY-MM-DD，为空则不计持有天数
+	BuyPlan      string  `json:"buy_plan"`       // 基金补仓计划 JSON（净值刷新时计算，不写 note 列）
 	UpdatedAt    string  `json:"updated_at"`
 }
 
@@ -77,6 +78,11 @@ func Init(path string) error {
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='buy_date'`).Scan(&bdc); e == nil && bdc == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN buy_date TEXT NOT NULL DEFAULT ''`)
 	}
+	// 兼容旧库：新增 buy_plan 列（基金补仓计划 JSON，由净值刷新时计算，不写入 note 列）
+	var bpc int
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='buy_plan'`).Scan(&bpc); e == nil && bpc == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN buy_plan TEXT NOT NULL DEFAULT ''`)
+	}
 	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 		date   TEXT NOT NULL,
 		symbol TEXT NOT NULL,
@@ -123,7 +129,53 @@ func Init(path string) error {
 	if err := initOperationGuides(); err != nil {
 		return fmt.Errorf("init operation_guides: %w", err)
 	}
+	if err := initNotifySettings(); err != nil {
+		return fmt.Errorf("init notify_settings: %w", err)
+	}
 	return nil
+}
+
+// ---- 通知渠道配置（单条 JSON 配置，id=1，与 ai_settings 同模式） ----
+func initNotifySettings() error {
+	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS notify_settings (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		cfg TEXT NOT NULL DEFAULT '{}'
+	)`)
+	return err
+}
+
+// GetNotifyConfig returns the raw JSON config ("{}" if none stored).
+func GetNotifyConfig() (string, error) {
+	var cfg string
+	err := DB.QueryRow("SELECT cfg FROM notify_settings WHERE id=1").Scan(&cfg)
+	if err == sql.ErrNoRows {
+		return "{}", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return cfg, nil
+}
+
+// SaveNotifyConfig upserts the notify config JSON.
+func SaveNotifyConfig(cfg string) error {
+	_, err := DB.Exec(`INSERT INTO notify_settings(id,cfg) VALUES(1,?)
+		ON CONFLICT(id) DO UPDATE SET cfg=excluded.cfg`, cfg)
+	return err
+}
+
+// GetPnlLatest returns the most recent daily P&L record (for notification summaries).
+func GetPnlLatest() (*PnlDay, error) {
+	var p PnlDay
+	err := DB.QueryRow(`SELECT date,total_cny,total_usd,rate,detail FROM pnl_daily ORDER BY date DESC LIMIT 1`).
+		Scan(&p.Date, &p.TotalCNY, &p.TotalUSD, &p.Rate, &p.Detail)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 // ============================================================================
@@ -380,7 +432,7 @@ func migrateMarkets() error {
 }
 
 func List() ([]Holding, error) {
-	rows, err := DB.Query("SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,updated_at FROM holdings ORDER BY id DESC")
+	rows, err := DB.Query("SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,updated_at FROM holdings ORDER BY id DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +440,7 @@ func List() ([]Holding, error) {
 	var out []Holding
 	for rows.Next() {
 		var h Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.UpdatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -398,8 +450,8 @@ func List() ([]Holding, error) {
 
 func Get(id int64) (*Holding, error) {
 	var h Holding
-	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,updated_at FROM holdings WHERE id=?", id).
-		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.UpdatedAt)
+	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,updated_at FROM holdings WHERE id=?", id).
+		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -408,8 +460,8 @@ func Get(id int64) (*Holding, error) {
 
 func Create(h *Holding) (int64, error) {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.UpdatedAt)
+	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UpdatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -418,8 +470,16 @@ func Create(h *Holding) (int64, error) {
 
 func Update(h *Holding) error {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,updated_at=? WHERE id=?",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.UpdatedAt, h.ID)
+	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,updated_at=? WHERE id=?",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UpdatedAt, h.ID)
+	return err
+}
+
+// SaveBuyPlan persists the computed 补仓计划 JSON for a holding (used by the
+// net-value refresh path). It never touches the note column.
+func SaveBuyPlan(id int64, plan string) error {
+	_, err := DB.Exec("UPDATE holdings SET buy_plan=?, updated_at=? WHERE id=?",
+		plan, time.Now().Format("2006-01-02 15:04:05"), id)
 	return err
 }
 

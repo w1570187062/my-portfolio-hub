@@ -52,6 +52,8 @@
   }
   .nav-item:hover { background:var(--bg-hover,rgba(110,156,122,.08)); color:var(--primary); }
   .nav-item.active { background:var(--primary-soft,rgba(111,158,94,.14)); color:var(--primary); font-weight:600; }
+  .nav-home-btn { padding:8px 14px; background:var(--primary-soft,rgba(111,158,94,.14)); border-color:var(--primary,#6f9e5e); color:var(--primary,#6f9e5e); font-weight:600; }
+  .nav-home-btn:hover { background:var(--primary,#6f9e5e); color:#fff; }
 
   /* 操作指南 */
   .guide-list { max-height:360px; overflow-y:auto; margin-bottom:12px; }
@@ -72,22 +74,22 @@
 <div id="app" hidden>
   <header>
     <div class="brand-nav">
-      <h1><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>观澜</h1>
+      <h1 id="brandTitle" title="点击回到主页" style="cursor:pointer"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>观澜</h1>
       <button id="navToggle" class="btn nav-toggle-btn" type="button" title="导航菜单" aria-label="菜单" aria-expanded="false">
         <svg class="hamburger-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
       </button>
+      <button id="homeBtn" class="btn nav-home-btn" title="回到主页" type="button" style="display:none">🏠 主页</button>
       <div id="navDropdown" class="nav-dropdown" hidden>
-        <button class="nav-item active" data-nav="home" type="button">🏠 <span>主页</span></button>
         <button class="nav-item" data-nav="asset" type="button">🗂️ <span>资产全景</span></button>
         <button class="nav-item" data-nav="tools" type="button">🛠️ <span>盈亏工具</span></button>
         <button class="nav-item" data-nav="pie" type="button">🥧 <span>资产构成</span></button>
         <button class="nav-item" data-nav="trend" type="button">📈 <span>盈亏走势</span></button>
         <button class="nav-item" data-nav="calendar" type="button">📅 <span>盈亏日历</span></button>
+      <button class="nav-item" data-nav="notify" type="button">🔔 <span>通知渠道</span></button>
       </div>
     </div>
     <!-- 原 nav 按钮（隐藏，保留供 JS 绑定兼容） -->
     <div id="legacyNav" hidden>
-      <button id="homeBtn" class="btn" title="回到主页" type="button">🏠<span class="home-btn-label">主页</span></button>
       <button id="pieBtn" class="btn">🥧 资产构成</button>
       <button id="trendBtn" class="btn">📈 盈亏走势</button>
       <button id="calendarBtn" class="btn">📅 盈亏日历</button>
@@ -133,24 +135,55 @@
   <div id="assetView" hidden>
     <section id="assetSummary" class="summary asset-summary"></section>
     <div class="asset-toolbar">
-      <button id="assetAiBtn" class="btn">🤖 一键 AI 总结</button>
-      <button id="aiSummarizeBtn" class="btn">✨ 权益类总结</button>
-      <span class="atool-sep"></span>
-      <button id="aiSettingsBtn" class="btn">⚙️ AI 设置</button>
-      <button id="aiHistoryBtn" class="btn">🕘 AI 历史</button>
-      <span class="atool-sep"></span>
+      <button id="aiPickBtn" class="btn">🤖 AI中枢</button>
       <button id="assetSnapBtn" class="btn">📥 更新理财持仓</button>
       <button id="ai_export_json" class="btn">⬇️ 导出数据</button>
-      <button id="assetRefreshBtn" class="btn">🔄 刷新</button>
+      <button id="assetRefreshBtn" class="btn">🔄 刷新历史数据</button>
     </div>
     <div class="asset-tabs" id="assetTabs">
       <button class="btn atab active" data-tab="wealth" type="button">理财</button>
       <button class="btn atab" data-tab="cash" type="button">现金</button>
-      <button class="btn atab" data-tab="liability" type="button">负债</button>
-      <button class="btn atab" data-tab="consume" type="button">消费</button>
+      <button class="btn atab" data-tab="liability" type="button" style="display:none">负债</button>
+      <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
       <button class="btn atab" data-tab="sources" type="button">资产来源</button>
     </div>
     <div id="assetTabBody"></div>
+  </div>
+
+  <div id="notifyView" hidden>
+    <section class="summary"></section>
+    <div class="notify-wrap">
+      <h2>🔔 通知渠道</h2>
+      <p class="tool-hint">配置净值更新后的通知方式，并用开关启用。点「保存配置」生效；点「测试通知」可验证渠道是否可用。手动或自动更新净值数据后会自动推送。</p>
+
+      <div class="notify-card">
+        <div class="notify-card-head">
+          <h3>钉钉</h3>
+          <label class="switch"><input type="checkbox" id="dtEnabled"><span class="switch-knob"></span></label>
+        </div>
+        <label>Webhook 地址<input type="text" id="dtWebhook" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."></label>
+        <label>加签密钥（可选）<input type="text" id="dtSecret" placeholder="机器人安全设置中的加签密钥，不填则无需加签"></label>
+      </div>
+
+      <div class="notify-card">
+        <div class="notify-card-head">
+          <h3>邮箱</h3>
+          <label class="switch"><input type="checkbox" id="emEnabled"><span class="switch-knob"></span></label>
+        </div>
+        <label>SMTP 服务器<input type="text" id="emHost" placeholder="smtp.qq.com"></label>
+        <label>端口<input type="number" id="emPort" value="465" step="1"></label>
+        <label>账号<input type="text" id="emUser" placeholder="1570187062@qq.com"></label>
+        <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）"></label>
+        <label>发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com"></label>
+        <label>收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com"></label>
+      </div>
+
+      <div id="notifyErr" class="err"></div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="notifyTestBtn">📨 测试通知</button>
+        <button class="btn" type="button" id="notifySaveBtn">💾 保存配置</button>
+      </div>
+    </div>
   </div>
 
   <div id="toolsView" hidden>
@@ -308,6 +341,13 @@
   <div id="guideModal" class="modal" hidden>
     <div class="modal-card" style="width:560px; max-width:94vw;">
       <h2>操作指南</h2>
+      <div class="guide-plan">
+        <div class="guide-plan-head">
+          <span class="guide-plan-title">📊 动态补仓计划</span>
+          <span class="guide-plan-sub">基金净值刷新后自动计算</span>
+        </div>
+        <div id="guidePlanBody" class="guide-plan-body"></div>
+      </div>
       <div id="guideList" class="guide-list"><div class="guide-empty">暂无操作记录</div></div>
       <form id="guideForm" hidden>
         <input type="hidden" id="guide_id">
@@ -367,38 +407,68 @@
     </div>
   </div>
 
-  <div id="aiModal" class="modal" hidden>
-    <div class="modal-card" style="width:800px; max-width:94vw;">
-      <h2>AI 总结设置</h2>
-      <div class="modal-card-body">
-      <label>API Key
-        <span class="ai-key-row">
-          <input id="ai_apikey" type="password" placeholder="sk-...">
-          <button type="button" id="ai_toggleKey" class="btn btn-sm">显示</button>
-        </span>
-      </label>
-      <label>模型名称 <input id="ai_model" placeholder="deepseek-v4-pro"></label>
-      <label>模型地址 <input id="ai_baseurl" placeholder="https://api.deepseek.com"></label>
-      <label>提示词模板
-        <span class="ai-tpl-row">
-          <select id="ai_tpl_sel"></select>
-          <button type="button" id="ai_tpl_new" class="btn btn-sm">新增</button>
-          <button type="button" id="ai_tpl_del" class="btn btn-sm">删除</button>
-        </span>
-      </label>
-      <label>模板名称 <input id="ai_tpl_name" placeholder="模板名称"></label>
-      <label>模板内容（用 {{DATA}} 插入持仓统计）
-        <textarea id="ai_tpl_content" rows="11" placeholder="在此编写提示词，用 {{DATA}} 占位符插入实时持仓统计"></textarea>
-      </label>
-      <div id="aiErr" class="err"></div>
+  <!-- AI 中枢：总结 / 功能 / 设置 / 历史（tab 切换） -->
+  <div id="aiHubModal" class="modal" hidden>
+    <div class="modal-card" style="width:800px; max-width:94vw; position: relative;">
+      <h2>AI 中枢</h2>
+      <button class="card-close" type="button" id="aiHubXClose" title="关闭" aria-label="关闭">✕</button>
+      <div class="hist-tabs more-tabs">
+        <button id="hubTabSummary" class="btn tab active" type="button">🤖 AI 总结</button>
+        <button id="hubTabSettings" class="btn tab" type="button">AI 设置</button>
+        <button id="hubTabHistory" class="btn tab" type="button">AI 历史</button>
       </div>
-      <div class="modal-actions">
-        <button class="btn" type="button" id="ai_cancel">关闭</button>
-        <button class="btn" type="button" id="ai_save">保存设置</button>
+
+      <!-- 总结：下拉选择类型后生成 -->
+      <div id="hubSummaryPanel" class="more-panel">
+        <label>总结类型
+          <select id="aiPickType">
+            <option value="all">一键 AI 总结（汇总全部资产）</option>
+            <option value="equity">权益类总结（股票 / 基金）</option>
+          </select>
+        </label>
+        <p class="tool-hint">使用「AI 设置」中的 API Key / 模型 / 提示词模板生成总结，结果自动保存到 AI 历史。</p>
+        <div id="aiPickErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="aiPickGo">✨ 生成总结</button>
+        </div>
+      </div>
+
+      <!-- 设置 -->
+      <div id="hubSettingsPanel" class="more-panel modal-card-body" hidden>
+        <label>API Key
+          <span class="ai-key-row">
+            <input id="ai_apikey" type="password" placeholder="sk-...">
+            <button type="button" id="ai_toggleKey" class="btn btn-sm">显示</button>
+          </span>
+        </label>
+        <label>模型名称 <input id="ai_model" placeholder="deepseek-v4-pro"></label>
+        <label>模型地址 <input id="ai_baseurl" placeholder="https://api.deepseek.com"></label>
+        <label>提示词模板
+          <span class="ai-tpl-row">
+            <select id="ai_tpl_sel"></select>
+            <button type="button" id="ai_tpl_new" class="btn btn-sm">新增</button>
+            <button type="button" id="ai_tpl_del" class="btn btn-sm">删除</button>
+          </span>
+        </label>
+        <label>模板名称 <input id="ai_tpl_name" placeholder="模板名称"></label>
+        <label>模板内容（用 {{DATA}} 插入持仓统计）
+          <textarea id="ai_tpl_content" rows="11" placeholder="在此编写提示词，用 {{DATA}} 占位符插入实时持仓统计"></textarea>
+        </label>
+        <div id="aiErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="ai_save">保存设置</button>
+        </div>
+      </div>
+
+      <!-- 历史 -->
+      <div id="hubHistoryPanel" class="more-panel" hidden>
+        <p class="more-history-note">AI 总结历史（最近 10 条，点击可查看全文）</p>
+        <div id="aiHistoryList" class="ai-history-list"></div>
       </div>
     </div>
   </div>
 
+  <!-- AI 持仓总结结果（独立顶层弹框，避免被 aiHubModal 的 hidden 态影响） -->
   <div id="aiResultModal" class="modal" hidden>
     <div class="modal-card" style="width:700px; max-width:94vw;">
       <h2>AI 持仓总结
@@ -407,16 +477,6 @@
       <div id="aiResultBody" class="ai-result">生成中…</div>
       <div class="modal-actions">
         <button class="btn" type="button" id="ai_result_close">关闭</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="aiHistoryModal" class="modal" hidden>
-    <div class="modal-card" style="width:680px; max-width:94vw;">
-      <h2>AI 总结历史 <span style="font-size:12px;color:#8a8f99;font-weight:normal">（最近 10 条）</span></h2>
-      <div id="aiHistoryList" class="ai-history-list"></div>
-      <div class="modal-actions">
-        <button type="button" id="ai_history_close" class="btn">关闭</button>
       </div>
     </div>
   </div>

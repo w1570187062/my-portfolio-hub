@@ -794,6 +794,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   gap: 10px;
   max-height: 64vh;
   overflow: auto;
+  padding-bottom: 14px;
 }
 .ai-history-item {
   border: 1px solid var(--border);
@@ -1611,6 +1612,15 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .asset-summary .c-sub { color: var(--text-muted); font-size: 12px; margin-top: 4px; line-height: 1.6; overflow-wrap: anywhere; word-break: break-all; }
 .asset-summary .card.up .c-value { color: #f87171; }
 .asset-summary .card.down .c-value { color: #4ade80; }
+/* 合并卡片：总资产 + 权益市值 / 理财持仓 明细 */
+.asset-summary .card-merged { flex: 1 1 100%; }
+.asset-summary .c-breakdown { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.asset-summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.asset-summary .c-br-label { color: var(--text-muted); min-width: 60px; flex: 0 0 auto; }
+.asset-summary .c-br-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+.asset-summary .c-br-delta { margin-left: auto; font-size: 12px; font-family: var(--font-mono); text-align: right; min-width: 0; }
+.asset-summary .c-br-delta.up { color: #f87171; }
+.asset-summary .c-br-delta.down { color: #4ade80; }
 .empty { color: var(--text-muted); font-size: 13px; padding: 8px 2px; }
 .hist-tbl-wrap { max-height: 60vh; overflow: auto; }
 
@@ -1802,6 +1812,8 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   /* 美元计算器「当前汇率」输入框宽度自适应容器 */
   .tool-rate { display: flex; flex-direction: column; }
   .tool-rate input { width: 100%; }
+  /* 资产全景合并卡片：手机端占满一行 */
+  .asset-summary .card-merged { flex: 1 1 100%; }
 }
 
 /* ===== 技术分析弹框 ===== */
@@ -1840,3 +1852,205 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .sig-item.sig-down .sig-arrow { color: #2ed573; }
 .sig-reason { flex: 1; color: var(--text-muted); }
 .sig-score { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); min-width: 40px; text-align: right; }
+
+/* 操作指南 · 动态补仓计划（净值刷新时计算，存 holdings.buy_plan，不写 note） */
+.guide-plan {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.guide-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.guide-plan-title { font-size: 14px; font-weight: 600; color: var(--primary); }
+#guidePlanHolding {
+  flex: 1;
+  max-width: 62%;
+  background: var(--bg-input, var(--bg));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.guide-plan-body { font-size: 13px; }
+.guide-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 10px 4px;
+  text-align: center;
+}
+.plan-note {
+  background: rgba(111,158,94,0.10);
+  border-left: 3px solid var(--primary);
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--text);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+.plan-tiers { display: flex; flex-direction: column; gap: 8px; }
+.plan-tier {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+}
+.plan-tier-label { font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.plan-tier-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 10px;
+  font-size: 12px;
+}
+.plan-tier-grid span { color: var(--text-muted); }
+.plan-tier-grid b { font-family: var(--font-mono); color: var(--text); text-align: right; }
+.plan-tier-signal { margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.plan-foot {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+.plan-meta { margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.plan-time { margin-top: 6px; font-size: 11px; color: var(--text-muted); text-align: right; }
+.bp-badge {
+  display: inline-block;
+  margin: 4px 0 8px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--primary-soft, rgba(111,158,94,.14));
+  border: 1px solid var(--primary);
+}
+.plan-tier.has-signal { border-color: var(--up, #f87171); background: rgba(248,113,113,.08); }
+.plan-tier.has-signal .plan-tier-label { color: var(--up, #f87171); }
+.tier-flag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--up, #f87171);
+}
+
+/* ===== 操作指南 · 动态补仓计划（可折叠二级列表） ===== */
+.bp-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.bp-head.bp-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.bp-head.bp-toggle:hover { background: var(--bg-hover); }
+.bp-chevron {
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: transform .15s ease;
+  flex: 0 0 auto;
+}
+.bp-card.collapsed .bp-chevron { transform: rotate(-90deg); }
+.bp-name { font-weight: 600; color: var(--text); }
+.bp-code { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+.bp-summary {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.bp-summary.trig { color: var(--up, #f87171); font-weight: 600; }
+.bp-card.collapsed .bp-body { display: none; }
+.bp-body { padding: 0 14px 14px; }
+
+/* ===== 通知渠道二级页 ===== */
+.notify-wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 4px 40px;
+}
+.notify-wrap h2 { font-size: 20px; margin: 8px 0 4px; }
+.notify-card {
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 14px 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.notify-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.notify-card-head h3 { font-size: 16px; margin: 0; }
+.notify-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 12px;
+}
+.notify-card label input {
+  padding: 9px 11px;
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg-soft, #f4f5f7);
+  color: var(--text, #1f2329);
+}
+.notify-card label input:focus { outline: 2px solid var(--primary, #6f9e5e); border-color: transparent; }
+
+/* 开关 toggle */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 26px;
+  flex: none;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch-knob {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: #c4c9d2;
+  border-radius: 999px;
+  transition: background .2s;
+}
+.switch-knob::before {
+  content: "";
+  position: absolute;
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform .2s;
+  box-shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+.switch input:checked + .switch-knob { background: var(--primary, #6f9e5e); }
+.switch input:checked + .switch-knob::before { transform: translateX(20px); }

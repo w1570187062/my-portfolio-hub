@@ -61,6 +61,7 @@ if (navToggleBtn && navDropdown) {
             $('#holdingsView').hidden = true;
             $('#assetView').hidden = true;
             $('#toolsView').hidden = true;
+            $('#notifyView').hidden = true;
             $('#calendarView').hidden = false;
             calViewDate = new Date();
             renderCalendar();
@@ -71,6 +72,7 @@ if (navToggleBtn && navDropdown) {
           break;
         case 'asset': showAssetView(); break;
         case 'tools': showToolsView(); break;
+        case 'notify': showNotifyView(); break;
       }
     };
   });
@@ -245,7 +247,7 @@ function renderFx(d) {
   const items = [
     { label: '美元', val: d.usd_cny || 0, dec: 4, unit: '¥', code: 'USD', chg: chgStr(usdChg, 2) },
     { label: '港币', val: d.hkd_cny || 0, dec: 4, unit: '¥', code: 'HKD', chg: chgStr(hkdChg, 2) },
-    { label: '人民币', val: d.cny_usd || 0, dec: 6, unit: '$', code: 'CNY', chg: chgStr(cnyChg, 4) },
+    { label: '人民币', val: d.cny_usd || 0, dec: 4, unit: '$', code: 'CNY', chg: chgStr(cnyChg, 2) },
   ];
 
   // Render all items in a scroll container; overflow:hidden + translateY cycles through them
@@ -747,8 +749,6 @@ $('#adjustForm').onsubmit = async (e) => {
 
 let pendingDelId = null;
 let pendingExport = false;
-let pendingAiAll = false;
-let pendingAiEquity = false;
 function delHolding(id) {
   pendingDelId = id;
   $('#confirmMsg').textContent = '确认删除该持仓？删除后不可恢复。';
@@ -768,30 +768,10 @@ function resetConfirm() {
   pendingDelId = null;
   pendingAssetDel = null;
   pendingExport = false;
-  pendingAiAll = false;
-  pendingAiEquity = false;
   const btn = $('#confirmOk');
   btn.textContent = '删除';
   btn.classList.add('danger');
   $('#confirmTitle').textContent = '确认删除';
-}
-function confirmAssetAi() {
-  pendingAiAll = true;
-  const btn = $('#confirmOk');
-  btn.textContent = '生成';
-  btn.classList.remove('danger');
-  $('#confirmTitle').textContent = '确认生成 AI 总结';
-  $('#confirmMsg').textContent = '将汇总全部资产（理财 / 现金 / 负债 / 消费 / 持仓）并调用 AI 生成总结，是否继续？';
-  $('#confirmModal').hidden = false;
-}
-function confirmEquityAi() {
-  pendingAiEquity = true;
-  const btn = $('#confirmOk');
-  btn.textContent = '生成';
-  btn.classList.remove('danger');
-  $('#confirmTitle').textContent = '确认生成权益类总结';
-  $('#confirmMsg').textContent = '将汇总权益类持仓（股票 / 基金）并调用 AI 生成总结，是否继续？';
-  $('#confirmModal').hidden = false;
 }
 $('#confirmCancel').onclick = resetConfirm;
 $('#confirmOk').onclick = async () => {
@@ -801,23 +781,11 @@ $('#confirmOk').onclick = async () => {
     exportHoldingsJSON();
     return;
   }
-  if (pendingAiAll) {
-    pendingAiAll = false;
-    resetConfirm();
-    assetAiSummarize();
-    return;
-  }
-  if (pendingAiEquity) {
-    pendingAiEquity = false;
-    resetConfirm();
-    aiSummarize();
-    return;
-  }
   if (pendingAssetDel) {
     const { type, id } = pendingAssetDel;
     $('#confirmModal').hidden = true;
     pendingAssetDel = null;
-    const paths = { source: '/api/asset/sources/', wealth: '/api/asset/wealth/', liability: '/api/asset/liabilities/', consumption: '/api/asset/consumptions/' };
+    const paths = { source: '/api/asset/sources/', wealth: '/api/asset/wealth/', cash: '/api/asset/cash/', liability: '/api/asset/liabilities/', consumption: '/api/asset/consumptions/' };
     try {
       const r = await api(paths[type] + id, { method: 'DELETE' });
       if (!r.ok) { let m = '删除失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m + ' (HTTP ' + r.status + ')', 'err'); return; }
@@ -1288,6 +1256,7 @@ function showHoldingsView() {
   $('#calendarView').hidden = true;
   $('#assetView').hidden = true;
   $('#toolsView').hidden = true;
+  $('#notifyView').hidden = true;
   $('#holdingsView').hidden = false;
   $('#calendarBtn').classList.remove('active');
   setNavActive('home');
@@ -1295,6 +1264,12 @@ function showHoldingsView() {
 
 // 主页按钮：回到一级页面（持仓列表）并滚到顶部
 $('#homeBtn').onclick = () => {
+  showHoldingsView();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+// 「观澜」标题文本：点击回到主页（替代已隐藏的主页按钮）
+$('#brandTitle').onclick = () => {
+  if (navDropdown && !navDropdown.hidden) closeNavDropdown();
   showHoldingsView();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
@@ -1306,7 +1281,7 @@ document.addEventListener('keydown', (e) => {
   // 弹框优先（已有各自的关闭按钮，但 ESC 顺手关弹框更友好）
   const openModals = document.querySelectorAll('.modal:not([hidden])');
   if (openModals.length) return; // 让弹框内的 ESC 由各弹框自行处理
-  const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#calendarView').hidden;
+  const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#calendarView').hidden || !$('#notifyView').hidden;
   if (inSubView) {
     showHoldingsView();
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1579,8 +1554,7 @@ function selectTpl(i) {
 }
 
 function openAIModal() {
-  renderTplSelect();
-  $('#aiModal').hidden = false;
+  switchHubTab('settings');
 }
 
 function openAIResultModal(text) {
@@ -1638,7 +1612,7 @@ async function aiSummarize() {
   if (api_key) localStorage.setItem('pf_ai_key', api_key);
   if (!content) { toast('提示词模板为空', 'err'); return; }
   openAIResultModal('生成中…（模型思考中，请稍候，最长约 3 分钟）');
-  $('#aiSummarizeBtn').disabled = true;
+  $('#aiPickGo').disabled = true;
   try {
     const r = await api('/api/ai/summary', { method: 'POST', body: JSON.stringify({ api_key, model, base_url, template: content }) });
     if (!r.ok) {
@@ -1653,7 +1627,7 @@ async function aiSummarize() {
   } catch (e) {
     $('#aiResultBody').textContent = '请求异常：' + e.message;
   } finally {
-    $('#aiSummarizeBtn').disabled = false;
+    $('#aiPickGo').disabled = false;
   }
 }
 
@@ -1677,9 +1651,6 @@ function fallbackCopy(txt) {
 }
 
 // AI 事件绑定
-$('#aiSettingsBtn').onclick = openAIModal;
-$('#aiSummarizeBtn').onclick = confirmEquityAi;
-$('#ai_cancel').onclick = () => { $('#aiModal').hidden = true; };
 $('#ai_save').onclick = aiSaveSettings;
 $('#ai_tpl_sel').onchange = (e) => selectTpl(parseInt(e.target.value, 10));
 $('#ai_tpl_new').onclick = () => {
@@ -1701,8 +1672,34 @@ $('#ai_toggleKey').onclick = () => {
 };
 $('#ai_copy').onclick = () => copyText($('#aiResultBody').textContent);
 $('#ai_result_close').onclick = () => { $('#aiResultModal').hidden = true; };
-$('#aiHistoryBtn').onclick = () => { loadAIHistory(); $('#aiHistoryModal').hidden = false; };
-$('#ai_history_close').onclick = () => { $('#aiHistoryModal').hidden = true; };
+
+// ---- AI 中枢弹框（总结下拉选择 + 功能 / 设置 / 历史，tab 切换） ----
+function switchHubTab(tab) {
+  $('#hubTabSummary').classList.toggle('active', tab === 'summary');
+  $('#hubTabSettings').classList.toggle('active', tab === 'settings');
+  $('#hubTabHistory').classList.toggle('active', tab === 'history');
+  $('#hubSummaryPanel').hidden = tab !== 'summary';
+  $('#hubSettingsPanel').hidden = tab !== 'settings';
+  $('#hubHistoryPanel').hidden = tab !== 'history';
+  $('#aiHubModal').hidden = false;
+  if (tab === 'settings') renderTplSelect();
+  if (tab === 'history') loadAIHistory();
+}
+$('#aiPickBtn').onclick = () => {
+  $('#aiPickErr').textContent = '';
+  $('#aiPickGo').disabled = false;
+  switchHubTab('summary');
+};
+$('#hubTabSummary').onclick = () => switchHubTab('summary');
+$('#hubTabSettings').onclick = () => switchHubTab('settings');
+$('#hubTabHistory').onclick = () => switchHubTab('history');
+$('#aiHubXClose').onclick = () => { $('#aiHubModal').hidden = true; };
+$('#aiPickGo').onclick = () => {
+  const type = $('#aiPickType').value;
+  $('#aiHubModal').hidden = true;
+  if (type === 'all') assetAiSummarize();
+  else aiSummarize();
+};
 $('#ai_export_json').onclick = confirmExport;
 
 // ---- 持仓历史盈亏（每日表格 + 盈亏曲线，tab 切换） ----
@@ -1711,7 +1708,7 @@ $('#histTabTable').onclick = () => switchHistTab('table');
 $('#histTabChart').onclick = () => switchHistTab('chart');
 
 // ===== 调试：统一按钮点击日志（addEventListener 追加，不干扰原有 onclick） =====
-['addBtn','guideBtn','refreshBtn','aiSummarizeBtn','aiSettingsBtn','aiHistoryBtn','calendarBtn','confirmOk','confirmCancel','pieBtn','trendBtn','chartCloseBtn','calModalClose','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','navToggle','ai_cancel','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','ai_result_close','ai_history_close','histCloseBtn','histTabTable','histTabChart','cancelBtn'].forEach((id) => {
+['addBtn','guideBtn','refreshBtn','aiPickBtn','moreBtn','aiPickGo','aiHubXClose','hubTabSummary','hubTabTools','hubTabSettings','hubTabHistory','calendarBtn','confirmOk','confirmCancel','pieBtn','trendBtn','chartCloseBtn','calModalClose','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','navToggle','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','ai_result_close','histCloseBtn','histTabTable','histTabChart','cancelBtn'].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', () => console.log('[click]', id));
 });
@@ -1873,6 +1870,7 @@ function showAssetView() {
   $('#holdingsView').hidden = true;
   $('#calendarView').hidden = true;
   $('#toolsView').hidden = true;
+  $('#notifyView').hidden = true;
   $('#assetView').hidden = false;
   $('#calendarBtn').classList.remove('active');
   $('#assetBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
@@ -1891,6 +1889,7 @@ async function showToolsView() {
   $('#holdingsView').hidden = true;
   $('#calendarView').hidden = true;
   $('#assetView').hidden = true;
+  $('#notifyView').hidden = true;
   $('#toolsView').hidden = false;
   $('#calendarBtn').classList.remove('active');
   $('#toolsBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
@@ -2316,16 +2315,27 @@ function renderAssetSummary() {
   const wBy = w.by_currency || {};
   const cBy = cash.by_currency || {};
   const byCurHtml = (m) => Object.keys(m).map((k) => `${curSymbolJS(k)}${fmt(m[k] || 0)}`).join(' ｜ ');
-  const cards = [
-    ['总资产', (eq.market_value || 0) + (w.total || 0) + (cash.total || 0), '', ''],
-    ['总负债', l.total || 0, '月供 ' + money(l.monthly_payment || 0), ''],
-    ['现金', cash.total || 0, byCurHtml(cBy) || '', ''],
-    ['权益市值', eq.market_value || 0, '当日 ' + pnlTxt(eq.day_pnl || 0), pnlCls(eq.day_pnl || 0)],
-    ['理财持仓', w.total || 0, (byCurHtml(wBy) ? '理财分类 ' + byCurHtml(wBy) + '<br>' : '') + (w.snap_date && w.snap_date !== new Date().toLocaleDateString('en-CA') ? '今日未录入' : '今日收益 ' + pnlTxt(w.today_pnl || 0)), pnlCls(w.today_pnl || 0)],
-  ];
-  $('#assetSummary').innerHTML = cards.map(([label, val, sub, cls]) =>
-    `<div class="card ${cls}"><div class="c-label">${label}</div><div class="c-value">${money(val)}</div>${sub ? `<div class="c-sub">${sub}</div>` : ''}</div>`
-  ).join('');
+  const total = (eq.market_value || 0) + (w.total || 0) + (cash.total || 0);
+  // 合并卡片：总资产（含 权益市值 / 理财持仓 明细）
+  const equityRow =
+    `<div class="c-br"><span class="c-br-label">权益市值</span>` +
+    `<span class="c-br-val">${money(eq.market_value || 0)}</span>` +
+    `<span class="c-br-delta ${pnlCls(eq.day_pnl || 0)}">当日 ${pnlTxt(eq.day_pnl || 0)}</span></div>`;
+  const wealthRow =
+    `<div class="c-br"><span class="c-br-label">理财持仓</span>` +
+    `<span class="c-br-val">${money(w.total || 0)}</span>` +
+    `<span class="c-br-delta ${pnlCls(w.today_pnl || 0)}">${(w.snap_date && w.snap_date !== new Date().toLocaleDateString('en-CA') ? '今日未录入' : '今日收益 ' + pnlTxt(w.today_pnl || 0))}</span></div>`;
+  const cashRow =
+    `<div class="c-br"><span class="c-br-label">现金</span>` +
+    `<span class="c-br-val">${money(cash.total || 0)}</span>` +
+    `<span class="c-br-delta">${byCurHtml(cBy) ? byCurHtml(cBy) : '—'}</span></div>`;
+  const mergedCard =
+    `<div class="card card-merged">` +
+      `<div class="c-label">总资产</div>` +
+      `<div class="c-value">${money(total)}</div>` +
+      `<div class="c-breakdown">${equityRow}${wealthRow}${cashRow}</div>` +
+    `</div>`;
+  $('#assetSummary').innerHTML = mergedCard;
 }
 
 function renderAssetTab() {
@@ -2668,7 +2678,107 @@ $('#consumeCancel').onclick = () => ($('#consumeModal').hidden = true);
 
 // ---- 每日持仓金额录入（自动算每日盈亏） ----
 $('#assetSnapBtn').onclick = openSnapModal;
-$('#assetRefreshBtn').onclick = () => loadAsset();
+$('#assetRefreshBtn').onclick = async () => {
+  const btn = $('#assetRefreshBtn');
+  const old = btn.textContent;
+  btn.textContent = '⏳ 刷新中…';
+  btn.disabled = true;
+  try {
+    const r = await api('/api/refresh', { method: 'POST' });
+    if (r.ok) {
+      const d = await r.json();
+      if (d.failed && d.failed.length) toast('以下未刷新成功：\n' + d.failed.join('\n'), 'err');
+      else toast('净值已刷新', 'ok');
+    } else {
+      toast('刷新请求失败 (HTTP ' + r.status + ')', 'err');
+    }
+  } catch (e) {
+    toast('刷新异常：' + e.message, 'err');
+  } finally {
+    btn.textContent = old;
+    btn.disabled = false;
+  }
+  loadAsset();
+};
+
+// ---- 通知渠道二级页 ----
+function showNotifyView() {
+  $('#holdingsView').hidden = true;
+  $('#assetView').hidden = true;
+  $('#toolsView').hidden = true;
+  $('#calendarView').hidden = true;
+  $('#notifyView').hidden = false;
+  setNavActive('notify');
+  loadNotifySettings();
+}
+async function loadNotifySettings() {
+  $('#notifyErr').textContent = '';
+  try {
+    const r = await api('/api/notify/settings');
+    if (!r.ok) return;
+    const d = await r.json();
+    const dt = d.dingtalk || {};
+    const em = d.email || {};
+    $('#dtEnabled').checked = !!dt.enabled;
+    $('#dtWebhook').value = dt.webhook || '';
+    $('#dtSecret').value = dt.secret || '';
+    $('#emEnabled').checked = !!em.enabled;
+    $('#emHost').value = em.smtp_host || '';
+    $('#emPort').value = em.smtp_port || 465;
+    $('#emUser').value = em.username || '';
+    $('#emPass').value = em.password || '';
+    $('#emFrom').value = em.from || '';
+    $('#emTo').value = em.to || '';
+  } catch (e) { /* 忽略，使用默认值 */ }
+}
+$('#notifySaveBtn').onclick = async () => {
+  $('#notifyErr').textContent = '';
+  const payload = {
+    dingtalk: {
+      enabled: $('#dtEnabled').checked,
+      webhook: $('#dtWebhook').value.trim(),
+      secret: $('#dtSecret').value.trim(),
+    },
+    email: {
+      enabled: $('#emEnabled').checked,
+      smtp_host: $('#emHost').value.trim(),
+      smtp_port: parseInt($('#emPort').value, 10) || 465,
+      username: $('#emUser').value.trim(),
+      password: $('#emPass').value,
+      from: $('#emFrom').value.trim(),
+      to: $('#emTo').value.trim(),
+    },
+  };
+  try {
+    const r = await api('/api/notify/settings', { method: 'POST', body: JSON.stringify(payload) });
+    if (!r.ok) {
+      let m = '保存失败';
+      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
+      $('#notifyErr').textContent = m;
+      return;
+    }
+    toast('通知配置已保存', 'ok');
+  } catch (e) {
+    $('#notifyErr').textContent = '保存异常：' + e.message;
+  }
+};
+$('#notifyTestBtn').onclick = async () => {
+  $('#notifyErr').textContent = '';
+  const r = await api('/api/notify/test', { method: 'POST', body: JSON.stringify({}) });
+  let m = '';
+  if (!r.ok) {
+    try { const d = await r.json(); m = d.error || ('测试失败 (HTTP ' + r.status + ')'); } catch (_) { m = '测试失败 (HTTP ' + r.status + ')'; }
+    $('#notifyErr').textContent = m;
+    return;
+  }
+  const d = await r.json();
+  const res = d.results || {};
+  const parts = Object.keys(res).map((k) => (k === 'dingtalk' ? '钉钉' : '邮箱') + '：' + res[k]);
+  if (!parts.length) { $('#notifyErr').textContent = '没有已开启且配置完整的渠道'; return; }
+  const okAll = parts.every((p) => p.endsWith('ok'));
+  toast('测试结果 — ' + parts.join('；'), okAll ? 'ok' : 'err');
+  $('#notifyErr').textContent = '测试结果：' + parts.join('；');
+};
 
 async function openSnapModal() {
   await loadAsset();
@@ -2717,7 +2827,6 @@ $('#snapSave').onclick = async () => {
 };
 
 // ---- 一键 AI 总结（汇总全部资产） ----
-$('#assetAiBtn').onclick = confirmAssetAi;
 async function assetAiSummarize() {
   const boxKey = ($('#ai_apikey') ? $('#ai_apikey').value : '').trim();
   const lsKey = (localStorage.getItem('pf_ai_key') || '').trim();
@@ -2731,7 +2840,7 @@ async function assetAiSummarize() {
   if (!content) { toast('提示词模板为空，请先在「AI 设置」选择或填写模板', 'err'); openAIModal(); return; }
   if (api_key) localStorage.setItem('pf_ai_key', api_key);
   openAIResultModal('生成中…（正在汇总全部资产并调用模型，请稍候）');
-  $('#assetAiBtn').disabled = true;
+  $('#aiPickGo').disabled = true;
   try {
     const r = await api('/api/asset/summary', { method: 'POST', body: JSON.stringify({ model, base_url, api_key, template: content }) });
     if (!r.ok) { let m = '生成失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#aiResultBody').textContent = m; return; }
@@ -2740,7 +2849,7 @@ async function assetAiSummarize() {
   } catch (err) {
     $('#aiResultBody').textContent = '异常：' + err.message;
   } finally {
-    $('#assetAiBtn').disabled = false;
+    $('#aiPickGo').disabled = false;
   }
 }
 
@@ -2857,13 +2966,14 @@ $('#analysisClose').onclick = () => { $('#analysisModal').hidden = true; };
 // ── 操作指南 ──────────────────────────────────────────
 
 let allGuides = [];
+let guideHoldings = [];
 
 async function openGuide() {
   $('#guideModal').hidden = false;
   $('#guideForm').hidden = true;
   $('#guideActions').hidden = false;
-  // 预加载持仓列表（供表单下拉选择）
-  await loadGuides();
+  // 预加载操作记录 + 持仓补仓计划
+  await Promise.all([loadGuides(), loadGuideHoldings()]);
 }
 
 async function loadGuides() {
@@ -2874,6 +2984,81 @@ async function loadGuides() {
     allGuides = d.guides || [];
     renderGuideList();
   } catch (e) { toast('加载异常：' + e.message, 'err'); }
+}
+
+// 加载持仓列表，用于「动态补仓计划」的数据来源
+async function loadGuideHoldings() {
+  try {
+    const r = await api('/api/holdings');
+    if (!r.ok) return;
+    const d = await r.json();
+    guideHoldings = d.holdings || [];
+    renderBuyPlans();
+  } catch (_) {}
+}
+
+// 直接渲染所有带补仓计划的基金（数据来自 holdings.buy_plan，由净值刷新时计算）
+// 二级列表样式：每个基金条目头部可点击折叠/展开其补仓计划明细
+function renderBuyPlans() {
+  const body = $('#guidePlanBody');
+  const planned = guideHoldings.filter((h) => h.buy_plan && h.linked_symbol);
+  if (!planned.length) {
+    body.innerHTML = '<div class="guide-empty">暂无补仓计划：持仓基金会在净值刷新（定时 21:00 / 手动刷新）后自动计算</div>';
+    return;
+  }
+  let html = '';
+  planned.forEach((h) => {
+    let plan;
+    try { plan = JSON.parse(h.buy_plan); } catch (_) { return; }
+    const name = h.name || h.symbol || ('#' + h.id);
+    const tiers = (plan.HasData && plan.Tiers) ? plan.Tiers : [];
+    const triggered = tiers.filter((t) => t.Signal).length;
+    const summary = triggered > 0
+      ? `<span class="bp-summary trig">🔥 触发 ${triggered} 档</span>`
+      : (tiers.length ? `<span class="bp-summary">待触发 · ${tiers.length} 档</span>` : '<span class="bp-summary">计划中</span>');
+    html += `<div class="bp-card collapsed">
+      <div class="bp-head bp-toggle" data-bp="${h.id}">
+        <span class="bp-chevron">▾</span>
+        <span class="bp-name">${esc(name)}</span>
+        <span class="bp-code">${esc(h.symbol || '')} · 联接 ${esc(h.linked_symbol || '')}</span>
+        ${summary}
+      </div>
+      <div class="bp-body">
+        <div class="bp-badge">🤖 自动补仓计划</div>`;
+    if (plan.Note) html += `<div class="plan-note">${esc(plan.Note)}</div>`;
+    if (tiers.length) {
+      html += '<div class="plan-tiers">';
+      tiers.forEach((t) => {
+        html += `<div class="plan-tier${t.Signal ? ' has-signal' : ''}">
+          <div class="plan-tier-label">${esc(t.Label)}${t.Signal ? '<span class="tier-flag">触发</span>' : ''}</div>
+          <div class="plan-tier-grid">
+            <span>触发价</span><b>${fmt(t.Price)}</b>
+            <span>回撤</span><b>${t.Drawdown != null ? t.Drawdown.toFixed(1) : '—'}%</b>
+            <span>建议投入</span><b>¥${fmt(t.Amount)}</b>
+            <span>可补份额</span><b>${fmt(t.Shares)}</b>
+          </div>
+          ${t.Signal ? `<div class="plan-tier-signal">${esc(t.Signal)}</div>` : ''}
+        </div>`;
+      });
+      html += '</div>';
+      html += `<div class="plan-foot">弹药上限 ≈ ¥${fmt(plan.AmmoCap)}　｜　已持有市值 ¥${fmt(plan.HeldValue)}　｜　浮动亏损 ¥${fmt(plan.LossAmt)}</div>`;
+      if (plan.ETFLatest) {
+        html += `<div class="plan-meta">联接ETF 最新 ${fmt(plan.ETFLatest)}　｜　BOLL 中轨 ${fmt(plan.BOLLMid)} / 下轨 ${fmt(plan.BOLLLower)}　｜　近60日 ${fmt(plan.SwingBottom)}~${fmt(plan.SwingTop)}（自高点回撤 ${plan.BottomPct != null ? plan.BottomPct.toFixed(1) : '—'}%）</div>`;
+      }
+    } else {
+      html += '<div class="guide-empty">暂无可用的联接ETF日K线，补仓位未更新</div>';
+    }
+    html += `<div class="plan-time">计算时间：${esc(plan.ComputedAt || '')}</div>`;
+    html += `</div></div>`;
+  });
+  body.innerHTML = html;
+  body.querySelectorAll('.bp-toggle').forEach((el) => {
+    el.onclick = () => {
+      const card = el.closest('.bp-card');
+      if (!card) return;
+      card.classList.toggle('collapsed');
+    };
+  });
 }
 
 function renderGuideList() {
