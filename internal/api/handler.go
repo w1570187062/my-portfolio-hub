@@ -147,6 +147,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/ai/history", aiHistoryGet)
 
 		// 通知渠道：配置读写 + 测试发送
+		g.GET("/version", versionGet)
 		g.GET("/notify/settings", notifySettingsGet)
 		g.POST("/notify/settings", notifySettingsPost)
 		g.POST("/notify/test", notifyTest)

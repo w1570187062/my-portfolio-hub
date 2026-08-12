@@ -16,6 +16,22 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('pf_theme', next);
     applyTheme(next);
   };
+
+  // 页脚版本信息：commit 短哈希 + 提交时间戳（后端构建时注入）
+  const vi = document.getElementById('versionInfo');
+  if (vi) {
+    fetch('/api/version')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+      .then((v) => {
+        let txt = 'build ' + (v.commit || 'dev');
+        if (v.commit_time) {
+          const t = String(v.commit_time).replace('T', ' ').slice(0, 16);
+          txt += ' · ' + t;
+        }
+        vi.textContent = txt;
+      })
+      .catch(() => { vi.textContent = 'build dev'; });
+  }
 });
 
 // ===== 导航下拉菜单 =====

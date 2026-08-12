@@ -6,9 +6,11 @@ COPY go.mod ./
 COPY internal ./internal
 COPY main.go ./
 COPY web ./web
+COPY VERSION ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /out/app .
+    V=$(tr -d '\r\n ' < VERSION) && \
+    go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags "-X 'portfolio/internal/api.BuildInfo=$V'" -o /out/app .
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
