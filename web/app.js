@@ -935,6 +935,16 @@ $('#refreshBtn').onclick = async () => {
 // 视图切换（表格 / 卡片）：localStorage 记忆，桌面端默认表格
 function syncViewToggle() {
   document.querySelectorAll('#viewToggle .vt-btn').forEach((x) => x.classList.toggle('active', x.dataset.view === holdingsView));
+  positionIndicator();
+}
+// 滑动白块：根据当前 active 按钮定位指示器（宽 + 位移），实现左右平移动画
+function positionIndicator() {
+  const ind = document.getElementById('vtIndicator');
+  if (!ind) return;
+  const active = document.querySelector('#viewToggle .vt-btn.active');
+  if (!active) return;
+  ind.style.width = active.offsetWidth + 'px';
+  ind.style.transform = 'translateX(' + active.offsetLeft + 'px)';
 }
 document.querySelectorAll('#viewToggle .vt-btn').forEach((b) => {
   b.onclick = () => {
@@ -945,6 +955,8 @@ document.querySelectorAll('#viewToggle .vt-btn').forEach((b) => {
   };
 });
 syncViewToggle();
+window.addEventListener('resize', positionIndicator);
+setTimeout(positionIndicator, 0); // 字体/布局稳定后校正初始位置
 $('#emptyAddBtn').onclick = () => openModal(null);
 // 文本筛选（设计系统：搜索框 + 「/」聚焦 + Enter 提交）
 (function wireFilter() {
