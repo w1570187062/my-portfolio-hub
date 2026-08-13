@@ -1267,31 +1267,42 @@ function drawTrend() {
   const n = data.length;
   const maxBar = Math.max(1, ...data.map((x) => Math.abs(x.total_cny)));
   const cVals = data.map((x) => x.cum);
-  let cMin = Math.min(0, ...cVals), cMax = Math.max(0, ...cVals);
-  if (cMax === cMin) cMax = cMin + 1;
+  // 累计盈亏与当日盈亏共用中央零基线、同半幅归一化，消除双轴割裂感
+  const cMaxAbs = Math.max(1, ...cVals.map((v) => Math.abs(v)));
   const zeroY = mT + plotH / 2;
   const yBar = (v) => zeroY - (v / maxBar) * (plotH / 2);
-  const yLine = (v) => mT + plotH - ((v - cMin) / (cMax - cMin)) * plotH;
+  const yLine = (v) => zeroY - (v / cMaxAbs) * (plotH / 2);
   const slot = plotW / n;
   const bw = Math.max(2, slot * 0.6);
-  let bars = '', line = '', hotspots = '';
+  const linePts = [];
+  let bars = '', line = '', area = '', dots = '', hotspots = '';
   data.forEach((x, i) => {
     const cx = mL + (i + 0.5) * slot;
     // 交互热区：覆盖整列，hover 显示金额
     hotspots += `<rect class="trend-hot" data-i="${i}" x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
+    const ly = yLine(x.cum);
+    linePts.push([cx, ly]);
     if (!x.hasData) {
       // 占位：浅色细柱，表示当日无快照数据
       bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${(zeroY - 1).toFixed(2)}" width="${bw.toFixed(2)}" height="2" fill="#e9ebf0"/>`;
-      line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${yLine(x.cum).toFixed(2)} `;
+      line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
       return;
     }
     const yv = yBar(x.total_cny);
-    const y0 = zeroY;
-    const top = Math.min(y0, yv), hgt = Math.abs(yv - y0);
+    const top = Math.min(zeroY, yv), hgt = Math.abs(yv - zeroY);
     const color = x.total_cny > 0 ? '#f5222d' : x.total_cny < 0 ? '#00a854' : '#c9ced6';
-    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" fill="${color}"/>`;
-    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${yLine(x.cum).toFixed(2)} `;
+    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" rx="2" fill="${color}"/>`;
+    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
+    // 折线数据点圆点，对齐柱子中心，把柱与线焊在一起
+    dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3" fill="#722ed1" stroke="#fff" stroke-width="1.2"/>`;
   });
+  // 面积：折线到中央零线的闭合带，给折线体量感、与柱子共用零线呼应
+  if (linePts.length) {
+    let ap = `M ${linePts[0][0].toFixed(2)} ${zeroY.toFixed(2)} `;
+    linePts.forEach((p) => { ap += `L ${p[0].toFixed(2)} ${p[1].toFixed(2)} `; });
+    ap += `L ${linePts[linePts.length - 1][0].toFixed(2)} ${zeroY.toFixed(2)} Z`;
+    area = `<path d="${ap}" fill="rgba(114,46,209,0.10)" stroke="none"/>`;
+  }
   // axes & grid
   const xLabelStep = Math.max(1, Math.ceil(n / 10));
   let xlabels = '';
@@ -1305,13 +1316,14 @@ function drawTrend() {
     <text x="${mL - 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#f5222d" text-anchor="end">+${fmt(maxBar)}</text>
     <text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="end">0</text>
     <text x="${mL - 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#00a854" text-anchor="end">-${fmt(maxBar)}</text>
-    <text x="${W - mR + 6}" y="${(mT + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">${fmt(cMax)}</text>
-    <text x="${W - mR + 6}" y="${(mT + plotH).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">${fmt(cMin)}</text>`;
+    <text x="${W - mR + 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">+${fmt(cMaxAbs)}</text>
+    <text x="${W - mR + 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="start">0</text>
+    <text x="${W - mR + 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">-${fmt(cMaxAbs)}</text>`;
   const grid = `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" stroke="#e5e6eb" stroke-width="1"/>`;
   const legend = `
     <div style="display:flex;gap:18px;margin-top:10px;font-size:13px;flex-wrap:wrap">
-      <span><span style="display:inline-block;width:12px;height:12px;background:#f5222d;border-radius:2px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (左轴, 红涨绿跌)</span>
-      <span><span style="display:inline-block;width:18px;height:3px;background:#722ed1;margin-right:6px;vertical-align:middle"></span>累计盈亏 (右轴)</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:#f5222d;border-radius:2px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (红涨绿跌)</span>
+      <span><span style="display:inline-block;width:18px;height:3px;background:#722ed1;margin-right:6px;vertical-align:middle"></span>累计盈亏</span>
       <span><span style="display:inline-block;width:12px;height:3px;background:#e9ebf0;margin-right:6px;vertical-align:middle"></span>无数据日 (占位)</span>
     </div>`;
   // 翻页导航：‹ 前15天 | 日期范围 | 后15天 › | 回最新
@@ -1325,9 +1337,9 @@ function drawTrend() {
   </div>`;
   $('#chartBody').innerHTML = `
     ${nav}<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      ${grid}${bars}${hotspots}
-      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2"/>
-      ${yLabels}${xlabels}
+      ${grid}${area}${bars}${hotspots}
+      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2" stroke-linejoin="round"/>
+      ${dots}${yLabels}${xlabels}
     </svg>${legend}`;
   // 绑定柱子交互热区 tooltip
   document.querySelectorAll('#chartBody .trend-hot').forEach((r) => {
@@ -2002,24 +2014,33 @@ function renderHistChart(d, cur) {
   const n = s.length;
   const maxBar = Math.max(1, ...s.map((x) => Math.abs(x.day_pnl)));
   const cVals = s.map((x) => x.total_pnl);
-  let cMin = Math.min(0, ...cVals), cMax = Math.max(0, ...cVals);
-  if (cMax === cMin) cMax = cMin + 1;
+  const cMaxAbs = Math.max(1, ...cVals.map((v) => Math.abs(v)));
   const zeroY = mT + plotH / 2;
   const yBar = (v) => zeroY - (v / maxBar) * (plotH / 2);
-  const yLine = (v) => mT + plotH - ((v - cMin) / (cMax - cMin)) * plotH;
+  const yLine = (v) => zeroY - (v / cMaxAbs) * (plotH / 2);
   const slot = plotW / n;
   const bw = Math.max(2, slot * 0.6);
-  let bars = '', line = '', hotspots = '';
+  const linePts = [];
+  let bars = '', line = '', area = '', dots = '', hotspots = '';
   s.forEach((x, i) => {
     const cx = mL + (i + 0.5) * slot;
     // 交互热区：覆盖整列，hover 显示金额
     hotspots += `<rect class="trend-hot" data-i="${i}" x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
+    const ly = yLine(x.total_pnl);
+    linePts.push([cx, ly]);
     const yv = yBar(x.day_pnl);
     const top = Math.min(zeroY, yv), hgt = Math.abs(yv - zeroY);
     const color = x.day_pnl > 0 ? '#f5222d' : x.day_pnl < 0 ? '#00a854' : '#c9ced6';
-    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" fill="${color}"/>`;
-    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${yLine(x.total_pnl).toFixed(2)} `;
+    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" rx="2" fill="${color}"/>`;
+    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
+    dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3" fill="#722ed1" stroke="#fff" stroke-width="1.2"/>`;
   });
+  if (linePts.length) {
+    let ap = `M ${linePts[0][0].toFixed(2)} ${zeroY.toFixed(2)} `;
+    linePts.forEach((p) => { ap += `L ${p[0].toFixed(2)} ${p[1].toFixed(2)} `; });
+    ap += `L ${linePts[linePts.length - 1][0].toFixed(2)} ${zeroY.toFixed(2)} Z`;
+    area = `<path d="${ap}" fill="rgba(114,46,209,0.10)" stroke="none"/>`;
+  }
   const xLabelStep = Math.max(1, Math.ceil(n / 10));
   let xlabels = '';
   s.forEach((x, i) => {
@@ -2032,8 +2053,9 @@ function renderHistChart(d, cur) {
     <text x="${mL - 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#f5222d" text-anchor="end">+${fmt(maxBar)}</text>
     <text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="end">0</text>
     <text x="${mL - 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#00a854" text-anchor="end">-${fmt(maxBar)}</text>
-    <text x="${W - mR + 6}" y="${(mT + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">${fmt(cMax)}</text>
-    <text x="${W - mR + 6}" y="${(mT + plotH).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">${fmt(cMin)}</text>`;
+    <text x="${W - mR + 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">+${fmt(cMaxAbs)}</text>
+    <text x="${W - mR + 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="start">0</text>
+    <text x="${W - mR + 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">-${fmt(cMaxAbs)}</text>`;
   const grid = `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" stroke="#e5e6eb" stroke-width="1"/>`;
   const legend = `
     <div style="display:flex;gap:18px;margin-top:10px;font-size:13px;flex-wrap:wrap">
@@ -2042,9 +2064,9 @@ function renderHistChart(d, cur) {
     </div>`;
   $('#histChartBody').innerHTML = `
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      ${grid}${bars}${hotspots}
-      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2"/>
-      ${yLabels}${xlabels}
+      ${grid}${area}${bars}${hotspots}
+      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2" stroke-linejoin="round"/>
+      ${dots}${yLabels}${xlabels}
     </svg>${legend}`;
   // 绑定柱子交互热区 tooltip
   document.querySelectorAll('#histChartBody .trend-hot').forEach((r) => {
