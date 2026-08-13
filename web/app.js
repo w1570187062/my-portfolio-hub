@@ -1381,7 +1381,9 @@ function hideTrendTip() { const tip = document.getElementById('trendTip'); if (t
 
 $('#assetPieBtn').onclick = () => { renderPie(); };
 $('#assetTrendBtn').onclick = renderTrend;
-$('#chartCloseBtn').onclick = closeChart;
+// 关闭按钮已移除：右上角 ✕ 与点击遮罩均可关闭
+$('#chartModal').addEventListener('click', (e) => { if (e.target === $('#chartModal')) $('#chartModal').hidden = true; });
+$('#histModal').addEventListener('click', (e) => { if (e.target === $('#histModal')) $('#histModal').hidden = true; });
 
 // ---- P&L Calendar ----
 const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -1940,12 +1942,11 @@ $('#aiPickGo').onclick = () => {
 $('#ai_export_json').onclick = confirmExport;
 
 // ---- 持仓历史盈亏（每日表格 + 盈亏曲线，tab 切换） ----
-$('#histCloseBtn').onclick = () => { $('#histModal').hidden = true; };
 $('#histTabTable').onclick = () => switchHistTab('table');
 $('#histTabChart').onclick = () => switchHistTab('chart');
 
 // ===== 调试：统一按钮点击日志（addEventListener 追加，不干扰原有 onclick） =====
-['addBtn','guideBtn','refreshBtn','aiPickBtn','moreBtn','aiPickGo','aiHubXClose','hubTabSummary','hubTabTools','hubTabSettings','hubTabHistory','calendarBtn','confirmOk','confirmCancel','assetPieBtn','assetTrendBtn','chartCloseBtn','calModalClose','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','navToggle','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','ai_result_close','histCloseBtn','histTabTable','histTabChart','cancelBtn'].forEach((id) => {
+['addBtn','guideBtn','refreshBtn','aiPickBtn','moreBtn','aiPickGo','aiHubXClose','hubTabSummary','hubTabTools','hubTabSettings','hubTabHistory','calendarBtn','confirmOk','confirmCancel','assetPieBtn','assetTrendBtn','calModalClose','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','navToggle','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','ai_result_close','histTabTable','histTabChart','cancelBtn'].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', () => console.log('[click]', id));
 });

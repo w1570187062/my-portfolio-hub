@@ -14,17 +14,17 @@
   .seg-btn.active { background:var(--btn-primary); color:#fff; border-color:var(--btn-primary); font-weight:600; }
   .adj-preview { margin:6px 0 10px; padding:10px 12px; background:var(--bg-soft,#f4f5f7); border-radius:8px; font-size:13px; line-height:1.6; color:var(--text,#1f2329); }
   .adj-preview .warn { color:#e5484d; }
-  .adj-preview b { color:var(--accent,#3370ff); }
+  .adj-preview b { color:var(--primary,#6f9e5e); }
   .adj-history { margin-top:14px; border-top:1px solid var(--border,#e5e7eb); padding-top:10px; }
   .adj-history h3 { font-size:13px; color:var(--text-muted,#6b7280); margin:0 0 8px; font-weight:600; }
   .adj-realized { font-size:13px; margin-bottom:8px; }
-  .adj-realized b { color:var(--accent,#3370ff); }
+  .adj-realized b { color:var(--primary,#6f9e5e); }
   .adj-history-list { max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
   .adj-empty { font-size:12px; color:var(--text-muted,#9aa0a6); padding:6px 0; }
   .adj-tx { border:1px solid var(--border,#e5e7eb); border-radius:8px; padding:8px 10px; font-size:12px; }
   .adj-tag { display:inline-block; padding:1px 8px; border-radius:999px; font-weight:600; font-size:11px; margin-right:8px; }
-  .adj-tag.buy { background:rgba(229,72,77,.12); color:#e5484d; }
-  .adj-tag.sell { background:rgba(51,112,255,.12); color:#3370ff; }
+  .adj-tag.buy { background:var(--primary-soft, rgba(111,158,94,.14)); color:var(--primary,#6f9e5e); }
+  .adj-tag.sell { background:rgba(138,143,153,.14); color:#6b7280; }
   .adj-meta { color:var(--text-muted,#9aa0a6); font-size:11px; }
   .adj-rl { float:right; font-weight:600; }
   .adj-rl.up { color:#e5484d; }
@@ -404,9 +404,6 @@
     <div class="modal-card chart-card">
       <h2 id="chartTitle">图表</h2>
       <div id="chartBody"></div>
-      <div class="modal-actions">
-        <button class="btn" type="button" id="chartCloseBtn">关闭</button>
-      </div>
     </div>
   </div>
 
@@ -526,9 +523,6 @@
       </div>
       <div id="histTableWrap"><div id="histTable" class="hist-table"></div></div>
       <div id="histChartWrap" hidden><div id="histChartBody"></div></div>
-      <div class="modal-actions">
-        <button class="btn" type="button" id="histCloseBtn">关闭</button>
-      </div>
     </div>
   </div>
 
