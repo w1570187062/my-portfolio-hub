@@ -2207,6 +2207,23 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 [data-theme="light"] .asset-toolbar .btn.icon-btn::before { border-top-color: #eceef2; }
 /* 覆盖移动端 flex 拉伸：图标按钮保持固定尺寸 */
 .asset-toolbar .btn.icon-btn { flex: 0 0 auto; }
+/* AI中枢按钮：实色主色填充，作为工具栏主操作与其余中性图标形成清晰层级 */
+.asset-toolbar .btn.icon-btn.ai-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
+}
+.asset-toolbar .btn.icon-btn.ai-primary:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .32);
+}
+.asset-toolbar .btn.icon-btn.ai-primary:active {
+  background: var(--primary-active);
+  border-color: var(--primary-active);
+}
 
 /* ===== 行情时效性标识（P0-1） ===== */
 /* 行情更新时间：整合进汇率条的滚动条右侧，圆角矩形包裹（替换原 .quote-fresh） */
