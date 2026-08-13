@@ -1829,7 +1829,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   .asset-summary .card-merged { flex: 1 1 100%; }
   /* 盈亏工具 / 通知渠道卡片：手机端收窄左右间距，避免贴边且输入框过窄 */
   .tools-grid { padding: 8px 14px 30px; }
-  .notify-wrap { padding: 8px 14px 40px; }
+  .notify-wrap { padding: 4px 14px 40px; }
 }
 
 /* ===== 技术分析弹框 ===== */
@@ -2003,7 +2003,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .notify-wrap {
   max-width: none;
   margin: 0;
-  padding: 8px 28px 40px;
+  padding: 4px 28px 40px;
 }
 .notify-wrap h2 { font-size: 20px; margin: 8px 0 4px; }
 .notify-card {
@@ -2038,6 +2038,19 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   color: var(--text, #1f2329);
 }
 .notify-card label input:focus { outline: 2px solid var(--primary, #6f9e5e); border-color: transparent; }
+/* 明文输入框眼睛切换 */
+.input-eye { position: relative; display: block; }
+.input-eye input { width: 100%; padding-right: 42px; }
+.eye-toggle {
+  position: absolute; top: 50%; right: 2px; transform: translateY(-50%);
+  width: 36px; height: 36px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--text-muted, #6b7280);
+  cursor: pointer; border-radius: 8px;
+}
+.eye-toggle:hover { color: var(--text, #1f2329); background: var(--bg-soft, #f4f5f7); }
+.eye-toggle:focus-visible { outline: 2px solid var(--primary, #6f9e5e); outline-offset: 1px; }
+.eye-toggle svg { width: 18px; height: 18px; display: block; }
 .notify-card label select {
   padding: 9px 11px;
   border: 1px solid var(--border, #d0d5dd);

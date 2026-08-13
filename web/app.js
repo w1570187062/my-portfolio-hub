@@ -2430,6 +2430,20 @@ document.addEventListener('click', (e) => {
   const card = x.closest('.tool-card');
   if (card) { card.hidden = true; updateRestore(); }
 });
+// 明文输入框（Webhook/密钥）的显示/隐藏眼睛切换：默认 password 隐藏，点击切换
+const EYE_OPEN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+document.querySelectorAll('.eye-toggle').forEach(b => { if (!b.innerHTML.trim()) b.innerHTML = EYE_OPEN; });
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.eye-toggle');
+  if (!btn) return;
+  const input = document.getElementById(btn.dataset.eyeFor);
+  if (!input) return;
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  btn.innerHTML = reveal ? EYE_OFF : EYE_OPEN;
+  btn.setAttribute('aria-label', (reveal ? '隐藏' : '显示') + '明文');
+});
 const toolsRestoreBtn = $('#toolsRestoreBtn');
 if (toolsRestoreBtn) {
   toolsRestoreBtn.onclick = () => {
@@ -2929,7 +2943,7 @@ function showNotifyView() {
   $('#toolsView').hidden = true;
   $('#calendarView').hidden = true;
   $('#notifyView').hidden = false;
-  injectPageHead('notifyView', '');
+  injectPageHead('notifyView', '🔔 通知渠道');
   setNavActive('notify');
   loadNotifySettings();
 }

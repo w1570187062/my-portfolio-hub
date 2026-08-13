@@ -161,9 +161,7 @@
   </div>
 
   <div id="notifyView" hidden>
-    <section class="summary"></section>
     <div class="notify-wrap">
-      <h2>🔔 通知渠道</h2>
       <p class="tool-hint">配置净值更新后的通知方式，并用开关启用。点「保存配置」生效；点「测试通知」可验证渠道是否可用。手动或自动更新净值数据后会自动推送。</p>
 
       <div class="notify-card">
@@ -185,8 +183,8 @@
           <h3>钉钉</h3>
           <label class="switch"><input type="checkbox" id="dtEnabled"><span class="switch-knob"></span></label>
         </div>
-        <label>Webhook 地址<input type="text" id="dtWebhook" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."></label>
-        <label>加签密钥（可选）<input type="text" id="dtSecret" placeholder="机器人安全设置中的加签密钥，不填则无需加签"></label>
+        <label>Webhook 地址<span class="input-eye"><input type="password" id="dtWebhook" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."><button type="button" class="eye-toggle" data-eye-for="dtWebhook" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+        <label>加签密钥（可选）<span class="input-eye"><input type="password" id="dtSecret" placeholder="机器人安全设置中的加签密钥，不填则无需加签"><button type="button" class="eye-toggle" data-eye-for="dtSecret" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
       </div>
 
       <div class="notify-card">
