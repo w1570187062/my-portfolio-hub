@@ -481,7 +481,23 @@ function buildFilters() {
   const box = $('#filters');
   box.innerHTML = '';
 
-  // 类别筛选行已按需求不在表格上方展示（默认全部，不过滤）
+  // 类别：左右滑动滑块（单选：全部 / 股票 / 基金），按需求不显示「类别：」文字标签
+  const catRow = document.createElement('div');
+  catRow.className = 'filter-row';
+  const catSlider = document.createElement('div');
+  catSlider.id = 'catSlider';
+  catSlider.className = 'slider';
+  [['', '全部'], ['stock', '股票'], ['fund', '基金']].forEach(([val, txt]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'slider-item' + (val === '' ? ' active' : '');
+    b.dataset.cat = val;
+    b.textContent = txt;
+    b.onclick = () => onCatSelect(val, catSlider);
+    catSlider.appendChild(b);
+  });
+  catRow.appendChild(catSlider);
+  box.appendChild(catRow);
   catFilter = new Set(); // 默认：全部
 
   // 市场：多选 chips（横向可滑动，避免换行）
