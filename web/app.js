@@ -77,7 +77,7 @@ if (navToggleBtn && navDropdown) {
             $('#toolsView').hidden = true;
             $('#notifyView').hidden = true;
             $('#calendarView').hidden = false;
-            calViewDate = new Date();
+            restoreCalMonth();
             renderCalendar();
             setNavActive('calendar');
           } else {
@@ -115,6 +115,7 @@ let curPage = 1;
 let pageSize = 10;
 let catFilter = new Set(); // selected categories; empty = all
 let mktFilter = new Set(); // selected markets; empty = all
+let textFilter = '';        // 文本搜索（名称/代码/备注），配合「/」快捷聚焦
 let usdRate = 1;
 let hkdRate = 1;
 let dayDate = ''; // 当日盈亏所基于的快照日期（YYYY-MM-DD）
@@ -342,10 +343,16 @@ function stopFxCycle() {
 
 // Holdings after applying the two-level (category + market) filter.
 function filteredHoldings() {
-  return allHoldings.filter((h) =>
-    (catFilter.size === 0 || catFilter.has(h.category)) &&
-    (mktFilter.size === 0 || mktFilter.has(h.market))
-  );
+  const kw = textFilter;
+  return allHoldings.filter((h) => {
+    if (catFilter.size && !catFilter.has(h.category)) return false;
+    if (mktFilter.size && !mktFilter.has(h.market)) return false;
+    if (kw) {
+      const hay = ((h.name || '') + ' ' + (h.symbol || '') + ' ' + (h.note || '')).toLowerCase();
+      if (!hay.includes(kw)) return false;
+    }
+    return true;
+  });
 }
 
 // Render both the summary cards and the table from the currently filtered set,
@@ -401,7 +408,9 @@ function renderFiltered() {
   const cards = document.getElementById('cards');
   const empty = document.getElementById('holdingsEmpty');
   const tw = document.querySelector('.table-wrap');
-  if (holdingsView === 'card') {
+  // 手机端（<640）强制卡片视图，表格横向溢出体验差（设计系统：移动端表格转卡片）
+  const useCard = (window.innerWidth < 640) ? true : (holdingsView === 'card');
+  if (useCard) {
     if (tbl) tbl.hidden = true;
     if (tw) tw.hidden = true;
     if (pager) pager.hidden = true;
@@ -967,6 +976,14 @@ document.querySelectorAll('#viewToggle .vt-btn').forEach((b) => {
 });
 syncViewToggle();
 $('#emptyAddBtn').onclick = () => openModal(null);
+// 文本筛选（设计系统：搜索框 + 「/」聚焦 + Enter 提交）
+(function wireFilter() {
+  const fi = document.getElementById('filterInput');
+  if (!fi) return;
+  const apply = () => { textFilter = fi.value.trim().toLowerCase(); curPage = 1; renderFiltered(); };
+  fi.addEventListener('input', apply);
+  fi.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+})();
 // 资产空状态内联"添加"按钮（各空 tab 共用，data-empty-add 区分类型）
 $('#assetTabBody').addEventListener('click', (e) => {
   const b = e.target.closest('[data-empty-add]');
@@ -1408,6 +1425,15 @@ $('#brandTitle').onclick = () => {
 };
 // ESC 键：从任意二级页（资产/速算/日历）返回主页
 document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  const tag = (t.tagName || '').toLowerCase();
+  const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable;
+  // 「/」聚焦筛选（设计系统：快捷聚焦搜索框）
+  if (e.key === '/' && !typing) {
+    const fi = document.getElementById('filterInput');
+    if (fi) { e.preventDefault(); fi.focus(); }
+    return;
+  }
   if (e.key !== 'Escape') return;
   // 优先关闭导航下拉菜单
   if (navDropdown && !navDropdown.hidden) { closeNavDropdown(); return; }
@@ -1488,6 +1514,20 @@ function shiftCalDay(dir) {
 
 // 盈亏日历：仅显示当前查看月份，支持上/下月切换
 let calViewDate = new Date();   // 当前查看的月份
+// 日历月份记忆（设计系统：二级页记忆日历月份）
+function saveCalMonth() {
+  try { localStorage.setItem('pf_cal_month', calViewDate.getFullYear() + '-' + (calViewDate.getMonth() + 1)); } catch (_) {}
+}
+function restoreCalMonth() {
+  try {
+    const s = localStorage.getItem('pf_cal_month');
+    if (s && /^\d{4}-\d{1,2}$/.test(s)) {
+      const p = s.split('-'); calViewDate = new Date(+p[0], +p[1] - 1, 1); return;
+    }
+  } catch (_) {}
+  calViewDate = new Date();
+}
+restoreCalMonth();
 let calMaxAbs = 1;              // 盈亏着色归一化最大值
 
 async function renderCalendar() {
@@ -1577,6 +1617,7 @@ function drawCalMonth() {
   const grid = $('#calGrid');
   grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
   grid.innerHTML = cells;
+  saveCalMonth();
 }
 
 function openCalDay(date) {
@@ -2056,12 +2097,25 @@ const moneyCur = (n, cur) => curSymbolJS(cur) + fmt(n == null ? 0 : n);
 
 $('#assetBtn').onclick = () => showAssetView();
 
+// 二级页统一页头（设计系统：← 返回 + 标题 + 操作区）
+function injectPageHead(viewId, title) {
+  const v = document.getElementById(viewId);
+  if (!v || v.querySelector(':scope > .page-head')) return;
+  const h = document.createElement('div');
+  h.className = 'page-head';
+  h.innerHTML = '<button class="btn icon-btn page-back" type="button" aria-label="返回" title="返回">←</button>'
+    + '<h2 class="page-head__title">' + (title || '') + '</h2>'
+    + '<div class="page-head__actions"></div>';
+  h.querySelector('.page-back').onclick = () => showHoldingsView();
+  v.insertBefore(h, v.firstChild);
+}
 async function showAssetView() {
   $('#holdingsView').hidden = true;
   $('#calendarView').hidden = true;
   $('#toolsView').hidden = true;
   $('#notifyView').hidden = true;
   $('#assetView').hidden = false;
+  injectPageHead('assetView', '资产全景');
   $('#calendarBtn').classList.remove('active');
   $('#assetBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
   setNavActive('asset');
@@ -2109,6 +2163,7 @@ async function showToolsView() {
   $('#assetView').hidden = true;
   $('#notifyView').hidden = true;
   $('#toolsView').hidden = false;
+  injectPageHead('toolsView', '');
   $('#calendarBtn').classList.remove('active');
   $('#toolsBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
   setNavActive('tools');
@@ -2398,12 +2453,25 @@ function updateRestore() {
     box.hidden = true;
   }
 }
-document.querySelectorAll('.tool-card .card-close').forEach(btn => {
-  btn.onclick = () => {
-    const card = btn.closest('.tool-card');
-    if (card) card.hidden = true;
-    updateRestore();
-  };
+// 统一关闭：.card-close 同时服务弹窗（关闭模态）与工具卡（收起计算器）。
+// 设计系统要求所有弹窗关闭位统一为 .card-close（右上角 ×）。
+function injectModalClose() {
+  document.querySelectorAll('.modal .modal-card').forEach((mc) => {
+    if (mc.querySelector('.card-close')) return;
+    const x = document.createElement('button');
+    x.type = 'button'; x.className = 'card-close'; x.textContent = '✕';
+    x.setAttribute('title', '关闭'); x.setAttribute('aria-label', '关闭');
+    mc.insertBefore(x, mc.firstChild);
+  });
+}
+injectModalClose();
+document.addEventListener('click', (e) => {
+  const x = e.target.closest('.card-close');
+  if (!x) return;
+  const modal = x.closest('.modal');
+  if (modal) { modal.hidden = true; return; }
+  const card = x.closest('.tool-card');
+  if (card) { card.hidden = true; updateRestore(); }
 });
 const toolsRestoreBtn = $('#toolsRestoreBtn');
 if (toolsRestoreBtn) {
@@ -2904,6 +2972,7 @@ function showNotifyView() {
   $('#toolsView').hidden = true;
   $('#calendarView').hidden = true;
   $('#notifyView').hidden = false;
+  injectPageHead('notifyView', '');
   setNavActive('notify');
   loadNotifySettings();
 }
@@ -3383,7 +3452,7 @@ function editGuide(id) {
 }
 
 async function deleteGuide(id) {
-  if (!confirm('确定删除这条操作记录？')) return;
+  if (!confirm('删除这条操作记录？此操作不可撤销')) return;
   try {
     const r = await api('/api/guides/' + id, { method: 'DELETE' });
     if (!r.ok) { toast('删除失败', 'err'); return; }

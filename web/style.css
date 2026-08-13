@@ -53,8 +53,18 @@
   --btn-shadow-hover: 0 4px 12px rgba(0, 0, 0, .4), 0 0 20px var(--primary-glow);
   --btn-transition: all .2s ease;
 
-  /* 卡片 & 布局 */
-  --card-radius: 14px;
+  /* 形状与间距 token（设计系统收敛点） */
+  --radius: 12px;                     /* 圆角统一 12px */
+  --card-radius: var(--radius);       /* 卡片/表格/工具卡圆角 */
+  --btn-radius: var(--radius);        /* 按钮圆角统一 */
+  --card-gap: 12px;                   /* 卡片之间间距 */
+  --card-pad: 14px;                   /* 卡内边距 */
+  --section-gap: 20px;                /* 区块之间间距 */
+  --btn-h: 34px;                      /* 主/次按钮高度 */
+  --icon-btn: 36px;                   /* 图标按钮边长 */
+  --row-h: 42px;                      /* 列表行高 40-44px */
+  --touch: 36px;                      /* 最小可点区 */
+  --row-divider: rgba(255, 255, 255, .06); /* 行分割线 ≤8% */
   --card-shadow: 0 4px 24px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .03);
   --card-shadow-hover: 0 8px 32px rgba(0, 0, 0, .45), 0 0 30px var(--primary-glow);
   --card-border: 1px solid var(--border);
@@ -73,6 +83,7 @@
   --bg-hover: rgba(45, 212, 167, .07);
   --bg-input: rgba(0, 0, 0, .03);
   --border: rgba(15, 23, 42, .1);
+  --row-divider: rgba(15, 23, 42, .06);
   --border-strong: rgba(13, 148, 136, .4);
   --text: #1f2329;
   --text-muted: #5a6068;
@@ -183,6 +194,7 @@
   color: var(--primary);
   border-radius: var(--btn-radius);
   padding: 8px 16px;
+  min-height: var(--btn-h);
   font-size: 14px;
   line-height: 1.3;
   cursor: pointer;
@@ -685,7 +697,7 @@ header h1 {
   backdrop-filter: blur(12px);
   border: var(--card-border);
   border-radius: var(--card-radius);
-  padding: 16px 20px;
+  padding: var(--card-pad);
   min-width: 180px;
   display: flex;
   align-items: center;
@@ -739,8 +751,9 @@ table {
 .table-wrap { width: 100%; overflow-x: auto; padding: 0 28px 8px; }
 th, td {
   padding: 8px 16px;
+  height: var(--row-h);
   text-align: left;
-  border-bottom: 1px solid rgba(255, 255, 255, .05);
+  border-bottom: 1px solid var(--row-divider);
   font-size: 14px;
   white-space: nowrap;
 }
@@ -958,8 +971,10 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 #aiResultModal { z-index: 150; }
 .modal-card {
   background: var(--bg-card-solid);
-  border-radius: 20px;
+  border-radius: var(--radius);
   width: 380px;
+  max-width: 94vw;
+  position: relative;
   max-height: 90vh;
   /* 外层只做形状（圆角 + 阴影 + 背景），不滚动；
      滚动交给内部的 form / 内容容器，避免滚动条压住右圆角。 */
@@ -2261,4 +2276,55 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .empty-state p { margin: 0 0 14px; }
 .empty-block { text-align: center; padding: 22px 12px; color: var(--text-muted); }
 .empty-block .empty { margin: 0 0 12px; }
+
+/* ============================================================
+   设计系统规范层（落地自 DESIGN_SYSTEM.md）
+   仅在此层新增规范类；业务样式不得再写死色值/间距/圆角。
+   ============================================================ */
+
+/* 卡片第二态（交替背景） */
+.card--alt { background: var(--bg-card-solid); }
+
+/* 骨架屏（替代转圈） */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-input) 37%, var(--bg-card) 63%);
+  background-size: 400% 100%;
+  animation: sk 1.2s infinite linear;
+  border-radius: 6px;
+}
+@keyframes sk { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+
+/* 刷新进度条（保留旧数据） */
+.refresh-bar { position: relative; height: 3px; background: var(--bg-input); border-radius: 2px; overflow: hidden; margin: 6px 0; }
+.refresh-bar > i { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; background: var(--primary); border-radius: 2px; animation: rbar 1s infinite ease-in-out; }
+@keyframes rbar { 0% { left: -40%; } 100% { left: 100%; } }
+
+/* 表格：操作列居中 */
+.act { text-align: center; }
+.row-actions { text-align: center; white-space: nowrap; }
+
+/* 图标按钮：36×36 方形（与 .btn 组合使用） */
+.icon-btn { width: var(--icon-btn); height: var(--icon-btn); padding: 0; border-radius: var(--radius); justify-content: center; flex: 0 0 auto; }
+
+/* 搜索框（设计系统：「/」聚焦筛选） */
+.filter-search { height: var(--btn-h); padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-input); color: var(--text); font-size: 14px; min-width: 160px; }
+.filter-search::placeholder { color: var(--text-faint); }
+
+/* 可达性：键盘焦点 2px 主色描边 */
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+
+/* 二级页统一页头：← 返回 + 标题 + 操作区 */
+.page-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 calc(var(--section-gap) - 12px); }
+.page-head__title { font-size: 17px; font-weight: 700; margin: 0; }
+.page-head__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.page-back { min-width: var(--touch); min-height: var(--touch); }
+
+/* 空态语义别名 */
+.empty--initial { padding: 48px 16px; }
+.empty--filtered { padding: 20px 4px; }
+
+/* 平板断点（640–1023）：锁定三档响应式，弹窗限宽 94vw */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .modal-card { max-width: 94vw; }
+}
 .asset-add-inline { font-size: 13px; padding: 6px 16px; }
