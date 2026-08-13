@@ -160,7 +160,16 @@ async function boot() {
   showApp();
 }
 
-function showApp() { $('#app').hidden = false; load(); loadAISettings(); }
+function showApp() {
+  $('#app').hidden = false;
+  load();
+  loadAISettings();
+  // #app 在 boot() 前一直 hidden，顶层 syncViewToggle() 测得 0 宽导致滑块白块不可见；
+  // 此处 #app 已可见，重新定位指示器，并用 rAF / fonts.ready 兜底字体异步加载导致的位移偏差。
+  syncViewToggle();
+  requestAnimationFrame(syncViewToggle);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncViewToggle);
+}
 
 function toast(msg, type = 'info') {
   const t = $('#toast');
@@ -198,12 +207,14 @@ async function load() {
   }
 }
 
-// 行情时效性标识：整合进汇率条右侧的圆角 pill，显示「行情更新于 HH:MM:SS」（超 30 分钟仅变灰，不再提示"可能已过期"）。
+// 行情时效性标识：整合进汇率条右侧。「行情更新于」为无边框前缀文本，「MM-DD HH:MM:SS」单独包进圆角 pill（超 30 分钟仅变灰，不再提示"可能已过期"）。
 let freshnessTimer = null;
 function renderFreshness() {
   const el = document.getElementById('fxQuoteTime');
+  const wrap = document.getElementById('fxQuoteWrap');
   if (!el) return;
-  if (!updatedAtMax) { el.hidden = true; el.textContent = ''; return; }
+  if (!updatedAtMax) { if (wrap) wrap.hidden = true; el.textContent = ''; return; }
+  if (wrap) wrap.hidden = false;
   el.hidden = false;
   const parts = String(updatedAtMax).split(' ');
   const hhmmss = parts[1] || updatedAtMax;
@@ -213,8 +224,8 @@ function renderFreshness() {
   const now = new Date();
   const diffMs = now - t;
   const stale = isNaN(diffMs) ? false : diffMs > 30 * 60 * 1000;
-  let txt = '行情更新于 ' + dayMD + ' ' + hhmmss;
-  el.textContent = txt;
+  // 仅日期时间入圆角 pill；「行情更新于」前缀已由 fx-quote-label 独立渲为无边框文本
+  el.textContent = dayMD + ' ' + hhmmss;
   el.className = 'fx-quote-time' + (stale ? ' stale' : '');
 }
 
@@ -285,7 +296,7 @@ function renderFx(d) {
     '<div class="fx-scroll-wrap"><div class="fx-scroll-inner" id="fxScrollInner">' +
     itemsHtml + '</div></div>' +
     '<span class="fx-sep"></span>' +
-    '<span class="fx-quote-time" id="fxQuoteTime"></span>';
+    '<span class="fx-quote-wrap" id="fxQuoteWrap"><span class="fx-quote-label">行情更新于</span><span class="fx-quote-time" id="fxQuoteTime"></span></span>';
 
   // Number animation
   bar.querySelectorAll('.fx-num').forEach((el) => {
@@ -1392,6 +1403,7 @@ function showHoldingsView() {
   $('#holdingsView').hidden = false;
   $('#calendarBtn').classList.remove('active');
   setNavActive('home');
+  syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
 }
 
 // 主页按钮：回到一级页面（持仓列表）并滚到顶部

@@ -2225,6 +2225,9 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 }
 .fx-quote-time b { color: var(--text); font-weight: 600; }
 .fx-quote-time.stale { color: var(--text-faint, #6b7280); opacity: .8; }
+/* 「行情更新于」前缀：无边框纯文本；日期时间值单独留在 .fx-quote-time 圆角 pill 内 */
+.fx-quote-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.fx-quote-label { color: var(--text-muted, #9aa3af); font-size: 12px; line-height: 1.5; white-space: nowrap; }
 
 /* ===== 刷新失败持久标记（P0-2） ===== */
 tr.row-failed { background: rgba(245, 166, 35, .16); }
