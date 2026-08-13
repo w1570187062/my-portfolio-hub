@@ -32,6 +32,7 @@ func main() {
 	// Daily P&L snapshot: backfill today on startup, then record every day at 15:15.
 	api.EnsureSnapshot()
 	go api.ScheduleDailySnapshot()
+	go api.ScheduleDailyAISummary()
 
 	// 每日 00:00 归零结算：先兜底落库上一交易日盈亏，再把当日盈亏归零（不带入下一交易日）。
 	api.EnsureMidnightReset()

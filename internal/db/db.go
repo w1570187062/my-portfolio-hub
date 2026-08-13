@@ -132,7 +132,85 @@ func Init(path string) error {
 	if err := initNotifySettings(); err != nil {
 		return fmt.Errorf("init notify_settings: %w", err)
 	}
+	if err := initBuyPlanExecuted(); err != nil {
+		return fmt.Errorf("init buy_plan_executed: %w", err)
+	}
 	return nil
+}
+
+// ---- 补仓计划「已执行」标记（buy_plan_executed）----
+// 用户在某档补仓计划点「标记已补」后落库，用于界面置灰✓并排除出待触发信号。
+// 与 position_tx 区分：此处仅记录"计划档位已执行"，不改动持仓数量/成本。
+
+type BuyPlanExec struct {
+	ID         int64   `json:"id"`
+	HoldingID  int64   `json:"holding_id"`
+	TierIndex  int     `json:"tier_index"` // 补仓计划 Tiers 数组下标（档位稳定按序）
+	TierLabel  string  `json:"tier_label"`
+	Price      float64 `json:"price"`
+	Amount     float64 `json:"amount"`
+	Note       string  `json:"note"`
+	CreatedAt  string  `json:"created_at"`
+}
+
+func initBuyPlanExecuted() error {
+	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS buy_plan_executed (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		holding_id INTEGER NOT NULL,
+		tier_index INTEGER NOT NULL DEFAULT 0,
+		tier_label TEXT NOT NULL DEFAULT '',
+		price REAL NOT NULL DEFAULT 0,
+		amount REAL NOT NULL DEFAULT 0,
+		note TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	)`)
+	return err
+}
+
+// SaveExecutedBuyPlan records that a buy-plan tier was executed ("标记已补").
+func SaveExecutedBuyPlan(tx *BuyPlanExec) error {
+	tx.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+	_, err := DB.Exec(`INSERT INTO buy_plan_executed(holding_id,tier_index,tier_label,price,amount,note,created_at) VALUES(?,?,?,?,?,?,?)`,
+		tx.HoldingID, tx.TierIndex, tx.TierLabel, tx.Price, tx.Amount, tx.Note, tx.CreatedAt)
+	return err
+}
+
+// ListExecutedBuyPlans returns executed tiers for a holding, newest first.
+func ListExecutedBuyPlans(holdingID int64) ([]BuyPlanExec, error) {
+	rows, err := DB.Query(`SELECT id,holding_id,tier_index,tier_label,price,amount,note,created_at FROM buy_plan_executed WHERE holding_id=? ORDER BY id DESC`, holdingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []BuyPlanExec
+	for rows.Next() {
+		var t BuyPlanExec
+		if err := rows.Scan(&t.ID, &t.HoldingID, &t.TierIndex, &t.TierLabel, &t.Price, &t.Amount, &t.Note, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// ListExecutedBuyPlanKeys returns the set of executed tier keys as "holdingID:tierIndex".
+// Used by the notify path to exclude executed tiers from pending "补仓信号".
+func ListExecutedBuyPlanKeys() (map[string]bool, error) {
+	rows, err := DB.Query(`SELECT holding_id, tier_index FROM buy_plan_executed`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	m := map[string]bool{}
+	for rows.Next() {
+		var hid int64
+		var idx int
+		if err := rows.Scan(&hid, &idx); err != nil {
+			return nil, err
+		}
+		m[fmt.Sprintf("%d:%d", hid, idx)] = true
+	}
+	return m, rows.Err()
 }
 
 // ---- 通知渠道配置（单条 JSON 配置，id=1，与 ai_settings 同模式） ----

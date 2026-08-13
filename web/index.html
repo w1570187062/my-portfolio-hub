@@ -102,6 +102,7 @@
 
   <div id="holdingsView">
   <section id="summary" class="summary"></section>
+  <div id="quoteFreshness" class="quote-fresh" hidden></div>
   <div id="fxbar" class="fxbar" hidden></div>
 
   <div class="list-bar">
@@ -110,6 +111,10 @@
       <button id="addBtn" class="btn">➕ 添加持仓</button>
       <button id="guideBtn" class="btn">📋 操作指南</button>
       <button id="refreshBtn" class="btn">🔄 刷新行情</button>
+      <div class="view-toggle" id="viewToggle">
+        <button class="btn vt-btn active" data-view="table" type="button">表格</button>
+        <button class="btn vt-btn" data-view="card" type="button">卡片</button>
+      </div>
     </div>
   </div>
 
@@ -125,7 +130,13 @@
     <tbody id="rows"></tbody>
   </table>
   </div>
+  <div id="cards" class="cards-grid" hidden></div>
   <div id="pager" class="pager"></div>
+  <div id="holdingsEmpty" class="empty-state" hidden>
+    <div class="empty-icon">📭</div>
+    <p>还没有任何持仓，添加第一笔开始记录吧。</p>
+    <button class="btn" id="emptyAddBtn" type="button">➕ 添加第一笔持仓</button>
+  </div>
   </div>
 
   <div id="assetView" hidden>
@@ -154,6 +165,20 @@
     <div class="notify-wrap">
       <h2>🔔 通知渠道</h2>
       <p class="tool-hint">配置净值更新后的通知方式，并用开关启用。点「保存配置」生效；点「测试通知」可验证渠道是否可用。手动或自动更新净值数据后会自动推送。</p>
+
+      <div class="notify-card">
+        <div class="notify-card-head">
+          <h3>推送策略</h3>
+        </div>
+        <label>推送频率
+          <select id="ntfPolicy">
+            <option value="every">每次净值更新都推送</option>
+            <option value="only_close">仅收盘后（定时快照）</option>
+            <option value="only_signal">仅出现补仓信号时</option>
+          </select>
+        </label>
+        <p class="tool-hint">控制净值更新后何时推送通知，避免频繁打扰。</p>
+      </div>
 
       <div class="notify-card">
         <div class="notify-card-head">
@@ -454,6 +479,12 @@
         <label>模板内容（用 {{DATA}} 插入持仓统计）
           <textarea id="ai_tpl_content" rows="11" placeholder="在此编写提示词，用 {{DATA}} 占位符插入实时持仓统计"></textarea>
         </label>
+        <label class="switch-row">每日收盘后自动生成 AI 总结（复用 21:00 基金快照）
+          <label class="switch"><input type="checkbox" id="aiAutoDaily"><span class="switch-knob"></span></label>
+        </label>
+        <label class="switch-row">生成后随净值推送发送
+          <label class="switch"><input type="checkbox" id="aiAutoSend"><span class="switch-knob"></span></label>
+        </label>
         <div id="aiErr" class="err"></div>
         <div class="modal-actions">
           <button class="btn" type="button" id="ai_save">保存设置</button>
@@ -623,6 +654,21 @@
     </div>
   </div>
 
+<div id="toolTipHint" class="tool-tip-hint" hidden></div>
+<div id="calJumpModal" class="modal" hidden>
+  <div class="modal-card" style="width:360px; max-width:92vw;">
+    <h2>跳转到月份</h2>
+    <button class="card-close" type="button" id="calJumpClose" title="关闭" aria-label="关闭">✕</button>
+    <div class="cal-jump">
+      <div class="cal-jump-year">
+        <button class="btn cal-nav-btn" id="calJumpPrevY" type="button">‹</button>
+        <span id="calJumpYear" class="cal-jump-yearval"></span>
+        <button class="btn cal-nav-btn" id="calJumpNextY" type="button">›</button>
+      </div>
+      <div class="cal-jump-months" id="calJumpMonths"></div>
+    </div>
+  </div>
+</div>
 <div id="toast" class="toast"></div>
 <footer id="appFooter"><span id="versionInfo"></span></footer>
 <script src="/app.js"></script>

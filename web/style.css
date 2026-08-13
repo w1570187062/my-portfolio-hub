@@ -2162,3 +2162,103 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 [data-theme="light"] .asset-toolbar .btn.icon-btn::before { border-top-color: #eceef2; }
 /* 覆盖移动端 flex 拉伸：图标按钮保持固定尺寸 */
 .asset-toolbar .btn.icon-btn { flex: 0 0 auto; }
+
+/* ===== 行情时效性标识（P0-1） ===== */
+.quote-fresh {
+  margin: 10px 2px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.quote-fresh b { color: var(--text); font-weight: 600; }
+.quote-fresh.stale { color: var(--text-faint); }
+.quote-fresh .fresh-warn { color: #f5a623; }
+.quote-fresh .fresh-age { color: var(--text-muted); }
+
+/* ===== 刷新失败持久标记（P0-2） ===== */
+tr.row-failed { background: rgba(245, 166, 35, .16); }
+tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
+.fail-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #f5a623;
+  color: #1a1a1a;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.card-failed { border-color: rgba(245, 166, 35, .55) !important; }
+
+/* ===== 持仓卡片视图（P0-3） ===== */
+.view-toggle { display: inline-flex; gap: 2px; background: var(--bg-input); border-radius: 8px; padding: 2px; }
+.view-toggle .vt-btn { border: none; background: transparent; color: var(--text-muted); padding: 5px 12px; font-size: 13px; border-radius: 6px; }
+.view-toggle .vt-btn.active { background: var(--bg-card-solid); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.holding-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.holding-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.28); border-color: rgba(110,156,122,.4); }
+.hc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.hc-name { font-weight: 600; font-size: 15px; color: var(--text); }
+.hc-code { color: var(--text-muted); font-size: 12px; margin: 2px 0 8px; }
+.hc-row { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 0; }
+.hc-label { color: var(--text-faint); }
+.hc-val { color: var(--text); font-weight: 500; margin-right: 6px; }
+
+/* ===== 补仓计划已执行（P1-4） ===== */
+.plan-tier .tier-action { margin-top: 6px; }
+.plan-tier.is-executed { opacity: .72; }
+.tier-exec-btn { margin-top: 2px; font-size: 12px; padding: 3px 10px; }
+.tier-executed { color: var(--text-muted); font-size: 12px; padding: 3px 0; }
+.tier-executed::before { content: "✓ "; color: #4ade80; font-weight: 700; }
+
+/* ===== 推送策略 / 开关行（P1-5 / P1-6） ===== */
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* ===== 工具栏首次引导（P2-8） ===== */
+.tool-tip-hint {
+  position: absolute;
+  z-index: 9000;
+  background: var(--bg-card-solid);
+  color: var(--text);
+  border: 1px solid rgba(110,156,122,.5);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.4);
+  pointer-events: none;
+  max-width: 220px;
+}
+
+/* ===== 盈亏日历月份跳转（P2-9） ===== */
+.cal-title { cursor: pointer; user-select: none; padding: 2px 8px; border-radius: 6px; }
+.cal-title:hover { background: var(--bg-hover); }
+.cal-jump { padding: 8px 4px; }
+.cal-jump-year { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 14px; font-size: 16px; font-weight: 600; }
+.cal-jump-yearval { min-width: 80px; text-align: center; }
+.cal-jump-months { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.cal-jump-m { font-size: 14px; padding: 10px 0; }
+.cal-jump-m.active { background: var(--bg-hover); border-color: rgba(110,156,122,.6); }
+
+/* ===== 空状态引导（P2-10） ===== */
+.empty-state { text-align: center; padding: 48px 16px; color: var(--text-muted); }
+.empty-state .empty-icon { font-size: 42px; margin-bottom: 8px; }
+.empty-state p { margin: 0 0 14px; }
+.empty-block { text-align: center; padding: 22px 12px; color: var(--text-muted); }
+.empty-block .empty { margin: 0 0 12px; }
+.asset-add-inline { font-size: 13px; padding: 6px 16px; }

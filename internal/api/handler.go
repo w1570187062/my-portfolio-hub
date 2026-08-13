@@ -130,6 +130,8 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/holdings/:id/refresh", refreshOne)
 		g.POST("/holdings/:id/adjust", adjustHolding)
 		g.GET("/holdings/:id/transactions", listTransactions)
+		g.POST("/holdings/:id/buy-plan/execute", executeBuyPlanTier)
+		g.GET("/holdings/:id/buy-plan/executed", listExecutedBuyPlan)
 		g.GET("/guides", listGuides)
 		g.POST("/guides", createGuide)
 		g.GET("/guides/:id", getGuide)
@@ -222,7 +224,46 @@ func listHoldings(c *gin.Context) {
 	for _, h := range hs {
 		out = append(out, enrich(h))
 	}
-	c.JSON(http.StatusOK, gin.H{"holdings": out, "day_date": time.Now().Format("2006-01-02")})
+	c.JSON(http.StatusOK, gin.H{
+		"holdings":      out,
+		"day_date":      time.Now().Format("2006-01-02"),
+		"snapshot_date": latestSnapshotDate(),
+		"updated_at_max": maxUpdatedAt(hs),
+	})
+}
+
+// maxUpdatedAt returns the most recent holdings.updated_at across the slice
+// (format "2006-01-02 15:04:05"), or "" when none is set.
+func maxUpdatedAt(hs []db.Holding) string {
+	var max time.Time
+	has := false
+	for _, h := range hs {
+		if h.UpdatedAt == "" {
+			continue
+		}
+		t, err := time.ParseInLocation("2006-01-02 15:04:05", h.UpdatedAt, time.Local)
+		if err != nil {
+			continue
+		}
+		if !has || t.After(max) {
+			max = t
+			has = true
+		}
+	}
+	if !has {
+		return ""
+	}
+	return max.Format("2006-01-02 15:04:05")
+}
+
+// latestSnapshotDate returns the date of the most recent daily P&L snapshot
+// (pnl_daily), falling back to today when no snapshot exists yet. Used to label
+// the "快照日期" shown under the summary cards.
+func latestSnapshotDate() string {
+	if row, err := db.GetPnlLatest(); err == nil && row != nil {
+		return row.Date
+	}
+	return time.Now().Format("2006-01-02")
 }
 
 func createHolding(c *gin.Context) {
@@ -373,7 +414,7 @@ func refresh(c *gin.Context) {
 	}
 	_ = doSnapshot()
 	NotifyNetValueUpdated("手动刷新行情")
-	c.JSON(http.StatusOK, gin.H{"holdings": out, "rate": rate, "rate_degraded": degraded, "rate_error": rateErr, "failed": failed})
+	c.JSON(http.StatusOK, gin.H{"holdings": out, "rate": rate, "rate_degraded": degraded, "rate_error": rateErr, "failed": failed, "updated_at_max": maxUpdatedAt(hs)})
 }
 
 // refreshOne refreshes the latest quote for a single holding, persists it, and
@@ -446,7 +487,63 @@ func refreshOne(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"holding": enrich(*h)})
 }
 
-// recomputeBuyPlan recomputes the 补仓计划 for a fund holding that has a
+// executeBuyPlanTier records that a specific buy-plan tier was executed
+// ("标记已补"): the tier is persisted as executed so the UI can grey it out (✓)
+// and the notify path excludes it from pending 补仓信号. It does NOT modify the
+// holding's quantity/cost (no automatic 加仓) — it only records the execution.
+func executeBuyPlanTier(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	var req struct {
+		TierIndex int     `json:"tier_index"`
+		TierLabel  string  `json:"tier_label"`
+		Price      float64 `json:"price"`
+		Amount     float64 `json:"amount"`
+		Note       string  `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if req.TierIndex < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tier_index 非法"})
+		return
+	}
+	tx := &db.BuyPlanExec{
+		HoldingID: id,
+		TierIndex: req.TierIndex,
+		TierLabel: strings.TrimSpace(req.TierLabel),
+		Price:     req.Price,
+		Amount:    req.Amount,
+		Note:      strings.TrimSpace(req.Note),
+	}
+	if err := db.SaveExecutedBuyPlan(tx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "executed": tx})
+}
+
+// listExecutedBuyPlan returns the executed tiers for a holding.
+func listExecutedBuyPlan(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	rows, err := db.ListExecutedBuyPlans(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if rows == nil {
+		rows = []db.BuyPlanExec{}
+	}
+	c.JSON(http.StatusOK, gin.H{"executed": rows})
+}
 // linked_symbol set, and persists it into holdings.buy_plan. It is triggered by
 // both the manual net-value refresh and the scheduled 21:00 snapshot (via
 // refreshAllQuotes / refreshOne). Results are NOT written into the note column;
@@ -546,10 +643,21 @@ func summary(c *gin.Context) {
 	if hkdCV > 0 {
 		hkdPct = hkdPnl / hkdCV * 100
 	}
+	// 本月累计盈亏：汇总最近 pnl_daily 中本月（按数据日期）的总盈亏
+	var monthPNL float64
+	if hist, e := db.GetPnlHistory(); e == nil {
+		ym := time.Now().Format("2006-01")
+		for _, r := range hist {
+			if strings.HasPrefix(r.Date, ym) {
+				monthPNL += r.TotalCNY
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"rate":                cnyRate,
 		"rate_degraded":       degraded,
 		"unsupported_currencies": unsupported,
+		"month_pnl_cny":       monthPNL,
 		"hkd_rate":            hkdToCny,
 		"cny_market_value":    cnyMV,
 		"cny_cost_value":      cnyCV,

@@ -33,6 +33,10 @@ type aiConfig struct {
 	Model     string       `json:"model"`
 	BaseURL   string       `json:"base_url"`
 	Templates []aiTemplate `json:"templates"`
+	// AutoDaily: 每日收盘后（21:30 定时任务，复用 21:00 基金快照）自动生成 AI 总结并存入历史。
+	AutoDaily bool `json:"auto_daily"`
+	// AutoSend: 自动生成的总结是否随净值推送一起发送到已配置的通知渠道。
+	AutoSend bool `json:"auto_send"`
 }
 
 var defaultTemplates = []aiTemplate{
@@ -430,4 +434,64 @@ func aiHistoryGet(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"history": rows})
+}
+
+// generateDailyAISummary generates the portfolio AI summary using the saved
+// config, persists it to history, and returns the content. It mirrors the logic
+// in aiSummary but runs without an HTTP context (for the scheduled job).
+func generateDailyAISummary() (string, error) {
+	cfg, err := loadAIConfig()
+	if err != nil {
+		return "", err
+	}
+	if cfg.APIKey == "" || cfg.BaseURL == "" || cfg.Model == "" {
+		return "", fmt.Errorf("AI 未配置（请在 AI 设置填写 API Key / 模型 / 模型地址）")
+	}
+	tmpl := defaultTemplates[0].Content
+	if len(cfg.Templates) > 0 {
+		tmpl = cfg.Templates[0].Content
+	}
+	stats, err := buildPortfolioStats()
+	if err != nil {
+		return "", err
+	}
+	prompt := injectData(tmpl, stats)
+	content, err := callChatCompletions(cfg.BaseURL, cfg.APIKey, cfg.Model, prompt)
+	if err != nil {
+		return "", err
+	}
+	if err := db.SaveAISummary(content, cfg.Model); err != nil {
+		log.Printf("warn: save ai summary history failed: %v", err)
+	}
+	return content, nil
+}
+
+// ScheduleDailyAISummary runs once per day at 21:30 Beijing (after the 21:00
+// fund snapshot). If AutoDaily is enabled in the AI settings, it generates the
+// summary and saves it to history; if AutoSend is also enabled, it pushes the
+// result via the configured notify channels.
+func ScheduleDailyAISummary() {
+	scheduleAt(21, 30, "AI收盘总结", func(label string) {
+		if !isTradingDayCN(time.Now()) {
+			log.Printf("[ai] %s 非交易日，跳过定时总结", label)
+			return
+		}
+		cfg, err := loadAIConfig()
+		if err != nil {
+			log.Printf("[ai] 读取 AI 配置失败: %v", err)
+			return
+		}
+		if !cfg.AutoDaily {
+			return
+		}
+		content, err := generateDailyAISummary()
+		if err != nil {
+			log.Printf("[ai] 定时总结生成失败: %v", err)
+			return
+		}
+		log.Printf("[ai] 定时总结已生成并保存到历史")
+		if cfg.AutoSend {
+			NotifyAIContent("持仓 AI 收盘总结", content)
+		}
+	})
 }

@@ -43,6 +43,11 @@ type emailCfg struct {
 type notifyConfig struct {
 	Dingtalk dingtalkCfg `json:"dingtalk"`
 	Email    emailCfg    `json:"email"`
+	// Policy controls how often net-value notifications are sent:
+	//   "" / "every"      —— 每次净值更新都推送（默认）
+	//   "only_close"      —— 仅收盘后定时快照推送
+	//   "only_signal"     —— 仅在有补仓信号时推送
+	Policy string `json:"policy"`
 }
 
 func loadNotifyConfig() (notifyConfig, error) {
@@ -260,6 +265,7 @@ func collectBuySignals() []buySignal {
 		return nil
 	}
 	var out []buySignal
+	execKeys, _ := db.ListExecutedBuyPlanKeys()
 	for _, h := range hs {
 		if strings.TrimSpace(h.BuyPlan) == "" {
 			continue
@@ -278,7 +284,11 @@ func collectBuySignals() []buySignal {
 		if json.Unmarshal([]byte(h.BuyPlan), &plan) != nil || !plan.HasData {
 			continue
 		}
-		for _, t := range plan.Tiers {
+		for idx, t := range plan.Tiers {
+			// 已"标记已补"的档位不再计入待触发信号
+			if execKeys[fmt.Sprintf("%d:%d", h.ID, idx)] {
+				continue
+			}
 			// 价格到点位：联接ETF最新价 ≤ 触发价（浮点误差极小，直接比较）
 			if plan.ETFLatest <= 0 || plan.ETFLatest > t.Price {
 				continue
@@ -381,21 +391,72 @@ func NotifyNetValueUpdated(triggeredBy string) {
 		if !cfg.Dingtalk.Enabled && !cfg.Email.Enabled {
 			return
 		}
+		if !shouldSendByPolicy(cfg, triggeredBy) {
+			log.Printf("[notify] 按推送策略(%s)跳过本次推送（触发：%s）", policyName(cfg.Policy), triggeredBy)
+			return
+		}
 		text := buildNetValueNotifyText(triggeredBy)
-		if cfg.Dingtalk.Enabled && cfg.Dingtalk.Webhook != "" {
-			if e := sendDingtalk(cfg.Dingtalk, "持仓净值更新", text); e != nil {
-				log.Printf("[notify] 钉钉发送失败: %v", e)
-			} else {
-				log.Printf("[notify] 钉钉发送成功")
-			}
+		sendToChannels(cfg, "持仓净值更新", text)
+	}()
+}
+
+// shouldSendByPolicy decides whether a net-value update should be pushed given
+// the configured frequency policy and the trigger source.
+func shouldSendByPolicy(cfg notifyConfig, triggeredBy string) bool {
+	switch cfg.Policy {
+	case "only_close":
+		// 仅收盘后定时快照（A股15:15 / 基金21:00 / 美股07:00）推送
+		return strings.Contains(triggeredBy, "定时快照")
+	case "only_signal":
+		// 仅在有补仓信号时推送
+		return len(collectBuySignals()) > 0
+	default: // "" / "every"
+		return true
+	}
+}
+
+func policyName(p string) string {
+	switch p {
+	case "only_close":
+		return "仅收盘后"
+	case "only_signal":
+		return "仅补仓信号"
+	default:
+		return "每次更新"
+	}
+}
+
+// sendToChannels sends text (markdown) to all enabled channels (dingtalk + email).
+func sendToChannels(cfg notifyConfig, title, text string) {
+	if cfg.Dingtalk.Enabled && cfg.Dingtalk.Webhook != "" {
+		if e := sendDingtalk(cfg.Dingtalk, title, text); e != nil {
+			log.Printf("[notify] 钉钉发送失败: %v", e)
+		} else {
+			log.Printf("[notify] 钉钉发送成功")
 		}
-		if cfg.Email.Enabled {
-			if e := sendEmail(cfg.Email, "持仓净值更新通知", stripMarkdown(text)); e != nil {
-				log.Printf("[notify] 邮箱发送失败: %v", e)
-			} else {
-				log.Printf("[notify] 邮箱发送成功")
-			}
+	}
+	if cfg.Email.Enabled {
+		if e := sendEmail(cfg.Email, title+"通知", stripMarkdown(text)); e != nil {
+			log.Printf("[notify] 邮箱发送失败: %v", e)
+		} else {
+			log.Printf("[notify] 邮箱发送成功")
 		}
+	}
+}
+
+// NotifyAIContent sends AI-generated content (e.g. 收盘后自动总结) to all
+// enabled channels. Runs in a background goroutine.
+func NotifyAIContent(title, text string) {
+	go func() {
+		cfg, err := loadNotifyConfig()
+		if err != nil {
+			log.Printf("[notify] 读取配置失败: %v", err)
+			return
+		}
+		if !cfg.Dingtalk.Enabled && !cfg.Email.Enabled {
+			return
+		}
+		sendToChannels(cfg, title, text)
 	}()
 }
 
