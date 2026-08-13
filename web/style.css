@@ -2311,7 +2311,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 
 /* ===== 持仓卡片视图（P0-3） ===== */
 .view-toggle { position: relative; display: inline-flex; gap: 2px; background: var(--bg-input); border-radius: 8px; padding: 2px; }
-.view-toggle .vt-indicator { position: absolute; top: 2px; bottom: 2px; left: 0; width: 0; background: var(--bg-card-solid); border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.2); transform: translateX(0); z-index: 0; transition: transform .26s cubic-bezier(.4,0,.2,1), width .26s cubic-bezier(.4,0,.2,1); will-change: transform, width; }
+.view-toggle .vt-indicator { position: absolute; top: 2px; bottom: 2px; left: 0; width: 0; background: var(--primary); border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.2); transform: translateX(0); z-index: 0; transition: transform .26s cubic-bezier(.4,0,.2,1), width .26s cubic-bezier(.4,0,.2,1); will-change: transform, width; }
 .view-toggle .vt-btn { position: relative; z-index: 1; border: none; background: transparent; color: var(--text-muted); padding: 5px 12px; font-size: 13px; border-radius: 6px; transition: color .2s ease; }
 .view-toggle .vt-btn.active { background: transparent; color: var(--text); box-shadow: none; }
 .cards-grid {
