@@ -1482,6 +1482,15 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .asset-summary { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px 20px 12px; }
 .asset-summary .card { min-width: 150px; flex: 1 1 calc(33% - 12px); }
 .asset-toolbar { display: flex; gap: 10px; flex-wrap: wrap; padding: 0 20px 12px; }
+/* 工具栏分组竖线：桌面显示，移动端隐藏（见 @media 内 .atool-sep） */
+.asset-toolbar .atool-sep {
+  align-self: center;
+  width: 1px;
+  height: 18px;
+  background: var(--border, rgba(255, 255, 255, .14));
+  margin: 0 2px;
+  flex: 0 0 auto;
+}
 .atool-sep {
   width: 1px;
   height: 24px;
@@ -1599,7 +1608,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   gap: 0;
   overflow: hidden;
 }
-.asset-summary .c-label { color: var(--text-muted); font-size: 12px; }
+.asset-summary .c-label { color: var(--text-muted); font-size: 13px; font-weight: 700; }
 .asset-summary .c-value {
   font-size: 20px;
   font-weight: 700;
@@ -1616,7 +1625,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .asset-summary .card-merged { flex: 1 1 100%; }
 .asset-summary .c-breakdown { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
 .asset-summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
-.asset-summary .c-br-label { color: var(--text-muted); min-width: 60px; flex: 0 0 auto; }
+.asset-summary .c-br-label { color: var(--text-muted); min-width: 60px; flex: 0 0 auto; font-weight: 600; }
 .asset-summary .c-br-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
 .asset-summary .c-br-delta { margin-left: auto; font-size: 12px; font-family: var(--font-mono); text-align: right; min-width: 0; }
 .asset-summary .c-br-delta.up { color: #f87171; }

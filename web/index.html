@@ -82,16 +82,12 @@
       <div id="navDropdown" class="nav-dropdown" hidden>
         <button class="nav-item" data-nav="asset" type="button">🗂️ <span>资产全景</span></button>
         <button class="nav-item" data-nav="tools" type="button">🛠️ <span>盈亏工具</span></button>
-        <button class="nav-item" data-nav="pie" type="button">🥧 <span>资产构成</span></button>
-        <button class="nav-item" data-nav="trend" type="button">📈 <span>盈亏走势</span></button>
         <button class="nav-item" data-nav="calendar" type="button">📅 <span>盈亏日历</span></button>
       <button class="nav-item" data-nav="notify" type="button">🔔 <span>通知渠道</span></button>
       </div>
     </div>
     <!-- 原 nav 按钮（隐藏，保留供 JS 绑定兼容） -->
     <div id="legacyNav" hidden>
-      <button id="pieBtn" class="btn">🥧 资产构成</button>
-      <button id="trendBtn" class="btn">📈 盈亏走势</button>
       <button id="calendarBtn" class="btn">📅 盈亏日历</button>
       <button id="assetBtn" class="btn">🗂️ 资产全景</button>
       <button id="toolsBtn" class="btn">🛠️ 盈亏工具</button>
@@ -136,9 +132,13 @@
     <section id="assetSummary" class="summary asset-summary"></section>
     <div class="asset-toolbar">
       <button id="aiPickBtn" class="btn">🤖 AI中枢</button>
+      <span class="atool-sep"></span>
       <button id="assetSnapBtn" class="btn">📥 更新理财持仓</button>
       <button id="ai_export_json" class="btn">⬇️ 导出数据</button>
       <button id="assetRefreshBtn" class="btn">🔄 刷新历史数据</button>
+      <span class="atool-sep"></span>
+      <button id="assetPieBtn" class="btn">🥧 资产构成</button>
+      <button id="assetTrendBtn" class="btn">📈 盈亏走势</button>
     </div>
     <div class="asset-tabs" id="assetTabs">
       <button class="btn atab active" data-tab="wealth" type="button">理财</button>

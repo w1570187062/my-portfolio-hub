@@ -70,8 +70,6 @@ if (navToggleBtn && navDropdown) {
           showHoldingsView();
           window.scrollTo({ top: 0, behavior: 'smooth' });
           break;
-        case 'pie':   renderPie();   break;
-        case 'trend': renderTrend(); break;
         case 'calendar':
           if ($('#calendarView').hidden) {
             $('#holdingsView').hidden = true;
@@ -1240,8 +1238,8 @@ function moveTrendTip(e) {
 }
 function hideTrendTip() { const tip = document.getElementById('trendTip'); if (tip) tip.classList.remove('show'); }
 
-$('#pieBtn').onclick = () => { renderPie(); };
-$('#trendBtn').onclick = renderTrend;
+$('#assetPieBtn').onclick = () => { renderPie(); };
+$('#assetTrendBtn').onclick = renderTrend;
 $('#chartCloseBtn').onclick = closeChart;
 
 // ---- P&L Calendar ----
@@ -1746,7 +1744,7 @@ $('#histTabTable').onclick = () => switchHistTab('table');
 $('#histTabChart').onclick = () => switchHistTab('chart');
 
 // ===== 调试：统一按钮点击日志（addEventListener 追加，不干扰原有 onclick） =====
-['addBtn','guideBtn','refreshBtn','aiPickBtn','moreBtn','aiPickGo','aiHubXClose','hubTabSummary','hubTabTools','hubTabSettings','hubTabHistory','calendarBtn','confirmOk','confirmCancel','pieBtn','trendBtn','chartCloseBtn','calModalClose','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','navToggle','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','ai_result_close','histCloseBtn','histTabTable','histTabChart','cancelBtn'].forEach((id) => {
+['addBtn','guideBtn','refreshBtn','aiPickBtn','moreBtn','aiPickGo','aiHubXClose','hubTabSummary','hubTabTools','hubTabSettings','hubTabHistory','calendarBtn','confirmOk','confirmCancel','assetPieBtn','assetTrendBtn','chartCloseBtn','calModalClose','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','navToggle','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','ai_result_close','histCloseBtn','histTabTable','histTabChart','cancelBtn'].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', () => console.log('[click]', id));
 });
@@ -2352,7 +2350,7 @@ function renderAssetSummary() {
   const eq = d.equity || {}, w = d.wealth || {}, l = d.liability || {}, c = d.consumption || {}, cash = d.cash || {};
   const wBy = w.by_currency || {};
   const cBy = cash.by_currency || {};
-  const byCurHtml = (m) => Object.keys(m).map((k) => `${curSymbolJS(k)}${fmt(m[k] || 0)}`).join(' ｜ ');
+  const byCurHtml = (m) => Object.keys(m).map((k) => `${curSymbolJS(k)}${fmt(m[k] || 0)}`).join(' | ');
   const total = (eq.market_value || 0) + (w.total || 0) + (cash.total || 0);
   // 合并卡片：总资产（含 权益市值 / 理财持仓 明细）
   const equityRow =
