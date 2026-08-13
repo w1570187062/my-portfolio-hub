@@ -2108,6 +2108,10 @@ async function showAssetView() {
   $('#notifyView').hidden = true;
   $('#assetView').hidden = false;
   injectPageHead('assetView', '🗂️ 资产全景');
+  // 将工具栏整排移入页头右侧 actions（与「资产全景」同一行末尾）
+  const tb = document.querySelector('#assetView .asset-toolbar');
+  const acts = document.querySelector('#assetView .page-head__actions');
+  if (tb && acts && tb.parentElement !== acts) acts.appendChild(tb);
   $('#calendarBtn').classList.remove('active');
   $('#assetBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
   setNavActive('asset');
@@ -3270,9 +3274,9 @@ function isTierTriggered(plan, t) {
 // 二级列表样式：每个基金条目头部可点击折叠/展开其补仓计划明细
 async function renderBuyPlans() {
   const body = $('#guidePlanBody');
-  const planned = guideHoldings.filter((h) => h.buy_plan && h.linked_symbol);
+  const planned = guideHoldings.filter((h) => h.buy_plan && (h.linked_symbol || h.category === 'stock'));
   if (!planned.length) {
-    body.innerHTML = '<div class="guide-empty">暂无补仓计划：持仓基金会在净值刷新（定时 21:00 / 手动刷新）后自动计算</div>';
+    body.innerHTML = '<div class="guide-empty">暂无补仓计划：持仓基金 / 亏损股票会在净值刷新（定时 21:00 / 手动刷新）后自动计算</div>';
     return;
   }
   let html = '';
@@ -3295,7 +3299,7 @@ async function renderBuyPlans() {
       <div class="bp-head bp-toggle" data-bp="${h.id}">
         <span class="bp-chevron">▾</span>
         <span class="bp-name">${esc(name)}</span>
-        <span class="bp-code">${esc(h.symbol || '')} · 联接 ${esc(h.linked_symbol || '')}</span>
+        <span class="bp-code">${esc(h.symbol || '')}${h.category === 'stock' ? '' : (' · 联接 ' + esc(h.linked_symbol || ''))}</span>
         ${summary}
       </div>
       <div class="bp-body">
@@ -3324,10 +3328,10 @@ async function renderBuyPlans() {
       html += '</div>';
       html += `<div class="plan-foot">弹药上限 ≈ ¥${fmt(plan.AmmoCap)}　｜　已持有市值 ¥${fmt(plan.HeldValue)}　｜　浮动亏损 ¥${fmt(plan.LossAmt)}</div>`;
       if (plan.ETFLatest) {
-        html += `<div class="plan-meta">联接ETF 最新 ${fmt(plan.ETFLatest)}　｜　BOLL 中轨 ${fmt(plan.BOLLMid)} / 下轨 ${fmt(plan.BOLLLower)}　｜　近60日 ${fmt(plan.SwingBottom)}~${fmt(plan.SwingTop)}（自高点回撤 ${plan.BottomPct != null ? plan.BottomPct.toFixed(1) : '—'}%）</div>`;
+        html += `<div class="plan-meta">${h.category === 'stock' ? '标的' : '联接ETF'} 最新 ${fmt(plan.ETFLatest)}　｜　BOLL 中轨 ${fmt(plan.BOLLMid)} / 下轨 ${fmt(plan.BOLLLower)}　｜　近60日 ${fmt(plan.SwingBottom)}~${fmt(plan.SwingTop)}（自高点回撤 ${plan.BottomPct != null ? plan.BottomPct.toFixed(1) : '—'}%）</div>`;
       }
     } else {
-      html += '<div class="guide-empty">暂无可用的联接ETF日K线，补仓位未更新</div>';
+      html += '<div class="guide-empty">暂无可用的标的K线，补仓位未更新</div>';
     }
     html += `<div class="plan-time">计算时间：${esc(plan.ComputedAt || '')}</div>`;
     html += `</div></div>`;

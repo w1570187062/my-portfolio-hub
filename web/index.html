@@ -368,11 +368,15 @@
       <div class="guide-plan">
         <div class="guide-plan-head">
           <span class="guide-plan-title">📊 动态补仓计划</span>
-          <span class="guide-plan-sub">基金净值刷新后自动计算</span>
+          <span class="guide-plan-sub">基金 / 亏损股票在净值刷新后自动计算</span>
         </div>
         <div id="guidePlanBody" class="guide-plan-body"></div>
       </div>
-      <div id="guideList" class="guide-list"><div class="guide-empty">暂无操作记录</div></div>
+      <div class="guide-manual">
+        <div class="guide-plan-head">
+          <span class="guide-plan-title">📝 手动添加补仓计划</span>
+        </div>
+        <div id="guideList" class="guide-list"><div class="guide-empty">暂无操作记录</div></div>
       <form id="guideForm" hidden>
         <input type="hidden" id="guide_id">
         <label>标题 *<input id="guide_title" placeholder="如：买入 PEP 100股 @150" required></label>
@@ -391,6 +395,7 @@
         <button class="btn" type="button" id="guideNew">➕ 新增记录</button>
         <button class="btn" type="button" id="guideClose">关闭</button>
       </div>
+      </div><!-- /guide-manual -->
     </div>
   </div>
 

@@ -548,11 +548,29 @@ func listExecutedBuyPlan(c *gin.Context) {
 // both the manual net-value refresh and the scheduled 21:00 snapshot (via
 // refreshAllQuotes / refreshOne). Results are NOT written into the note column;
 // the 操作指南弹框 reads holdings.buy_plan to display them.
+// recomputeBuyPlan 在净值刷新（手动/定时）时为持仓计算并持久化动态补仓计划：
+//   - 基金：需设置关联联接ETF代码，基于ETF日K线计算（原逻辑）；
+//   - 股票：仅当处于浮亏（成本>现价）时，基于自身日K线计算，纳入动态补仓计划。
 func recomputeBuyPlan(h *db.Holding) {
-	if h.Category != "fund" || h.LinkedSymbol == "" {
+	switch h.Category {
+	case "fund":
+		if h.LinkedSymbol == "" {
+			return
+		}
+		saveBuyPlan(h, market.ComputeLinkedETFBuyPlan(h.LinkedSymbol, h.Symbol, h.Market, h.CostPrice, h.CurrentPrice, h.Quantity))
+	case "stock":
+		// 仅浮亏时才生成摊薄成本的补仓计划
+		if h.CostPrice <= h.CurrentPrice {
+			return
+		}
+		saveBuyPlan(h, market.ComputeLinkedETFBuyPlan(h.Symbol, h.Symbol, h.Market, h.CostPrice, h.CurrentPrice, h.Quantity))
+	}
+}
+
+func saveBuyPlan(h *db.Holding, plan *market.BuyPlan) {
+	if plan == nil {
 		return
 	}
-	plan := market.ComputeLinkedETFBuyPlan(h.LinkedSymbol, h.Symbol, h.Market, h.CostPrice, h.CurrentPrice, h.Quantity)
 	b, err := json.Marshal(plan)
 	if err != nil {
 		log.Printf("[buyplan] %s 序列化失败: %s", h.Symbol, err.Error())
