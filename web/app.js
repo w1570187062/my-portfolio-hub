@@ -123,7 +123,8 @@ let snapshotDate = '';   // 最近 pnl_daily 快照日期（YYYY-MM-DD）
 let updatedAtMax = '';   // 行情更新时间最大值（YYYY-MM-DD HH:MM:SS）
 let monthPnlCNY = 0;     // 本月累计盈亏（CNY）
 let failedSymbols = {};  // symbol -> 失败原因（刷新失败持久标记）
-let holdingsView = localStorage.getItem('pf_view') || 'table'; // table | card
+// table | card；移动端（窄屏）默认卡片视图（表格横向溢出体验差），但不强制——允许用户手动切回表格（可横向滚动）
+let holdingsView = localStorage.getItem('pf_view') || (window.innerWidth < 640 ? 'card' : 'table');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Two-level category -> market association (二级筛选).
@@ -350,8 +351,8 @@ function renderFiltered() {
   const cards = document.getElementById('cards');
   const empty = document.getElementById('holdingsEmpty');
   const tw = document.querySelector('.table-wrap');
-  // 手机端（<640）强制卡片视图，表格横向溢出体验差（设计系统：移动端表格转卡片）
-  const useCard = (window.innerWidth < 640) ? true : (holdingsView === 'card');
+  // 视图以用户选择为准（holdingsView），移动端仅作为默认偏好，不再强制卡片，保证切换按钮在手机上真实生效
+  const useCard = holdingsView === 'card';
   if (useCard) {
     if (tbl) tbl.hidden = true;
     if (tw) tw.hidden = true;
