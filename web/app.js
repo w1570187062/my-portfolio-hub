@@ -539,7 +539,7 @@ function buildFilters() {
   const mktRow = document.createElement('div');
   mktRow.id = 'mktRow';
   mktRow.className = 'filter-row scroll-row';
-  mktRow.innerHTML = '<span class="filters-label">市场：</span>';
+  mktRow.innerHTML = ''; // 不显示「市场：」文字标签（需求）
   box.appendChild(mktRow);
   mktRow.style.display = 'none'; // 默认全部时隐藏市场行
   mktFilter = new Set(ALL_MARKETS);
