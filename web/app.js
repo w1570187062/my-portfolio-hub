@@ -1360,6 +1360,28 @@ function drawCalMonth() {
   const m = calViewDate.getMonth();
   $('#calTitle').textContent = y + '年' + (m + 1) + '月';
 
+  // 当月总盈亏：所查看月份所有有数据日期的 total_cny 求和（切换月份自动更新）
+  const monthPrefix = y + '-' + String(m + 1).padStart(2, '0');
+  let monthPnl = 0, monthDays = 0;
+  for (const ds in calData) {
+    if (ds.startsWith(monthPrefix)) {
+      monthPnl += calData[ds].total_cny || 0;
+      monthDays++;
+    }
+  }
+  const ms = $('#calMonthSummary');
+  if (ms) {
+    if (!monthDays) {
+      ms.innerHTML = '<span class="cal-ms-label">本月暂无盈亏数据</span>';
+    } else {
+      const msCls = monthPnl > 0 ? 'up' : monthPnl < 0 ? 'down' : 'flat';
+      const sign = monthPnl >= 0 ? '+' : '';
+      ms.innerHTML = '<span class="cal-ms-label">本月总盈亏</span>'
+        + `<span class="cal-ms-val ${msCls}">¥${sign}${fmt(monthPnl)}</span>`
+        + `<span class="cal-ms-sub">${monthDays} 天有数据</span>`;
+    }
+  }
+
   const first = new Date(y, m, 1);
   const start = sundayOf(first);                       // 该月1号所在周的周日
   const daysInMonth = new Date(y, m + 1, 0).getDate();
