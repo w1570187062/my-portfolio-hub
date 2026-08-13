@@ -236,13 +236,82 @@ func sendEmail(cfg emailCfg, subject, body string) error {
 
 // ---- 净值更新触发通知 ----
 
-// buildNetValueNotifyText 构造通知正文：触发来源 + 日期 + 当日盈亏概览。
+// buySignal 补仓信号：某持仓的某一档已到补仓点位（操作指南里的动态补仓计划）。
+type buySignal struct {
+	Name         string
+	Symbol       string
+	LinkedSymbol string
+	TierLabel    string
+	TierPrice    float64
+	Drawdown     float64
+	Amount       float64
+	Signal       string
+}
+
+// collectBuySignals 遍历所有持仓的补仓计划（holdings.buy_plan，由净值刷新时计算、
+// 操作指南弹框展示的同一份数据），收集已触发（Signal 非空）的档位。
+func collectBuySignals() []buySignal {
+	hs, err := db.List()
+	if err != nil {
+		log.Printf("[notify] 读取持仓失败: %v", err)
+		return nil
+	}
+	var out []buySignal
+	for _, h := range hs {
+		if strings.TrimSpace(h.BuyPlan) == "" {
+			continue
+		}
+		var plan struct {
+			HasData bool `json:"HasData"`
+			Tiers   []struct {
+				Label    string  `json:"Label"`
+				Price    float64 `json:"Price"`
+				Drawdown float64 `json:"Drawdown"`
+				Amount   float64 `json:"Amount"`
+				Signal   string  `json:"Signal"`
+			} `json:"Tiers"`
+		}
+		if json.Unmarshal([]byte(h.BuyPlan), &plan) != nil || !plan.HasData {
+			continue
+		}
+		for _, t := range plan.Tiers {
+			if strings.TrimSpace(t.Signal) == "" {
+				continue
+			}
+			out = append(out, buySignal{
+				Name:         h.Name,
+				Symbol:       h.Symbol,
+				LinkedSymbol: h.LinkedSymbol,
+				TierLabel:    t.Label,
+				TierPrice:    t.Price,
+				Drawdown:     t.Drawdown,
+				Amount:       t.Amount,
+				Signal:       t.Signal,
+			})
+		}
+	}
+	return out
+}
+
+// buildNetValueNotifyText 构造通知正文：触发来源 + 补仓信号 + 日期 + 当日盈亏概览。
 func buildNetValueNotifyText(triggeredBy string) string {
 	date := time.Now().Format("2006-01-02")
 	var sb strings.Builder
 	sb.WriteString("## 持仓净值已更新\n\n")
 	sb.WriteString(fmt.Sprintf("- **触发**：%s\n", triggeredBy))
 	sb.WriteString(fmt.Sprintf("- **日期**：%s\n", date))
+
+	// 补仓信号重点提示：有条目已到补仓点位时置顶突出
+	if sigs := collectBuySignals(); len(sigs) > 0 {
+		sb.WriteString(fmt.Sprintf("\n## 🚨 补仓信号（%d 档已到补仓点位）\n\n", len(sigs)))
+		for _, s := range sigs {
+			sb.WriteString(fmt.Sprintf("- **%s**（%s · 联接 %s）\n", s.Name, s.Symbol, s.LinkedSymbol))
+			sb.WriteString(fmt.Sprintf("  触发档：`%s`　触发价 %.3f　回撤 %.1f%%　建议投入 ¥%.2f\n",
+				s.TierLabel, s.TierPrice, s.Drawdown, s.Amount))
+			sb.WriteString("  > 信号：" + s.Signal + "\n")
+		}
+	}
+
 	if row, err := db.GetPnlLatest(); err == nil && row != nil {
 		sb.WriteString(fmt.Sprintf("- **当日总盈亏**：¥%s\n", moneyFmt(row.TotalCNY)))
 		sb.WriteString(fmt.Sprintf("- **美元盈亏**：$%s\n", moneyFmt(row.TotalUSD)))
