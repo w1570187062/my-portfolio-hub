@@ -1667,10 +1667,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 /* ===== 小工具页 ===== */
 .tool-head { display: flex; align-items: center; gap: 14px; padding: 8px 28px 4px; }
 .tool-head h2 { margin: 0; font-size: 18px; color: var(--text); }
-.tools-grid { display: grid; grid-template-columns: 1fr; gap: 16px; max-width: 980px; margin: 0 auto; padding: 8px 28px 30px; align-items: start; }
-/* 仅权益资产盈亏计算器卡片加宽；其余计算器与合并卡保持原宽居中 */
-.tool-card:not(.tool-card--wide):not(.merge-card) { max-width: 820px; margin-inline: auto; }
-.tool-card--wide { max-width: 100%; }
+.tools-grid { display: grid; grid-template-columns: 1fr; gap: 16px; max-width: none; margin: 0; padding: 8px 28px 30px; align-items: start; }
 .tool-card {
   position: relative;
   background: var(--bg-card);
@@ -1830,6 +1827,9 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   .tool-rate input { width: 100%; }
   /* 资产全景合并卡片：手机端占满一行 */
   .asset-summary .card-merged { flex: 1 1 100%; }
+  /* 盈亏工具 / 通知渠道卡片：手机端收窄左右间距，避免贴边且输入框过窄 */
+  .tools-grid { padding: 8px 14px 30px; }
+  .notify-wrap { padding: 8px 14px 40px; }
 }
 
 /* ===== 技术分析弹框 ===== */
@@ -2001,9 +2001,9 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 
 /* ===== 通知渠道二级页 ===== */
 .notify-wrap {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 8px 4px 40px;
+  max-width: none;
+  margin: 0;
+  padding: 8px 28px 40px;
 }
 .notify-wrap h2 { font-size: 20px; margin: 8px 0 4px; }
 .notify-card {
