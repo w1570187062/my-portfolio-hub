@@ -1587,7 +1587,9 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .asset-table .up { color: #f87171; }
 .asset-table .down { color: #4ade80; }
 .snap-body { max-height: 62vh; overflow: auto; }
-.snap-row { padding: 14px 0; border-bottom: 1px solid rgba(255, 255, 255, .05); }
+.snap-row { padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; background: rgba(255, 255, 255, .02); }
+.snap-row:last-child { margin-bottom: 0; }
+[data-theme="light"] .snap-row { background: rgba(15, 23, 42, .02); }
 .snap-row .sr-name { font-size: 13px; margin-bottom: 8px; color: var(--text); }
 .snap-row .sr-name small { color: var(--text-muted); display: block; }
 .sr-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
