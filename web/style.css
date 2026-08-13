@@ -2303,6 +2303,11 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .holding-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.28); border-color: rgba(110,156,122,.4); }
 .hc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .hc-name { font-weight: 600; font-size: 15px; color: var(--text); }
+/* 卡片名称跟随当日涨跌变色（与表格 name-up/name-down 一致；提高优先级以免被上方默认色覆盖） */
+.hc-name.name-up { color: #f87171; }
+.hc-name.name-down { color: #4ade80; }
+:root[data-theme="light"] .hc-name.name-up { color: #dc2626; }
+:root[data-theme="light"] .hc-name.name-down { color: #16a34a; }
 .hc-code { color: var(--text-muted); font-size: 12px; margin: 2px 0 8px; }
 .hc-row { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 0; }
 .hc-label { color: var(--text-faint); }

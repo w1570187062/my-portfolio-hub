@@ -419,7 +419,7 @@ function renderCards(hs) {
     const fail = failedSymbols[h.symbol];
     return `<div class="holding-card${fail ? ' card-failed' : ''}" data-card="${h.id}" data-category="${h.category}" data-linked-symbol="${esc(h.linked_symbol || '')}">
       <div class="hc-top">
-        <div class="hc-name">${esc(h.name)}${h.day_pnl_pct > 0 ? ' <span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? ' <span class="name-arrow-down">▼</span>' : '')}${h.category === 'fund' && h.linked_symbol ? ' <span class="linked-badge">🔗</span>' : ''}</div>
+        <div class="hc-name${h.day_pnl_pct > 0 ? ' name-up' : (h.day_pnl_pct < 0 ? ' name-down' : '')}">${esc(h.name)}${h.day_pnl_pct > 0 ? ' <span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? ' <span class="name-arrow-down">▼</span>' : '')}${h.category === 'fund' && h.linked_symbol ? ' <span class="linked-badge">🔗</span>' : ''}</div>
         ${fail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}
       </div>
       <div class="hc-code">${esc(h.symbol)} · ${cat(h.category)} · ${h.market} · ${h.currency}</div>
@@ -1965,21 +1965,24 @@ function switchHistTab(which) {
 }
 
 function renderHistTable(d, cur) {
-  const s = d.series || [];
+  const s = (d.series || []).slice().reverse(); // 从新到旧展示（曲线仍用原升序）
   if (s.length === 0) {
     $('#histTable').innerHTML = '<p style="color:#8a8f99;line-height:1.6;padding:8px 2px">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；从记录之日起每个交易日生成一个数据点。</p>';
     return;
   }
-  const rows = s.map((x, i) => `
+  const rows = s.map((x, i) => {
+    const isBase = (i === s.length - 1); // 最早一天无"当日盈亏"
+    return `
     <tr>
       <td>${x.date}</td>
       <td class="num">${fmtNav(x.close, (d.holding || {}).category)}</td>
-      <td class="num ${cls(x.day_pnl)}">${i === 0 ? '—' : fmt(x.day_pnl)}</td>
-      <td class="num ${cls(x.day_pnl_pct)}">${i === 0 ? '—' : pct(x.day_pnl_pct)}</td>
+      <td class="num ${cls(x.day_pnl)}">${isBase ? '—' : fmt(x.day_pnl)}</td>
+      <td class="num ${cls(x.day_pnl_pct)}">${isBase ? '—' : pct(x.day_pnl_pct)}</td>
       <td class="num ${cls(x.total_pnl)}">${fmt(x.total_pnl)}</td>
       <td class="num ${cls(x.total_pnl_pct)}">${pct(x.total_pnl_pct)}</td>
       <td class="num">${fmt(x.market_value)}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   $('#histTable').innerHTML = `
     <table class="hist-tbl">
       <thead><tr>
