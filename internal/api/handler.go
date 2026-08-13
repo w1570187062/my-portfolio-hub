@@ -413,7 +413,7 @@ func refresh(c *gin.Context) {
 		out = append(out, enrich(h))
 	}
 	_ = doSnapshot()
-	NotifyNetValueUpdated("手动刷新行情")
+	NotifyNetValueUpdated("手动刷新行情", "")
 	c.JSON(http.StatusOK, gin.H{"holdings": out, "rate": rate, "rate_degraded": degraded, "rate_error": rateErr, "failed": failed, "updated_at_max": maxUpdatedAt(hs)})
 }
 
@@ -483,7 +483,7 @@ func refreshOne(c *gin.Context) {
 		}
 	}
 	_ = doSnapshot()
-	NotifyNetValueUpdated("手动刷新单只持仓")
+	NotifyNetValueUpdated("手动刷新单只持仓", "")
 	c.JSON(http.StatusOK, gin.H{"holding": enrich(*h)})
 }
 
@@ -992,7 +992,7 @@ func runScheduledSnapshot(label string) {
 		log.Printf("[snapshot] %s 快照失败: %v", label, err)
 	} else {
 		log.Printf("[snapshot] %s 定时盈亏记录完成", label)
-		NotifyNetValueUpdated("定时快照(" + label + ")")
+		NotifyNetValueUpdated("定时快照("+label+")", scopeFromLabel(label))
 	}
 }
 
@@ -1155,7 +1155,7 @@ func snapshotHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	NotifyNetValueUpdated("手动快照")
+	NotifyNetValueUpdated("手动快照", "")
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

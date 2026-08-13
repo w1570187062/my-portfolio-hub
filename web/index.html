@@ -9,8 +9,9 @@
 <style>
   /* 加减仓弹窗 */
   .seg { display:flex; gap:8px; margin-bottom:10px; }
-  .seg-btn { flex:1; padding:8px 0; border:1px solid var(--border, #d0d5dd); background:var(--bg-soft,#f4f5f7); border-radius:8px; cursor:pointer; font-size:14px; color:var(--text-muted,#6b7280); }
-  .seg-btn.active { background:var(--accent,#3370ff); color:#fff; border-color:var(--accent,#3370ff); font-weight:600; }
+  .seg-btn { flex:1; padding:8px 0; border:1px solid var(--border, #d0d5dd); background:var(--bg-soft,#f4f5f7); border-radius:8px; cursor:pointer; font-size:14px; color:var(--text-muted,#6b7280); transition:var(--btn-transition, all .15s ease); }
+  .seg-btn:not(.active):hover { border-color:var(--btn-primary-hover); color:var(--btn-primary-hover); }
+  .seg-btn.active { background:var(--btn-primary); color:#fff; border-color:var(--btn-primary); font-weight:600; }
   .adj-preview { margin:6px 0 10px; padding:10px 12px; background:var(--bg-soft,#f4f5f7); border-radius:8px; font-size:13px; line-height:1.6; color:var(--text,#1f2329); }
   .adj-preview .warn { color:#e5484d; }
   .adj-preview b { color:var(--accent,#3370ff); }
