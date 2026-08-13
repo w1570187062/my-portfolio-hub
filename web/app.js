@@ -274,7 +274,7 @@ function renderFx(d) {
 
   // Render all items in a scroll container; overflow:hidden + translateY cycles through them
   const itemsHtml = items.map((it) =>
-    '<div class="fx-scroll-item">' + it.label + ' <b>1 ' + it.code +
+    '<div class="fx-scroll-item"><b>1 ' + it.code +
     ' = <span class="fx-num" data-val="' + it.val + '" data-dec="' + it.dec + '">' +
     it.val.toFixed(it.dec) + '</span> ' + it.unit + '</b>' + it.chg + '</div>'
   ).join('');
