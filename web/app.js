@@ -401,16 +401,16 @@ function renderSummary(hs) {
     total: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1"/><path d="M3 8v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2z"/><circle cx="16.5" cy="13" r="1.2"/></svg>',
     up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>',
     down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 7 9 13 13 9 21 17"/><polyline points="15 17 21 17 21 11"/></svg>',
-    rmb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 9.5h7M12 6v12M9.3 13.5h5.4"/></svg>',
-    exchange: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 8 18 8"/><polyline points="14 4 18 8 14 12"/><polyline points="20 16 6 16"/><polyline points="10 12 6 16 10 20"/></svg>',
-    updown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 6 9 2 13"/><line x1="6" y1="9" x2="6" y2="15"/><polyline points="18 9 18 15 22 11"/><line x1="18" y1="9" x2="18" y2="15"/></svg>',
+    rmb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l6 8 6-8"/><line x1="12" y1="12" x2="12" y2="20"/><line x1="8" y1="15" x2="16" y2="15"/><line x1="8" y1="18" x2="16" y2="18"/></svg>',
+    usd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><path d="M16.5 7c0-1.9-2-2.8-4.5-2.8S7.5 5.1 7.5 7s1.5 2.5 4.5 3 4.5 1.4 4.5 3.5-2 2.8-4.5 2.8-4.5-.9-4.5-2.8"/></svg>',
+    distribution: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="7"/><line x1="18" y1="20" x2="18" y2="10"/></svg>',
   };
   $('#summary').innerHTML = `
    <div class="card"><div class="card-icon">${ICON.total}</div><div class="card-body"><div class="label">总资产 (CNY)</div><div class="value">${fmt(totalCNY)}</div></div></div>
    <div class="card"><div class="card-icon ${pCls}">${pCls === 'down' ? ICON.down : ICON.up}</div><div class="card-body"><div class="label">总盈亏 (CNY)</div><div class="value ${pCls}">${fmt(totalPnl)} (${pct(totalPct)})</div></div></div>
    <div class="card"><div class="card-icon">${ICON.rmb}</div><div class="card-body"><div class="label">RMB 市值</div><div class="value">${fmt(cnyMV)}</div></div></div>
-   <div class="card"><div class="card-icon">${ICON.exchange}</div><div class="card-body"><div class="label">USD 市值 (CNY)</div><div class="value">${fmt(usdMV * usdRate)}</div></div></div>
-   <div class="card card-updown"><div class="card-icon">${ICON.updown}</div><div class="card-body"><div class="label">今日涨跌平家数 (${todayStr})</div><div class="value updown-value"><span class="up">▲ ${upCount}</span><span class="ud-sep">/</span><span class="down">▼ ${downCount}</span><span class="ud-sep">/</span><span class="flat">— ${flatCount}</span></div><div class="updown-pnl ${dpCls}">当日盈亏 ¥${fmt(dayPnlCNY)}</div></div></div>`;
+   <div class="card"><div class="card-icon">${ICON.usd}</div><div class="card-body"><div class="label">USD 市值 (CNY)</div><div class="value">${fmt(usdMV * usdRate)}</div></div></div>
+   <div class="card card-updown"><div class="card-icon">${ICON.distribution}</div><div class="card-body"><div class="label">今日涨跌平家数 (${todayStr})</div><div class="value updown-value"><span class="up">▲ ${upCount}</span><span class="ud-sep">/</span><span class="down">▼ ${downCount}</span><span class="ud-sep">/</span><span class="flat">— ${flatCount}</span></div><div class="updown-pnl ${dpCls}">当日盈亏 ¥${fmt(dayPnlCNY)}</div></div></div>`;
 }
 
 // Build the two-level filter UI: a category slider (left-right swipeable, single
