@@ -1215,20 +1215,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 }
 .fx-scroll-item b { color: var(--text); font-weight: 600; }
 .fxbar .fx-num { font-variant-numeric: tabular-nums; display: inline-block; text-align: left; font-family: var(--font-mono); }
-@keyframes fxPulse { 0%{opacity:.6} 50%{opacity:1} 100%{opacity:.6} }
-.fxbar .fx-status.ok { animation: fxPulse 2.6s ease-in-out infinite; }
 .fxbar .fx-sep { flex: 1 1 auto; }
-.fxbar .fx-updated { color: var(--text-faint); }
-.fx-status {
-  padding: 3px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.fx-status.ok { background: var(--success-soft); color: var(--success); }
-.fx-status.warn { background: var(--warning-soft); color: var(--warning); }
-.fx-status.err { background: var(--danger-soft); color: var(--danger); }
 
 /* ===== 日历 ===== */
 .cal-wrap { width: 60vw; margin: 0 auto; }
@@ -1439,6 +1426,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   .card-icon svg { width: 18px; height: 18px; }
   /* 表格/筛选留边收窄 */
   .table-wrap { padding: 0 14px 8px; }
+  .cards-grid { padding: 0 14px; }
   .filters { padding: 0 14px; }
   .list-bar { padding: 0 14px; }
   /* 市场多选框：手机端竖排（每行一个市场），便于点选，且与其它筛选元素同宽 */
@@ -2046,6 +2034,21 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   color: var(--text, #1f2329);
 }
 .notify-card label input:focus { outline: 2px solid var(--primary, #6f9e5e); border-color: transparent; }
+.notify-card label select {
+  padding: 9px 11px;
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg-soft, #f4f5f7);
+  color: var(--text, #1f2329);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.notify-card label select:focus { outline: none; border-color: var(--primary, #6f9e5e); box-shadow: 0 0 0 3px var(--primary-soft, rgba(111,158,94,.18)); }
+.notify-card label select option { background: var(--bg-card, #fff); color: var(--text, #1f2329); }
+/* 通知底部按钮：不套独立背景框，仅右对齐排列 */
+.notify-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
 
 /* 开关 toggle */
 .switch {
@@ -2179,16 +2182,22 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .asset-toolbar .btn.icon-btn { flex: 0 0 auto; }
 
 /* ===== 行情时效性标识（P0-1） ===== */
-.quote-fresh {
-  margin: 10px 2px 0;
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.6;
+/* 行情更新时间：整合进汇率条的滚动条右侧，圆角矩形包裹（替换原 .quote-fresh） */
+.fx-quote-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: var(--bg-input, #2a2f3a);
+  border: 1px solid var(--border, #3a4150);
+  color: var(--text-muted, #9aa3af);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
 }
-.quote-fresh b { color: var(--text); font-weight: 600; }
-.quote-fresh.stale { color: var(--text-faint); }
-.quote-fresh .fresh-warn { color: #f5a623; }
-.quote-fresh .fresh-age { color: var(--text-muted); }
+.fx-quote-time b { color: var(--text); font-weight: 600; }
+.fx-quote-time.stale { color: var(--text-faint, #6b7280); opacity: .8; }
 
 /* ===== 刷新失败持久标记（P0-2） ===== */
 tr.row-failed { background: rgba(245, 166, 35, .16); }
@@ -2218,7 +2227,10 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
   margin-top: 4px;
+  padding: 0 28px;
 }
+/* 修复卡片/表格切换：class 的 display 会盖过 [hidden]，必须强制 hidden 生效 */
+.cards-grid[hidden], .table-wrap[hidden], .pager[hidden], #tbl[hidden], #holdingsEmpty[hidden] { display: none !important; }
 .holding-card {
   background: var(--bg-card);
   border: 1px solid rgba(255,255,255,.06);
@@ -2313,11 +2325,10 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 /* 可达性：键盘焦点 2px 主色描边 */
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
 
-/* 二级页统一页头：← 返回 + 标题 + 操作区 */
+/* 二级页统一页头：标题 + 操作区（无返回箭头） */
 .page-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 calc(var(--section-gap) - 12px); }
 .page-head__title { font-size: 17px; font-weight: 700; margin: 0; }
 .page-head__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.page-back { min-width: var(--touch); min-height: var(--touch); }
 
 /* 空态语义别名 */
 .empty--initial { padding: 48px 16px; }

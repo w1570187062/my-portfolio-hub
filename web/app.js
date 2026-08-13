@@ -198,12 +198,12 @@ async function load() {
   }
 }
 
-// 行情时效性标识：统计卡区下方显示「行情更新于 HH:MM:SS」，超 30 分钟变灰并追加（可能已过期）；并显示快照日期。
+// 行情时效性标识：整合进汇率条右侧的圆角 pill，显示「行情更新于 HH:MM:SS」（超 30 分钟仅变灰，不再提示"可能已过期"）。
 let freshnessTimer = null;
 function renderFreshness() {
-  const el = document.getElementById('quoteFreshness');
+  const el = document.getElementById('fxQuoteTime');
   if (!el) return;
-  if (!updatedAtMax) { el.hidden = true; el.innerHTML = ''; return; }
+  if (!updatedAtMax) { el.hidden = true; el.textContent = ''; return; }
   el.hidden = false;
   const parts = String(updatedAtMax).split(' ');
   const hhmmss = parts[1] || updatedAtMax;
@@ -211,38 +211,13 @@ function renderFreshness() {
   const now = new Date();
   const diffMs = now - t;
   const stale = isNaN(diffMs) ? false : diffMs > 30 * 60 * 1000;
-  const ageMin = isNaN(diffMs) ? 0 : Math.max(0, Math.round(diffMs / 60000));
-  let html = '行情更新于 <b>' + esc(hhmmss) + '</b>';
-  if (stale) html += ' <span class="fresh-warn">（可能已过期，约 ' + ageMin + ' 分钟前）</span>';
-  else if (ageMin > 0) html += ' <span class="fresh-age">（' + ageMin + ' 分钟前）</span>';
-  if (snapshotDate) html += ' ｜ 快照日期 <b>' + esc(snapshotDate) + '</b>';
-  el.innerHTML = html;
-  el.className = 'quote-fresh' + (stale ? ' stale' : '');
+  let txt = '行情更新于 ' + hhmmss;
+  if (snapshotDate) txt += ' · 快照 ' + snapshotDate;
+  el.textContent = txt;
+  el.className = 'fx-quote-time' + (stale ? ' stale' : '');
 }
 
-// 渲染顶部汇率条：USD/HKD/RMB 三者汇率 + 更新时间 + 数据状态
-let fxTickTimer = null;
-let fxUpdatedTs = 0;
-let fxRawUpdated = '';
-
-function parseFxTs(s) {
-  if (!s) return 0;
-  const t = new Date(String(s).replace(' ', 'T')).getTime();
-  return isNaN(t) ? 0 : t;
-}
-
-// 每秒刷新"更新于 X 秒前"，制造持续动感
-function fxTick() {
-  const el = document.getElementById('fxUpdated');
-  if (!el) return;
-  if (!fxUpdatedTs) { el.textContent = '更新于 ' + (fxRawUpdated || '—'); return; }
-  const sec = Math.max(0, Math.floor((Date.now() - fxUpdatedTs) / 1000));
-  let rel;
-  if (sec < 60) rel = sec + ' 秒前';
-  else if (sec < 3600) rel = Math.floor(sec / 60) + ' 分钟前';
-  else rel = Math.floor(sec / 3600) + ' 小时前';
-  el.textContent = '更新于 ' + rel;
-}
+// 渲染顶部汇率条：USD/HKD/RMB 三者汇率 + 行情更新时间（圆角 pill）
 
 // 数字滚动动画：从旧值平滑滚动到新值（首次从 0 开始）
 function animateFxNum(el, target, dec) {
@@ -309,8 +284,7 @@ function renderFx(d) {
     '<div class="fx-scroll-wrap"><div class="fx-scroll-inner" id="fxScrollInner">' +
     itemsHtml + '</div></div>' +
     '<span class="fx-sep"></span>' +
-    '<span class="fx-updated" id="fxUpdated"></span>' +
-    '<span class="fx-status ' + statusCls + '">' + status + '</span>';
+    '<span class="fx-quote-time" id="fxQuoteTime"></span>';
 
   // Number animation
   bar.querySelectorAll('.fx-num').forEach((el) => {
@@ -322,12 +296,8 @@ function renderFx(d) {
   stopFxCycle();
   fxCycleTimer = setInterval(fxStep, 3500);
 
-  // Relative time tick
-  fxRawUpdated = d.updated || '';
-  fxUpdatedTs = parseFxTs(fxRawUpdated);
-  if (fxTickTimer) clearInterval(fxTickTimer);
-  fxTick();
-  fxTickTimer = setInterval(fxTick, 1000);
+  // 行情更新时间 pill（由 renderFreshness 填充，30s 刷新一次）
+  renderFreshness();
 }
 
 function fxStep() {
@@ -511,24 +481,7 @@ function buildFilters() {
   const box = $('#filters');
   box.innerHTML = '';
 
-  // 类别：左右滑动滑块（单选：全部 / 股票 / 基金）
-  const catRow = document.createElement('div');
-  catRow.className = 'filter-row';
-  catRow.innerHTML = '<span class="filters-label">类别：</span>';
-  const catSlider = document.createElement('div');
-  catSlider.id = 'catSlider';
-  catSlider.className = 'slider';
-  [['', '全部'], ['stock', '股票'], ['fund', '基金']].forEach(([val, txt]) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'slider-item' + (val === '' ? ' active' : '');
-    b.dataset.cat = val;
-    b.textContent = txt;
-    b.onclick = () => onCatSelect(val, catSlider);
-    catSlider.appendChild(b);
-  });
-  catRow.appendChild(catSlider);
-  box.appendChild(catRow);
+  // 类别筛选行已按需求不在表格上方展示（默认全部，不过滤）
   catFilter = new Set(); // 默认：全部
 
   // 市场：多选 chips（横向可滑动，避免换行）
@@ -2097,16 +2050,14 @@ const moneyCur = (n, cur) => curSymbolJS(cur) + fmt(n == null ? 0 : n);
 
 $('#assetBtn').onclick = () => showAssetView();
 
-// 二级页统一页头（设计系统：← 返回 + 标题 + 操作区）
+// 二级页统一页头（设计系统：标题 + 操作区；不显示返回箭头）
 function injectPageHead(viewId, title) {
   const v = document.getElementById(viewId);
   if (!v || v.querySelector(':scope > .page-head')) return;
   const h = document.createElement('div');
   h.className = 'page-head';
-  h.innerHTML = '<button class="btn icon-btn page-back" type="button" aria-label="返回" title="返回">←</button>'
-    + '<h2 class="page-head__title">' + (title || '') + '</h2>'
+  h.innerHTML = '<h2 class="page-head__title">' + (title || '') + '</h2>'
     + '<div class="page-head__actions"></div>';
-  h.querySelector('.page-back').onclick = () => showHoldingsView();
   v.insertBefore(h, v.firstChild);
 }
 async function showAssetView() {
@@ -2120,21 +2071,11 @@ async function showAssetView() {
   $('#assetBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
   setNavActive('asset');
   await loadAsset();
-  showToolbarGuide();
 }
 
-// 首次进入资产全景：依次展示 5 个工具栏图标的功能说明（localStorage 记忆只看一次）
+// 工具栏引导动画已按需求取消（不再首次进入时依次提示）
 async function showToolbarGuide() {
-  if (localStorage.getItem('pf_toolbar_seen')) return;
-  const ids = ['aiPickBtn', 'assetSnapBtn', 'ai_export_json', 'assetPieBtn', 'assetTrendBtn'];
-  for (const id of ids) {
-    const b = document.getElementById(id);
-    if (!b) continue;
-    showToolTip(b, b.dataset.tip || '');
-    await sleep(1400);
-  }
-  hideToolTip();
-  localStorage.setItem('pf_toolbar_seen', '1');
+  return;
 }
 function showToolTip(el, text) {
   const tip = document.getElementById('toolTipHint');
