@@ -2169,7 +2169,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .asset-toolbar .btn.icon-btn::after {
   content: attr(data-tip);
   position: absolute;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
   background: #2b2f36;
@@ -2190,11 +2190,11 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .asset-toolbar .btn.icon-btn::before {
   content: '';
   position: absolute;
-  bottom: calc(100% + 3px);
+  top: calc(100% + 3px);
   left: 50%;
   transform: translateX(-50%);
   border: 5px solid transparent;
-  border-top-color: #2b2f36;
+  border-bottom-color: #2b2f36;
   opacity: 0;
   visibility: hidden;
   transition: opacity .15s, visibility .15s;
@@ -2214,26 +2214,9 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   color: #33363d;
   box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
 }
-[data-theme="light"] .asset-toolbar .btn.icon-btn::before { border-top-color: #eceef2; }
+[data-theme="light"] .asset-toolbar .btn.icon-btn::before { border-bottom-color: #eceef2; }
 /* 覆盖移动端 flex 拉伸：图标按钮保持固定尺寸 */
 .asset-toolbar .btn.icon-btn { flex: 0 0 auto; }
-/* AI中枢按钮：实色主色填充，作为工具栏主操作与其余中性图标形成清晰层级 */
-.asset-toolbar .btn.icon-btn.ai-primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
-}
-.asset-toolbar .btn.icon-btn.ai-primary:hover {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
-  color: #fff;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, .32);
-}
-.asset-toolbar .btn.icon-btn.ai-primary:active {
-  background: var(--primary-active);
-  border-color: var(--primary-active);
-}
 
 /* 工具栏移入资产全景页头右侧 actions 后，抵消原独立行内边距 */
 .page-head__actions .asset-toolbar { padding: 0; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
