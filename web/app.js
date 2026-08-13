@@ -349,6 +349,14 @@ function toRmb(h, v) {
   return v || 0;
 }
 
+// 市值原币种括号备注：非人民币持仓，在人民币金额后附注原币种符号+金额，便于核对真实币种规模。
+// market_value 本身是持仓原始币种金额（USD 持仓即美元数），toRmb 才折算人民币展示。
+function mvOrigNote(h) {
+  const cur = (h.currency || 'CNY').toUpperCase();
+  if (cur === 'CNY' || cur === 'RMB') return '';
+  return ` <span class="mv-orig">(${curSymbolJS(h.currency)}${fmt(h.market_value || 0)})</span>`;
+}
+
 // Apply the active column sort to a filtered holding list.
 // 市值/盈亏按 RMB 折算后比较，与列表展示口径一致；盈亏率按原值。
 function sortedHoldings(hs) {
@@ -424,7 +432,7 @@ function renderCards(hs) {
       </div>
       <div class="hc-code">${esc(h.symbol)} · ${cat(h.category)} · ${h.market} · ${h.currency}</div>
       <div class="hc-row"><span class="hc-label">现价</span><span class="hc-val">${fmtNav(h.current_price, h.category)}</span><span class="hc-label">当日</span><span class="hc-val ${dpCls}">${pct(h.day_pnl_pct)}</span></div>
-      <div class="hc-row"><span class="hc-label">市值</span><span class="hc-val">¥${fmt(toRmb(h, h.market_value))}</span></div>
+      <div class="hc-row"><span class="hc-label">市值</span><span class="hc-val">¥${fmt(toRmb(h, h.market_value))}${mvOrigNote(h)}</span></div>
       <div class="hc-row"><span class="hc-label">累计盈亏</span><span class="hc-val ${pCls}">¥${fmt(toRmb(h, h.pnl))} (${pct(h.pnl_pct)})</span></div>
     </div>`;
   }).join('');
@@ -587,7 +595,7 @@ function renderRows(hs) {
      <td class="num">${fmt(h.quantity)}</td>
      <td class="num">${fmtNav(h.cost_price, h.category)}</td>
      <td class="num">${fmtNav(h.current_price, h.category)}</td>
-     <td class="num">${fmt(toRmb(h, h.market_value))}</td>
+     <td class="num">${fmt(toRmb(h, h.market_value))}${mvOrigNote(h)}</td>
      <td class="num ${cls(h.day_pnl)}">${fmt(toRmb(h, h.day_pnl))} <span class="dp-pct">(${pct(h.day_pnl_pct)})</span></td>
      <td class="num ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
      <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
