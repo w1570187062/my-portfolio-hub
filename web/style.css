@@ -1288,10 +1288,15 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
    横屏(landscape)时 iPhone 高度约 402px，用 max-height 也触发，保证横屏套用同套样式 */
 @media (max-width: 640px), (orientation: landscape) and (max-height: 640px) {
   .cal-wrap { width: 96vw; }
-  .cal-cell { padding: 4px 4px; }
-  .cal-val { font-size: 10px; }
-  .cal-day { font-size: 16px; }
-  .cal-emoji { font-size: 24px; }
+  .cal-cell { padding: 3px 3px; }
+  .cal-val { font-size: 9px; }
+  .cal-day { font-size: 13px; }
+  .cal-emoji { font-size: 18px; }
+  .cal-head h2 { font-size: 15px; }
+  .cal-title { font-size: 13px; min-width: 84px; }
+  .cal-weekdays span { font-size: 11px; }
+  .cal-month { font-size: 11px; }
+  .cal-legend { font-size: 11px; }
   /* 手机无 hover：强制只显示居中金额，点按/长按也不淡出日期与 emoji */
   .cal-cell.has-amt:hover { justify-content: center; }
   .cal-cell.has-amt:hover .cal-day,
@@ -1450,6 +1455,11 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   .modal-card { width: auto; max-width: 92vw; margin: 0 12px; }
   .chart-card { width: auto; max-width: 94vw; }
   .cal-wrap { width: 92vw; }
+  .cal-month-summary .cal-ms-val { font-size: 15px; }
+  .cal-month-summary .cal-ms-label { font-size: 12px; }
+  .cal-month-summary .cal-ms-sub { font-size: 11px; }
+  .cal-hint { font-size: 12px; }
+  .cal-sub { font-size: 11px; }
   #calModal .modal-card { width:auto; max-width:92vw; }
   /* 登录框预留（当前已隐藏） */
   .login-box { margin: 60px auto; padding: 24px; max-width: 90vw; }
