@@ -803,7 +803,6 @@ $('#adjTypeSeg').addEventListener('click', (e) => {
   const el = document.getElementById(fid);
   if (el) el.addEventListener('input', computeAdjPreview);
 });
-$('#adjCancel').onclick = () => { $('#adjustModal').hidden = true; };
 $('#adjustForm').onsubmit = async (e) => {
   e.preventDefault();
   const id = $('#adj_id').value;
@@ -864,7 +863,6 @@ function resetConfirm() {
   btn.classList.add('danger');
   $('#confirmTitle').textContent = '确认删除';
 }
-$('#confirmCancel').onclick = resetConfirm;
 $('#confirmOk').onclick = async () => {
   if (pendingExport) {
     pendingExport = false;
@@ -908,7 +906,6 @@ $('#confirmOk').onclick = async () => {
 // 登录界面已移除：初始化时由 boot() 静默自动登录，无需手动输入
 $('#addBtn').onclick = () => openModal(null);
 $('#guideBtn').onclick = () => openGuide();
-$('#cancelBtn').onclick = () => ($('#modal').hidden = true);
 $('#f_category').onchange = () => {
   fillMarketOptions($('#f_category').value);
   const opts = CAT_MARKETS[$('#f_category').value] || [];
@@ -1488,8 +1485,6 @@ function renderCalJump() {
   });
 }
 
-$('#calModalClose').onclick = () => { $('#calModal').hidden = true; };
-$('#mergeClose').onclick = () => { $('#mergeModal').hidden = true; };
 // 日历弹框：前一天 / 后一天（跳到有快照数据的前/后一个日期，便于连续浏览盈亏）
 $('#calModalPrev').onclick = () => shiftCalDay(-1);
 $('#calModalNext').onclick = () => shiftCalDay(1);
@@ -1910,7 +1905,6 @@ $('#ai_toggleKey').onclick = () => {
   else { inp.type = 'password'; $('#ai_toggleKey').textContent = '显示'; }
 };
 $('#ai_copy').onclick = () => copyText($('#aiResultBody').textContent);
-$('#ai_result_close').onclick = () => { $('#aiResultModal').hidden = true; };
 
 // ---- AI 中枢弹框（总结下拉选择 + 功能 / 设置 / 历史，tab 切换） ----
 function switchHubTab(tab) {
@@ -1946,7 +1940,7 @@ $('#histTabTable').onclick = () => switchHistTab('table');
 $('#histTabChart').onclick = () => switchHistTab('chart');
 
 // ===== 调试：统一按钮点击日志（addEventListener 追加，不干扰原有 onclick） =====
-['addBtn','guideBtn','refreshBtn','aiPickBtn','moreBtn','aiPickGo','aiHubXClose','hubTabSummary','hubTabTools','hubTabSettings','hubTabHistory','calendarBtn','confirmOk','confirmCancel','assetPieBtn','assetTrendBtn','calModalClose','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','navToggle','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','ai_result_close','histTabTable','histTabChart','cancelBtn'].forEach((id) => {
+['addBtn','guideBtn','refreshBtn','aiPickBtn','moreBtn','aiPickGo','aiHubXClose','hubTabSummary','hubTabTools','hubTabSettings','hubTabHistory','calendarBtn','confirmOk','assetPieBtn','assetTrendBtn','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','navToggle','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','histTabTable','histTabChart'].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', () => console.log('[click]', id));
 });
@@ -2725,7 +2719,6 @@ $('#assetSourceForm').onsubmit = async (e) => {
     await loadAsset();
   } catch (err) { $('#assetSourceErr').textContent = '异常：' + err.message; }
 };
-$('#assetSourceCancel').onclick = () => ($('#assetSourceModal').hidden = true);
 
 // ---- 理财 ----
 // 统一折算成 RMB 金额用于排序（不同币种可比较"总金额"）
@@ -2796,7 +2789,6 @@ $('#wealthForm').onsubmit = async (e) => {
     await loadAsset();
   } catch (err) { $('#wealthErr').textContent = '异常：' + err.message; }
 };
-$('#wealthCancel').onclick = () => ($('#wealthModal').hidden = true);
 
 // ---- 现金 ----
 function renderCash(body) {
@@ -2850,7 +2842,6 @@ $('#cashForm').onsubmit = async (e) => {
     await loadAsset();
   } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
 };
-$('#cashCancel').onclick = () => ($('#cashModal').hidden = true);
 
 async function openWealthHist(id) {
   try {
@@ -2872,7 +2863,6 @@ async function openWealthHist(id) {
     $('#wealthHistModal').hidden = false;
   } catch (err) { toast('异常：' + err.message, 'err'); }
 }
-$('#wealthHistClose').onclick = () => ($('#wealthHistModal').hidden = true);
 
 // ---- 负债 ----
 function renderLiability(body) {
@@ -2931,7 +2921,6 @@ $('#liabilityForm').onsubmit = async (e) => {
     await loadAsset();
   } catch (err) { $('#liabilityErr').textContent = '异常：' + err.message; }
 };
-$('#liabilityCancel').onclick = () => ($('#liabilityModal').hidden = true);
 
 // ---- 消费 ----
 function renderConsume(body) {
@@ -2986,7 +2975,6 @@ $('#consumeForm').onsubmit = async (e) => {
     await loadAsset();
   } catch (err) { $('#consumeErr').textContent = '异常：' + err.message; }
 };
-$('#consumeCancel').onclick = () => ($('#consumeModal').hidden = true);
 
 // ---- 每日持仓金额录入（自动算每日盈亏） ----
 $('#assetSnapBtn').onclick = openSnapModal;
@@ -3100,7 +3088,6 @@ async function openSnapModal() {
   $('#snapModal').dataset.date = today;
   $('#snapModal').hidden = false;
 }
-$('#snapCancel').onclick = () => ($('#snapModal').hidden = true);
 $('#snapSave').onclick = async () => {
   const date = $('#snapModal').dataset.date || ymd(new Date());
   const items = [];
@@ -3254,7 +3241,6 @@ function renderAnalysis(a) {
 }
 
 // ── 弹框关闭 ──────────────────────────────────────────
-$('#analysisClose').onclick = () => { $('#analysisModal').hidden = true; };
 
 // ── 操作指南 ──────────────────────────────────────────
 
@@ -3516,7 +3502,6 @@ $('#guideForm').onsubmit = async (e) => {
 
 $('#guideNew').onclick = () => openGuideForm(null);
 $('#guideCancel').onclick = () => closeGuideForm();
-$('#guideClose').onclick = () => { $('#guideModal').hidden = true; };
 
 // ESC 关闭指南弹窗（扩展原有 ESC 逻辑：弹框层优先）
 document.addEventListener('keydown', function _guideEsc(e) {

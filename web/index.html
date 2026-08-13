@@ -328,7 +328,6 @@
         <label id="linked_symbol_row" style="display:none">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL"></label>
         <div id="formErr" class="err"></div>
         <div class="modal-actions">
-          <button class="btn" type="button" id="cancelBtn">取消</button>
           <button class="btn" type="submit">保存</button>
         </div>
       </form>
@@ -352,7 +351,6 @@
         <label>备注<input id="adj_note" placeholder="可选，如 补仓/止盈"></label>
         <div id="adjErr" class="err"></div>
         <div class="modal-actions">
-          <button class="btn" type="button" id="adjCancel">取消</button>
           <button class="btn" type="submit">确认</button>
         </div>
       </form>
@@ -394,7 +392,6 @@
       </form>
       <div class="modal-actions" id="guideActions">
         <button class="btn" type="button" id="guideNew">➕ 新增记录</button>
-        <button class="btn" type="button" id="guideClose">关闭</button>
       </div>
       </div><!-- /guide-manual -->
     </div>
@@ -417,9 +414,6 @@
         </div>
       </div>
       <div id="calModalBody"></div>
-      <div class="modal-actions">
-        <button class="btn" type="button" id="calModalClose">关闭</button>
-      </div>
     </div>
   </div>
 
@@ -428,9 +422,6 @@
       <h2>合并盈亏汇总</h2>
       <p class="tool-hint">将「权益资产盈亏」与「美元资产盈亏」的计算结果合并汇总（单位均为人民币）。未计算的来源按 0 计入并标注。</p>
       <div class="tool-result" id="mergeResult"></div>
-      <div class="modal-actions">
-        <button type="button" id="mergeClose" class="btn">关闭</button>
-      </div>
     </div>
   </div>
 
@@ -508,9 +499,6 @@
         <button type="button" id="ai_copy" class="btn btn-sm" style="float:right;margin-top:2px">复制</button>
       </h2>
       <div id="aiResultBody" class="ai-result">生成中…</div>
-      <div class="modal-actions">
-        <button class="btn" type="button" id="ai_result_close">关闭</button>
-      </div>
     </div>
   </div>
 
@@ -531,7 +519,6 @@
       <h2 id="confirmTitle">确认删除</h2>
       <p id="confirmMsg" class="confirm-msg"></p>
       <div class="modal-actions">
-        <button class="btn" type="button" id="confirmCancel">取消</button>
         <button type="button" id="confirmOk" class="btn danger">删除</button>
       </div>
     </div>
@@ -543,9 +530,6 @@
       <h2 id="analysisTitle">技术分析</h2>
       <div id="analysisTime" class="analysis-time"></div>
       <div id="analysisBody" class="analysis-body"></div>
-      <div class="modal-actions">
-        <button class="btn" type="button" id="analysisClose">关闭</button>
-      </div>
     </div>
   </div>
 </div>
@@ -561,7 +545,7 @@
         </label>
         <label>备注 <input id="as_note"></label>
         <div id="assetSourceErr" class="err"></div>
-        <div class="modal-actions"><button type="button" id="assetSourceCancel" class="btn">取消</button><button class="btn" type="submit" class="btn">保存</button></div>
+        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
       </form>
     </div>
   </div>
@@ -579,7 +563,7 @@
         </label>
         <label>备注 <input id="w_note"></label>
         <div id="wealthErr" class="err"></div>
-        <div class="modal-actions"><button type="button" id="wealthCancel" class="btn">取消</button><button class="btn" type="submit" class="btn">保存</button></div>
+        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
       </form>
     </div>
   </div>
@@ -597,7 +581,7 @@
         <label>月供 <input id="lb_monthly" type="number" step="any"></label>
         <label>备注 <input id="lb_note"></label>
         <div id="liabilityErr" class="err"></div>
-        <div class="modal-actions"><button type="button" id="liabilityCancel" class="btn">取消</button><button class="btn" type="submit" class="btn">保存</button></div>
+        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
       </form>
     </div>
   </div>
@@ -613,7 +597,7 @@
         <label>支付来源 <select id="cs_source"></select></label>
         <label>备注 <input id="cs_note"></label>
         <div id="consumeErr" class="err"></div>
-        <div class="modal-actions"><button type="button" id="consumeCancel" class="btn">取消</button><button class="btn" type="submit" class="btn">保存</button></div>
+        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
       </form>
     </div>
   </div>
@@ -631,7 +615,7 @@
         <label>所属来源 <select id="c_source"></select></label>
         <label>备注 <input id="c_note"></label>
         <div id="cashErr" class="err"></div>
-        <div class="modal-actions"><button type="button" id="cashCancel" class="btn">取消</button><button class="btn" type="submit" class="btn">保存</button></div>
+        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
       </form>
     </div>
   </div>
@@ -641,7 +625,7 @@
       <h2>更新理财持仓</h2>
       <p class="snap-hint">填写各理财当日「持仓金额」，系统自动计算：每日盈亏 = 当日金额 − 昨日金额 − 当日净存入。留空则不更新该项。</p>
       <div id="snapBody" class="snap-body"></div>
-      <div class="modal-actions"><button type="button" id="snapCancel" class="btn">取消</button><button type="button" id="snapSave" class="btn">保存</button></div>
+      <div class="modal-actions"><button type="button" id="snapSave" class="btn">保存</button></div>
     </div>
   </div>
 
@@ -649,7 +633,6 @@
     <div class="modal-card" style="width:600px; max-width:94vw;">
       <h2 id="wealthHistTitle">每日盈亏</h2>
       <div id="wealthHistBody"></div>
-      <div class="modal-actions"><button type="button" id="wealthHistClose" class="btn">关闭</button></div>
     </div>
   </div>
 

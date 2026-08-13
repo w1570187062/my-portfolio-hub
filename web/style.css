@@ -1068,7 +1068,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
 .confirm-card { width: 340px; }
 .confirm-msg { font-size: 14px; color: var(--text-muted); line-height: 1.6; margin: 8px 0 18px; }
-.chart-card { width: 780px; max-width: 94vw; }
+.chart-card { width: 780px; max-width: 94vw; padding-bottom: 18px; }
 #chartBody { margin-top: 14px; overflow: auto; }
 #chartBody svg { max-width: 100%; height: auto; }
 
