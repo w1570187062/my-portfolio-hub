@@ -1221,40 +1221,59 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .toast.ok { background: rgba(74, 222, 128, .9); }
 .toast.info { background: rgba(45, 212, 167, .9); }
 
-/* ===== 汇率条 ===== */
-.fxbar {
+/* ===== 顶部汇率 / 行情时间（位于主题切换按钮左侧） ===== */
+.header-fx {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 20px;
-  margin: 4px 28px 12px;
-  font-size: 13px;
-  color: var(--text-muted);
-  border: var(--card-border);
-  border-radius: var(--card-radius);
-  background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  box-shadow: var(--card-shadow);
-}
-.fx-scroll-wrap {
-  flex: 0 1 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  margin-right: 6px;
   min-width: 0;
-  height: 22px;
+}
+.hf-marquee {
+  width: 250px;
+  max-width: 42vw;
   overflow: hidden;
-  position: relative;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);
 }
-.fx-scroll-inner {
-  transition: transform .45s ease;
-}
-.fx-scroll-item {
-  height: 22px;
-  line-height: 22px;
+.hf-track {
+  display: inline-flex;
+  align-items: center;
   white-space: nowrap;
+  will-change: transform;
+  animation: hf-marquee 26s linear infinite;
 }
-.fx-scroll-item b { color: var(--text); font-weight: 600; }
-.fxbar .fx-num { font-variant-numeric: tabular-nums; display: inline-block; text-align: left; font-family: var(--font-mono); }
-.fxbar .fx-sep { flex: 1 1 auto; }
+.hf-track:hover { animation-play-state: paused; }
+@keyframes hf-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.hf-item {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+.hf-item b { color: var(--text); font-weight: 600; }
+.hf-num { color: var(--text); }
+.hf-dot { color: var(--border-strong, #3a4150); margin: 0 12px; }
+.hf-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bg-input, #2a2f3a);
+  border: 1px solid var(--border, #3a4150);
+  color: var(--text-muted, #9aa3af);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+.hf-time.stale { color: var(--text-faint, #6b7280); opacity: .8; }
 
 /* ===== 日历 ===== */
 .cal-wrap { width: 60vw; margin: 0 auto; }
@@ -1458,8 +1477,12 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   }
   /* 汇总卡片：一行两张、更紧凑 */
   .summary { padding: 12px 14px; gap: 10px; }
-  /* 汇率条：与汇总卡片左右对齐、更紧凑 */
-  .fxbar { padding: 8px 12px; margin: 4px 14px 10px; gap: 8px; }
+  /* 顶部汇率/时间：手机端收窄，避免与品牌区挤占 */
+  .header-fx { margin-right: 4px; gap: 2px; }
+  .hf-marquee { width: 116px; max-width: 38vw; }
+  .hf-item { font-size: 11px; }
+  .hf-dot { margin: 0 8px; }
+  .hf-time { font-size: 10px; padding: 1px 7px; }
   .card {
     min-width: 140px;
     flex: 1 1 calc(50% - 5px);
@@ -2270,25 +2293,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .page-head__actions .asset-toolbar { padding: 0; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
 
 /* ===== 行情时效性标识（P0-1） ===== */
-/* 行情更新时间：整合进汇率条的滚动条右侧，圆角矩形包裹（替换原 .quote-fresh） */
-.fx-quote-time {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 11px;
-  border-radius: 999px;
-  background: var(--bg-input, #2a2f3a);
-  border: 1px solid var(--border, #3a4150);
-  color: var(--text-muted, #9aa3af);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: nowrap;
-}
-.fx-quote-time b { color: var(--text); font-weight: 600; }
-.fx-quote-time.stale { color: var(--text-faint, #6b7280); opacity: .8; }
-/* 「行情更新于」前缀：无边框纯文本；日期时间值单独留在 .fx-quote-time 圆角 pill 内 */
-.fx-quote-wrap { display: inline-flex; align-items: center; gap: 6px; }
-.fx-quote-label { color: var(--text-muted, #9aa3af); font-size: 12px; line-height: 1.5; white-space: nowrap; }
+/* 行情更新时间已并入 header 左侧第二行（.hf-time），原 .fx-quote-* 废弃移除。 */
 
 /* ===== 刷新失败持久标记（P0-2） ===== */
 tr.row-failed { background: rgba(245, 166, 35, .16); }

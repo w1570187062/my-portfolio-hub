@@ -207,14 +207,13 @@ async function load() {
   }
 }
 
-// 行情时效性标识：整合进汇率条右侧。「行情更新于」为无边框前缀文本，「MM-DD HH:MM:SS」单独包进圆角 pill（超 30 分钟仅变灰，不再提示"可能已过期"）。
+// 行情时效性标识：原「行情更新于 MM-DD HH:MM:SS」已简化为「MM-DD HH:MM:SS 更新」，时间格式不变；
+// 显示在 header 左侧（主题切换按钮之前）的第二行圆角 pill，超 30 分钟仅变灰。
 let freshnessTimer = null;
 function renderFreshness() {
-  const el = document.getElementById('fxQuoteTime');
-  const wrap = document.getElementById('fxQuoteWrap');
+  const el = document.getElementById('hfTime');
   if (!el) return;
-  if (!updatedAtMax) { if (wrap) wrap.hidden = true; el.textContent = ''; return; }
-  if (wrap) wrap.hidden = false;
+  if (!updatedAtMax) { el.textContent = ''; el.hidden = true; return; }
   el.hidden = false;
   const parts = String(updatedAtMax).split(' ');
   const hhmmss = parts[1] || updatedAtMax;
@@ -224,40 +223,17 @@ function renderFreshness() {
   const now = new Date();
   const diffMs = now - t;
   const stale = isNaN(diffMs) ? false : diffMs > 30 * 60 * 1000;
-  // 仅日期时间入圆角 pill；「行情更新于」前缀已由 fx-quote-label 独立渲为无边框文本
-  el.textContent = dayMD + ' ' + hhmmss;
-  el.className = 'fx-quote-time' + (stale ? ' stale' : '');
+  // 简化：「行情更新于」改为时间 + 「更新」，时间格式保持 MM-DD HH:MM:SS 不变。
+  el.textContent = dayMD + ' ' + hhmmss + ' 更新';
+  el.className = 'hf-time' + (stale ? ' stale' : '');
 }
 
-// 渲染顶部汇率条：USD/HKD/RMB 三者汇率 + 行情更新时间（圆角 pill）
-
-// 数字滚动动画：从旧值平滑滚动到新值（首次从 0 开始）
-function animateFxNum(el, target, dec) {
-  const start = parseFloat(el.dataset.cur || '0') || 0;
-  el.dataset.cur = String(target);
-  const dur = 650;
-  const t0 = performance.now();
-  function step(now) {
-    const p = Math.min(1, (now - t0) / dur);
-    const e = 1 - Math.pow(1 - p, 3); // easeOutCubic
-    const v = start + (target - start) * e;
-    el.textContent = v.toFixed(dec);
-    if (p < 1) requestAnimationFrame(step);
-    else el.textContent = target.toFixed(dec);
-  }
-  requestAnimationFrame(step);
-}
-
-let fxIndex = 0;
-let fxCycleTimer = null;
-
+// 顶部汇率跑马灯（横向滚动）+ 行情更新时间，已移至 header 左侧（主题切换按钮之前）。
+// 上方为汇率跑马灯（CDATA 复制一份首尾相接，配合 CSS translateX(-50%) 无缝循环），下方为行情更新时间。
 function renderFx(d) {
-  const bar = document.getElementById('fxbar');
-  if (!bar) return;
-  if (!d) { bar.hidden = true; stopFxCycle(); return; }
-  bar.hidden = false;
-  const status = d.healthy ? (d.stale ? '缓存' : '实时') : '离线兜底';
-  const statusCls = d.healthy ? (d.stale ? 'warn' : 'ok') : 'err';
+  const track = document.getElementById('hfTrack');
+  if (!track) return;
+  if (!d) { track.innerHTML = ''; return; }
 
   // Per-item day-over-day comparison (red=up/涨，green=down/跌，Chinese convention)
   let usdChg = null, hkdChg = null, cnyChg = null;
@@ -280,47 +256,22 @@ function renderFx(d) {
   }
 
   const items = [
-    { label: '美元', val: d.usd_cny || 0, dec: 4, unit: '¥', code: 'USD', chg: chgStr(usdChg, 2) },
-    { label: '港币', val: d.hkd_cny || 0, dec: 4, unit: '¥', code: 'HKD', chg: chgStr(hkdChg, 2) },
-    { label: '人民币', val: d.cny_usd || 0, dec: 4, unit: '$', code: 'CNY', chg: chgStr(cnyChg, 2) },
+    { code: 'USD', val: d.usd_cny || 0, dec: 4, unit: '¥', chg: chgStr(usdChg, 2) },
+    { code: 'HKD', val: d.hkd_cny || 0, dec: 4, unit: '¥', chg: chgStr(hkdChg, 2) },
+    { code: 'CNY', val: d.cny_usd || 0, dec: 4, unit: '$', chg: chgStr(cnyChg, 2) },
   ];
 
-  // Render all items in a scroll container; overflow:hidden + translateY cycles through them
-  const itemsHtml = items.map((it) =>
-    '<div class="fx-scroll-item"><b>1 ' + it.code +
-    ' = <span class="fx-num" data-val="' + it.val + '" data-dec="' + it.dec + '">' +
-    it.val.toFixed(it.dec) + '</span> ' + it.unit + '</b>' + it.chg + '</div>'
-  ).join('');
-
-  bar.innerHTML =
-    '<div class="fx-scroll-wrap"><div class="fx-scroll-inner" id="fxScrollInner">' +
-    itemsHtml + '</div></div>' +
-    '<span class="fx-sep"></span>' +
-    '<span class="fx-quote-wrap" id="fxQuoteWrap"><span class="fx-quote-label">行情更新于</span><span class="fx-quote-time" id="fxQuoteTime"></span></span>';
-
-  // Number animation
-  bar.querySelectorAll('.fx-num').forEach((el) => {
-    animateFxNum(el, parseFloat(el.dataset.val) || 0, parseInt(el.dataset.dec, 10) || 4);
-  });
-
-  // Start vertical scroll cycle
-  fxIndex = 0;
-  stopFxCycle();
-  fxCycleTimer = setInterval(fxStep, 3500);
+  // 单份内容：三项汇率用「·」分隔，末尾再补一个「·」便于无缝循环。
+  const itemHtml = items.map((it) =>
+    '<span class="hf-item"><b>1 ' + it.code +
+    ' = <span class="hf-num">' + it.val.toFixed(it.dec) + '</span> ' + it.unit + '</b>' + it.chg + '</span>'
+  ).join('<span class="hf-dot">·</span>');
+  const unit = itemHtml + '<span class="hf-dot">·</span>';
+  // 复制一份首尾相接，translateX(-50%) 正好偏移一个 unit 宽度，实现无缝滚动。
+  track.innerHTML = unit + unit;
 
   // 行情更新时间 pill（由 renderFreshness 填充，30s 刷新一次）
   renderFreshness();
-}
-
-function fxStep() {
-  const inner = document.getElementById('fxScrollInner');
-  if (!inner) return;
-  fxIndex = (fxIndex + 1) % 3;
-  inner.style.transform = 'translateY(-' + (fxIndex * 22) + 'px)';
-}
-
-function stopFxCycle() {
-  if (fxCycleTimer) { clearInterval(fxCycleTimer); fxCycleTimer = null; }
 }
 
 // Holdings after applying the two-level (category + market) filter.
