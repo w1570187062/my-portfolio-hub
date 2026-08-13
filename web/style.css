@@ -1627,7 +1627,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .asset-summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
 .asset-summary .c-br-label { color: var(--text-muted); min-width: 60px; flex: 0 0 auto; font-weight: 600; }
 .asset-summary .c-br-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
-.asset-summary .c-br-delta { margin-left: auto; font-size: 12px; font-family: var(--font-mono); text-align: right; min-width: 0; }
+.asset-summary .c-br-delta { margin-left: auto; font-size: 12px; font-family: var(--font-mono); font-weight: 600; text-align: right; min-width: 0; }
 .asset-summary .c-br-delta.up { color: #f87171; }
 .asset-summary .c-br-delta.down { color: #4ade80; }
 .empty { color: var(--text-muted); font-size: 13px; padding: 8px 2px; }
@@ -2100,3 +2100,65 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .cal-month-summary .cal-ms-val.down { color: var(--success, #4ade80); }
 .cal-month-summary .cal-ms-val.flat { color: var(--text-muted, #8a8f98); }
 .cal-month-summary .cal-ms-sub { font-size: 12px; color: var(--text-muted, #8a8f98); }
+
+/* ===== 资产全景工具栏：图标按钮 + 悬停提示 ===== */
+.asset-toolbar .btn.icon-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  line-height: 1;
+}
+.asset-toolbar .btn.icon-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2b2f36;
+  color: #e6e8ec;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  padding: 4px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .15s, visibility .15s;
+  z-index: 30;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+}
+.asset-toolbar .btn.icon-btn::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #2b2f36;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .15s, visibility .15s;
+  z-index: 30;
+}
+.asset-toolbar .btn.icon-btn:hover::after,
+.asset-toolbar .btn.icon-btn:hover::before,
+.asset-toolbar .btn.icon-btn:focus-visible::after,
+.asset-toolbar .btn.icon-btn:focus-visible::before {
+  opacity: 1;
+  visibility: visible;
+}
+[data-theme="light"] .asset-toolbar .btn.icon-btn::after {
+  background: #eceef2;
+  color: #33363d;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+}
+[data-theme="light"] .asset-toolbar .btn.icon-btn::before { border-top-color: #eceef2; }
+/* 覆盖移动端 flex 拉伸：图标按钮保持固定尺寸 */
+.asset-toolbar .btn.icon-btn { flex: 0 0 auto; }
