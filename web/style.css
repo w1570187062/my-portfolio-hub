@@ -2425,7 +2425,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .icon-btn { width: var(--icon-btn); height: var(--icon-btn); padding: 0; border-radius: var(--radius); justify-content: center; flex: 0 0 auto; }
 
 /* 搜索框（设计系统：「/」聚焦筛选） */
-.filter-search { height: var(--btn-h); padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-input); color: var(--text); font-size: 14px; min-width: 160px; }
+.filter-search { height: var(--btn-h); padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-input); color: var(--text); font-size: 14px; min-width: 160px; -webkit-appearance: none; appearance: none; }
 .filter-search::placeholder { color: var(--text-faint); }
 
 /* 可达性：键盘焦点 2px 主色描边 */
