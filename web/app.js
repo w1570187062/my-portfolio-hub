@@ -216,20 +216,21 @@ function renderFreshness() {
   if (!updatedAtMax) { el.textContent = ''; el.hidden = true; return; }
   el.hidden = false;
   const parts = String(updatedAtMax).split(' ');
-  const hhmmss = parts[1] || updatedAtMax;
+  const full = parts[1] || updatedAtMax;
+  const hhmm = full.length >= 8 ? full.slice(0, 5) : full; // 精确到分钟，去秒
   const dayFull = parts[0] || '';
   const dayMD = dayFull.length >= 10 ? dayFull.slice(5) : dayFull; // 取 MM-DD
   const t = new Date(String(updatedAtMax).replace(' ', 'T'));
   const now = new Date();
   const diffMs = now - t;
   const stale = isNaN(diffMs) ? false : diffMs > 30 * 60 * 1000;
-  // 简化：「行情更新于」改为时间 + 「更新」，时间格式保持 MM-DD HH:MM:SS 不变。
-  el.textContent = dayMD + ' ' + hhmmss + ' 更新';
+  // 简化：「行情更新于」改为「MM-DD HH:MM 更新」，精确到分钟。
+  el.textContent = dayMD + ' ' + hhmm + ' 更新';
   el.className = 'hf-time' + (stale ? ' stale' : '');
 }
 
-// 顶部汇率跑马灯（横向滚动）+ 行情更新时间，已移至 header 左侧（主题切换按钮之前）。
-// 上方为汇率跑马灯（CDATA 复制一份首尾相接，配合 CSS translateX(-50%) 无缝循环），下方为行情更新时间。
+// 顶部汇率跑马灯（纵向上下滚动）+ 行情更新时间，已移至 header 左侧（主题切换按钮之前）。
+// 上方为汇率跑马灯（三项纵向堆叠，复制一份首尾相接，配合 CSS translateY 步进无缝循环），下方为行情更新时间。
 function renderFx(d) {
   const track = document.getElementById('hfTrack');
   if (!track) return;
@@ -261,14 +262,12 @@ function renderFx(d) {
     { code: 'CNY', val: d.cny_usd || 0, dec: 4, unit: '$', chg: chgStr(cnyChg, 2) },
   ];
 
-  // 单份内容：三项汇率用「·」分隔，末尾再补一个「·」便于无缝循环。
-  const itemHtml = items.map((it) =>
-    '<span class="hf-item"><b>1 ' + it.code +
-    ' = <span class="hf-num">' + it.val.toFixed(it.dec) + '</span> ' + it.unit + '</b>' + it.chg + '</span>'
-  ).join('<span class="hf-dot">·</span>');
-  const unit = itemHtml + '<span class="hf-dot">·</span>';
-  // 复制一份首尾相接，translateX(-50%) 正好偏移一个 unit 宽度，实现无缝滚动。
-  track.innerHTML = unit + unit;
+  // 纵向跑马灯：三项汇率纵向堆叠成一组，复制一份首尾相接；CSS 步进 -20px(单项高) → -60px(-3 项) 实现无缝循环。
+  const oneSet = items.map((it) =>
+    '<div class="hf-item"><b>1 ' + it.code +
+    ' = <span class="hf-num">' + it.val.toFixed(it.dec) + '</span> ' + it.unit + '</b>' + it.chg + '</div>'
+  ).join('');
+  track.innerHTML = oneSet + oneSet;
 
   // 行情更新时间 pill（由 renderFreshness 填充，30s 刷新一次）
   renderFreshness();
