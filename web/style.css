@@ -791,9 +791,9 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .down { color: #4ade80; }
 .flat { color: var(--text-muted); }
 .name-up { color: #f87171; font-weight: 600; }
-.name-arrow { color: #f87171; font-size: 11px; }
+.name-arrow { color: #f87171; font-size: 11px; margin-right: 3px; }
 .name-down { color: #4ade80; font-weight: 600; }
-.name-arrow-down { color: #4ade80; font-size: 11px; }
+.name-arrow-down { color: #4ade80; font-size: 11px; margin-right: 3px; }
 
 /* 名称可点击（技术分析入口） */
 .name-clickable { cursor: pointer; transition: background .15s ease, color .15s ease; }
