@@ -207,11 +207,13 @@ function renderFreshness() {
   el.hidden = false;
   const parts = String(updatedAtMax).split(' ');
   const hhmmss = parts[1] || updatedAtMax;
+  const dayFull = parts[0] || '';
+  const dayMD = dayFull.length >= 10 ? dayFull.slice(5) : dayFull; // 取 MM-DD
   const t = new Date(String(updatedAtMax).replace(' ', 'T'));
   const now = new Date();
   const diffMs = now - t;
   const stale = isNaN(diffMs) ? false : diffMs > 30 * 60 * 1000;
-  let txt = '行情更新于 ' + hhmmss;
+  let txt = '行情更新于 ' + dayMD + ' ' + hhmmss;
   el.textContent = txt;
   el.className = 'fx-quote-time' + (stale ? ' stale' : '');
 }
