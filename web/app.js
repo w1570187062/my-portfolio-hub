@@ -253,7 +253,8 @@ function renderFx(d) {
     const abs = Math.abs(chg.pct);
     const sign = chg.pct >= 0 ? '+' : '';
     const dir = chg.pct > 0.01 ? '▲' : (chg.pct < -0.01 ? '▼' : '');
-    return ' <span class="fx-chg" style="color:' + (chg.pct > 0.01 ? 'var(--up)' : (chg.pct < -0.01 ? 'var(--down)' : 'var(--text-muted)')) + '">(' + sign + abs.toFixed(dec) + '% ' + dir + ')</span>';
+    // 三角箭头放在涨跌幅前面：如 (▲+0.12%)
+    return ' <span class="fx-chg" style="color:' + (chg.pct > 0.01 ? 'var(--up)' : (chg.pct < -0.01 ? 'var(--down)' : 'var(--text-muted)')) + '">(' + dir + sign + abs.toFixed(dec) + '%)</span>';
   }
 
   const items = [
