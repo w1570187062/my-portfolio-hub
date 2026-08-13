@@ -3013,6 +3013,12 @@ async function loadGuideHoldings() {
   } catch (_) {}
 }
 
+// 补仓档位是否已到点位：联接ETF最新价 ≤ 该档触发价（与推送通知的判定一致）。
+// 注意 BuyPlanTier.Signal 只是档位说明文字（恒非空），不是触发标记。
+function isTierTriggered(plan, t) {
+  return !!(t && plan && plan.ETFLatest != null && plan.ETFLatest > 0 && plan.ETFLatest <= t.Price);
+}
+
 // 直接渲染所有带补仓计划的基金（数据来自 holdings.buy_plan，由净值刷新时计算）
 // 二级列表样式：每个基金条目头部可点击折叠/展开其补仓计划明细
 function renderBuyPlans() {
@@ -3028,7 +3034,7 @@ function renderBuyPlans() {
     try { plan = JSON.parse(h.buy_plan); } catch (_) { return; }
     const name = h.name || h.symbol || ('#' + h.id);
     const tiers = (plan.HasData && plan.Tiers) ? plan.Tiers : [];
-    const triggered = tiers.filter((t) => t.Signal).length;
+    const triggered = tiers.filter((t) => isTierTriggered(plan, t)).length;
     const summary = triggered > 0
       ? `<span class="bp-summary trig">🔥 触发 ${triggered} 档</span>`
       : (tiers.length ? `<span class="bp-summary">待触发 · ${tiers.length} 档</span>` : '<span class="bp-summary">计划中</span>');
@@ -3045,8 +3051,8 @@ function renderBuyPlans() {
     if (tiers.length) {
       html += '<div class="plan-tiers">';
       tiers.forEach((t) => {
-        html += `<div class="plan-tier${t.Signal ? ' has-signal' : ''}">
-          <div class="plan-tier-label">${esc(t.Label)}${t.Signal ? '<span class="tier-flag">触发</span>' : ''}</div>
+        html += `<div class="plan-tier${isTierTriggered(plan, t) ? ' has-signal' : ''}">
+          <div class="plan-tier-label">${esc(t.Label)}${isTierTriggered(plan, t) ? '<span class="tier-flag">触发</span>' : ''}</div>
           <div class="plan-tier-grid">
             <span>触发价</span><b>${fmt(t.Price)}</b>
             <span>回撤</span><b>${t.Drawdown != null ? t.Drawdown.toFixed(1) : '—'}%</b>

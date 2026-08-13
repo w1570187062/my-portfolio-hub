@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/smtp"
 	"net/url"
@@ -249,7 +250,9 @@ type buySignal struct {
 }
 
 // collectBuySignals 遍历所有持仓的补仓计划（holdings.buy_plan，由净值刷新时计算、
-// 操作指南弹框展示的同一份数据），收集已触发（Signal 非空）的档位。
+// 操作指南弹框展示的同一份数据），收集「联接ETF最新价已到该档触发价」的档位。
+// 注意：BuyPlanTier.Signal 是档位说明文字（恒非空），不是触发标记；
+// 真正判定「价格已到补仓点位」是 ETFLatest（联接ETF最新价）≤ 该档 Price。
 func collectBuySignals() []buySignal {
 	hs, err := db.List()
 	if err != nil {
@@ -262,8 +265,9 @@ func collectBuySignals() []buySignal {
 			continue
 		}
 		var plan struct {
-			HasData bool `json:"HasData"`
-			Tiers   []struct {
+			HasData   bool `json:"HasData"`
+			ETFLatest float64 `json:"ETFLatest"`
+			Tiers     []struct {
 				Label    string  `json:"Label"`
 				Price    float64 `json:"Price"`
 				Drawdown float64 `json:"Drawdown"`
@@ -275,7 +279,8 @@ func collectBuySignals() []buySignal {
 			continue
 		}
 		for _, t := range plan.Tiers {
-			if strings.TrimSpace(t.Signal) == "" {
+			// 价格到点位：联接ETF最新价 ≤ 触发价（浮点误差极小，直接比较）
+			if plan.ETFLatest <= 0 || plan.ETFLatest > t.Price {
 				continue
 			}
 			out = append(out, buySignal{
@@ -306,8 +311,8 @@ func buildNetValueNotifyText(triggeredBy string) string {
 		sb.WriteString(fmt.Sprintf("\n## 🚨 补仓信号（%d 档已到补仓点位）\n\n", len(sigs)))
 		for _, s := range sigs {
 			sb.WriteString(fmt.Sprintf("- **%s**（%s · 联接 %s）\n", s.Name, s.Symbol, s.LinkedSymbol))
-			sb.WriteString(fmt.Sprintf("  触发档：`%s`　触发价 %.3f　回撤 %.1f%%　建议投入 ¥%.2f\n",
-				s.TierLabel, s.TierPrice, s.Drawdown, s.Amount))
+			sb.WriteString(fmt.Sprintf("  触发档：`%s`　触发价 %.3f　自高点回撤 %.1f%%　建议投入 ¥%.2f\n",
+				s.TierLabel, s.TierPrice, math.Abs(s.Drawdown), s.Amount))
 			sb.WriteString("  > 信号：" + s.Signal + "\n")
 		}
 	}
