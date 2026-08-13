@@ -2714,28 +2714,6 @@ $('#consumeCancel').onclick = () => ($('#consumeModal').hidden = true);
 
 // ---- 每日持仓金额录入（自动算每日盈亏） ----
 $('#assetSnapBtn').onclick = openSnapModal;
-$('#assetRefreshBtn').onclick = async () => {
-  const btn = $('#assetRefreshBtn');
-  const old = btn.textContent;
-  btn.textContent = '⏳ 刷新中…';
-  btn.disabled = true;
-  try {
-    const r = await api('/api/refresh', { method: 'POST' });
-    if (r.ok) {
-      const d = await r.json();
-      if (d.failed && d.failed.length) toast('以下未刷新成功：\n' + d.failed.join('\n'), 'err');
-      else toast('净值已刷新', 'ok');
-    } else {
-      toast('刷新请求失败 (HTTP ' + r.status + ')', 'err');
-    }
-  } catch (e) {
-    toast('刷新异常：' + e.message, 'err');
-  } finally {
-    btn.textContent = old;
-    btn.disabled = false;
-  }
-  loadAsset();
-};
 
 // ---- 通知渠道二级页 ----
 function showNotifyView() {
