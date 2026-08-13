@@ -2082,7 +2082,7 @@ async function showAssetView() {
   $('#toolsView').hidden = true;
   $('#notifyView').hidden = true;
   $('#assetView').hidden = false;
-  injectPageHead('assetView', '资产全景');
+  injectPageHead('assetView', '🗂️ 资产全景');
   $('#calendarBtn').classList.remove('active');
   $('#assetBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
   setNavActive('asset');

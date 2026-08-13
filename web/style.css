@@ -1667,7 +1667,10 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 /* ===== 小工具页 ===== */
 .tool-head { display: flex; align-items: center; gap: 14px; padding: 8px 28px 4px; }
 .tool-head h2 { margin: 0; font-size: 18px; color: var(--text); }
-.tools-grid { display: grid; grid-template-columns: 1fr; gap: 16px; max-width: 820px; margin: 0 auto; padding: 8px 28px 30px; align-items: start; }
+.tools-grid { display: grid; grid-template-columns: 1fr; gap: 16px; max-width: 980px; margin: 0 auto; padding: 8px 28px 30px; align-items: start; }
+/* 仅权益资产盈亏计算器卡片加宽；其余计算器与合并卡保持原宽居中 */
+.tool-card:not(.tool-card--wide):not(.merge-card) { max-width: 820px; margin-inline: auto; }
+.tool-card--wide { max-width: 100%; }
 .tool-card {
   position: relative;
   background: var(--bg-card);
@@ -1759,6 +1762,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .tool-table .trow .eq-note { flex: 1.6; }
+.tool-table .trow .eq-amt { flex: 2.4; }
 .tool-table .trow .eq-kind { flex: 0 0 78px; }
 .tool-table .trow .usd-kind { flex: 0 0 78px; }
 .tool-table .trow .usd-cost {
@@ -2326,8 +2330,8 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
 
 /* 二级页统一页头：标题 + 操作区（无返回箭头） */
-.page-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 calc(var(--section-gap) - 12px); }
-.page-head__title { font-size: 17px; font-weight: 700; margin: 0; }
+.page-head { display: flex; align-items: center; gap: 10px; padding: 8px 28px 4px; }
+.page-head__title { font-size: 18px; font-weight: 700; margin: 0; }
 .page-head__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
 /* 空态语义别名 */
