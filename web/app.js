@@ -328,7 +328,8 @@ function filteredHoldings() {
   const kw = textFilter;
   return allHoldings.filter((h) => {
     if (catFilter.size && !catFilter.has(h.category)) return false;
-    if (mktFilter.size && !mktFilter.has(h.market)) return false;
+    // 市场筛选仅在选定了具体类别（市场行可见）时生效：全不勾选 → 空集 → 无数据；全勾选 → 全部。
+    if (catFilter.size && !mktFilter.has(h.market)) return false;
     if (kw) {
       const hay = ((h.name || '') + ' ' + (h.symbol || '') + ' ' + (h.note || '')).toLowerCase();
       if (!hay.includes(kw)) return false;
@@ -413,7 +414,21 @@ function renderFiltered() {
     if (pager) pager.hidden = false;
     renderRows(sorted);
   }
-  if (empty) empty.hidden = allHoldings.length > 0;
+  if (empty) {
+    const emptyMsg = document.getElementById('emptyMsg');
+    const emptyAddBtn = document.getElementById('emptyAddBtn');
+    if (allHoldings.length === 0) {
+      if (emptyMsg) emptyMsg.textContent = '还没有任何持仓，添加第一笔开始记录吧。';
+      if (emptyAddBtn) emptyAddBtn.hidden = false;
+      empty.hidden = false;
+    } else if (hs.length === 0) {
+      if (emptyMsg) emptyMsg.textContent = '无数据：当前筛选条件下没有匹配的持仓，请调整筛选。';
+      if (emptyAddBtn) emptyAddBtn.hidden = true;
+      empty.hidden = false;
+    } else {
+      empty.hidden = true;
+    }
+  }
 }
 
 // 卡片视图：每只持仓一张卡（名称+代码 / 现价+当日% / 市值 / 累计盈亏），点击进详情。
@@ -545,7 +560,7 @@ function rebuildMarketChips() {
   const avail = availableMarkets();
   const valid = new Set(avail);
   [...mktFilter].forEach((m) => { if (!valid.has(m)) mktFilter.delete(m); });
-  if (mktFilter.size === 0) avail.forEach((m) => mktFilter.add(m)); // default: all
+  // 注意：不再在空集时自动补回全部——全部不勾选即代表「无选中市场」，应过滤为空（显示无数据）。
   avail.forEach((m) => {
     const label = document.createElement('label');
     label.className = 'chip';
