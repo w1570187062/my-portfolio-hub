@@ -1010,7 +1010,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   margin: 0;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 154, 168, .6) rgba(255, 255, 255, .06);
+  scrollbar-color: var(--primary) rgba(255, 255, 255, .06);
   box-sizing: border-box;
 }
 .modal-card form::-webkit-scrollbar,
@@ -1019,7 +1019,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .modal-card > div:not(.modal-actions):not(.cal-modal-head)::-webkit-scrollbar-track { background: transparent; }
 .modal-card form::-webkit-scrollbar-thumb,
 .modal-card > div:not(.modal-actions):not(.cal-modal-head)::-webkit-scrollbar-thumb {
-  background: rgba(148, 154, 168, .6);
+  background: var(--primary);
   border-radius: 4px;
 }
 
@@ -1027,7 +1027,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .table-wrap, .cards-grid, .asset-table, .ai-history-list,
 .hist-table, .snap-body, .hist-tbl-wrap, .analysis-body {
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 154, 168, .6) rgba(255, 255, 255, .06);
+  scrollbar-color: var(--primary) rgba(255, 255, 255, .06);
 }
 .table-wrap::-webkit-scrollbar, .cards-grid::-webkit-scrollbar, .asset-table::-webkit-scrollbar,
 .ai-history-list::-webkit-scrollbar, .hist-table::-webkit-scrollbar, .snap-body::-webkit-scrollbar,
@@ -1037,7 +1037,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .table-wrap::-webkit-scrollbar-thumb, .cards-grid::-webkit-scrollbar-thumb, .asset-table::-webkit-scrollbar-thumb,
 .ai-history-list::-webkit-scrollbar-thumb, .hist-table::-webkit-scrollbar-thumb, .snap-body::-webkit-scrollbar-thumb,
 .hist-tbl-wrap::-webkit-scrollbar-thumb, .analysis-body::-webkit-scrollbar-thumb {
-  background: rgba(148, 154, 168, .6);
+  background: var(--primary);
   border-radius: 6px;
 }
 .table-wrap::-webkit-scrollbar-track, .cards-grid::-webkit-scrollbar-track, .asset-table::-webkit-scrollbar-track,
@@ -1117,6 +1117,8 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 }
 .list-bar .filters { padding: 0; margin: 0; flex: 1 1 auto; min-width: 0; }
 .list-actions { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.action-btns { display: flex; align-items: center; gap: 12px; }
+.action-tools { display: flex; align-items: center; gap: 12px; }
 .filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .filters .filters-label { font-size: 13px; color: var(--text-muted); margin-right: 4px; }
 .chip {
@@ -1459,10 +1461,13 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   .cards-grid { padding: 0 14px; }
   .filters { padding: 0 14px; }
   .list-bar { padding: 0 14px; }
-  /* 手机端：操作按钮自成一行，「刷新行情」后换行；搜索与视图切换跟随换行 */
-  .list-actions { flex-wrap: wrap; flex: 1 1 100%; gap: 8px; }
-  .list-actions > .btn { flex: 1 1 0; min-width: 0; text-align: center; }
-  .list-actions .filter-search { flex: 1 1 160px; min-width: 0; }
+  /* 手机端：操作按钮一行（添加/指南/刷新），搜索与视图切换另起一行 */
+  .list-actions { flex-direction: column; align-items: stretch; gap: 8px; flex: 1 1 100%; }
+  .action-btns { gap: 8px; }
+  .action-btns > .btn { flex: 1 1 0; min-width: 0; text-align: center; white-space: nowrap; }
+  .action-tools { gap: 8px; }
+  .action-tools .filter-search { flex: 1 1 auto; min-width: 0; }
+  .action-tools .view-toggle { flex: 0 0 auto; }
   /* 市场多选框：手机端竖排（每行一个市场），便于点选，且与其它筛选元素同宽 */
   .filter-row.scroll-row {
     flex-direction: column;
