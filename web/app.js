@@ -212,7 +212,6 @@ function renderFreshness() {
   const diffMs = now - t;
   const stale = isNaN(diffMs) ? false : diffMs > 30 * 60 * 1000;
   let txt = '行情更新于 ' + hhmmss;
-  if (snapshotDate) txt += ' · 快照 ' + snapshotDate;
   el.textContent = txt;
   el.className = 'fx-quote-time' + (stale ? ' stale' : '');
 }
