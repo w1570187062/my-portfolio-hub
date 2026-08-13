@@ -1046,6 +1046,18 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   background: rgba(255, 255, 255, .06);
   border-radius: 6px;
 }
+
+/* 页面级滚动条（首页表格/卡片的主要可见竖向滚动条就是 html/body 在滚）——也用豆沙绿 */
+html { scrollbar-width: thin; scrollbar-color: var(--primary) rgba(255, 255, 255, .06); }
+html::-webkit-scrollbar, body::-webkit-scrollbar { width: 10px; height: 10px; }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 6px;
+}
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, .06);
+  border-radius: 6px;
+}
 /* 直接子 p（提示语 / 确认消息）：左右对齐，无上下间距由后续元素控制 */
 .modal-card > p {
   flex-shrink: 0;
