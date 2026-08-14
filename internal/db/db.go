@@ -20,6 +20,7 @@ type Holding struct {
 	Category     string  `json:"category"` // stock | fund
 	Market       string  `json:"market"`   // stock: 沪深|美股|港股 ; fund: QDII|债券|股票
 	Currency     string  `json:"currency"` // CNY | USD
+	SourceID     int64   `json:"source_id"` // 所属平台/来源（asset_sources）
 	Quantity     float64 `json:"quantity"`
 	CostPrice    float64 `json:"cost_price"`
 	CurrentPrice float64 `json:"current_price"`
@@ -83,6 +84,11 @@ func Init(path string) error {
 	var bpc int
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='buy_plan'`).Scan(&bpc); e == nil && bpc == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN buy_plan TEXT NOT NULL DEFAULT ''`)
+	}
+	// 兼容旧库：新增 source_id 列（所属平台/来源，关联 asset_sources）
+	var scid int
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='source_id'`).Scan(&scid); e == nil && scid == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN source_id INTEGER NOT NULL DEFAULT 0`)
 	}
 	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 		date    TEXT NOT NULL,
@@ -513,7 +519,7 @@ func migrateMarkets() error {
 
 // List returns holdings for a user (userID). Pass 0 to get all (used by scheduled jobs).
 func List(userID int64) ([]Holding, error) {
-	q := "SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at FROM holdings"
+	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at FROM holdings"
 	var args []interface{}
 	if userID > 0 {
 		q += " WHERE user_id=?"
@@ -528,7 +534,7 @@ func List(userID int64) ([]Holding, error) {
 	var out []Holding
 	for rows.Next() {
 		var h Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -538,8 +544,8 @@ func List(userID int64) ([]Holding, error) {
 
 func Get(id int64) (*Holding, error) {
 	var h Holding
-	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at FROM holdings WHERE id=?", id).
-		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt)
+	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at FROM holdings WHERE id=?", id).
+		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -548,8 +554,8 @@ func Get(id int64) (*Holding, error) {
 
 func Create(h *Holding) (int64, error) {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt)
+	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -558,8 +564,8 @@ func Create(h *Holding) (int64, error) {
 
 func Update(h *Holding) error {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=? WHERE id=?",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.ID)
+	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=? WHERE id=?",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.ID)
 	return err
 }
 
@@ -839,6 +845,8 @@ func initAssetTables() error {
 			source_id INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL DEFAULT '',
 			code TEXT NOT NULL DEFAULT '',
+			currency TEXT NOT NULL DEFAULT 'rmb',
+			cum_pnl REAL NOT NULL DEFAULT 0,
 			note TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT ''
 		)`,
@@ -886,6 +894,7 @@ func initAssetTables() error {
 	}
 	// Migrations for columns added after first release.
 	addColumnIfMissing("wealth_products", "currency", "TEXT NOT NULL DEFAULT 'rmb'")
+	addColumnIfMissing("wealth_products", "cum_pnl", "REAL NOT NULL DEFAULT 0")
 	return nil
 }
 
@@ -957,18 +966,19 @@ func DeleteSource(id int64) error {
 // ---- Wealth products (理财) ----
 
 type WealthProduct struct {
-	ID        int64  `json:"id"`
-	UserID    int64  `json:"user_id"`
-	SourceID  int64  `json:"source_id"`
-	Name      string `json:"name"`
-	Code      string `json:"code"`
-	Currency  string `json:"currency"`
-	Note      string `json:"note"`
-	CreatedAt string `json:"created_at"`
+	ID        int64   `json:"id"`
+	UserID    int64   `json:"user_id"`
+	SourceID  int64   `json:"source_id"`
+	Name      string  `json:"name"`
+	Code      string  `json:"code"`
+	Currency  string  `json:"currency"`
+	Note      string  `json:"note"`
+	CumPnl    float64 `json:"cum_pnl"` // 累计收益：手动编辑值优先；为 0 时由每日快照自动累计。
+	CreatedAt string  `json:"created_at"`
 }
 
 func ListWealth(userID int64) ([]WealthProduct, error) {
-	rows, err := DB.Query(`SELECT id,user_id,source_id,name,code,currency,note,created_at FROM wealth_products WHERE user_id=? ORDER BY id DESC`, userID)
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,code,currency,cum_pnl,note,created_at FROM wealth_products WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -976,7 +986,7 @@ func ListWealth(userID int64) ([]WealthProduct, error) {
 	var out []WealthProduct
 	for rows.Next() {
 		var w WealthProduct
-		if err := rows.Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.Note, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.CumPnl, &w.Note, &w.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, w)
@@ -985,7 +995,7 @@ func ListWealth(userID int64) ([]WealthProduct, error) {
 }
 
 func ListWealthBySource(sourceID int64) ([]WealthProduct, error) {
-	rows, err := DB.Query(`SELECT id,user_id,source_id,name,code,currency,note,created_at FROM wealth_products WHERE source_id=? ORDER BY id DESC`, sourceID)
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,code,currency,cum_pnl,note,created_at FROM wealth_products WHERE source_id=? ORDER BY id DESC`, sourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -993,7 +1003,7 @@ func ListWealthBySource(sourceID int64) ([]WealthProduct, error) {
 	var out []WealthProduct
 	for rows.Next() {
 		var w WealthProduct
-		if err := rows.Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.Note, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.CumPnl, &w.Note, &w.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, w)
@@ -1006,8 +1016,8 @@ func CreateWealth(w *WealthProduct) (int64, error) {
 		w.Currency = "rmb"
 	}
 	w.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO wealth_products(user_id,source_id,name,code,currency,note,created_at) VALUES(?,?,?,?,?,?,?)`,
-		w.UserID, w.SourceID, w.Name, w.Code, w.Currency, w.Note, w.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO wealth_products(user_id,source_id,name,code,currency,cum_pnl,note,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		w.UserID, w.SourceID, w.Name, w.Code, w.Currency, w.CumPnl, w.Note, w.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -1018,8 +1028,8 @@ func UpdateWealth(w *WealthProduct) error {
 	if w.Currency == "" {
 		w.Currency = "rmb"
 	}
-	_, err := DB.Exec(`UPDATE wealth_products SET user_id=?,source_id=?,name=?,code=?,currency=?,note=? WHERE id=?`,
-		w.UserID, w.SourceID, w.Name, w.Code, w.Currency, w.Note, w.ID)
+	_, err := DB.Exec(`UPDATE wealth_products SET user_id=?,source_id=?,name=?,code=?,currency=?,cum_pnl=?,note=? WHERE id=?`,
+		w.UserID, w.SourceID, w.Name, w.Code, w.Currency, w.CumPnl, w.Note, w.ID)
 	return err
 }
 

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"portfolio/internal/api"
 	"portfolio/internal/db"
@@ -47,10 +48,36 @@ func main() {
 		log.Fatalf("embed fs: %v", err)
 	}
 	fileServer := http.FileServer(http.FS(sub))
+	// 强制浏览器/代理不缓存静态资源；并对 index.html 注入带版本的 app.js/style.css URL，
+	// 这样每次部署（VERSION 变化）都会让浏览器拉取全新的前端，彻底规避"改了前端却不生效"的缓存问题。
+	noCache := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			if data, err := fs.ReadFile(webFS, "web/index.html"); err == nil {
+				v := api.BuildInfo
+				if i := strings.IndexByte(v, '|'); i >= 0 {
+					v = v[:i]
+				}
+				if v == "" {
+					v = "dev"
+				}
+				html := string(data)
+				html = strings.Replace(html, `src="/app.js"`, `src="/app.js?v=`+v+`"`, 1)
+				html = strings.Replace(html, `href="/style.css"`, `href="/style.css?v=`+v+`"`, 1)
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Pragma", "no-cache")
+				_, _ = w.Write([]byte(html))
+				return
+			}
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
+		fileServer.ServeHTTP(w, r)
+	})
 
 	r := gin.Default()
 	api.RegisterRoutes(r)
-	r.NoRoute(gin.WrapH(fileServer))
+	r.NoRoute(gin.WrapH(noCache))
 
 	addr := os.Getenv("PORT")
 	if addr == "" {

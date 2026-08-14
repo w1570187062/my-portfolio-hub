@@ -106,12 +106,12 @@
   </header>
 
   <div id="holdingsView">
-  <section id="summary" class="summary collapsible">
+  <section id="summary" class="summary collapsible collapsed">
     <div class="collapse-hat">
       <span class="hat-title">资产总览</span>
       <span class="hat-chevron">▾</span>
     </div>
-    <div class="collapse-body" id="summaryBody"></div>
+    <div class="collapse-body card-body card-cols" id="summaryBody"></div>
   </section>
 
   <div class="list-bar">
@@ -119,7 +119,7 @@
     <div class="list-actions">
       <div class="action-btns">
         <button id="addBtn" class="btn">➕ 添加持仓</button>
-        <button id="guideBtn" class="btn">📋 操作指南</button>
+        <button id="guideBtn" class="btn">📋 补仓计划</button>
         <button id="refreshBtn" class="btn">🔄 刷新行情</button>
       </div>
       <div class="action-tools">
@@ -137,7 +137,7 @@
   <table id="tbl">
     <thead>
       <tr>
-        <th class="num">#</th><th>名称</th><th>代码</th><th class="hide-col">类型</th><th class="hide-col">市场</th><th class="hide-col">币种</th>
+        <th class="num">#</th><th>名称</th><th>代码</th><th>来源</th><th class="hide-col">类型</th><th class="hide-col">市场</th><th class="hide-col">币种</th>
         <th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th>
         <th class="num sortable" data-sort="market_value" onclick="setSort('market_value')">市值(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="day_pnl" onclick="setSort('day_pnl')">当日盈亏(<span id="dayDateLbl"></span>) <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl" onclick="setSort('pnl')">总盈亏(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl_pct" onclick="setSort('pnl_pct')">盈亏率 <span class="sort-ind"></span></th><th class="num">持仓天数</th><th>备注</th><th>操作</th>
       </tr>
@@ -155,7 +155,7 @@
   </div>
 
   <div id="assetView" hidden>
-    <section id="assetSummary" class="summary asset-summary collapsible">
+    <section id="assetSummary" class="summary asset-summary collapsible collapsed">
       <div class="collapse-hat">
         <span class="hat-title">资产总览</span>
         <span class="hat-chevron">▾</span>
@@ -176,7 +176,7 @@
       <button class="btn atab" data-tab="cash" type="button">现金</button>
       <button class="btn atab" data-tab="liability" type="button" style="display:none">负债</button>
       <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
-      <button class="btn atab" data-tab="sources" type="button">资产来源</button>
+      <button class="btn atab" data-tab="sources" type="button">来源</button>
     </div>
     <div id="assetTabBody"></div>
   </div>
@@ -335,6 +335,9 @@
         <label>市场
           <select id="f_market"></select>
         </label>
+        <label>来源
+          <select id="f_source"></select>
+        </label>
         <label>币种
           <select id="f_currency"><option value="CNY">RMB</option><option value="HKD">HKD</option><option value="USD">USD</option></select>
         </label>
@@ -382,7 +385,7 @@
 
   <div id="guideModal" class="modal" hidden>
     <div class="modal-card" style="width:560px; max-width:94vw;">
-      <h2>操作指南</h2>
+      <h2>补仓计划</h2>
       <div class="guide-plan">
         <div class="guide-plan-head">
           <span class="guide-plan-title">📊 动态补仓计划</span>
@@ -545,12 +548,12 @@
   <!-- ===== 资产全景弹框 ===== -->
   <div id="assetSourceModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="assetSourceTitle">添加资产来源</h2>
+      <h2 id="assetSourceTitle">添加来源</h2>
       <form id="assetSourceForm">
         <input type="hidden" id="as_id">
         <label>名称 <input id="as_name" placeholder="如 招商银行 / 支付宝" required></label>
         <label>类型
-          <select id="as_type"><option value="bank">银行</option><option value="platform">平台</option></select>
+          <select id="as_type"><option value="bank">银行</option><option value="securities">证券</option><option value="software">软件</option></select>
         </label>
         <label>备注 <input id="as_note"></label>
         <div id="assetSourceErr" class="err"></div>
@@ -570,6 +573,7 @@
         <label>货币类型
           <select id="w_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
         </label>
+        <label>累计收益 <input id="w_cum" type="number" step="any" placeholder="留空则按每日盈亏自动累计"></label>
         <label>备注 <input id="w_note"></label>
         <div id="wealthErr" class="err"></div>
         <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>

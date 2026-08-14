@@ -93,7 +93,11 @@ func assetOverview(c *gin.Context) {
 		wToday += fxToCNY(todayPnl, w.Currency, cnyRate, hkdRate)
 		wByCur[w.Currency] += amt
 		cnt, _ := db.CountWealthSnapshots(w.ID)
-		cum := wealthCumPnl(w.ID)
+		// 累计收益：手动编辑值优先（CumPnl 非 0），否则按每日快照自动累计。
+		cum := w.CumPnl
+		if cum == 0 {
+			cum = wealthCumPnl(w.ID)
+		}
 		wItems = append(wItems, gin.H{
 			"id":          w.ID,
 			"name":        w.Name,
@@ -322,6 +326,12 @@ func listWealth(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	// 累计收益回退：未手动编辑（CumPnl=0）时按每日快照自动累计，保证编辑弹框预填值与实际展示一致。
+	for i := range out {
+		if out[i].CumPnl == 0 {
+			out[i].CumPnl = wealthCumPnl(out[i].ID)
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"wealth": out})
 }

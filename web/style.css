@@ -550,7 +550,7 @@
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 4px 28px 16px;
+  padding: 4px 28px 10px;
   color: var(--text-muted);
   font-size: 13px;
 }
@@ -737,15 +737,16 @@ header h1 {
 /* 汇总卡：总资产 / 总盈亏 / 涨跌平数 三列并排、竖线分割 */
 .summary .card-merged { flex: 1 1 100%; }
 .summary .card-cols { flex-direction: row; align-items: stretch; flex: 1 1 auto; gap: 0; }
-.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 18px; border-left: 1px solid var(--border); display: flex; flex-direction: row; justify-content: center; align-items: flex-end; gap: 18px; text-align: left; }
-.summary .c-main { display: flex; flex-direction: column; align-items: flex-start; }
-.summary .c-detail { display: flex; flex-direction: column; margin-bottom: 0; }
+.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 14px; border-left: 1px solid var(--border); display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 16px; text-align: center; }
+.summary .c-main { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.summary .c-detail { display: flex; flex-direction: column; margin-bottom: 0; justify-content: center; }
 .summary .c-detail > :last-child { margin-bottom: 0; padding-bottom: 0; }
-.summary .c-col:first-child { padding-left: 0; border-left: none; }
+.summary .c-col:first-child { padding-left: 14px; border-left: none; }
 .summary .c-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.summary .c-col .card-icon { width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto; }
-.summary .c-col .card-icon svg { width: 17px; height: 17px; }
-.summary .c-breakdown { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.summary .c-content { display: flex; flex-direction: column; min-width: 0; }
+.summary .c-col .card-icon { width: 108px; height: 108px; border-radius: 22px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+.summary .c-col .card-icon svg { width: 56px; height: 56px; }
+.summary .c-breakdown { margin-top: 6px; padding-top: 0; display: flex; flex-direction: column; gap: 4px; }
 .summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
 .summary .c-br-label { color: var(--text-muted); min-width: 64px; flex: 0 0 auto; font-weight: 600; }
 .summary .c-br-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
@@ -755,7 +756,7 @@ header h1 {
 :root[data-theme="light"] .summary .c-sub.up { color: #dc2626; }
 :root[data-theme="light"] .summary .c-sub.down { color: #16a34a; }
 /* 总盈亏列：分币种盈亏（RMB/USD/HKD，CNY 折算）上下排列 */
-.summary .c-pnl { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.summary .c-pnl { margin-top: 4px; padding-top: 0; display: flex; flex-direction: column; gap: 3px; }
 .summary .c-pnl-row { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
 .summary .c-pnl-label { color: var(--text-muted); min-width: 38px; flex: 0 0 auto; font-weight: 600; }
 .summary .c-pnl-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
@@ -765,7 +766,17 @@ header h1 {
 :root[data-theme="light"] .summary .c-pnl-val.down { color: #16a34a; }
 
 /* ===== 卡片折叠/展开（帽子）：资产总览 / 资产全景顶部卡 ===== */
-.summary.collapsible { flex-direction: column; align-items: stretch; }
+.summary.collapsible {
+  display: block;
+  gap: 0;
+  padding: 0;
+  margin: 16px 20px;
+  background: var(--bg-card);
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
 .collapsible .collapse-hat {
   display: flex;
   align-items: center;
@@ -773,22 +784,22 @@ header h1 {
   gap: 10px;
   cursor: pointer;
   user-select: none;
-  padding: 2px 2px 8px;
-  margin-bottom: 12px;
+  padding: 13px 18px;
   border-bottom: 1px solid var(--border);
 }
 .collapsible .collapse-hat:hover { opacity: .82; }
 .collapsible .hat-title { font-size: 15px; font-weight: 700; letter-spacing: .4px; color: var(--text); }
-.collapsible .hat-chevron { font-size: 13px; line-height: 1; color: var(--text-muted); transition: transform .2s ease; }
+.collapsible .hat-chevron { font-size: 20px; line-height: 1; color: var(--text-muted); transition: transform .2s ease; }
 .collapsible.collapsed .hat-chevron { transform: rotate(-90deg); }
-.collapsible .collapse-body { overflow: hidden; }
+.collapsible .collapse-body { overflow: hidden; padding: 16px 18px; }
 .collapsible.collapsed .collapse-body { display: none; }
+.collapsible.collapsed .collapse-hat { border-bottom: none; }
 
 /* ===== 数据表格 ===== */
 table {
   width: auto;
   min-width: 100%;
-  margin: 0 0 32px;
+  margin: 0 0 12px;
   border-collapse: collapse;
   background: var(--bg-card);
   backdrop-filter: blur(12px);
@@ -815,6 +826,8 @@ th {
   letter-spacing: .5px;
 }
 td { color: var(--text); }
+/* 首页持仓表：表头标题居最右 */
+#tbl th { text-align: center; }
 tbody tr {
   transition: background .15s ease;
 }
@@ -1508,9 +1521,11 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   }
   /* 汇总卡片：一行两张、更紧凑 */
   .summary { padding: 12px 14px; gap: 10px; }
+  /* 折叠卡：手机端收窄外边距，避免贴边又不过度内缩 */
+  .summary.collapsible { margin: 12px 14px; }
   /* 合并卡：手机端三列改为上下堆叠，竖线改为横线分割 */
   .summary .card-cols { flex-direction: column; align-items: stretch; }
-  .summary .c-col { flex-direction: column; align-items: center; text-align: center; padding: 12px 0 0; border-left: none; border-top: 1px solid var(--border); }
+  .summary .c-col { flex-direction: column; align-items: center; text-align: center; padding: 12px 0 0; border-left: none; border-top: none; }
   .summary .c-main { align-items: center; }
   .summary .c-col:first-child { padding-top: 0; border-top: none; }
   /* 顶部汇率/时间：手机端收窄字号，纵向跑马灯自然适配窄宽 */
@@ -1525,6 +1540,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .card .value { font-size: 18px; }
   .card-icon { width: 34px; height: 34px; }
   .card-icon svg { width: 18px; height: 18px; }
+  /* 首页汇总卡图标：手机端缩小，避免上下堆叠时过大 */
+  .summary .c-col .card-icon { width: 72px; height: 72px; border-radius: 16px; }
+  .summary .c-col .card-icon svg { width: 36px; height: 36px; }
   /* 表格/筛选留边收窄 */
   .table-wrap { padding: 0 14px 8px; }
   .cards-grid { padding: 0 14px; }
@@ -1680,12 +1698,12 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 .empty-tip { color: var(--text-muted); font-size: 13px; padding: 20px 4px; text-align: center; }
 .asset-table { width: 100%; border-collapse: collapse; font-size: 15px; }
-.asset-table th { font-size: 13px; }
+.asset-table th { font-size: 13px; text-align: center; }
 .asset-table th, .asset-table td {
   padding: 6px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, .05);
-  text-align: left;
 }
+.asset-table td { text-align: left; }
 .asset-table td.num, .asset-table th.num { text-align: right; }
 .asset-table .up { color: #f87171; }
 .asset-table .down { color: #4ade80; }
@@ -1741,7 +1759,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .asset-summary .card.down .c-value { color: #4ade80; }
 /* 合并卡片：总资产 + 权益市值 / 理财持仓 明细 */
 .asset-summary .card-merged { flex: 1 1 100%; }
-.asset-summary .c-breakdown { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.asset-summary .c-breakdown { margin-top: 8px; padding-top: 0; display: flex; flex-direction: column; gap: 6px; }
 .asset-summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
 .asset-summary .c-br-label { color: var(--text-muted); min-width: 60px; flex: 0 0 auto; font-weight: 600; }
 .asset-summary .c-br-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
@@ -1767,6 +1785,11 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 /* ===== 统一按钮风格（资产全景模块） ===== */
 /* 新系统已在顶部定义，此处保留旧样式以兼容 */
 .asset-add { margin-left: auto; }
+/* 理财区块标题右侧操作区：添加按钮 + 视图切换（表格/卡片），切换器紧贴添加按钮右侧 */
+.asset-section-head .sec-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.asset-section-head .sec-actions .asset-add { margin-left: 0; }
+/* 资产全景理财表格视图，复用全局 table 样式，仅约束内边距 */
+.asset-table { width: 100%; }
 .cur-badge {
   display: inline-block;
   font-size: 11px;
@@ -2098,7 +2121,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 .bp-head.bp-toggle:hover { background: var(--bg-hover); }
 .bp-chevron {
-  font-size: 11px;
+  font-size: 16px;
   color: var(--text-muted);
   transition: transform .15s ease;
   flex: 0 0 auto;
@@ -2219,7 +2242,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 
 /* ===== 页脚版本信息 ===== */
 #appFooter {
-  padding: 18px 16px 28px;
+  padding: 12px 16px 18px;
   text-align: center;
 }
 #versionInfo {

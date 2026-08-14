@@ -129,6 +129,7 @@ let monthPnlUsd = 0;     // 本月累计盈亏（USD 原始货币）
 let failedSymbols = {};  // symbol -> 失败原因（刷新失败持久标记）
 // table | card；移动端（窄屏）默认卡片视图（表格横向溢出体验差），但不强制——允许用户手动切回表格（可横向滚动）
 let holdingsView = localStorage.getItem('pf_view') || (window.innerWidth < 640 ? 'card' : 'table');
+let wealthView = localStorage.getItem('pf_wealth_view') || (window.innerWidth < 640 ? 'card' : 'table');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Two-level category -> market association (二级筛选).
@@ -208,6 +209,7 @@ async function load() {
     if (ddl) ddl.textContent = dayDate;
     renderFreshness();
     if (!freshnessTimer) freshnessTimer = setInterval(renderFreshness, 30000);
+    await loadSourcesCache();
     buildFilters();
     renderFiltered();
   } catch (e) {
@@ -461,7 +463,7 @@ function renderSummary(hs) {
     distribution: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="7"/><line x1="18" y1="20" x2="18" y2="10"/></svg>',
     pnl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><polyline points="7 15 11 10 14 13 21 6"/></svg>',
   };
-  // 合并卡：总资产 / 总盈亏(带涨跌箭头) / 涨跌平数 三列并排、竖线分割，币种市值明细置于总资产列下。
+  // 合并卡：总资产 / 总盈亏(带涨跌箭头) / 涨跌数 三列并排、居中，币种市值明细置于各列右侧。
   let br = '';
   br += `<div class="c-br"><span class="c-br-label">RMB 市值</span><span class="c-br-val">${fmt(cnyMV)}</span></div>`;
   br += `<div class="c-br"><span class="c-br-label">USD 市值</span><span class="c-br-val">${fmt(usdMV * usdRate)}</span></div>`;
@@ -480,29 +482,37 @@ function renderSummary(hs) {
   const mpRows = `<div class="c-pnl-row"><span class="c-pnl-label">RMB</span><span class="c-pnl-val ${mpCnyCls}">¥${fmt(monthPnlCny)}</span></div>` +
                  `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${mpUsdCls}">$${fmt(monthPnlUsd)}</span></div>`;
   $('#summaryBody').innerHTML = `
-   <div class="card card-merged"><div class="card-body card-cols">
+
      <div class="c-col">
-       <div class="c-main">
-         <div class="c-head"><div class="card-icon">${ICON.total}</div><div class="label">总资产 (CNY)</div></div>
-         <div class="value">${fmt(totalCNY)}</div>
+       <div class="card-icon">${ICON.total}</div>
+       <div class="c-content">
+         <div class="c-main">
+           <div class="c-head"><div class="label">总资产 (CNY)</div></div>
+           <div class="value">${fmt(totalCNY)}</div>
+         </div>
+         <div class="c-detail"><div class="c-breakdown">${br}</div></div>
        </div>
-       <div class="c-detail"><div class="c-breakdown">${br}</div></div>
      </div>
      <div class="c-col">
-       <div class="c-main">
-         <div class="c-head"><div class="card-icon">${ICON.pnl}</div><div class="label">总盈亏 (CNY)</div></div>
-         <div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div>
+       <div class="card-icon">${ICON.pnl}</div>
+       <div class="c-content">
+         <div class="c-main">
+           <div class="c-head"><div class="label">总盈亏 (CNY)</div></div>
+           <div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div>
+         </div>
+         <div class="c-detail"><div class="c-pnl">${pnlRows}</div></div>
        </div>
-       <div class="c-detail"><div class="c-pnl">${pnlRows}</div></div>
      </div>
      <div class="c-col">
-       <div class="c-main">
-         <div class="c-head"><div class="card-icon">${ICON.distribution}</div><div class="label">涨跌平数 (${todayStr})</div></div>
-         <div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div>
+       <div class="card-icon">${ICON.distribution}</div>
+       <div class="c-content">
+         <div class="c-main">
+           <div class="c-head"><div class="label">涨跌数 (${todayStr})</div></div>
+           <div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div>
+         </div>
+         <div class="c-detail"><div class="c-pnl">${mpRows}</div></div>
        </div>
-       <div class="c-detail"><div class="c-pnl">${mpRows}</div></div>
-     </div>
-   </div></div>`;
+     </div>`;
 }
 
 // Build the two-level filter UI: a category slider (left-right swipeable, single
@@ -602,7 +612,7 @@ function renderRows(hs) {
     if (isFail) tr.className = 'row-failed';
     tr.innerHTML = `
      <td class="num idx">${start + i + 1}${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}</td>
-     <td class="name-clickable ${h.day_pnl_pct > 0 ? 'name-up' : (h.day_pnl_pct < 0 ? 'name-down' : '')}" data-analysis="${h.id}" data-category="${h.category}" data-linked-symbol="${esc(h.linked_symbol || '')}" title="${h.category === 'fund' && !h.linked_symbol ? '基金未关联股票代码，不支持技术分析' : esc(h.name)}">${h.day_pnl_pct > 0 ? '<span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? '<span class="name-arrow-down">▼</span>' : '')}<span class="name-text">${esc(h.name)}</span>${h.category === 'fund' && h.linked_symbol ? ' <span class="linked-badge" title="关联 ' + esc(h.linked_symbol) + '">🔗</span>' : ''}</td><td>${h.symbol}</td><td class="hide-col">${cat(h.category)}</td><td class="hide-col">${h.market}</td><td class="hide-col">${h.currency}</td>
+     <td class="name-clickable ${h.day_pnl_pct > 0 ? 'name-up' : (h.day_pnl_pct < 0 ? 'name-down' : '')}" data-analysis="${h.id}" data-category="${h.category}" data-linked-symbol="${esc(h.linked_symbol || '')}" title="${h.category === 'fund' && !h.linked_symbol ? '基金未关联股票代码，不支持技术分析' : esc(h.name)}">${h.day_pnl_pct > 0 ? '<span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? '<span class="name-arrow-down">▼</span>' : '')}<span class="name-text">${esc(h.name)}</span>${h.category === 'fund' && h.linked_symbol ? ' <span class="linked-badge" title="关联 ' + esc(h.linked_symbol) + '">🔗</span>' : ''}</td><td>${h.symbol}</td><td>${esc(h.source_name || '')}</td><td class="hide-col">${cat(h.category)}</td><td class="hide-col">${h.market}</td><td class="hide-col">${h.currency}</td>
      <td class="num">${fmt(h.quantity)}</td>
      <td class="num">${fmtNav(h.cost_price, h.category)}</td>
      <td class="num">${fmtNav(h.current_price, h.category)}</td>
@@ -705,6 +715,9 @@ function openModal(h) {
   $('#f_category').value = h ? h.category : 'stock';
   fillMarketOptions($('#f_category').value);
   $('#f_market').value = h ? h.market : CAT_MARKETS['stock'][0];
+  const fsrc = $('#f_source');
+  fsrc.innerHTML = (assetSources || []).map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加来源）</option>';
+  fsrc.value = h && h.source_id ? String(h.source_id) : (assetSources && assetSources[0] ? String(assetSources[0].id) : '');
   $('#f_currency').value = h ? h.currency : 'CNY';
   $('#f_quantity').value = h ? h.quantity : '';
   $('#f_cost_price').value = h ? h.cost_price : '';
@@ -998,7 +1011,21 @@ document.querySelectorAll('#viewToggle .vt-btn').forEach((b) => {
   };
 });
 syncViewToggle();
-window.addEventListener('resize', positionIndicator);
+// 通用：根据当前 active 按钮定位滑动白块（支持首页与资产全景理财两个切换器）
+function positionIndicatorFor(toggleId, indId) {
+  const ind = document.getElementById(indId);
+  if (!ind) return;
+  const active = document.querySelector('#' + toggleId + ' .vt-btn.active');
+  if (!active) return;
+  ind.style.width = active.offsetWidth + 'px';
+  ind.style.transform = 'translateX(' + active.offsetLeft + 'px)';
+}
+function syncWealthToggle() {
+  document.querySelectorAll('#wealthViewToggle .vt-btn').forEach((x) => x.classList.toggle('active', x.dataset.wview === wealthView));
+  positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator');
+  setTimeout(() => positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator'), 0);
+}
+window.addEventListener('resize', () => { positionIndicator(); positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator'); });
 setTimeout(positionIndicator, 0); // 字体/布局稳定后校正初始位置
 $('#emptyAddBtn').onclick = () => openModal(null);
 // 文本筛选（设计系统：搜索框 + 「/」聚焦 + Enter 提交）
@@ -1030,6 +1057,7 @@ $('#form').onsubmit = async (e) => {
     category: $('#f_category').value,
     market: $('#f_market').value,
     currency: $('#f_currency').value,
+    source_id: parseInt($('#f_source').value || '0', 10) || 0,
     quantity: parseFloat($('#f_quantity').value),
     cost_price: parseFloat($('#f_cost_price').value),
     current_price: parseFloat($('#f_current_price').value || '0'),
@@ -2697,13 +2725,10 @@ function renderAssetSummary() {
     `<div class="c-br"><span class="c-br-label">现金</span>` +
     `<span class="c-br-val">${money(cash.total || 0)}</span>` +
     `<span class="c-br-delta">${byCurHtml(cBy) ? byCurHtml(cBy) : '—'}</span></div>`;
-  const mergedCard =
-    `<div class="card card-merged">` +
-      `<div class="c-label">总资产</div>` +
-      `<div class="c-value">${money(total)}</div>` +
-      `<div class="c-breakdown">${equityRow}${wealthRow}${cashRow}</div>` +
-    `</div>`;
-  $('#assetSummaryBody').innerHTML = mergedCard;
+  $('#assetSummaryBody').innerHTML =
+    `<div class="c-label">总资产</div>` +
+    `<div class="c-value">${money(total)}</div>` +
+    `<div class="c-breakdown">${equityRow}${wealthRow}${cashRow}</div>`;
 }
 
 function renderAssetTab() {
@@ -2728,7 +2753,7 @@ document.querySelectorAll('#assetTabs .atab').forEach((b) => {
 
 function assetDel(type, id) {
   const msg = {
-    source: '确认删除该资产来源？关联记录会保留来源名快照，但来源本身不可恢复。',
+    source: '确认删除该来源？关联记录会保留来源名快照，但来源本身不可恢复。',
     wealth: '确认删除该理财？其每日录入记录一并删除，不可恢复。',
     cash: '确认删除该现金记录？不可恢复。',
     liability: '确认删除该负债？不可恢复。',
@@ -2742,12 +2767,12 @@ function assetDel(type, id) {
 // ---- 资产来源 ----
 function renderSources(body) {
   const list = assetSources;
-  let html = `<div class="asset-section-head"><h3>资产来源（${list.length}）</h3><button class="btn asset-add" id="addSourceBtn">＋ 添加来源</button></div>`;
-  if (!list.length) html += `<div class="empty-block"><p class="empty">还没有资产来源，先添加一个银行或平台吧。</p><button class="btn asset-add-inline" data-empty-add="source" type="button">➕ 添加来源</button></div>`;
+  let html = `<div class="asset-section-head"><h3>来源（${list.length}）</h3><button class="btn asset-add" id="addSourceBtn">＋ 添加来源</button></div>`;
+  if (!list.length) html += `<div class="empty-block"><p class="empty">还没有来源，先添加一个银行、证券或软件吧。</p><button class="btn asset-add-inline" data-empty-add="source" type="button">➕ 添加来源</button></div>`;
   else {
     html += `<table class="asset-table"><thead><tr><th>名称</th><th>类型</th><th>备注</th><th></th></tr></thead><tbody>`;
     for (const s of list) {
-      html += `<tr><td>${esc(s.name)}</td><td>${s.type === 'platform' ? '平台' : '银行'}</td><td>${esc(s.note || '')}</td>
+      html += `<tr><td>${esc(s.name)}</td><td>${s.type === 'securities' ? '证券' : s.type === 'software' ? '软件' : s.type === 'platform' ? '平台' : '银行'}</td><td>${esc(s.note || '')}</td>
         <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-source" data-id="${s.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-source" data-id="${s.id}">🗑️ 删除</button></td></tr>`;
     }
     html += `</tbody></table>`;
@@ -2760,7 +2785,7 @@ function renderSources(body) {
 
 function openAssetSourceModal(id) {
   const s = id ? assetSources.find((x) => x.id === id) : null;
-  $('#assetSourceTitle').textContent = s ? '编辑资产来源' : '添加资产来源';
+  $('#assetSourceTitle').textContent = s ? '编辑来源' : '添加来源';
   $('#as_id').value = s ? s.id : '';
   $('#as_name').value = s ? s.name : '';
   $('#as_type').value = s ? s.type : 'bank';
@@ -2795,8 +2820,14 @@ function wealthAmount(p) {
 function renderWealth(body) {
   const raw = (assetData.wealth || {}).products || [];
   const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount)); // 按卡片显示的原币金额从大到小（与卡片展示口径一致）
-  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><button class="btn asset-add" id="addWealthBtn">＋ 添加理财</button></div>`;
+  const toggleHtml = w.length ? `<div class="view-toggle" id="wealthViewToggle">
+      <span class="vt-indicator" id="wealthVtIndicator"></span>
+      <button class="btn vt-btn ${wealthView === 'table' ? 'active' : ''}" data-wview="table" type="button">表格</button>
+      <button class="btn vt-btn ${wealthView === 'card' ? 'active' : ''}" data-wview="card" type="button">卡片</button>
+    </div>` : '';
+  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn asset-add" id="addWealthBtn">＋ 添加理财</button>${toggleHtml}</div></div>`;
   if (!w.length) html += `<div class="empty-block"><p class="empty">还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn asset-add-inline" data-empty-add="wealth" type="button">➕ 添加第一笔理财</button></div>`;
+  else if (wealthView === 'table') html += renderWealthTable(w);
   else {
     html += `<div class="asset-list wealth-list">`;
     w.forEach((p, i) => {
@@ -2805,7 +2836,7 @@ function renderWealth(body) {
       html += `<div class="asset-card wealth-card"><div class="ac-head">
           <div class="ac-idx">${i + 1}</div>
           <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span></div>
-            <div class="ac-sub">${esc(p.code || '')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
+            <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
         <div class="ac-sub">总金额：<span class="ac-amount">${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}">${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}">${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
         <div class="ac-actions">
           <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">📈 每日盈亏</button>
@@ -2820,6 +2851,41 @@ function renderWealth(body) {
   body.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="del-wealth"]').forEach((b) => b.onclick = () => assetDel('wealth', Number(b.dataset.id)));
   body.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHist(Number(b.dataset.id)));
+  // 视图切换（表格 / 卡片），复用首页同款滑动切换器
+  body.querySelectorAll('#wealthViewToggle .vt-btn').forEach((b) => {
+    b.onclick = () => {
+      wealthView = b.dataset.wview;
+      localStorage.setItem('pf_wealth_view', wealthView);
+      renderWealth(body);
+    };
+  });
+  syncWealthToggle();
+}
+
+// 理财表格视图（与卡片视图共用同一份数据，列：名称/代码/来源/总金额/今日收益/累计收益/录入天数/操作）
+function renderWealthTable(w) {
+  let rows = w.map((p, i) => {
+    const pnl = p.today_pnl || 0;
+    const cum = p.cum_pnl || 0;
+    return `<tr>
+      <td class="num">${i + 1}</td>
+      <td>${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span></td>
+      <td>${esc(p.code || '-')}</td>
+      <td>${esc(p.source_name || '')}</td>
+      <td class="num">${moneyCur(p.amount || 0, p.currency)}</td>
+      <td class="num ${pnlCls(pnl)}">${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</td>
+      <td class="num ${pnlCls(cum)}">${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
+      <td class="num">${p.snap_count || 0}</td>
+      <td class="num asset-row-actions">
+        <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}" title="每日盈亏">📈</button>
+        <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}" title="编辑">✏️</button>
+        <button class="btn btn-icon danger" data-act="del-wealth" data-id="${p.id}" title="删除">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<div class="table-wrap"><table class="asset-table"><thead><tr>
+    <th class="num">#</th><th>名称</th><th>代码</th><th>来源</th><th class="num">总金额</th><th class="num">今日收益</th><th class="num">累计收益</th><th class="num">录入天数</th><th>操作</th>
+  </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 async function openWealthModal(id) {
@@ -2834,6 +2900,7 @@ async function openWealthModal(id) {
   $('#w_code').value = w ? (w.code || '') : '';
   $('#w_source').value = w ? w.source_id : (assetSources[0] ? assetSources[0].id : '');
   $('#w_currency').value = w ? (w.currency || 'rmb') : 'rmb';
+  $('#w_cum').value = w ? (w.cum_pnl != null ? w.cum_pnl : '') : '';
   $('#w_note').value = w ? (w.note || '') : '';
   $('#wealthErr').textContent = '';
   $('#wealthModal').hidden = false;
@@ -2841,7 +2908,7 @@ async function openWealthModal(id) {
 $('#wealthForm').onsubmit = async (e) => {
   e.preventDefault();
   const id = $('#w_id').value ? Number($('#w_id').value) : 0;
-  const payload = { name: $('#w_name').value.trim(), code: $('#w_code').value.trim(), source_id: Number($('#w_source').value) || 0, currency: $('#w_currency').value, note: $('#w_note').value.trim() };
+  const payload = { name: $('#w_name').value.trim(), code: $('#w_code').value.trim(), source_id: Number($('#w_source').value) || 0, currency: $('#w_currency').value, cum_pnl: parseFloat($('#w_cum').value) || 0, note: $('#w_note').value.trim() };
   if (!payload.name) { $('#wealthErr').textContent = '名称不能为空'; return; }
   try {
     const r = id ? await api('/api/asset/wealth/' + id, { method: 'PUT', body: JSON.stringify(payload) })

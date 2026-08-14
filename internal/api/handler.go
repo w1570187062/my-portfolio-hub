@@ -25,6 +25,7 @@ type HoldingView struct {
 	DayPnl      float64 `json:"day_pnl"`
 	DayPnlPct   float64 `json:"day_pnl_pct"`
 	HoldingDays int     `json:"holding_days"` // 持仓天数，从 buy_date 算起
+	SourceName   string  `json:"source_name"`  // 所属平台/来源名称（来自 asset_sources）
 }
 
 // usMarketClosedCST reports whether the most recent US trading session (US Eastern)
@@ -290,8 +291,16 @@ func listHoldings(c *gin.Context) {
 		return
 	}
 	out := make([]HoldingView, 0, len(hs))
+	srcName := map[int64]string{}
+	if srcs, e := db.ListSources(uid); e == nil {
+		for _, s := range srcs {
+			srcName[s.ID] = s.Name
+		}
+	}
 	for _, h := range hs {
-		out = append(out, enrich(h, uid))
+		v := enrich(h, uid)
+		v.SourceName = srcName[h.SourceID]
+		out = append(out, v)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"holdings":      out,
@@ -353,7 +362,16 @@ func createHolding(c *gin.Context) {
 		return
 	}
 	h.ID = id
-	c.JSON(http.StatusOK, gin.H{"holding": enrich(h, uid)})
+	v := enrich(h, uid)
+	// 单条返回也补全来源名称（enrich 本身不含来源解析；列表接口 listHoldings 已补全）。
+	if srcs, e := db.ListSources(uid); e == nil {
+		m := map[int64]string{}
+		for _, s := range srcs {
+			m[s.ID] = s.Name
+		}
+		v.SourceName = m[h.SourceID]
+	}
+	c.JSON(http.StatusOK, gin.H{"holding": v})
 }
 
 func updateHolding(c *gin.Context) {
@@ -377,7 +395,16 @@ func updateHolding(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"holding": enrich(h, currentUserID(c))})
+	uid := currentUserID(c)
+	v := enrich(h, uid)
+	if srcs, e := db.ListSources(uid); e == nil {
+		m := map[int64]string{}
+		for _, s := range srcs {
+			m[s.ID] = s.Name
+		}
+		v.SourceName = m[h.SourceID]
+	}
+	c.JSON(http.StatusOK, gin.H{"holding": v})
 }
 
 func deleteHolding(c *gin.Context) {
@@ -480,8 +507,16 @@ func refresh(c *gin.Context) {
 		rateErr = "汇率源暂不可用，已回退至最近一次成功获取的汇率"
 	}
 	out := make([]HoldingView, 0, len(hs))
+	srcName := map[int64]string{}
+	if srcs, e := db.ListSources(uid); e == nil {
+		for _, s := range srcs {
+			srcName[s.ID] = s.Name
+		}
+	}
 	for _, h := range hs {
-		out = append(out, enrich(h, uid))
+		v := enrich(h, uid)
+		v.SourceName = srcName[h.SourceID]
+		out = append(out, v)
 	}
 	_ = doSnapshot(uid)
 	NotifyNetValueUpdated(uid, "手动刷新行情", "")
