@@ -66,6 +66,10 @@ func EnsureUsers() error {
 		def := users[0].ID
 		backfillUser(def)
 	}
+	// 市场代码迁移需在 user_id 列就绪后执行（List 会读取 user_id）。
+	if err := migrateMarkets(); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -109,9 +109,6 @@ func Init(path string) error {
 	if err := initAISummaryHistory(); err != nil {
 		return fmt.Errorf("init ai_summary_history: %w", err)
 	}
-	if err := migrateMarkets(); err != nil {
-		return fmt.Errorf("migrate markets: %w", err)
-	}
 	if err := initAssetTables(); err != nil {
 		return fmt.Errorf("init asset tables: %w", err)
 	}
