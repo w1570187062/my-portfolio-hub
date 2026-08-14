@@ -456,6 +456,7 @@ function renderSummary(hs) {
     rmb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l6 8 6-8"/><line x1="12" y1="12" x2="12" y2="20"/><line x1="8" y1="15" x2="16" y2="15"/><line x1="8" y1="18" x2="16" y2="18"/></svg>',
     usd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><path d="M16.5 7c0-1.9-2-2.8-4.5-2.8S7.5 5.1 7.5 7s1.5 2.5 4.5 3 4.5 1.4 4.5 3.5-2 2.8-4.5 2.8-4.5-.9-4.5-2.8"/></svg>',
     distribution: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="7"/><line x1="18" y1="20" x2="18" y2="10"/></svg>',
+    pnl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><polyline points="7 15 11 10 14 13 21 6"/></svg>',
   };
   // 合并卡：总资产 / 总盈亏(带涨跌箭头) / 涨跌平数 三列并排、竖线分割，币种市值明细置于总资产列下。
   let br = '';
@@ -476,10 +477,19 @@ function renderSummary(hs) {
   const mpRows = `<div class="c-pnl-row"><span class="c-pnl-label">CNY</span><span class="c-pnl-val ${mpCnyCls}">¥${fmt(monthPnlCny)}</span></div>` +
                  `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${mpUsdCls}">$${fmt(monthPnlUsd)}</span></div>`;
   $('#summary').innerHTML = `
-   <div class="card card-merged"><div class="card-icon">${ICON.total}</div><div class="card-body card-cols">
-     <div class="c-col"><div class="label">总资产 (CNY)</div><div class="value">${fmt(totalCNY)}</div><div class="c-breakdown">${br}</div></div>
-     <div class="c-col"><div class="label">总盈亏 (CNY)</div><div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div><div class="c-pnl">${pnlRows}</div></div>
-     <div class="c-col"><div class="label">涨跌平数 (${todayStr})</div><div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div><div class="c-pnl">${mpRows}</div></div>
+   <div class="card card-merged"><div class="card-body card-cols">
+     <div class="c-col">
+       <div class="c-head"><div class="card-icon">${ICON.total}</div><div class="label">总资产 (CNY)</div></div>
+       <div class="value">${fmt(totalCNY)}</div><div class="c-breakdown">${br}</div>
+     </div>
+     <div class="c-col">
+       <div class="c-head"><div class="card-icon">${ICON.pnl}</div><div class="label">总盈亏 (CNY)</div></div>
+       <div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div><div class="c-pnl">${pnlRows}</div>
+     </div>
+     <div class="c-col">
+       <div class="c-head"><div class="card-icon">${ICON.distribution}</div><div class="label">涨跌平数 (${todayStr})</div></div>
+       <div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div><div class="c-pnl">${mpRows}</div>
+     </div>
    </div></div>`;
 }
 

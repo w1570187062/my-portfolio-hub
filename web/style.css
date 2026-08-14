@@ -739,6 +739,9 @@ header h1 {
 .summary .card-cols { flex-direction: row; align-items: stretch; flex: 1 1 auto; gap: 0; }
 .summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 18px; border-left: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; }
 .summary .c-col:first-child { padding-left: 0; border-left: none; }
+.summary .c-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.summary .c-col .card-icon { width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto; }
+.summary .c-col .card-icon svg { width: 17px; height: 17px; }
 .summary .c-breakdown { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
 .summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
 .summary .c-br-label { color: var(--text-muted); min-width: 64px; flex: 0 0 auto; font-weight: 600; }
