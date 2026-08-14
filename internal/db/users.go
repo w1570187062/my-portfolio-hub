@@ -45,6 +45,9 @@ func EnsureUsers() error {
 	if err := rebuildPnlDaily(); err != nil {
 		return err
 	}
+	if err := rebuildPriceDaily(); err != nil {
+		return err
+	}
 	if err := rebuildCalcInputs(); err != nil {
 		return err
 	}
@@ -78,7 +81,7 @@ func backfillUser(def int64) {
 	tables := []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
 		"cash_accounts", "consumptions", "ai_summary_history", "operation_guides",
-		"pnl_daily", "calc_inputs", "ai_settings",
+		"pnl_daily", "price_daily", "calc_inputs", "ai_settings",
 	}
 	for _, t := range tables {
 		// 忽略不存在的列（安全）
@@ -114,6 +117,35 @@ func rebuildPnlDaily() error {
 		return err
 	}
 	_, _ = DB.Exec(`DROP TABLE pnl_daily_old`)
+	return nil
+}
+
+// rebuildPriceDaily 将 price_daily(date,symbol) 改为 (date,symbol,user_id)，
+// 保留既有数据（归属默认用户），避免多用户刷新同一标的同日期时主键冲突。
+func rebuildPriceDaily() error {
+	has, _ := columnExists("price_daily", "user_id")
+	if has {
+		return nil
+	}
+	_, err := DB.Exec(`ALTER TABLE price_daily RENAME TO price_daily_old`)
+	if err != nil {
+		return err
+	}
+	_, err = DB.Exec(`CREATE TABLE price_daily (
+		date    TEXT NOT NULL,
+		symbol  TEXT NOT NULL,
+		close   REAL NOT NULL,
+		user_id INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (date, symbol, user_id)
+	)`)
+	if err != nil {
+		return err
+	}
+	_, err = DB.Exec(`INSERT INTO price_daily(date,symbol,close,user_id) SELECT date, symbol, close, 0 FROM price_daily_old`)
+	if err != nil {
+		return err
+	}
+	_, _ = DB.Exec(`DROP TABLE price_daily_old`)
 	return nil
 }
 

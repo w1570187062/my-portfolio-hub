@@ -85,10 +85,11 @@ func Init(path string) error {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN buy_plan TEXT NOT NULL DEFAULT ''`)
 	}
 	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
-		date   TEXT NOT NULL,
-		symbol TEXT NOT NULL,
-		close  REAL NOT NULL,
-		PRIMARY KEY (date, symbol)
+		date    TEXT NOT NULL,
+		symbol  TEXT NOT NULL,
+		close   REAL NOT NULL,
+		user_id INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (date, symbol, user_id)
 	)`)
 	if err != nil {
 		return fmt.Errorf("create price_daily: %w", err)
