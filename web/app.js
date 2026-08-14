@@ -2453,7 +2453,16 @@ document.addEventListener('click', (e) => {
   const card = x.closest('.tool-card');
   if (card) { card.hidden = true; updateRestore(); }
 });
-// 明文输入框（Webhook/密钥）的显示/隐藏眼睛切换：默认 password 隐藏，点击切换
+// 部分遮罩：保留首尾若干字符，中间以 * 替代（Webhook/加签密钥 这类普通文本框默认只露头尾）
+function maskSecret(v) {
+  v = v || '';
+  if (v.length <= 10) return v;            // 过短不遮罩，避免只剩 *
+  const head = v.slice(0, 8);
+  const tail = v.slice(-4);
+  const n = Math.min(v.length - head.length - tail.length, 16);
+  return head + '*'.repeat(n) + tail;
+}
+// 眼睛切换：password 型（邮箱授权码/AI Key）直接切 type；部分遮罩型（Webhook/密钥）切「只读遮罩 ↔ 可编辑明文」
 const EYE_OPEN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 document.querySelectorAll('.eye-toggle').forEach(b => { if (!b.innerHTML.trim()) b.innerHTML = EYE_OPEN; });
@@ -2462,10 +2471,28 @@ document.addEventListener('click', (e) => {
   if (!btn) return;
   const input = document.getElementById(btn.dataset.eyeFor);
   if (!input) return;
-  const reveal = input.type === 'password';
-  input.type = reveal ? 'text' : 'password';
-  btn.innerHTML = reveal ? EYE_OFF : EYE_OPEN;
-  btn.setAttribute('aria-label', (reveal ? '隐藏' : '显示') + '明文');
+  if (input.type === 'password') {
+    // 完全隐藏型：直接切换密文/明文
+    input.type = 'text';
+    btn.innerHTML = EYE_OFF;
+    btn.setAttribute('aria-label', '隐藏明文');
+  } else {
+    // 部分遮罩型：默认只读遮罩，点眼睛展开可编辑明文、再点重新遮罩（并保留编辑结果）
+    if (input.readOnly) {
+      input.value = input.dataset.raw || '';
+      input.readOnly = false;
+      input.focus();
+      if (input.select) input.select();
+      btn.innerHTML = EYE_OFF;
+      btn.setAttribute('aria-label', '隐藏明文');
+    } else {
+      input.dataset.raw = input.value;
+      input.value = maskSecret(input.value);
+      input.readOnly = true;
+      btn.innerHTML = EYE_OPEN;
+      btn.setAttribute('aria-label', '显示明文');
+    }
+  }
 });
 const toolsRestoreBtn = $('#toolsRestoreBtn');
 if (toolsRestoreBtn) {
@@ -2973,8 +3000,12 @@ async function loadNotifySettings() {
     const dt = d.dingtalk || {};
     const em = d.email || {};
     $('#dtEnabled').checked = !!dt.enabled;
-    $('#dtWebhook').value = dt.webhook || '';
-    $('#dtSecret').value = dt.secret || '';
+    $('#dtWebhook').dataset.raw = dt.webhook || '';
+    $('#dtWebhook').value = maskSecret(dt.webhook || '');
+    $('#dtWebhook').readOnly = true;
+    $('#dtSecret').dataset.raw = dt.secret || '';
+    $('#dtSecret').value = maskSecret(dt.secret || '');
+    $('#dtSecret').readOnly = true;
     $('#emEnabled').checked = !!em.enabled;
     $('#emHost').value = em.smtp_host || '';
     $('#emPort').value = em.smtp_port || 465;
@@ -2990,8 +3021,8 @@ $('#notifySaveBtn').onclick = async () => {
   const payload = {
     dingtalk: {
       enabled: $('#dtEnabled').checked,
-      webhook: $('#dtWebhook').value.trim(),
-      secret: $('#dtSecret').value.trim(),
+      webhook: ($('#dtWebhook').readOnly ? ($('#dtWebhook').dataset.raw || '') : $('#dtWebhook').value).trim(),
+      secret: ($('#dtSecret').readOnly ? ($('#dtSecret').dataset.raw || '') : $('#dtSecret').value).trim(),
     },
     email: {
       enabled: $('#emEnabled').checked,
