@@ -73,7 +73,7 @@ func nthSundayUTC(year, month, n int) time.Time {
 	return d.AddDate(0, 0, (n-1)*7)
 }
 
-func enrich(h db.Holding) HoldingView {
+func enrich(h db.Holding, userID int64) HoldingView {
 	mv := h.Quantity * h.CurrentPrice
 	cv := h.Quantity * h.CostPrice
 	pnl := mv - cv
@@ -89,7 +89,7 @@ func enrich(h db.Holding) HoldingView {
 		if prevMv := h.PrevClose * h.Quantity; prevMv > 0 {
 			dayPnlPct = dayPnl / prevMv * 100
 		}
-	} else if prev, ok, _ := db.GetPrevClose(h.Symbol, today, uid); ok {
+	} else if prev, ok, _ := db.GetPrevClose(h.Symbol, today, userID); ok {
 		dayPnl = (h.CurrentPrice - prev) * h.Quantity
 		if prevMv := prev * h.Quantity; prevMv > 0 {
 			dayPnlPct = dayPnl / prevMv * 100
@@ -291,7 +291,7 @@ func listHoldings(c *gin.Context) {
 	}
 	out := make([]HoldingView, 0, len(hs))
 	for _, h := range hs {
-		out = append(out, enrich(h))
+		out = append(out, enrich(h, uid))
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"holdings":      out,
@@ -353,7 +353,7 @@ func createHolding(c *gin.Context) {
 		return
 	}
 	h.ID = id
-	c.JSON(http.StatusOK, gin.H{"holding": enrich(h)})
+	c.JSON(http.StatusOK, gin.H{"holding": enrich(h, uid)})
 }
 
 func updateHolding(c *gin.Context) {
@@ -377,7 +377,7 @@ func updateHolding(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"holding": enrich(h)})
+	c.JSON(http.StatusOK, gin.H{"holding": enrich(h, currentUserID(c))})
 }
 
 func deleteHolding(c *gin.Context) {
@@ -420,7 +420,7 @@ func adjustHolding(c *gin.Context) {
 	}
 	realizedTotal, _ := db.SumRealizedPnl(id)
 	c.JSON(http.StatusOK, gin.H{
-		"holding":        enrich(*h),
+		"holding":        enrich(*h, currentUserID(c)),
 		"realized_pnl":   realized,
 		"realized_total": realizedTotal,
 	})
@@ -481,7 +481,7 @@ func refresh(c *gin.Context) {
 	}
 	out := make([]HoldingView, 0, len(hs))
 	for _, h := range hs {
-		out = append(out, enrich(h))
+		out = append(out, enrich(h, uid))
 	}
 	_ = doSnapshot(uid)
 	NotifyNetValueUpdated(uid, "手动刷新行情", "")
@@ -555,7 +555,7 @@ func refreshOne(c *gin.Context) {
 	}
 	_ = doSnapshot(h.UserID)
 	NotifyNetValueUpdated(h.UserID, "手动刷新单只持仓", "")
-	c.JSON(http.StatusOK, gin.H{"holding": enrich(*h)})
+	c.JSON(http.StatusOK, gin.H{"holding": enrich(*h, h.UserID)})
 }
 
 // executeBuyPlanTier records that a specific buy-plan tier was executed

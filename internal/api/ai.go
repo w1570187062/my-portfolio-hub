@@ -281,7 +281,7 @@ func buildPortfolioStats(uid int64) (string, error) {
 	mktMV := map[string]float64{}
 	views := make([]HoldingView, 0, len(hs))
 	for _, h := range hs {
-		v := enrich(h)
+		v := enrich(h, uid)
 		views = append(views, v)
 		mv := v.MarketValue
 		cv := v.CostValue

@@ -53,7 +53,7 @@ func assetOverview(c *gin.Context) {
 	var eqMV, eqCV, eqPnl, eqDay float64
 	eqItems := make([]gin.H, 0, len(hs))
 	for _, h := range hs {
-		v := enrich(h)
+		v := enrich(h, uid)
 		cmv := v.MarketValue * rateChoice(h.Currency, cnyRate, hkdRate)
 		eqMV += cmv
 		eqCV += v.CostValue * rateChoice(h.Currency, cnyRate, hkdRate)
@@ -736,7 +736,7 @@ func buildAssetStats(uid int64) (string, error) {
 	var eqMV, eqCV, eqPnl, eqDay float64
 	eqViews := make([]HoldingView, 0, len(hs))
 	for _, h := range hs {
-		v := enrich(h)
+		v := enrich(h, uid)
 		eqViews = append(eqViews, v)
 		eqMV += v.MarketValue * rateChoice(h.Currency, cnyRate, hkdRate)
 		eqCV += v.CostValue * rateChoice(h.Currency, cnyRate, hkdRate)

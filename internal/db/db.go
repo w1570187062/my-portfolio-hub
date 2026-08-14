@@ -780,7 +780,7 @@ type AISummaryRecord struct {
 }
 
 // GetAISummaryHistory returns a user's most recent records (newest first), up to limit.
-func GetAISummaryHistory(limit, userID int) ([]AISummaryRecord, error) {
+func GetAISummaryHistory(limit int, userID int64) ([]AISummaryRecord, error) {
 	rows, err := DB.Query(`SELECT id,user_id,created_at,model,content FROM ai_summary_history WHERE user_id=? ORDER BY id DESC LIMIT ?`, userID, limit)
 	if err != nil {
 		return nil, err
@@ -1232,7 +1232,7 @@ type Consumption struct {
 	CreatedAt string  `json:"created_at"`
 }
 
-func ListConsumptions(limit, userID int) ([]Consumption, error) {
+func ListConsumptions(limit int, userID int64) ([]Consumption, error) {
 	if limit <= 0 {
 		limit = 50
 	}
