@@ -1049,29 +1049,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   border-radius: 4px;
 }
 
-/* ===== 暗黑模式滚动条：表格/卡片等深色滚动区域更清晰，但不改变暗背景 ===== */
-.table-wrap, .cards-grid, .asset-table, .ai-history-list,
-.hist-table, .snap-body, .hist-tbl-wrap, .analysis-body {
-  scrollbar-width: thin;
-  scrollbar-color: var(--primary) rgba(255, 255, 255, .06);
-}
-.table-wrap::-webkit-scrollbar, .cards-grid::-webkit-scrollbar, .asset-table::-webkit-scrollbar,
-.ai-history-list::-webkit-scrollbar, .hist-table::-webkit-scrollbar, .snap-body::-webkit-scrollbar,
-.hist-tbl-wrap::-webkit-scrollbar, .analysis-body::-webkit-scrollbar {
-  height: 10px; width: 10px;
-}
-.table-wrap::-webkit-scrollbar-thumb, .cards-grid::-webkit-scrollbar-thumb, .asset-table::-webkit-scrollbar-thumb,
-.ai-history-list::-webkit-scrollbar-thumb, .hist-table::-webkit-scrollbar-thumb, .snap-body::-webkit-scrollbar-thumb,
-.hist-tbl-wrap::-webkit-scrollbar-thumb, .analysis-body::-webkit-scrollbar-thumb {
-  background: var(--primary);
-  border-radius: 6px;
-}
-.table-wrap::-webkit-scrollbar-track, .cards-grid::-webkit-scrollbar-track, .asset-table::-webkit-scrollbar-track,
-.ai-history-list::-webkit-scrollbar-track, .hist-table::-webkit-scrollbar-track, .snap-body::-webkit-scrollbar-track,
-.hist-tbl-wrap::-webkit-scrollbar-track, .analysis-body::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, .06);
-  border-radius: 6px;
-}
+/* ===== 表格/卡片等滚动区域：使用浏览器原生默认滚动条（默认灰色，不再用豆沙绿） ===== */
 
 /* 页面级滚动条（首页表格/卡片的主要可见竖向滚动条就是 html/body 在滚）——也用豆沙绿 */
 html { scrollbar-width: thin; scrollbar-color: var(--primary) rgba(255, 255, 255, .06); }
