@@ -740,6 +740,11 @@ header h1 {
 .summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
 .summary .c-br-label { color: var(--text-muted); min-width: 64px; flex: 0 0 auto; font-weight: 600; }
 .summary .c-br-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+.summary .c-sub { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.summary .c-sub.up { color: #f87171; }
+.summary .c-sub.down { color: #4ade80; }
+:root[data-theme="light"] .summary .c-sub.up { color: #dc2626; }
+:root[data-theme="light"] .summary .c-sub.down { color: #16a34a; }
 
 /* ===== 数据表格 ===== */
 table {
