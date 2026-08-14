@@ -121,7 +121,9 @@ let hkdRate = 1;
 let dayDate = ''; // 当日盈亏所基于的快照日期（YYYY-MM-DD）
 let snapshotDate = '';   // 最近 pnl_daily 快照日期（YYYY-MM-DD）
 let updatedAtMax = '';   // 行情更新时间最大值（YYYY-MM-DD HH:MM:SS）
-let monthPnlCNY = 0;     // 本月累计盈亏（CNY）
+let monthPnlCNY = 0;     // 本月累计盈亏（CNY 折算）
+let monthPnlCny = 0;     // 本月累计盈亏（RMB 原始货币）
+let monthPnlUsd = 0;     // 本月累计盈亏（USD 原始货币）
 let failedSymbols = {};  // symbol -> 失败原因（刷新失败持久标记）
 // table | card；移动端（窄屏）默认卡片视图（表格横向溢出体验差），但不强制——允许用户手动切回表格（可横向滚动）
 let holdingsView = localStorage.getItem('pf_view') || (window.innerWidth < 640 ? 'card' : 'table');
@@ -197,6 +199,8 @@ async function load() {
     snapshotDate = hd.snapshot_date || '';
     updatedAtMax = hd.updated_at_max || '';
     monthPnlCNY = sd.month_pnl_cny || 0;
+    monthPnlCny = sd.month_pnl_cny_ccy || 0;
+    monthPnlUsd = sd.month_pnl_usd || 0;
     const ddl = document.getElementById('dayDateLbl');
     if (ddl) ddl.textContent = dayDate;
     renderFreshness();
@@ -467,11 +471,15 @@ function renderSummary(hs) {
   pnlRows += `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${cls(usdPnl)}">${fmt(usdPnl * usdRate)}</span></div>`;
   if (hkdMV > 0) pnlRows += `<div class="c-pnl-row"><span class="c-pnl-label">HKD</span><span class="c-pnl-val ${cls(hkdPnl)}">${fmt(hkdPnl * hkdRate)}</span></div>`;
   const updownVal = `<span class="up">▲ ${upCount}</span><span class="ud-sep">/</span><span class="down">▼ ${downCount}</span><span class="ud-sep">/</span><span class="flat">— ${flatCount}</span>`;
+  // 本月累计：CNY 折算总额下方，再列出本月 RMB/USD 原始货币盈亏（上下排列）
+  const mpCnyCls = cls(monthPnlCny), mpUsdCls = cls(monthPnlUsd);
+  const mpRows = `<div class="c-pnl-row"><span class="c-pnl-label">CNY</span><span class="c-pnl-val ${mpCnyCls}">¥${fmt(monthPnlCny)}</span></div>` +
+                 `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${mpUsdCls}">$${fmt(monthPnlUsd)}</span></div>`;
   $('#summary').innerHTML = `
    <div class="card card-merged"><div class="card-icon">${ICON.total}</div><div class="card-body card-cols">
      <div class="c-col"><div class="label">总资产 (CNY)</div><div class="value">${fmt(totalCNY)}</div><div class="c-breakdown">${br}</div></div>
      <div class="c-col"><div class="label">总盈亏 (CNY)</div><div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div><div class="c-pnl">${pnlRows}</div></div>
-     <div class="c-col"><div class="label">涨跌平数 (${todayStr})</div><div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div></div>
+     <div class="c-col"><div class="label">涨跌平数 (${todayStr})</div><div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div><div class="c-pnl">${mpRows}</div></div>
    </div></div>`;
 }
 

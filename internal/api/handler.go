@@ -661,13 +661,22 @@ func summary(c *gin.Context) {
 	if hkdCV > 0 {
 		hkdPct = hkdPnl / hkdCV * 100
 	}
-	// 本月累计盈亏：汇总最近 pnl_daily 中本月（按数据日期）的总盈亏
-	var monthPNL float64
+	// 本月累计盈亏：汇总最近 pnl_daily 中本月（按数据日期）的总盈亏；
+	// 同时按币种拆分（解析 detail.by_currency，原始货币口径），供前端列出本月 CNY/USD 盈亏。
+	var monthPNL, monthPNLCny, monthPNLUsd float64
 	if hist, e := db.GetPnlHistory(); e == nil {
 		ym := time.Now().Format("2006-01")
 		for _, r := range hist {
-			if strings.HasPrefix(r.Date, ym) {
-				monthPNL += r.TotalCNY
+			if !strings.HasPrefix(r.Date, ym) {
+				continue
+			}
+			monthPNL += r.TotalCNY
+			var det struct {
+				ByCurrency map[string]float64 `json:"by_currency"`
+			}
+			if jErr := json.Unmarshal([]byte(r.Detail), &det); jErr == nil && det.ByCurrency != nil {
+				monthPNLCny += det.ByCurrency["CNY"]
+				monthPNLUsd += det.ByCurrency["USD"]
 			}
 		}
 	}
@@ -676,6 +685,8 @@ func summary(c *gin.Context) {
 		"rate_degraded":       degraded,
 		"unsupported_currencies": unsupported,
 		"month_pnl_cny":       monthPNL,
+		"month_pnl_cny_ccy":   monthPNLCny,
+		"month_pnl_usd":       monthPNLUsd,
 		"hkd_rate":            hkdToCny,
 		"cny_market_value":    cnyMV,
 		"cny_cost_value":      cnyCV,
