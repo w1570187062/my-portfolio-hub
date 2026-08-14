@@ -461,11 +461,16 @@ function renderSummary(hs) {
   // 总盈亏：涨用 ▲+红、跌用 ▼+绿（国内惯例），与持仓涨跌箭头风格一致
   const pnlArrow = pCls === 'up' ? '▲' : (pCls === 'down' ? '▼' : '');
   const pnlVal = pCls === 'flat' ? fmt(totalPnl) : (pnlArrow + ' ' + fmt(totalPnl));
+  // 分币种盈亏（折算为 CNY，与顶部总额一致）：RMB / USD /（有持仓的）HKD，上下排列
+  let pnlRows = '';
+  pnlRows += `<div class="c-pnl-row"><span class="c-pnl-label">RMB</span><span class="c-pnl-val ${cls(cnyPnl)}">${fmt(cnyPnl)}</span></div>`;
+  pnlRows += `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${cls(usdPnl)}">${fmt(usdPnl * usdRate)}</span></div>`;
+  if (hkdMV > 0) pnlRows += `<div class="c-pnl-row"><span class="c-pnl-label">HKD</span><span class="c-pnl-val ${cls(hkdPnl)}">${fmt(hkdPnl * hkdRate)}</span></div>`;
   const updownVal = `<span class="up">▲ ${upCount}</span><span class="ud-sep">/</span><span class="down">▼ ${downCount}</span><span class="ud-sep">/</span><span class="flat">— ${flatCount}</span>`;
   $('#summary').innerHTML = `
    <div class="card card-merged"><div class="card-icon">${ICON.total}</div><div class="card-body card-cols">
      <div class="c-col"><div class="label">总资产 (CNY)</div><div class="value">${fmt(totalCNY)}</div><div class="c-breakdown">${br}</div></div>
-     <div class="c-col"><div class="label">总盈亏 (CNY)</div><div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div></div>
+     <div class="c-col"><div class="label">总盈亏 (CNY)</div><div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div><div class="c-pnl">${pnlRows}</div></div>
      <div class="c-col"><div class="label">涨跌平数 (${todayStr})</div><div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div></div>
    </div></div>`;
 }
