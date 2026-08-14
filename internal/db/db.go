@@ -483,7 +483,8 @@ func classifyFundMarket(name string) string {
 // migrateMarkets remaps any legacy market codes to the new two-level scheme.
 // Safe to call on every startup: once migrated there are no legacy values left.
 func migrateMarkets() error {
-	hs, err := List()
+	// 全局一次性迁移：遍历所有用户的持仓（List(0) 返回全部），按主键更新 market。
+	hs, err := List(0)
 	if err != nil {
 		return err
 	}
