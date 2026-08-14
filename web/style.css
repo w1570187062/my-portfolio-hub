@@ -1578,9 +1578,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .summary .c-col { flex-direction: column; align-items: center; text-align: center; padding: 12px 0 0; border-left: none; border-top: none; }
   .summary .c-main { align-items: center; }
   .summary .c-col:first-child { padding-top: 0; border-top: none; }
-  /* 顶部汇率/时间：手机端收窄字号，纵向跑马灯自然适配窄宽 */
+  /* 顶部汇率/时间：手机端隐藏纵向汇率跑马灯（其横向宽度≈整段汇率文本，会把 header 撑出屏幕），仅保留更新时间 */
+  .hf-marquee { display: none; }
   .header-fx { margin-right: 4px; gap: 2px; }
-  .hf-item { font-size: 11px; }
   .hf-time { font-size: 10px; padding: 1px 7px; }
   .card {
     min-width: 140px;
