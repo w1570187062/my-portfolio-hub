@@ -453,11 +453,15 @@ function renderSummary(hs) {
     usd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><path d="M16.5 7c0-1.9-2-2.8-4.5-2.8S7.5 5.1 7.5 7s1.5 2.5 4.5 3 4.5 1.4 4.5 3.5-2 2.8-4.5 2.8-4.5-.9-4.5-2.8"/></svg>',
     distribution: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="7"/><line x1="18" y1="20" x2="18" y2="10"/></svg>',
   };
+  // 总资产卡片内联币种市值明细：把 RMB / USD（及有持仓的 HKD）市值并入「总资产 (CNY)」卡片，
+  // 其余单独卡片（总盈亏、今日涨跌平）保持原样。
+  let br = '';
+  br += `<div class="c-br"><span class="c-br-label">RMB 市值</span><span class="c-br-val">${fmt(cnyMV)}</span></div>`;
+  br += `<div class="c-br"><span class="c-br-label">USD 市值</span><span class="c-br-val">${fmt(usdMV * usdRate)}</span></div>`;
+  if (hkdMV > 0) br += `<div class="c-br"><span class="c-br-label">HKD 市值</span><span class="c-br-val">${fmt(hkdMV * hkdRate)}</span></div>`;
   $('#summary').innerHTML = `
-   <div class="card"><div class="card-icon">${ICON.total}</div><div class="card-body"><div class="label">总资产 (CNY)</div><div class="value">${fmt(totalCNY)}</div></div></div>
+   <div class="card card-merged"><div class="card-icon">${ICON.total}</div><div class="card-body"><div class="label">总资产 (CNY)</div><div class="value">${fmt(totalCNY)}</div><div class="c-breakdown">${br}</div></div></div>
    <div class="card"><div class="card-icon ${pCls}">${pCls === 'down' ? ICON.down : ICON.up}</div><div class="card-body"><div class="label">总盈亏 (CNY)</div><div class="value ${pCls}">${fmt(totalPnl)} (${pct(totalPct)})</div></div></div>
-   <div class="card"><div class="card-icon">${ICON.rmb}</div><div class="card-body"><div class="label">RMB 市值</div><div class="value">${fmt(cnyMV)}</div></div></div>
-   <div class="card"><div class="card-icon">${ICON.usd}</div><div class="card-body"><div class="label">USD 市值 (CNY)</div><div class="value">${fmt(usdMV * usdRate)}</div></div></div>
    <div class="card card-updown"><div class="card-icon">${ICON.distribution}</div><div class="card-body"><div class="label">今日涨跌平家数 (${todayStr})</div><div class="value updown-value"><span class="up">▲ ${upCount}</span><span class="ud-sep">/</span><span class="down">▼ ${downCount}</span><span class="ud-sep">/</span><span class="flat">— ${flatCount}</span></div><div class="updown-pnl ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div></div></div>`;
 }
 

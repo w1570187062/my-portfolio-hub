@@ -734,6 +734,12 @@ header h1 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+/* 汇总卡：总资产卡片内联币种市值明细（RMB/USD/HKD 并入总资产） */
+.summary .card-merged { flex: 1 1 100%; }
+.summary .c-breakdown { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.summary .c-br-label { color: var(--text-muted); min-width: 64px; flex: 0 0 auto; font-weight: 600; }
+.summary .c-br-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
 
 /* ===== 数据表格 ===== */
 table {
