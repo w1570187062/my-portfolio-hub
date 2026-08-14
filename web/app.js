@@ -117,6 +117,7 @@ let curPage = 1;
 let pageSize = 10;
 let catFilter = new Set(); // selected categories; empty = all
 let mktFilter = new Set(); // selected markets; empty = all
+let sourceFilter = new Set(); // selected source ids (点击表头「来源」筛选); empty = all
 let textFilter = '';        // 文本搜索（名称/代码/备注），配合「/」快捷聚焦
 let usdRate = 1;
 let hkdRate = 1;
@@ -291,6 +292,8 @@ function filteredHoldings() {
     if (catFilter.size && !catFilter.has(h.category)) return false;
     // 市场筛选仅在选定了具体类别（市场行可见）时生效：全不勾选 → 空集 → 无数据；全勾选 → 全部。
     if (catFilter.size && !mktFilter.has(h.market)) return false;
+    // 来源筛选：点击表头「来源」勾选来源后，仅显示属于这些来源的持仓。
+    if (sourceFilter.size && !sourceFilter.has(String(h.source_id || 0))) return false;
     if (kw) {
       const hay = ((h.name || '') + ' ' + (h.symbol || '') + ' ' + (h.note || '')).toLowerCase();
       if (!hay.includes(kw)) return false;
@@ -1036,6 +1039,62 @@ $('#emptyAddBtn').onclick = () => openModal(null);
   fi.addEventListener('input', apply);
   fi.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
 })();
+
+// ---- 来源筛选：点击首页持仓表表头「来源」弹出复选框，勾选后仅显示对应来源的持仓 ----
+function renderSourceFilterList() {
+  const box = $('#sourceFilterList');
+  if (!box) return;
+  box.innerHTML = '';
+  const srcs = assetSources || [];
+  if (!srcs.length) {
+    box.innerHTML = '<p class="src-empty">暂无来源，请先在资产全景添加</p>';
+    return;
+  }
+  srcs.forEach((s) => {
+    const lbl = document.createElement('label');
+    lbl.className = 'src-item';
+    lbl.innerHTML = `<input type="checkbox" value="${s.id}" ${sourceFilter.has(String(s.id)) ? 'checked' : ''}> <span>${esc(s.name)}</span>`;
+    lbl.querySelector('input').addEventListener('change', applySourceFilter);
+    box.appendChild(lbl);
+  });
+}
+function applySourceFilter() {
+  sourceFilter = new Set([...document.querySelectorAll('#sourceFilterList input:checked')].map((i) => i.value));
+  updateSourceBadge();
+  curPage = 1;
+  renderFiltered();
+}
+function updateSourceBadge() {
+  const b = $('#sourceBadge');
+  if (!b) return;
+  b.hidden = sourceFilter.size === 0;
+  b.textContent = String(sourceFilter.size);
+}
+function toggleSourceFilterPop(force) {
+  const th = $('#sourceTh');
+  const pop = $('#sourceFilterPop');
+  if (!th || !pop) return;
+  const show = (force === undefined) ? pop.hidden : force;
+  if (show) {
+    renderSourceFilterList();
+    const r = th.getBoundingClientRect();
+    pop.style.top = (r.bottom + 6) + 'px';
+    pop.style.left = Math.max(8, Math.min(r.right - 224, window.innerWidth - 232)) + 'px';
+    pop.hidden = false;
+  } else {
+    pop.hidden = true;
+  }
+}
+$('#sourceTh').onclick = (e) => { e.stopPropagation(); toggleSourceFilterPop(); };
+$('#srcApply').onclick = () => toggleSourceFilterPop(false);
+$('#srcAll').onclick = () => { document.querySelectorAll('#sourceFilterList input').forEach((i) => { i.checked = true; }); applySourceFilter(); };
+$('#srcNone').onclick = () => { document.querySelectorAll('#sourceFilterList input').forEach((i) => { i.checked = false; }); applySourceFilter(); };
+document.addEventListener('click', (e) => {
+  const pop = $('#sourceFilterPop');
+  if (pop && !pop.hidden && !pop.contains(e.target) && !e.target.closest('#sourceTh')) {
+    pop.hidden = true;
+  }
+});
 // 资产空状态内联"添加"按钮（各空 tab 共用，data-empty-add 区分类型）
 $('#assetTabBody').addEventListener('click', (e) => {
   const b = e.target.closest('[data-empty-add]');

@@ -137,13 +137,24 @@
   <table id="tbl">
     <thead>
       <tr>
-        <th class="num">#</th><th>名称</th><th>代码</th><th>来源</th><th class="hide-col">类型</th><th class="hide-col">市场</th><th class="hide-col">币种</th>
+        <th class="num">#</th><th>名称</th><th>代码</th><th id="sourceTh" class="src-th" title="按来源筛选">来源 <span class="src-caret">▾</span><span id="sourceBadge" class="src-badge" hidden></span></th><th class="hide-col">类型</th><th class="hide-col">市场</th><th class="hide-col">币种</th>
         <th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th>
         <th class="num sortable" data-sort="market_value" onclick="setSort('market_value')">市值(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="day_pnl" onclick="setSort('day_pnl')">当日盈亏(<span id="dayDateLbl"></span>) <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl" onclick="setSort('pnl')">总盈亏(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl_pct" onclick="setSort('pnl_pct')">盈亏率 <span class="sort-ind"></span></th><th class="num">持仓天数</th><th>备注</th><th>操作</th>
       </tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
+  </div>
+  <div id="sourceFilterPop" class="src-pop" hidden>
+    <div class="src-pop-head">
+      <span>按来源筛选</span>
+      <span>
+        <button type="button" class="src-link" id="srcAll">全选</button>
+        <button type="button" class="src-link" id="srcNone">清空</button>
+      </span>
+    </div>
+    <div id="sourceFilterList" class="src-pop-list"></div>
+    <div class="src-pop-foot"><button type="button" class="btn btn-sm" id="srcApply">确定</button></div>
   </div>
   <div id="cards" class="cards-grid" hidden></div>
   <div id="pager" class="pager"></div>

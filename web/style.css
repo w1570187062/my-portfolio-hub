@@ -942,9 +942,56 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 
 /* ===== 历史标签 ===== */
 .hist-tabs { display: flex; gap: 8px; margin: 6px 0 14px; }
-/* AI 中枢/history 弹框：tab 栏作为 modal-card 的直接子 div，需固定高度不参与 flex 拉伸，
-   否则会与下方面板各占一半、压缩设置面板高度导致底部按钮被裁剪 */
-.modal-card > .hist-tabs { flex: 0 0 auto; }
+/* AI 中枢/history 弹框：tab 栏是 modal-card 的直接子 div。下方通用规则
+   `.modal-card > div:not(...)` 会对其施加 flex:1+overflow:auto+padding，把 tab 栏
+   拉高、与下方面板争抢高度、被顶得显示不全。这里单独固定其高度、不滚动、水平留白对齐面板。 */
+.modal-card > .hist-tabs {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+  padding: 0 28px;
+}
+/* ---- 首页持仓表「来源」表头筛选下拉 ---- */
+.src-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.src-th:hover { color: var(--primary); }
+.src-caret { font-size: 10px; color: var(--text-muted); margin-left: 2px; }
+.src-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px; margin-left: 4px;
+  border-radius: 8px; background: var(--primary); color: #fff;
+  font-size: 11px; font-weight: 600; line-height: 1;
+}
+.src-badge[hidden] { display: none; }
+.src-pop {
+  position: fixed; z-index: 500; width: 224px;
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .4);
+  padding: 10px 12px;
+}
+.src-pop-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px; font-size: 13px; color: var(--text-muted);
+}
+.src-link {
+  background: none; border: none; color: var(--primary);
+  cursor: pointer; font-size: 12px; padding: 0 4px;
+}
+.src-link:hover { text-decoration: underline; }
+.src-pop-list {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 220px; overflow-y: auto;
+}
+.src-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--text); padding: 5px 6px;
+  border-radius: 6px; cursor: pointer;
+}
+.src-item:hover { background: var(--bg-card-alt); }
+.src-item input { width: auto; margin: 0; }
+.src-empty { font-size: 12px; color: var(--text-muted); padding: 6px 4px; }
+.src-pop-foot { margin-top: 8px; display: flex; justify-content: flex-end; }
 .hist-tabs .tab {
   padding: 8px 18px;
   border: 1px solid var(--border);
@@ -1067,9 +1114,9 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   flex-shrink: 0;
   padding: 22px 28px 10px;
 }
-/* 中间滚动容器：所有 form / 直接子 div（除 modal-actions / cal-modal-head） */
+/* 中间滚动容器：所有 form / 直接子 div（除 modal-actions / cal-modal-head / hist-tabs） */
 .modal-card form,
-.modal-card > div:not(.modal-actions):not(.cal-modal-head) {
+.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.hist-tabs) {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
