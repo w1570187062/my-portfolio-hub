@@ -1735,7 +1735,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border-radius: 16px;
   cursor: pointer;
   transition: var(--btn-transition);
+  margin-right: 8px;
 }
+.asset-row-actions button:last-child { margin-right: 0; }
 .asset-section-head { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 10px; }
 .asset-section-head h3 { font-size: 15px; margin: 0; color: var(--text); }
 .asset-pill {

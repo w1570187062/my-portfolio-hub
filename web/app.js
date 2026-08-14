@@ -2999,9 +2999,9 @@ function renderWealthTable(w) {
       <td class="num ${pnlCls(cum)}">${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
       <td class="num">${p.snap_count || 0}</td>
       <td class="num asset-row-actions">
-        <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}" title="每日盈亏">📈</button>
-        <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}" title="编辑">✏️</button>
-        <button class="btn btn-icon danger" data-act="del-wealth" data-id="${p.id}" title="删除">🗑️</button>
+        <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}" title="每日盈亏">📈 每日盈亏</button>
+        <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}" title="编辑">✏️ 编辑</button>
+        <button class="btn btn-icon danger" data-act="del-wealth" data-id="${p.id}" title="删除">🗑️ 删除</button>
       </td>
     </tr>`;
   }).join('');
