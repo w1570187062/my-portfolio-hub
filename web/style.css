@@ -734,8 +734,11 @@ header h1 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
-/* 汇总卡：总资产卡片内联币种市值明细（RMB/USD/HKD 并入总资产） */
+/* 汇总卡：总资产 / 总盈亏 / 涨跌平数 三列并排、竖线分割 */
 .summary .card-merged { flex: 1 1 100%; }
+.summary .card-cols { flex-direction: row; align-items: stretch; flex: 1 1 auto; gap: 0; }
+.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 18px; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+.summary .c-col:first-child { padding-left: 0; border-left: none; }
 .summary .c-breakdown { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
 .summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
 .summary .c-br-label { color: var(--text-muted); min-width: 64px; flex: 0 0 auto; font-weight: 600; }
@@ -1490,6 +1493,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   }
   /* 汇总卡片：一行两张、更紧凑 */
   .summary { padding: 12px 14px; gap: 10px; }
+  /* 合并卡：手机端三列改为上下堆叠，竖线改为横线分割 */
+  .summary .card-cols { flex-direction: column; align-items: stretch; }
+  .summary .c-col { padding: 12px 0 0; border-left: none; border-top: 1px solid var(--border); }
+  .summary .c-col:first-child { padding-top: 0; border-top: none; }
   /* 顶部汇率/时间：手机端收窄字号，纵向跑马灯自然适配窄宽 */
   .header-fx { margin-right: 4px; gap: 2px; }
   .hf-item { font-size: 11px; }
