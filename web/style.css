@@ -737,7 +737,7 @@ header h1 {
 /* 汇总卡：总资产 / 总盈亏 / 涨跌平数 三列并排、竖线分割 */
 .summary .card-merged { flex: 1 1 100%; }
 .summary .card-cols { flex-direction: row; align-items: stretch; flex: 1 1 auto; gap: 0; }
-.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 18px; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 18px; border-left: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; }
 .summary .c-col:first-child { padding-left: 0; border-left: none; }
 .summary .c-breakdown { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
 .summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
