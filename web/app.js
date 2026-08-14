@@ -479,7 +479,7 @@ function renderSummary(hs) {
   const mpCnyCls = cls(monthPnlCny), mpUsdCls = cls(monthPnlUsd);
   const mpRows = `<div class="c-pnl-row"><span class="c-pnl-label">RMB</span><span class="c-pnl-val ${mpCnyCls}">¥${fmt(monthPnlCny)}</span></div>` +
                  `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${mpUsdCls}">$${fmt(monthPnlUsd)}</span></div>`;
-  $('#summary').innerHTML = `
+  $('#summaryBody').innerHTML = `
    <div class="card card-merged"><div class="card-body card-cols">
      <div class="c-col">
        <div class="c-main">
@@ -2703,7 +2703,7 @@ function renderAssetSummary() {
       `<div class="c-value">${money(total)}</div>` +
       `<div class="c-breakdown">${equityRow}${wealthRow}${cashRow}</div>` +
     `</div>`;
-  $('#assetSummary').innerHTML = mergedCard;
+  $('#assetSummaryBody').innerHTML = mergedCard;
 }
 
 function renderAssetTab() {
@@ -3797,4 +3797,15 @@ async function onUserDeleteConfirm() {
   if (delOk) delOk.onclick = onUserDeleteConfirm;
   const delModal = document.getElementById('userDeleteModal');
   if (delModal) delModal.addEventListener('click', (e) => { if (e.target === delModal) delModal.hidden = true; });
+})();
+
+// 卡片折叠/展开（资产总览 / 资产全景顶部卡片的帽子标题栏）
+(function wireCollapse() {
+  document.querySelectorAll('.collapsible > .collapse-hat').forEach((hat) => {
+    hat.addEventListener('click', () => {
+      const card = hat.parentElement;
+      if (!card || !card.classList.contains('collapsible')) return;
+      card.classList.toggle('collapsed');
+    });
+  });
 })();

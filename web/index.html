@@ -106,7 +106,13 @@
   </header>
 
   <div id="holdingsView">
-  <section id="summary" class="summary"></section>
+  <section id="summary" class="summary collapsible">
+    <div class="collapse-hat">
+      <span class="hat-title">资产总览</span>
+      <span class="hat-chevron">▾</span>
+    </div>
+    <div class="collapse-body" id="summaryBody"></div>
+  </section>
 
   <div class="list-bar">
     <div id="filters" class="filters"></div>
@@ -149,7 +155,13 @@
   </div>
 
   <div id="assetView" hidden>
-    <section id="assetSummary" class="summary asset-summary"></section>
+    <section id="assetSummary" class="summary asset-summary collapsible">
+      <div class="collapse-hat">
+        <span class="hat-title">资产总览</span>
+        <span class="hat-chevron">▾</span>
+      </div>
+      <div class="collapse-body" id="assetSummaryBody"></div>
+    </section>
     <div class="asset-toolbar">
       <button id="aiPickBtn" class="btn icon-btn" type="button" data-tip="AI中枢" aria-label="AI中枢">🤖</button>
       <span class="atool-sep"></span>

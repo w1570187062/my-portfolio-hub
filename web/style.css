@@ -737,9 +737,10 @@ header h1 {
 /* 汇总卡：总资产 / 总盈亏 / 涨跌平数 三列并排、竖线分割 */
 .summary .card-merged { flex: 1 1 100%; }
 .summary .card-cols { flex-direction: row; align-items: stretch; flex: 1 1 auto; gap: 0; }
-.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 18px; border-left: 1px solid var(--border); display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 18px; text-align: left; }
+.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 18px; border-left: 1px solid var(--border); display: flex; flex-direction: row; justify-content: center; align-items: flex-end; gap: 18px; text-align: left; }
 .summary .c-main { display: flex; flex-direction: column; align-items: flex-start; }
-.summary .c-detail { display: flex; flex-direction: column; }
+.summary .c-detail { display: flex; flex-direction: column; margin-bottom: 0; }
+.summary .c-detail > :last-child { margin-bottom: 0; padding-bottom: 0; }
 .summary .c-col:first-child { padding-left: 0; border-left: none; }
 .summary .c-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .summary .c-col .card-icon { width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto; }
@@ -762,6 +763,26 @@ header h1 {
 .summary .c-pnl-val.down { color: #4ade80; }
 :root[data-theme="light"] .summary .c-pnl-val.up { color: #dc2626; }
 :root[data-theme="light"] .summary .c-pnl-val.down { color: #16a34a; }
+
+/* ===== 卡片折叠/展开（帽子）：资产总览 / 资产全景顶部卡 ===== */
+.summary.collapsible { flex-direction: column; align-items: stretch; }
+.collapsible .collapse-hat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 2px 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.collapsible .collapse-hat:hover { opacity: .82; }
+.collapsible .hat-title { font-size: 15px; font-weight: 700; letter-spacing: .4px; color: var(--text); }
+.collapsible .hat-chevron { font-size: 13px; line-height: 1; color: var(--text-muted); transition: transform .2s ease; }
+.collapsible.collapsed .hat-chevron { transform: rotate(-90deg); }
+.collapsible .collapse-body { overflow: hidden; }
+.collapsible.collapsed .collapse-body { display: none; }
 
 /* ===== 数据表格 ===== */
 table {
