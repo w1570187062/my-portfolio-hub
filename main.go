@@ -25,6 +25,10 @@ func main() {
 	if err := db.Init(dataDir); err != nil {
 		log.Fatalf("init db: %v", err)
 	}
+	// 多用户体系：建 users 表、补充 user_id 列、重建按用户隔离的表、确保默认用户。
+	if err := db.EnsureUsers(); err != nil {
+		log.Fatalf("ensure users: %v", err)
+	}
 
 	// FX rates: warm cache from DB and refresh in background (handlers no longer block on upstream).
 	market.StartFXUpdater()

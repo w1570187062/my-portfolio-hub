@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"portfolio/internal/auth"
 	"portfolio/internal/db"
 	"portfolio/internal/market"
 
@@ -90,7 +89,7 @@ func enrich(h db.Holding) HoldingView {
 		if prevMv := h.PrevClose * h.Quantity; prevMv > 0 {
 			dayPnlPct = dayPnl / prevMv * 100
 		}
-	} else if prev, ok, _ := db.GetPrevClose(h.Symbol, today); ok {
+	} else if prev, ok, _ := db.GetPrevClose(h.Symbol, today, uid); ok {
 		dayPnl = (h.CurrentPrice - prev) * h.Quantity
 		if prevMv := prev * h.Quantity; prevMv > 0 {
 			dayPnlPct = dayPnl / prevMv * 100
@@ -116,11 +115,15 @@ func enrich(h db.Holding) HoldingView {
 }
 
 func RegisterRoutes(r *gin.Engine) {
-	r.POST("/api/login", login)
 	g := r.Group("/api")
-	// 登录逻辑已注释（保留模块代码）：如需恢复鉴权，取消下一行注释即可
-	// g.Use(authRequired())
 	{
+		// 多用户：用户列表/新增/删除/统计/清空
+		g.GET("/users", listUsers)
+		g.POST("/users", createUserHandler)
+		g.DELETE("/users/:id", deleteUserHandler)
+		g.GET("/users/:id/stats", userStats)
+		g.POST("/users/:id/clear", clearUserHandler)
+
 		g.GET("/holdings", listHoldings)
 		g.POST("/holdings", createHolding)
 		g.PUT("/holdings/:id", updateHolding)
@@ -187,35 +190,101 @@ func RegisterRoutes(r *gin.Engine) {
 	}
 }
 
-func login(c *gin.Context) {
-	var b struct {
-		User string `json:"user"`
-		Pass string `json:"pass"`
+// currentUserID 从请求头 X-User-Id 解析当前用户；缺失或非数字时回退到首个用户。
+func currentUserID(c *gin.Context) int64 {
+	raw := strings.TrimSpace(c.GetHeader("X-User-Id"))
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		if us, e := db.ListUsers(); e == nil && len(us) > 0 {
+			return us[0].ID
+		}
+		return 0
 	}
-	if err := c.ShouldBindJSON(&b); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
-		return
-	}
-	if !auth.Check(b.User, b.Pass) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"token": auth.Issue(b.User)})
+	return id
 }
 
-func authRequired() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tok := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
-		if tok != "" && auth.Valid(tok) {
-			c.Next()
-			return
-		}
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+// allUsers returns every user. On error it logs and returns nil so scheduled
+// jobs simply skip their work rather than crash the server.
+func allUsers() []db.User {
+	us, err := db.ListUsers()
+	if err != nil {
+		log.Printf("[users] 列举用户失败: %v", err)
+		return nil
 	}
+	return us
+}
+
+// ---- 多用户管理 ----
+
+func listUsers(c *gin.Context) {
+	users, err := db.ListUsers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"users": users})
+}
+
+func createUserHandler(c *gin.Context) {
+	var b struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&b); err != nil || strings.TrimSpace(b.Name) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "用户名不能为空"})
+		return
+	}
+	name := strings.TrimSpace(b.Name)
+	if id, err := db.CreateUser(name); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	} else {
+		c.JSON(http.StatusOK, gin.H{"id": id, "name": name})
+	}
+}
+
+func deleteUserHandler(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	if err := db.DeleteUser(id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func userStats(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	stats, err := db.CountUserData(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"stats": stats})
+}
+
+func clearUserHandler(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	if err := db.ClearUserData(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func listHoldings(c *gin.Context) {
-	hs, err := db.List()
+	uid := currentUserID(c)
+	hs, err := db.List(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -227,7 +296,7 @@ func listHoldings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"holdings":      out,
 		"day_date":      time.Now().Format("2006-01-02"),
-		"snapshot_date": latestSnapshotDate(),
+		"snapshot_date": latestSnapshotDate(uid),
 		"updated_at_max": maxUpdatedAt(hs),
 	})
 }
@@ -257,10 +326,9 @@ func maxUpdatedAt(hs []db.Holding) string {
 }
 
 // latestSnapshotDate returns the date of the most recent daily P&L snapshot
-// (pnl_daily), falling back to today when no snapshot exists yet. Used to label
-// the "快照日期" shown under the summary cards.
-func latestSnapshotDate() string {
-	if row, err := db.GetPnlLatest(); err == nil && row != nil {
+// (pnl_daily) for a user, falling back to today when none exists yet.
+func latestSnapshotDate(uid int64) string {
+	if row, err := db.GetPnlLatest(uid); err == nil && row != nil {
 		return row.Date
 	}
 	return time.Now().Format("2006-01-02")
@@ -272,8 +340,10 @@ func createHolding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
+	uid := currentUserID(c)
+	h.UserID = uid
 	normalize(&h)
-	if exists, e := db.ExistsBySymbol(h.Symbol, 0); e == nil && exists {
+	if exists, e := db.ExistsBySymbol(h.Symbol, 0, uid); e == nil && exists {
 		c.JSON(http.StatusConflict, gin.H{"error": "该代码已存在，请勿重复添加"})
 		return
 	}
@@ -299,7 +369,7 @@ func updateHolding(c *gin.Context) {
 	}
 	h.ID = id
 	normalize(&h)
-	if exists, e := db.ExistsBySymbol(h.Symbol, id); e == nil && exists {
+	if exists, e := db.ExistsBySymbol(h.Symbol, id, currentUserID(c)); e == nil && exists {
 		c.JSON(http.StatusConflict, gin.H{"error": "该代码已存在，请勿与其他持仓重复"})
 		return
 	}
@@ -398,7 +468,8 @@ func normalize(h *db.Holding) {
 }
 
 func refresh(c *gin.Context) {
-	hs, failed, err := refreshAllQuotes()
+	uid := currentUserID(c)
+	hs, failed, err := refreshAllQuotes(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -412,8 +483,8 @@ func refresh(c *gin.Context) {
 	for _, h := range hs {
 		out = append(out, enrich(h))
 	}
-	_ = doSnapshot()
-	NotifyNetValueUpdated("手动刷新行情", "")
+	_ = doSnapshot(uid)
+	NotifyNetValueUpdated(uid, "手动刷新行情", "")
 	c.JSON(http.StatusOK, gin.H{"holdings": out, "rate": rate, "rate_degraded": degraded, "rate_error": rateErr, "failed": failed, "updated_at_max": maxUpdatedAt(hs)})
 }
 
@@ -482,8 +553,8 @@ func refreshOne(c *gin.Context) {
 			log.Printf("[refreshOne] %s(%s) 名称已同步为 %s", h.Symbol, h.Symbol, q.Name)
 		}
 	}
-	_ = doSnapshot()
-	NotifyNetValueUpdated("手动刷新单只持仓", "")
+	_ = doSnapshot(h.UserID)
+	NotifyNetValueUpdated(h.UserID, "手动刷新单只持仓", "")
 	c.JSON(http.StatusOK, gin.H{"holding": enrich(*h)})
 }
 
@@ -595,7 +666,8 @@ func fxInfo(c *gin.Context) {
 }
 
 func summary(c *gin.Context) {
-	hs, err := db.List()
+	uid := currentUserID(c)
+	hs, err := db.List(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -664,7 +736,7 @@ func summary(c *gin.Context) {
 	// 本月累计盈亏：汇总最近 pnl_daily 中本月（按数据日期）的总盈亏；
 	// 同时按币种拆分（解析 detail.by_currency，原始货币口径），供前端列出本月 CNY/USD 盈亏。
 	var monthPNL, monthPNLCny, monthPNLUsd float64
-	if hist, e := db.GetPnlHistory(); e == nil {
+	if hist, e := db.GetPnlHistory(uid); e == nil {
 		ym := time.Now().Format("2006-01")
 		for _, r := range hist {
 			if !strings.HasPrefix(r.Date, ym) {
@@ -780,8 +852,8 @@ func isTradingDayCN(t time.Time) bool {
 // CurrentPrice/PrevClose to the DB, and returns the updated slice plus any
 // symbols that failed to refresh. Used by both the manual refresh endpoint and
 // the scheduled/time-triggered snapshots so each snapshot computes from fresh prices.
-func refreshAllQuotes() ([]db.Holding, []string, error) {
-	hs, err := db.List()
+func refreshAllQuotes(uid int64) ([]db.Holding, []string, error) {
+	hs, err := db.List(uid)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -832,7 +904,7 @@ func refreshAllQuotes() ([]db.Holding, []string, error) {
 // 非交易日（周末/法定节假日）不记录，避免污染盈亏日历与走势。
 // 每条持仓的当日盈亏按其类别的"数据就绪时间"分时段计入（见下方 switch）：
 //   美股→美东收盘后(T+1)、A股→15:00后、港股→16:00后、基金→21:00后；未到时间记为 0。
-func doSnapshot() error {
+func doSnapshot(uid int64) error {
 	now := time.Now()
 	bj := now.In(time.FixedZone("CST", 8*3600))
 	bjHour := bj.Hour()
@@ -840,7 +912,7 @@ func doSnapshot() error {
 		log.Printf("[snapshot] %s 非交易日（周末/节假日），跳过当日盈亏记录", now.Format("2006-01-02"))
 		return nil
 	}
-	hs, err := db.List()
+	hs, err := db.List(uid)
 	if err != nil {
 		return err
 	}
@@ -859,7 +931,7 @@ func doSnapshot() error {
 	var bySym []symPnl
 	for i := range hs {
 		h := hs[i]
-		if e := db.SavePriceDaily(today, h.Symbol, h.CurrentPrice); e != nil {
+		if e := db.SavePriceDaily(today, h.Symbol, h.CurrentPrice, uid); e != nil {
 			return e
 		}
 		// Daily P&L basis must match the holdings list (enrich): prefer the
@@ -878,7 +950,7 @@ func doSnapshot() error {
 				dp = 0
 			} else if h.PrevClose > 0 {
 				dp = (h.CurrentPrice - h.PrevClose) * h.Quantity
-			} else if prev, ok2, e2 := db.GetPrevClose(h.Symbol, today); e2 == nil && ok2 {
+			} else if prev, ok2, e2 := db.GetPrevClose(h.Symbol, today, uid); e2 == nil && ok2 {
 				dp = (h.CurrentPrice - prev) * h.Quantity
 			}
 		case h.Category == "fund":
@@ -887,7 +959,7 @@ func doSnapshot() error {
 				dp = 0
 			} else if h.PrevClose > 0 {
 				dp = (h.CurrentPrice - h.PrevClose) * h.Quantity
-			} else if prev, ok2, e2 := db.GetPrevClose(h.Symbol, today); e2 == nil && ok2 {
+			} else if prev, ok2, e2 := db.GetPrevClose(h.Symbol, today, uid); e2 == nil && ok2 {
 				dp = (h.CurrentPrice - prev) * h.Quantity
 			}
 		case h.Market == "港股":
@@ -896,7 +968,7 @@ func doSnapshot() error {
 				dp = 0
 			} else if h.PrevClose > 0 {
 				dp = (h.CurrentPrice - h.PrevClose) * h.Quantity
-			} else if prev, ok2, e2 := db.GetPrevClose(h.Symbol, today); e2 == nil && ok2 {
+			} else if prev, ok2, e2 := db.GetPrevClose(h.Symbol, today, uid); e2 == nil && ok2 {
 				dp = (h.CurrentPrice - prev) * h.Quantity
 			}
 		default:
@@ -905,7 +977,7 @@ func doSnapshot() error {
 				dp = 0
 			} else if h.PrevClose > 0 {
 				dp = (h.CurrentPrice - h.PrevClose) * h.Quantity
-			} else if prev, ok2, e2 := db.GetPrevClose(h.Symbol, today); e2 == nil && ok2 {
+			} else if prev, ok2, e2 := db.GetPrevClose(h.Symbol, today, uid); e2 == nil && ok2 {
 				dp = (h.CurrentPrice - prev) * h.Quantity
 			}
 		}
@@ -928,7 +1000,7 @@ func doSnapshot() error {
 		chgPct := 0.0
 		prevClose := h.PrevClose
 		if prevClose <= 0 {
-			if p, ok2, e2 := db.GetPrevClose(h.Symbol, today); e2 == nil && ok2 {
+			if p, ok2, e2 := db.GetPrevClose(h.Symbol, today, uid); e2 == nil && ok2 {
 				prevClose = p
 			}
 		}
@@ -939,26 +1011,35 @@ func doSnapshot() error {
 	}
 	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
-	return db.SavePnlDaily(today, totalCNY, totalUSD, cnyRate, detail)
+	return db.SavePnlDaily(today, totalCNY, totalUSD, cnyRate, detail, uid)
 }
 
 // DoSnapshot is the exported entry for the daily ticker / startup backfill.
-func DoSnapshot() error { return doSnapshot() }
+// It records today's snapshot for every user.
+func DoSnapshot() error {
+	for _, u := range allUsers() {
+		if err := doSnapshot(u.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-// EnsureSnapshot records today's snapshot on startup if missing.
+// EnsureSnapshot records today's snapshot on startup if missing (per user).
 func EnsureSnapshot() {
 	today := time.Now().Format("2006-01-02")
-	has, _ := db.HasPnlDate(today)
-	if has {
-		return
-	}
 	if !isTradingDayCN(time.Now()) {
 		return
 	}
-	if _, _, err := refreshAllQuotes(); err != nil {
-		log.Printf("[snapshot] 启动补齐行情刷新失败: %v", err)
+	for _, u := range allUsers() {
+		if has, _ := db.HasPnlDate(today, u.ID); has {
+			continue
+		}
+		if _, _, err := refreshAllQuotes(u.ID); err != nil {
+			log.Printf("[snapshot] 启动补齐行情刷新失败(uid=%d): %v", u.ID, err)
+		}
+		_ = doSnapshot(u.ID)
 	}
-	_ = doSnapshot()
 }
 
 // ScheduleDailySnapshot runs three time-triggered P&L snapshots per day, each
@@ -996,14 +1077,16 @@ func runScheduledSnapshot(label string) {
 		log.Printf("[snapshot] %s 非交易日，跳过定时盈亏记录", label)
 		return
 	}
-	if _, _, err := refreshAllQuotes(); err != nil {
-		log.Printf("[snapshot] %s 行情刷新失败: %v", label, err)
-	}
-	if err := doSnapshot(); err != nil {
-		log.Printf("[snapshot] %s 快照失败: %v", label, err)
-	} else {
-		log.Printf("[snapshot] %s 定时盈亏记录完成", label)
-		NotifyNetValueUpdated("定时快照("+label+")", scopeFromLabel(label))
+	for _, u := range allUsers() {
+		if _, _, err := refreshAllQuotes(u.ID); err != nil {
+			log.Printf("[snapshot] %s 行情刷新失败(uid=%d): %v", label, u.ID, err)
+		}
+		if err := doSnapshot(u.ID); err != nil {
+			log.Printf("[snapshot] %s 快照失败(uid=%d): %v", label, u.ID, err)
+			continue
+		}
+		log.Printf("[snapshot] %s 定时盈亏记录完成(uid=%d)", label, u.ID)
+		NotifyNetValueUpdated(u.ID, "定时快照("+label+")", scopeFromLabel(label))
 	}
 }
 
@@ -1045,21 +1128,23 @@ func runMidnightReset() {
 		return
 	}
 	// 1) 落库：若上一交易日的 pnl_daily 缺失，则基于 price_daily 回填（不受时段闸门约束）。
-	if has, _ := db.HasPnlDate(settleDate); !has {
-		if err := finalizePnlFromPrices(settleDate); err != nil {
-			log.Printf("[midnight] %s 当日盈亏回填失败: %v", settleDate, err)
+	for _, u := range allUsers() {
+		if has, _ := db.HasPnlDate(settleDate, u.ID); !has {
+			if err := finalizePnlFromPrices(settleDate, u.ID); err != nil {
+				log.Printf("[midnight] %s 当日盈亏回填失败(uid=%d): %v", settleDate, u.ID, err)
+			} else {
+				log.Printf("[midnight] %s 当日盈亏已落库(uid=%d)（回填）", settleDate, u.ID)
+			}
 		} else {
-			log.Printf("[midnight] %s 当日盈亏已落库（回填）", settleDate)
+			log.Printf("[midnight] %s 当日盈亏已存在(uid=%d)，跳过回填", settleDate, u.ID)
 		}
-	} else {
-		log.Printf("[midnight] %s 当日盈亏已存在，跳过回填", settleDate)
+		// 2) 归零：把每个持仓的 prev_close 重设为最新价，使当日盈亏归零、不带入下一交易日。
+		if err := db.RebasePrevCloseAll(u.ID); err != nil {
+			log.Printf("[midnight] uid=%d prev_close 归零失败: %v", u.ID, err)
+			return
+		}
 	}
-	// 2) 归零：把每个持仓的 prev_close 重设为最新价，使当日盈亏归零、不带入下一交易日。
-	if err := db.RebasePrevCloseAll(); err != nil {
-		log.Printf("[midnight] prev_close 归零失败: %v", err)
-		return
-	}
-	log.Printf("[midnight] 当日盈亏已归零（prev_close 重设为最新价），结算日 %s", settleDate)
+	log.Printf("[midnight] 当日盈亏结算完成，结算日 %s", settleDate)
 }
 
 // lastTradingDayBefore returns the most recent China trading day strictly before t,
@@ -1079,15 +1164,15 @@ func lastTradingDayBefore(t time.Time) string {
 // (price_daily): per symbol dp = (close_T − close_{T-1}) × quantity. This mirrors the
 // dp formula in doSnapshot but is NOT gated by Beijing time, so it is safe to run at
 // midnight when the daytime snapshot may have been missed.
-func finalizePnlFromPrices(date string) error {
-	closes, err := db.GetPriceDailyByDate(date)
+func finalizePnlFromPrices(date string, uid int64) error {
+	closes, err := db.GetPriceDailyByDate(date, uid)
 	if err != nil {
 		return err
 	}
 	if len(closes) == 0 {
 		return nil // 当日无行情记录，无需落库
 	}
-	hs, err := db.List()
+	hs, err := db.List(uid)
 	if err != nil {
 		return err
 	}
@@ -1105,7 +1190,7 @@ func finalizePnlFromPrices(date string) error {
 	byCur := map[string]float64{"CNY": 0, "USD": 0, "HKD": 0}
 	var bySym []symPnl
 	for sym, close := range closes {
-		prev, ok, e := db.GetPrevClose(sym, date)
+		prev, ok, e := db.GetPrevClose(sym, date, uid)
 		if e != nil {
 			return e
 		}
@@ -1145,7 +1230,7 @@ func finalizePnlFromPrices(date string) error {
 	}
 	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
-	return db.SavePnlDaily(date, totalCNY, totalUSD, cnyRate, detail)
+	return db.SavePnlDaily(date, totalCNY, totalUSD, cnyRate, detail, uid)
 }
 
 // holdingBySymbol returns a pointer to the holding with the given symbol, or nil.
@@ -1159,19 +1244,21 @@ func holdingBySymbol(hs []db.Holding, sym string) *db.Holding {
 }
 
 func snapshotHandler(c *gin.Context) {
-	if _, _, err := refreshAllQuotes(); err != nil {
+	uid := currentUserID(c)
+	if _, _, err := refreshAllQuotes(uid); err != nil {
 		log.Printf("[snapshot] 手动快照行情刷新失败: %v", err)
 	}
-	if err := doSnapshot(); err != nil {
+	if err := doSnapshot(uid); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	NotifyNetValueUpdated("手动快照", "")
+	NotifyNetValueUpdated(uid, "手动快照", "")
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func pnlHistory(c *gin.Context) {
-	rows, err := db.GetPnlHistory()
+	uid := currentUserID(c)
+	rows, err := db.GetPnlHistory(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1192,7 +1279,7 @@ func holdingPnlHistory(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
 		return
 	}
-	series, err := db.GetPriceSeries(h.Symbol)
+	series, err := db.GetPriceSeries(h.Symbol, h.UserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1241,7 +1328,7 @@ func holdingPnlHistory(c *gin.Context) {
 // ============================================================================
 
 func listGuides(c *gin.Context) {
-	guides, err := db.ListOperationGuides()
+	guides, err := db.ListOperationGuides(currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1259,6 +1346,7 @@ func createGuide(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "标题不能为空"})
 		return
 	}
+	g.UserID = currentUserID(c)
 	id, err := db.InsertOperationGuide(&g)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

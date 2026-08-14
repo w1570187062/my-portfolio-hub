@@ -72,8 +72,8 @@ var defaultTemplates = []aiTemplate{
 const dataPlaceholder = "{{DATA}}"
 
 // loadAIConfig reads the persisted config and fills in defaults where missing.
-func loadAIConfig() (aiConfig, error) {
-	raw, err := db.GetAIConfig()
+func loadAIConfig(uid int64) (aiConfig, error) {
+	raw, err := db.GetAIConfig(uid)
 	if err != nil {
 		return aiConfig{}, err
 	}
@@ -94,7 +94,7 @@ func loadAIConfig() (aiConfig, error) {
 }
 
 func aiSettingsGet(c *gin.Context) {
-	cfg, err := loadAIConfig()
+	cfg, err := loadAIConfig(currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -115,7 +115,7 @@ func aiSettingsPost(c *gin.Context) {
 		b.BaseURL = "https://api.deepseek.com"
 	}
 	raw, _ := json.Marshal(b)
-	if err := db.SaveAIConfig(string(raw)); err != nil {
+	if err := db.SaveAIConfig(currentUserID(c), string(raw)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -130,6 +130,7 @@ type aiSummaryReq struct {
 }
 
 func aiSummary(c *gin.Context) {
+	uid := currentUserID(c)
 	var b aiSummaryReq
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
@@ -140,7 +141,7 @@ func aiSummary(c *gin.Context) {
 	// — otherwise a stale/invalid saved key makes every summary 401. Fall back to the
 	// saved config key only when the client leaves the field blank. Model/base_url/
 	// template still fall back to saved values when the client leaves them blank.
-	cfg, cfgErr := loadAIConfig()
+	cfg, cfgErr := loadAIConfig(uid)
 	if b.APIKey == "" {
 		b.APIKey = cfg.APIKey
 	}
@@ -161,7 +162,7 @@ func aiSummary(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先在「AI 设置」中填写 API Key、模型名称与模型地址"})
 		return
 	}
-	stats, err := buildPortfolioStats()
+	stats, err := buildPortfolioStats(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计失败: " + err.Error()})
 		return
@@ -173,7 +174,7 @@ func aiSummary(c *gin.Context) {
 		return
 	}
 	// Persist to history (keep latest 10). Failure is non-fatal.
-	if err := db.SaveAISummary(content, b.Model); err != nil {
+	if err := db.SaveAISummary(content, b.Model, uid); err != nil {
 		log.Printf("warn: save ai summary history failed: %v", err)
 	}
 	// If the key actually used differs from the saved one (e.g. the user typed a
@@ -182,7 +183,7 @@ func aiSummary(c *gin.Context) {
 	if cfgErr == nil && b.APIKey != "" && b.APIKey != cfg.APIKey {
 		cfg.APIKey = b.APIKey
 		if raw, e := json.Marshal(cfg); e == nil {
-			if e2 := db.SaveAIConfig(string(raw)); e2 != nil {
+			if e2 := db.SaveAIConfig(uid, string(raw)); e2 != nil {
 				log.Printf("warn: persist api key from summary failed: %v", e2)
 			}
 		}
@@ -257,8 +258,8 @@ func callChatCompletions(baseURL, apiKey, model, prompt string) (string, error) 
 
 // buildPortfolioStats assembles a human- and model-readable text snapshot of the
 // whole portfolio (all holdings, unfiltered) including summary + per-holding detail.
-func buildPortfolioStats() (string, error) {
-	hs, err := db.List()
+func buildPortfolioStats(uid int64) (string, error) {
+	hs, err := db.List(uid)
 	if err != nil {
 		return "", err
 	}
@@ -428,7 +429,7 @@ func truncate(s string, n int) string {
 
 // aiHistoryGet returns the most recent AI summary history (newest first, max 10).
 func aiHistoryGet(c *gin.Context) {
-	rows, err := db.GetAISummaryHistory(10)
+	rows, err := db.GetAISummaryHistory(10, currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -439,8 +440,8 @@ func aiHistoryGet(c *gin.Context) {
 // generateDailyAISummary generates the portfolio AI summary using the saved
 // config, persists it to history, and returns the content. It mirrors the logic
 // in aiSummary but runs without an HTTP context (for the scheduled job).
-func generateDailyAISummary() (string, error) {
-	cfg, err := loadAIConfig()
+func generateDailyAISummary(uid int64) (string, error) {
+	cfg, err := loadAIConfig(uid)
 	if err != nil {
 		return "", err
 	}
@@ -451,7 +452,7 @@ func generateDailyAISummary() (string, error) {
 	if len(cfg.Templates) > 0 {
 		tmpl = cfg.Templates[0].Content
 	}
-	stats, err := buildPortfolioStats()
+	stats, err := buildPortfolioStats(uid)
 	if err != nil {
 		return "", err
 	}
@@ -460,7 +461,7 @@ func generateDailyAISummary() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := db.SaveAISummary(content, cfg.Model); err != nil {
+	if err := db.SaveAISummary(content, cfg.Model, uid); err != nil {
 		log.Printf("warn: save ai summary history failed: %v", err)
 	}
 	return content, nil
@@ -476,22 +477,24 @@ func ScheduleDailyAISummary() {
 			log.Printf("[ai] %s 非交易日，跳过定时总结", label)
 			return
 		}
-		cfg, err := loadAIConfig()
-		if err != nil {
-			log.Printf("[ai] 读取 AI 配置失败: %v", err)
-			return
-		}
-		if !cfg.AutoDaily {
-			return
-		}
-		content, err := generateDailyAISummary()
-		if err != nil {
-			log.Printf("[ai] 定时总结生成失败: %v", err)
-			return
-		}
-		log.Printf("[ai] 定时总结已生成并保存到历史")
-		if cfg.AutoSend {
-			NotifyAIContent("持仓 AI 收盘总结", content)
+		for _, u := range allUsers() {
+			cfg, err := loadAIConfig(u.ID)
+			if err != nil {
+				log.Printf("[ai] 读取用户 %d AI 配置失败: %v", u.ID, err)
+				continue
+			}
+			if !cfg.AutoDaily {
+				continue
+			}
+			content, err := generateDailyAISummary(u.ID)
+			if err != nil {
+				log.Printf("[ai] 用户 %d 定时总结生成失败: %v", u.ID, err)
+				continue
+			}
+			log.Printf("[ai] 用户 %d 定时总结已生成并保存到历史", u.ID)
+			if cfg.AutoSend {
+				NotifyAIContent("持仓 AI 收盘总结", content)
+			}
 		}
 	})
 }

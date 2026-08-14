@@ -303,8 +303,8 @@ func scopeFromLabel(label string) string {
 // 因基金价格尚未在此时刷新、信号为陈旧值）。
 // 注意：BuyPlanTier.Signal 是档位说明文字（恒非空），不是触发标记；
 // 真正判定「价格已到补仓点位」是 ETFLatest（联接ETF最新价）≤ 该档 Price。
-func collectBuySignals(scope string) []buySignal {
-	hs, err := db.List()
+func collectBuySignals(uid int64, scope string) []buySignal {
+	hs, err := db.List(uid)
 	if err != nil {
 		log.Printf("[notify] 读取持仓失败: %v", err)
 		return nil
@@ -358,7 +358,7 @@ func collectBuySignals(scope string) []buySignal {
 
 // buildNetValueNotifyText 构造通知正文：触发来源 + 更新范围 + 补仓信号 + 日期 + 当日盈亏概览。
 // scope 限定只列出该范围内（美股/A股/基金）的持仓盈亏与补仓信号；"" / "all" 为全量（手动刷新）。
-func buildNetValueNotifyText(triggeredBy, scope string) string {
+func buildNetValueNotifyText(uid int64, triggeredBy, scope string) string {
 	date := time.Now().Format("2006-01-02")
 	label := scopeLabelCN(scope)
 	var sb strings.Builder
@@ -368,7 +368,7 @@ func buildNetValueNotifyText(triggeredBy, scope string) string {
 	sb.WriteString(fmt.Sprintf("- **日期**：%s\n", date))
 
 	// 补仓信号重点提示：有条目已到补仓点位时置顶突出（按范围过滤）
-	if sigs := collectBuySignals(scope); len(sigs) > 0 {
+	if sigs := collectBuySignals(uid, scope); len(sigs) > 0 {
 		sb.WriteString(fmt.Sprintf("\n## 🚨 补仓信号（%d 档已到补仓点位）\n\n", len(sigs)))
 		for _, s := range sigs {
 			sb.WriteString(fmt.Sprintf("- **%s**（%s · 联接 %s）\n", s.Name, s.Symbol, s.LinkedSymbol))
@@ -380,13 +380,13 @@ func buildNetValueNotifyText(triggeredBy, scope string) string {
 
 	// 持仓范围映射，用于按 scope 过滤明细中的按标的盈亏
 	hmap := map[string]db.Holding{}
-	if hs, err := db.List(); err == nil {
+	if hs, err := db.List(uid); err == nil {
 		for _, h := range hs {
 			hmap[h.Symbol] = h
 		}
 	}
 
-	if row, err := db.GetPnlLatest(); err == nil && row != nil {
+	if row, err := db.GetPnlLatest(uid); err == nil && row != nil {
 		if row.Detail != "" {
 			// 解析明细中的按标的盈亏，按更新范围过滤，最多列 15 条
 			var d struct {
@@ -468,7 +468,7 @@ func moneyFmt(v float64) string {
 // NotifyNetValueUpdated 在净值更新（手动或自动）完成后异步推送通知。
 // 后台 goroutine 执行，绝不阻塞刷新响应。无开启渠道时直接返回。
 // scope 限定通知范围（"" / "all" = 全量；"us"/"cn"/"fund" = 仅对应类别）；手动刷新传全量。
-func NotifyNetValueUpdated(triggeredBy, scope string) {
+func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 	go func() {
 		cfg, err := loadNotifyConfig()
 		if err != nil {
@@ -478,25 +478,25 @@ func NotifyNetValueUpdated(triggeredBy, scope string) {
 		if !cfg.Dingtalk.Enabled && !cfg.Email.Enabled {
 			return
 		}
-		if !shouldSendByPolicy(cfg, triggeredBy, scope) {
+		if !shouldSendByPolicy(uid, cfg, triggeredBy, scope) {
 			log.Printf("[notify] 按推送策略(%s)跳过本次推送（触发：%s）", policyName(cfg.Policy), triggeredBy)
 			return
 		}
-		text := buildNetValueNotifyText(triggeredBy, scope)
+		text := buildNetValueNotifyText(uid, triggeredBy, scope)
 		sendToChannels(cfg, "持仓净值更新", text)
 	}()
 }
 
 // shouldSendByPolicy decides whether a net-value update should be pushed given
 // the configured frequency policy and the trigger source.
-func shouldSendByPolicy(cfg notifyConfig, triggeredBy, scope string) bool {
+func shouldSendByPolicy(uid int64, cfg notifyConfig, triggeredBy, scope string) bool {
 	switch cfg.Policy {
 	case "only_close":
 		// 仅收盘后定时快照（A股15:15 / 基金21:00 / 美股07:00）推送
 		return strings.Contains(triggeredBy, "定时快照")
 	case "only_signal":
 		// 仅在有补仓信号时推送（按范围过滤，避免展示未刷新类别的陈旧信号）
-		return len(collectBuySignals(scope)) > 0
+		return len(collectBuySignals(uid, scope)) > 0
 	default: // "" / "every"
 		return true
 	}

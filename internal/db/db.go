@@ -28,6 +28,7 @@ type Holding struct {
 	LinkedSymbol string  `json:"linked_symbol"` // 基金关��的股票代码，非空时点击基金可做技术分析
 	BuyDate      string  `json:"buy_date"`       // 买入日期，YYYY-MM-DD，为空则不计持有天数
 	BuyPlan      string  `json:"buy_plan"`       // 基金补仓计划 JSON（净值刷新时计算，不写 note 列）
+	UserID       int64   `json:"user_id"`
 	UpdatedAt    string  `json:"updated_at"`
 }
 
@@ -242,11 +243,11 @@ func SaveNotifyConfig(cfg string) error {
 	return err
 }
 
-// GetPnlLatest returns the most recent daily P&L record (for notification summaries).
-func GetPnlLatest() (*PnlDay, error) {
+// GetPnlLatest returns the most recent daily P&L record for a user (for notification summaries).
+func GetPnlLatest(userID int64) (*PnlDay, error) {
 	var p PnlDay
-	err := DB.QueryRow(`SELECT date,total_cny,total_usd,rate,detail FROM pnl_daily ORDER BY date DESC LIMIT 1`).
-		Scan(&p.Date, &p.TotalCNY, &p.TotalUSD, &p.Rate, &p.Detail)
+	err := DB.QueryRow(`SELECT date,user_id,total_cny,total_usd,rate,detail FROM pnl_daily WHERE user_id=? ORDER BY date DESC LIMIT 1`, userID).
+		Scan(&p.Date, &p.UserID, &p.TotalCNY, &p.TotalUSD, &p.Rate, &p.Detail)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -509,8 +510,16 @@ func migrateMarkets() error {
 	return nil
 }
 
-func List() ([]Holding, error) {
-	rows, err := DB.Query("SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,updated_at FROM holdings ORDER BY id DESC")
+// List returns holdings for a user (userID). Pass 0 to get all (used by scheduled jobs).
+func List(userID int64) ([]Holding, error) {
+	q := "SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at FROM holdings"
+	var args []interface{}
+	if userID > 0 {
+		q += " WHERE user_id=?"
+		args = append(args, userID)
+	}
+	q += " ORDER BY id DESC"
+	rows, err := DB.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +527,7 @@ func List() ([]Holding, error) {
 	var out []Holding
 	for rows.Next() {
 		var h Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UpdatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -528,8 +537,8 @@ func List() ([]Holding, error) {
 
 func Get(id int64) (*Holding, error) {
 	var h Holding
-	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,updated_at FROM holdings WHERE id=?", id).
-		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UpdatedAt)
+	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at FROM holdings WHERE id=?", id).
+		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -538,8 +547,8 @@ func Get(id int64) (*Holding, error) {
 
 func Create(h *Holding) (int64, error) {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UpdatedAt)
+	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -548,8 +557,8 @@ func Create(h *Holding) (int64, error) {
 
 func Update(h *Holding) error {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,updated_at=? WHERE id=?",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UpdatedAt, h.ID)
+	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=? WHERE id=?",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.ID)
 	return err
 }
 
@@ -580,9 +589,9 @@ func Delete(id int64) error {
 
 // ExistsBySymbol reports whether another holding already uses the given symbol.
 // excludeID is used on updates to ignore the row being saved (pass 0 when creating).
-func ExistsBySymbol(symbol string, excludeID int64) (bool, error) {
+func ExistsBySymbol(symbol string, excludeID, userID int64) (bool, error) {
 	var n int
-	err := DB.QueryRow("SELECT COUNT(1) FROM holdings WHERE symbol=? AND id<>?", symbol, excludeID).Scan(&n)
+	err := DB.QueryRow("SELECT COUNT(1) FROM holdings WHERE symbol=? AND id<>? AND user_id=?", symbol, excludeID, userID).Scan(&n)
 	if err != nil {
 		return false, err
 	}
@@ -592,16 +601,16 @@ func ExistsBySymbol(symbol string, excludeID int64) (bool, error) {
 // ---- Daily price snapshots & P&L history ----
 
 // SavePriceDaily upserts the closing price for a symbol on a given date (YYYY-MM-DD).
-func SavePriceDaily(date, symbol string, close float64) error {
-	_, err := DB.Exec(`INSERT INTO price_daily(date,symbol,close) VALUES(?,?,?)
-		ON CONFLICT(date,symbol) DO UPDATE SET close=excluded.close`, date, symbol, close)
+func SavePriceDaily(date, symbol string, close float64, userID int64) error {
+	_, err := DB.Exec(`INSERT INTO price_daily(date,symbol,close,user_id) VALUES(?,?,?,?)
+		ON CONFLICT(date,symbol,user_id) DO UPDATE SET close=excluded.close`, date, symbol, close, userID)
 	return err
 }
 
 // GetPriceDailyByDate returns a symbol->close map for all symbols recorded on a date.
 // Used by the midnight settlement to backfill a missed daily P&L from stored closes.
-func GetPriceDailyByDate(date string) (map[string]float64, error) {
-	rows, err := DB.Query(`SELECT symbol, close FROM price_daily WHERE date=?`, date)
+func GetPriceDailyByDate(date string, userID int64) (map[string]float64, error) {
+	rows, err := DB.Query(`SELECT symbol, close FROM price_daily WHERE date=? AND user_id=?`, date, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -618,19 +627,17 @@ func GetPriceDailyByDate(date string) (map[string]float64, error) {
 	return out, rows.Err()
 }
 
-// RebasePrevCloseAll resets every holding's prev_close to its current_price. This is
-// the "daily P&L reset to zero" step: after it, the live 当日盈亏
-// (现价 − prev_close) × 数量 reads 0 for the new calendar day until the next session's
-// quote refresh re-establishes the official previous close.
-func RebasePrevCloseAll() error {
-	_, err := DB.Exec(`UPDATE holdings SET prev_close = current_price`)
+// RebasePrevCloseAll resets a user's holdings' prev_close to current_price. This is
+// the "daily P&L reset to zero" step for that user.
+func RebasePrevCloseAll(userID int64) error {
+	_, err := DB.Exec(`UPDATE holdings SET prev_close = current_price WHERE user_id=?`, userID)
 	return err
 }
 
 // GetPrevClose returns the most recent close for a symbol strictly before the given date.
-func GetPrevClose(symbol, date string) (float64, bool, error) {
+func GetPrevClose(symbol, date string, userID int64) (float64, bool, error) {
 	var close float64
-	err := DB.QueryRow(`SELECT close FROM price_daily WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1`, symbol, date).Scan(&close)
+	err := DB.QueryRow(`SELECT close FROM price_daily WHERE symbol=? AND date<? AND user_id=? ORDER BY date DESC LIMIT 1`, symbol, date, userID).Scan(&close)
 	if err == sql.ErrNoRows {
 		return 0, false, nil
 	}
@@ -647,8 +654,8 @@ type PriceDay struct {
 }
 
 // GetPriceSeries returns all recorded daily closing prices for a symbol, ascending by date.
-func GetPriceSeries(symbol string) ([]PriceDay, error) {
-	rows, err := DB.Query(`SELECT date, close FROM price_daily WHERE symbol=? ORDER BY date ASC`, symbol)
+func GetPriceSeries(symbol string, userID int64) ([]PriceDay, error) {
+	rows, err := DB.Query(`SELECT date, close FROM price_daily WHERE symbol=? AND user_id=? ORDER BY date ASC`, symbol, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -664,26 +671,27 @@ func GetPriceSeries(symbol string) ([]PriceDay, error) {
 	return out, rows.Err()
 }
 
-// SavePnlDaily upserts the daily P&L summary for a date.
-func SavePnlDaily(date string, totalCNY, totalUSD, rate float64, detail string) error {
-	_, err := DB.Exec(`INSERT INTO pnl_daily(date,total_cny,total_usd,rate,detail) VALUES(?,?,?,?,?)
-		ON CONFLICT(date) DO UPDATE SET total_cny=excluded.total_cny, total_usd=excluded.total_usd, rate=excluded.rate, detail=excluded.detail`,
-		date, totalCNY, totalUSD, rate, detail)
+// SavePnlDaily upserts the daily P&L summary for a date and user.
+func SavePnlDaily(date string, totalCNY, totalUSD, rate float64, detail string, userID int64) error {
+	_, err := DB.Exec(`INSERT INTO pnl_daily(date,user_id,total_cny,total_usd,rate,detail) VALUES(?,?,?,?,?,?)
+		ON CONFLICT(date,user_id) DO UPDATE SET total_cny=excluded.total_cny, total_usd=excluded.total_usd, rate=excluded.rate, detail=excluded.detail`,
+		date, userID, totalCNY, totalUSD, rate, detail)
 	return err
 }
 
 // PnlDay is one day's P&L record.
 type PnlDay struct {
 	Date     string  `json:"date"`
+	UserID   int64   `json:"user_id"`
 	TotalCNY float64 `json:"total_cny"`
 	TotalUSD float64 `json:"total_usd"`
 	Rate     float64 `json:"rate"`
 	Detail   string  `json:"detail"`
 }
 
-// GetPnlHistory returns all daily P&L records ordered by date ascending.
-func GetPnlHistory() ([]PnlDay, error) {
-	rows, err := DB.Query(`SELECT date,total_cny,total_usd,rate,detail FROM pnl_daily ORDER BY date ASC`)
+// GetPnlHistory returns a user's daily P&L records ordered by date ascending.
+func GetPnlHistory(userID int64) ([]PnlDay, error) {
+	rows, err := DB.Query(`SELECT date,user_id,total_cny,total_usd,rate,detail FROM pnl_daily WHERE user_id=? ORDER BY date ASC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -691,7 +699,7 @@ func GetPnlHistory() ([]PnlDay, error) {
 	var out []PnlDay
 	for rows.Next() {
 		var p PnlDay
-		if err := rows.Scan(&p.Date, &p.TotalCNY, &p.TotalUSD, &p.Rate, &p.Detail); err != nil {
+		if err := rows.Scan(&p.Date, &p.UserID, &p.TotalCNY, &p.TotalUSD, &p.Rate, &p.Detail); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -700,9 +708,9 @@ func GetPnlHistory() ([]PnlDay, error) {
 }
 
 // HasPnlDate reports whether a daily P&L record already exists for the date.
-func HasPnlDate(date string) (bool, error) {
+func HasPnlDate(date string, userID int64) (bool, error) {
 	var n int
-	err := DB.QueryRow(`SELECT COUNT(1) FROM pnl_daily WHERE date=?`, date).Scan(&n)
+	err := DB.QueryRow(`SELECT COUNT(1) FROM pnl_daily WHERE date=? AND user_id=?`, date, userID).Scan(&n)
 	if err != nil {
 		return false, err
 	}
@@ -719,10 +727,10 @@ func initAISettings() error {
 	return err
 }
 
-// GetAIConfig returns the raw JSON config (always non-empty; "{}" if none stored).
-func GetAIConfig() (string, error) {
+// GetAIConfig returns the raw JSON config for a user (always non-empty; "{}" if none stored).
+func GetAIConfig(userID int64) (string, error) {
 	var cfg string
-	err := DB.QueryRow("SELECT cfg FROM ai_settings WHERE id=1").Scan(&cfg)
+	err := DB.QueryRow("SELECT cfg FROM ai_settings WHERE user_id=?", userID).Scan(&cfg)
 	if err == sql.ErrNoRows {
 		return "{}", nil
 	}
@@ -732,10 +740,10 @@ func GetAIConfig() (string, error) {
 	return cfg, nil
 }
 
-// SaveAIConfig upserts the AI config JSON.
-func SaveAIConfig(cfg string) error {
-	_, err := DB.Exec(`INSERT INTO ai_settings(id,cfg) VALUES(1,?)
-		ON CONFLICT(id) DO UPDATE SET cfg=excluded.cfg`, cfg)
+// SaveAIConfig upserts the AI config JSON for a user.
+func SaveAIConfig(userID int64, cfg string) error {
+	_, err := DB.Exec(`INSERT INTO ai_settings(user_id,cfg) VALUES(?,?)
+		ON CONFLICT(user_id) DO UPDATE SET cfg=excluded.cfg`, userID, cfg)
 	return err
 }
 
@@ -751,27 +759,28 @@ func initAISummaryHistory() error {
 	return err
 }
 
-// SaveAISummary inserts a record and trims the table to the most recent 10.
-func SaveAISummary(content, model string) error {
+// SaveAISummary inserts a record and trims the table to the most recent 10 per user.
+func SaveAISummary(content, model string, userID int64) error {
 	now := time.Now().Format("2006-01-02 15:04:05")
-	if _, err := DB.Exec(`INSERT INTO ai_summary_history(created_at,model,content) VALUES(?,?,?)`, now, model, content); err != nil {
+	if _, err := DB.Exec(`INSERT INTO ai_summary_history(user_id,created_at,model,content) VALUES(?,?,?,?)`, userID, now, model, content); err != nil {
 		return err
 	}
-	_, err := DB.Exec(`DELETE FROM ai_summary_history WHERE id NOT IN (SELECT id FROM ai_summary_history ORDER BY id DESC LIMIT 10)`)
+	_, err := DB.Exec(`DELETE FROM ai_summary_history WHERE user_id=? AND id NOT IN (SELECT id FROM ai_summary_history WHERE user_id=? ORDER BY id DESC LIMIT 10)`, userID, userID)
 	return err
 }
 
 // AISummaryRecord is one saved AI summary.
 type AISummaryRecord struct {
 	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
 	CreatedAt string `json:"created_at"`
 	Model     string `json:"model"`
 	Content   string `json:"content"`
 }
 
-// GetAISummaryHistory returns the most recent records (newest first), up to limit.
-func GetAISummaryHistory(limit int) ([]AISummaryRecord, error) {
-	rows, err := DB.Query(`SELECT id,created_at,model,content FROM ai_summary_history ORDER BY id DESC LIMIT ?`, limit)
+// GetAISummaryHistory returns a user's most recent records (newest first), up to limit.
+func GetAISummaryHistory(limit, userID int) ([]AISummaryRecord, error) {
+	rows, err := DB.Query(`SELECT id,user_id,created_at,model,content FROM ai_summary_history WHERE user_id=? ORDER BY id DESC LIMIT ?`, userID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -779,7 +788,7 @@ func GetAISummaryHistory(limit int) ([]AISummaryRecord, error) {
 	var out []AISummaryRecord
 	for rows.Next() {
 		var r AISummaryRecord
-		if err := rows.Scan(&r.ID, &r.CreatedAt, &r.Model, &r.Content); err != nil {
+		if err := rows.Scan(&r.ID, &r.UserID, &r.CreatedAt, &r.Model, &r.Content); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -883,14 +892,15 @@ func initAssetTables() error {
 
 type AssetSource struct {
 	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
 	Name      string `json:"name"`
 	Type      string `json:"type"` // bank | platform
 	Note      string `json:"note"`
 	CreatedAt string `json:"created_at"`
 }
 
-func ListSources() ([]AssetSource, error) {
-	rows, err := DB.Query(`SELECT id,name,type,note,created_at FROM asset_sources ORDER BY id DESC`)
+func ListSources(userID int64) ([]AssetSource, error) {
+	rows, err := DB.Query(`SELECT id,user_id,name,type,note,created_at FROM asset_sources WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -898,7 +908,7 @@ func ListSources() ([]AssetSource, error) {
 	var out []AssetSource
 	for rows.Next() {
 		var s AssetSource
-		if err := rows.Scan(&s.ID, &s.Name, &s.Type, &s.Note, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.UserID, &s.Name, &s.Type, &s.Note, &s.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -908,8 +918,8 @@ func ListSources() ([]AssetSource, error) {
 
 func CreateSource(s *AssetSource) (int64, error) {
 	s.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO asset_sources(name,type,note,created_at) VALUES(?,?,?,?)`,
-		s.Name, s.Type, s.Note, s.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO asset_sources(user_id,name,type,note,created_at) VALUES(?,?,?,?,?)`,
+		s.UserID, s.Name, s.Type, s.Note, s.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -917,7 +927,7 @@ func CreateSource(s *AssetSource) (int64, error) {
 }
 
 func UpdateSource(s *AssetSource) error {
-	_, err := DB.Exec(`UPDATE asset_sources SET name=?,type=?,note=? WHERE id=?`, s.Name, s.Type, s.Note, s.ID)
+	_, err := DB.Exec(`UPDATE asset_sources SET user_id=?,name=?,type=?,note=? WHERE id=?`, s.UserID, s.Name, s.Type, s.Note, s.ID)
 	return err
 }
 
@@ -947,6 +957,7 @@ func DeleteSource(id int64) error {
 
 type WealthProduct struct {
 	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
 	SourceID  int64  `json:"source_id"`
 	Name      string `json:"name"`
 	Code      string `json:"code"`
@@ -955,8 +966,8 @@ type WealthProduct struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func ListWealth() ([]WealthProduct, error) {
-	rows, err := DB.Query(`SELECT id,source_id,name,code,currency,note,created_at FROM wealth_products ORDER BY id DESC`)
+func ListWealth(userID int64) ([]WealthProduct, error) {
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,code,currency,note,created_at FROM wealth_products WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -964,7 +975,7 @@ func ListWealth() ([]WealthProduct, error) {
 	var out []WealthProduct
 	for rows.Next() {
 		var w WealthProduct
-		if err := rows.Scan(&w.ID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.Note, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.Note, &w.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, w)
@@ -973,7 +984,7 @@ func ListWealth() ([]WealthProduct, error) {
 }
 
 func ListWealthBySource(sourceID int64) ([]WealthProduct, error) {
-	rows, err := DB.Query(`SELECT id,source_id,name,code,currency,note,created_at FROM wealth_products WHERE source_id=? ORDER BY id DESC`, sourceID)
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,code,currency,note,created_at FROM wealth_products WHERE source_id=? ORDER BY id DESC`, sourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -981,7 +992,7 @@ func ListWealthBySource(sourceID int64) ([]WealthProduct, error) {
 	var out []WealthProduct
 	for rows.Next() {
 		var w WealthProduct
-		if err := rows.Scan(&w.ID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.Note, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.Note, &w.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, w)
@@ -994,8 +1005,8 @@ func CreateWealth(w *WealthProduct) (int64, error) {
 		w.Currency = "rmb"
 	}
 	w.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO wealth_products(source_id,name,code,currency,note,created_at) VALUES(?,?,?,?,?,?)`,
-		w.SourceID, w.Name, w.Code, w.Currency, w.Note, w.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO wealth_products(user_id,source_id,name,code,currency,note,created_at) VALUES(?,?,?,?,?,?,?)`,
+		w.UserID, w.SourceID, w.Name, w.Code, w.Currency, w.Note, w.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -1006,8 +1017,8 @@ func UpdateWealth(w *WealthProduct) error {
 	if w.Currency == "" {
 		w.Currency = "rmb"
 	}
-	_, err := DB.Exec(`UPDATE wealth_products SET source_id=?,name=?,code=?,currency=?,note=? WHERE id=?`,
-		w.SourceID, w.Name, w.Code, w.Currency, w.Note, w.ID)
+	_, err := DB.Exec(`UPDATE wealth_products SET user_id=?,source_id=?,name=?,code=?,currency=?,note=? WHERE id=?`,
+		w.UserID, w.SourceID, w.Name, w.Code, w.Currency, w.Note, w.ID)
 	return err
 }
 
@@ -1023,6 +1034,7 @@ func DeleteWealth(id int64) error {
 
 type Cash struct {
 	ID        int64   `json:"id"`
+	UserID    int64   `json:"user_id"`
 	SourceID  int64   `json:"source_id"`
 	Name      string  `json:"name"`
 	Currency  string  `json:"currency"`
@@ -1031,8 +1043,8 @@ type Cash struct {
 	CreatedAt string  `json:"created_at"`
 }
 
-func ListCash() ([]Cash, error) {
-	rows, err := DB.Query(`SELECT id,source_id,name,currency,amount,note,created_at FROM cash_accounts ORDER BY id DESC`)
+func ListCash(userID int64) ([]Cash, error) {
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,currency,amount,note,created_at FROM cash_accounts WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1040,7 +1052,7 @@ func ListCash() ([]Cash, error) {
 	var out []Cash
 	for rows.Next() {
 		var c Cash
-		if err := rows.Scan(&c.ID, &c.SourceID, &c.Name, &c.Currency, &c.Amount, &c.Note, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Amount, &c.Note, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -1053,8 +1065,8 @@ func CreateCash(c *Cash) (int64, error) {
 		c.Currency = "rmb"
 	}
 	c.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO cash_accounts(source_id,name,currency,amount,note,created_at) VALUES(?,?,?,?,?,?)`,
-		c.SourceID, c.Name, c.Currency, c.Amount, c.Note, c.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO cash_accounts(user_id,source_id,name,currency,amount,note,created_at) VALUES(?,?,?,?,?,?,?)`,
+		c.UserID, c.SourceID, c.Name, c.Currency, c.Amount, c.Note, c.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -1065,8 +1077,8 @@ func UpdateCash(c *Cash) error {
 	if c.Currency == "" {
 		c.Currency = "rmb"
 	}
-	_, err := DB.Exec(`UPDATE cash_accounts SET source_id=?,name=?,currency=?,amount=?,note=? WHERE id=?`,
-		c.SourceID, c.Name, c.Currency, c.Amount, c.Note, c.ID)
+	_, err := DB.Exec(`UPDATE cash_accounts SET user_id=?,source_id=?,name=?,currency=?,amount=?,note=? WHERE id=?`,
+		c.UserID, c.SourceID, c.Name, c.Currency, c.Amount, c.Note, c.ID)
 	return err
 }
 
@@ -1157,6 +1169,7 @@ func CountWealthSnapshots(wealthID int64) (int, error) {
 
 type Liability struct {
 	ID            int64   `json:"id"`
+	UserID        int64   `json:"user_id"`
 	SourceID      int64   `json:"source_id"`
 	Name          string  `json:"name"`
 	Type          string  `json:"type"`
@@ -1167,8 +1180,8 @@ type Liability struct {
 	CreatedAt     string  `json:"created_at"`
 }
 
-func ListLiabilities() ([]Liability, error) {
-	rows, err := DB.Query(`SELECT id,source_id,name,type,amount,rate,monthly_payment,note,created_at FROM liabilities ORDER BY id DESC`)
+func ListLiabilities(userID int64) ([]Liability, error) {
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,type,amount,rate,monthly_payment,note,created_at FROM liabilities WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1176,7 +1189,7 @@ func ListLiabilities() ([]Liability, error) {
 	var out []Liability
 	for rows.Next() {
 		var l Liability
-		if err := rows.Scan(&l.ID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Rate, &l.MonthlyPayment, &l.Note, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.UserID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Rate, &l.MonthlyPayment, &l.Note, &l.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -1186,8 +1199,8 @@ func ListLiabilities() ([]Liability, error) {
 
 func CreateLiability(l *Liability) (int64, error) {
 	l.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO liabilities(source_id,name,type,amount,rate,monthly_payment,note,created_at) VALUES(?,?,?,?,?,?,?,?)`,
-		l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Note, l.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO liabilities(user_id,source_id,name,type,amount,rate,monthly_payment,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Note, l.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -1195,8 +1208,8 @@ func CreateLiability(l *Liability) (int64, error) {
 }
 
 func UpdateLiability(l *Liability) error {
-	_, err := DB.Exec(`UPDATE liabilities SET source_id=?,name=?,type=?,amount=?,rate=?,monthly_payment=?,note=? WHERE id=?`,
-		l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Note, l.ID)
+	_, err := DB.Exec(`UPDATE liabilities SET user_id=?,source_id=?,name=?,type=?,amount=?,rate=?,monthly_payment=?,note=? WHERE id=?`,
+		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Note, l.ID)
 	return err
 }
 
@@ -1209,6 +1222,7 @@ func DeleteLiability(id int64) error {
 
 type Consumption struct {
 	ID        int64   `json:"id"`
+	UserID    int64   `json:"user_id"`
 	Date      string  `json:"date"`
 	SourceID  int64   `json:"source_id"`
 	Category  string  `json:"category"`
@@ -1217,11 +1231,11 @@ type Consumption struct {
 	CreatedAt string  `json:"created_at"`
 }
 
-func ListConsumptions(limit int) ([]Consumption, error) {
+func ListConsumptions(limit, userID int) ([]Consumption, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := DB.Query(`SELECT id,date,source_id,category,amount,note,created_at FROM consumptions ORDER BY date DESC, id DESC LIMIT ?`, limit)
+	rows, err := DB.Query(`SELECT id,user_id,date,source_id,category,amount,note,created_at FROM consumptions WHERE user_id=? ORDER BY date DESC, id DESC LIMIT ?`, userID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1229,7 +1243,7 @@ func ListConsumptions(limit int) ([]Consumption, error) {
 	var out []Consumption
 	for rows.Next() {
 		var c Consumption
-		if err := rows.Scan(&c.ID, &c.Date, &c.SourceID, &c.Category, &c.Amount, &c.Note, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Date, &c.SourceID, &c.Category, &c.Amount, &c.Note, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -1242,8 +1256,8 @@ func CreateConsumption(c *Consumption) (int64, error) {
 		c.Date = time.Now().Format("2006-01-02")
 	}
 	c.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO consumptions(date,source_id,category,amount,note,created_at) VALUES(?,?,?,?,?,?)`,
-		c.Date, c.SourceID, c.Category, c.Amount, c.Note, c.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO consumptions(user_id,date,source_id,category,amount,note,created_at) VALUES(?,?,?,?,?,?,?)`,
+		c.UserID, c.Date, c.SourceID, c.Category, c.Amount, c.Note, c.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -1254,8 +1268,8 @@ func UpdateConsumption(c *Consumption) error {
 	if c.Date == "" {
 		c.Date = time.Now().Format("2006-01-02")
 	}
-	_, err := DB.Exec(`UPDATE consumptions SET date=?,source_id=?,category=?,amount=?,note=? WHERE id=?`,
-		c.Date, c.SourceID, c.Category, c.Amount, c.Note, c.ID)
+	_, err := DB.Exec(`UPDATE consumptions SET user_id=?,date=?,source_id=?,category=?,amount=?,note=? WHERE id=?`,
+		c.UserID, c.Date, c.SourceID, c.Category, c.Amount, c.Note, c.ID)
 	return err
 }
 
@@ -1264,17 +1278,17 @@ func DeleteConsumption(id int64) error {
 	return err
 }
 
-// ConsumptionSum returns the total spent on a given day (YYYY-MM-DD).
-func ConsumptionSum(day string) (float64, error) {
+// ConsumptionSum returns the total spent on a given day (YYYY-MM-DD) for a user.
+func ConsumptionSum(day string, userID int64) (float64, error) {
 	var s float64
-	err := DB.QueryRow(`SELECT COALESCE(SUM(amount),0) FROM consumptions WHERE date=?`, day).Scan(&s)
+	err := DB.QueryRow(`SELECT COALESCE(SUM(amount),0) FROM consumptions WHERE date=? AND user_id=?`, day, userID).Scan(&s)
 	return s, err
 }
 
-// ConsumptionSumMonth returns the total spent in a given month (YYYY-MM).
-func ConsumptionSumMonth(month string) (float64, error) {
+// ConsumptionSumMonth returns the total spent in a given month (YYYY-MM) for a user.
+func ConsumptionSumMonth(month string, userID int64) (float64, error) {
 	var s float64
-	err := DB.QueryRow(`SELECT COALESCE(SUM(amount),0) FROM consumptions WHERE date LIKE ?`, month+"%").Scan(&s)
+	err := DB.QueryRow(`SELECT COALESCE(SUM(amount),0) FROM consumptions WHERE date LIKE ? AND user_id=?`, month+"%", userID).Scan(&s)
 	return s, err
 }
 
@@ -1292,11 +1306,11 @@ func initCalcInputs() error {
 	return err
 }
 
-// GetCalcInput returns the stored payload (raw JSON string) for a kind.
+// GetCalcInput returns the stored payload (raw JSON string) for a kind+user.
 // ok is false when no row exists yet (caller should treat as empty).
-func GetCalcInput(kind string) (payload string, ok bool, err error) {
+func GetCalcInput(kind string, userID int64) (payload string, ok bool, err error) {
 	var p string
-	e := DB.QueryRow(`SELECT payload FROM calc_inputs WHERE kind=?`, kind).Scan(&p)
+	e := DB.QueryRow(`SELECT payload FROM calc_inputs WHERE kind=? AND user_id=?`, kind, userID).Scan(&p)
 	if e == sql.ErrNoRows {
 		return "", false, nil
 	}
@@ -1309,12 +1323,12 @@ func GetCalcInput(kind string) (payload string, ok bool, err error) {
 	return p, true, nil
 }
 
-// SaveCalcInput upserts the payload JSON for a kind.
-func SaveCalcInput(kind, payload string) error {
+// SaveCalcInput upserts the payload JSON for a kind+user.
+func SaveCalcInput(kind, payload string, userID int64) error {
 	now := time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec(`INSERT INTO calc_inputs(kind,payload,updated_at) VALUES(?,?,?)
-		ON CONFLICT(kind) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at`,
-		kind, payload, now)
+	_, err := DB.Exec(`INSERT INTO calc_inputs(kind,user_id,payload,updated_at) VALUES(?,?,?,?)
+		ON CONFLICT(kind,user_id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at`,
+		kind, userID, payload, now)
 	return err
 }
 
@@ -1335,9 +1349,9 @@ func CalcHoldingDays(buyDate string) int {
 	return days
 }
 
-// DeleteCalcInput removes the stored inputs for a kind (used by 清空).
-func DeleteCalcInput(kind string) error {
-	_, err := DB.Exec(`DELETE FROM calc_inputs WHERE kind=?`, kind)
+// DeleteCalcInput removes the stored inputs for a kind+user (used by 清空).
+func DeleteCalcInput(kind string, userID int64) error {
+	_, err := DB.Exec(`DELETE FROM calc_inputs WHERE kind=? AND user_id=?`, kind, userID)
 	return err
 }
 
@@ -1348,6 +1362,7 @@ func DeleteCalcInput(kind string) error {
 // OperationGuide records a trading decision / note.
 type OperationGuide struct {
 	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
 	HoldingID int64  `json:"holding_id"`
 	Title     string `json:"title"`
 	Content   string `json:"content"`
@@ -1359,6 +1374,7 @@ type OperationGuide struct {
 func initOperationGuides() error {
 	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS operation_guides (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL DEFAULT 0,
 		holding_id INTEGER NOT NULL DEFAULT 0,
 		title TEXT NOT NULL DEFAULT '',
 		content TEXT NOT NULL DEFAULT '',
@@ -1373,8 +1389,8 @@ func InsertOperationGuide(g *OperationGuide) (int64, error) {
 	now := time.Now().Format("2006-01-02 15:04:05")
 	g.CreatedAt = now
 	g.UpdatedAt = now
-	res, err := DB.Exec(`INSERT INTO operation_guides(holding_id,title,content,tags,created_at,updated_at) VALUES(?,?,?,?,?,?)`,
-		g.HoldingID, g.Title, g.Content, g.Tags, g.CreatedAt, g.UpdatedAt)
+	res, err := DB.Exec(`INSERT INTO operation_guides(user_id,holding_id,title,content,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`,
+		g.UserID, g.HoldingID, g.Title, g.Content, g.Tags, g.CreatedAt, g.UpdatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -1393,8 +1409,8 @@ func DeleteOperationGuide(id int64) error {
 	return err
 }
 
-func ListOperationGuides() ([]OperationGuide, error) {
-	rows, err := DB.Query(`SELECT id,holding_id,title,content,tags,created_at,updated_at FROM operation_guides ORDER BY id DESC`)
+func ListOperationGuides(userID int64) ([]OperationGuide, error) {
+	rows, err := DB.Query(`SELECT id,user_id,holding_id,title,content,tags,created_at,updated_at FROM operation_guides WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1402,7 +1418,7 @@ func ListOperationGuides() ([]OperationGuide, error) {
 	var out []OperationGuide
 	for rows.Next() {
 		var r OperationGuide
-		if err := rows.Scan(&r.ID, &r.HoldingID, &r.Title, &r.Content, &r.Tags, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.UserID, &r.HoldingID, &r.Title, &r.Content, &r.Tags, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

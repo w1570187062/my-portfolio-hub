@@ -98,9 +98,10 @@
         <div class="hf-marquee" id="hfMarquee"><div class="hf-track" id="hfTrack"></div></div>
         <div class="hf-time" id="hfTime"></div>
       </div>
+      <span id="userPill" class="user-pill" title="当前用户">👤 <b id="userNameText">默认</b></span>
       <div class="act-group">
         <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式">🌙</button>
-        <button id="logoutBtn" class="btn" style="display:none">退出</button>
+        <button id="userBtn" class="btn theme-toggle" type="button" title="用户切换">👤</button>
       </div>
     </div>
   </header>
@@ -642,6 +643,47 @@
       <div id="wealthHistBody"></div>
     </div>
   </div>
+
+<!-- ===== 用户切换底部抽屉 ===== -->
+<div id="userSheet" class="bottom-sheet" hidden>
+  <div class="sheet-backdrop" id="userSheetBackdrop"></div>
+  <div class="sheet-panel">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <h2>用户管理</h2>
+      <button class="sheet-close btn" type="button" id="userSheetClose" aria-label="关闭">✕</button>
+    </div>
+    <div class="user-current">
+      <div>
+        <div class="uc-name">当前用户：<span id="ucName">—</span></div>
+        <div class="uc-meta" id="ucMeta">— 条数据</div>
+      </div>
+    </div>
+    <div class="user-list" id="userList"></div>
+    <div class="user-add">
+      <input id="userNameInput" type="text" placeholder="新用户名" maxlength="20" autocomplete="off" spellcheck="false">
+      <button class="btn" type="button" id="userAddBtn">新增</button>
+    </div>
+  <div class="user-clear">
+    <button class="btn danger" type="button" id="userClearBtn">清空当前用户数据</button>
+  </div>
+</div>
+
+<!-- 删除用户：需输入「我已知晓」确认 -->
+<div id="userDeleteModal" class="modal" hidden>
+  <div class="modal-card confirm-card">
+    <h2>删除用户</h2>
+    <p class="confirm-msg" id="userDeleteMsg"></p>
+    <label class="ud-confirm-label">请输入「我已知晓」以确认删除：
+      <input id="userDeleteInput" type="text" autocomplete="off" spellcheck="false" placeholder="我已知晓" data-1p-ignore data-lpignore="true">
+    </label>
+    <div class="modal-actions">
+      <button class="btn" type="button" id="userDeleteCancel">取消</button>
+      <button class="btn danger" type="button" id="userDeleteOk" disabled>确认删除</button>
+    </div>
+  </div>
+</div>
+</div>
 
 <div id="toolTipHint" class="tool-tip-hint" hidden></div>
 <div id="calJumpModal" class="modal" hidden>

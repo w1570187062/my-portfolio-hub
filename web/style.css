@@ -2453,3 +2453,160 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
   .modal-card { max-width: 94vw; }
 }
 .asset-add-inline { font-size: 13px; padding: 6px 16px; }
+
+/* ===== 用户切换 / 多用户（头部用户胶囊 + 底部抽屉） ===== */
+.user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-size: 13px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--bg-soft, rgba(255, 255, 255, .06));
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-pill b { color: var(--primary); font-weight: 600; }
+
+.bottom-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.bottom-sheet[hidden] { display: none; }
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  backdrop-filter: blur(6px);
+}
+.sheet-panel {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: 86vh;
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  box-shadow: 0 -12px 48px rgba(0, 0, 0, .5);
+  padding: 10px 18px calc(18px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  animation: sheetUp .22s ease;
+}
+@keyframes sheetUp {
+  from { transform: translateY(24px); opacity: .35; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.sheet-handle {
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-strong, rgba(110, 156, 122, .35));
+  margin: 4px auto 10px;
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.sheet-head h2 { margin: 0; font-size: 17px; color: var(--text); font-weight: 700; }
+.sheet-close { padding: 4px 10px; font-size: 14px; }
+
+.user-current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--primary-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.uc-name { font-size: 14px; color: var(--text); }
+.uc-name span { color: var(--primary); font-weight: 600; }
+.uc-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 42vh;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary) rgba(255, 255, 255, .06);
+}
+.user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-soft, rgba(255, 255, 255, .04));
+}
+.user-row.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.ur-main { min-width: 0; }
+.ur-name { font-size: 14px; color: var(--text); font-weight: 600; }
+.ur-cur {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.ur-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.ur-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.ur-switch { padding: 5px 12px; font-size: 13px; }
+.ur-del { padding: 5px 12px; font-size: 13px; }
+.user-empty { text-align: center; color: var(--text-muted); padding: 18px 0; font-size: 13px; }
+
+.user-add { display: flex; gap: 8px; margin-bottom: 8px; }
+.user-add input {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--btn-radius);
+  background: var(--bg-input);
+  color: var(--text);
+}
+.user-add input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.user-clear { margin-top: 2px; }
+.user-clear .btn { width: 100%; }
+
+.ud-confirm-label {
+  display: block;
+  margin: 10px 0 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.ud-confirm-label input {
+  width: 100%;
+  padding: 10px 12px;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--btn-radius);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 14px;
+}
+.ud-confirm-label input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }

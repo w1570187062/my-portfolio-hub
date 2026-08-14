@@ -44,11 +44,12 @@ func curSymbol(currency string) string {
 }
 
 func assetOverview(c *gin.Context) {
+	uid := currentUserID(c)
 	cnyRate, hkdRate, _ := market.FetchFXRates()
 	today := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
 
 	// 1) 权益类（基金/股票）
-	hs, _ := db.List()
+	hs, _ := db.List(uid)
 	var eqMV, eqCV, eqPnl, eqDay float64
 	eqItems := make([]gin.H, 0, len(hs))
 	for _, h := range hs {
@@ -71,14 +72,14 @@ func assetOverview(c *gin.Context) {
 	}
 
 	// 2) 资产来源名映射
-	sources, _ := db.ListSources()
+	sources, _ := db.ListSources(uid)
 	srcName := map[int64]string{}
 	for _, s := range sources {
 		srcName[s.ID] = s.Name
 	}
 
 	// 3) 理财（最新持仓金额 + 今日盈亏），按币种分类
-	wps, _ := db.ListWealth()
+	wps, _ := db.ListWealth(uid)
 	var wTotal, wToday float64
 	wByCur := map[string]float64{}
 	wItems := make([]gin.H, 0, len(wps))
@@ -109,7 +110,7 @@ func assetOverview(c *gin.Context) {
 	}
 
 	// 3.5) 现金
-	cashs, _ := db.ListCash()
+	cashs, _ := db.ListCash(uid)
 	var cTotalCNY float64
 	cByCur := map[string]float64{}
 	cItems := make([]gin.H, 0, len(cashs))
@@ -128,7 +129,7 @@ func assetOverview(c *gin.Context) {
 	}
 
 	// 4) 负债
-	libs, _ := db.ListLiabilities()
+	libs, _ := db.ListLiabilities(uid)
 	var lTotal, lMonthly float64
 	lItems := make([]gin.H, 0, len(libs))
 	for _, l := range libs {
@@ -148,9 +149,9 @@ func assetOverview(c *gin.Context) {
 	}
 
 	// 5) 消费（今日 / 本月 / 近期列表）
-	cons, _ := db.ListConsumptions(50)
-	todayC, _ := db.ConsumptionSum(today)
-	monthC, _ := db.ConsumptionSumMonth(today[:7])
+	cons, _ := db.ListConsumptions(50, uid)
+	todayC, _ := db.ConsumptionSum(today, uid)
+	monthC, _ := db.ConsumptionSumMonth(today[:7], uid)
 	consItems := make([]gin.H, 0, len(cons))
 	for _, cc := range cons {
 		consItems = append(consItems, gin.H{
@@ -241,7 +242,7 @@ func wealthCumPnl(wealthID int64) float64 {
 // ---- 资产来源 CRUD ----
 
 func listSources(c *gin.Context) {
-	out, err := db.ListSources()
+	out, err := db.ListSources(currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -263,6 +264,7 @@ func createSource(c *gin.Context) {
 	if s.Type != "platform" {
 		s.Type = "bank"
 	}
+	s.UserID = currentUserID(c)
 	id, err := db.CreateSource(&s)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -292,6 +294,7 @@ func updateSource(c *gin.Context) {
 	if s.Type != "platform" {
 		s.Type = "bank"
 	}
+	s.UserID = currentUserID(c)
 	if err := db.UpdateSource(&s); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -315,7 +318,7 @@ func deleteSource(c *gin.Context) {
 // ---- 理财 CRUD ----
 
 func listWealth(c *gin.Context) {
-	out, err := db.ListWealth()
+	out, err := db.ListWealth(currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -334,6 +337,7 @@ func createWealth(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
 		return
 	}
+	w.UserID = currentUserID(c)
 	id, err := db.CreateWealth(&w)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -360,6 +364,7 @@ func updateWealth(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
 		return
 	}
+	w.UserID = currentUserID(c)
 	if err := db.UpdateWealth(&w); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -383,7 +388,7 @@ func deleteWealth(c *gin.Context) {
 // ---- 现金 CRUD ----
 
 func listCash(c *gin.Context) {
-	out, err := db.ListCash()
+	out, err := db.ListCash(currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -405,6 +410,7 @@ func createCash(c *gin.Context) {
 	if cc.Currency == "" {
 		cc.Currency = "rmb"
 	}
+	cc.UserID = currentUserID(c)
 	id, err := db.CreateCash(&cc)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -434,6 +440,7 @@ func updateCash(c *gin.Context) {
 	if cc.Currency == "" {
 		cc.Currency = "rmb"
 	}
+	cc.UserID = currentUserID(c)
 	if err := db.UpdateCash(&cc); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -526,7 +533,7 @@ func assetWealthHistory(c *gin.Context) {
 // ---- 负债 CRUD ----
 
 func listLiabilities(c *gin.Context) {
-	out, err := db.ListLiabilities()
+	out, err := db.ListLiabilities(currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -545,6 +552,7 @@ func createLiability(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
 		return
 	}
+	l.UserID = currentUserID(c)
 	id, err := db.CreateLiability(&l)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -571,6 +579,7 @@ func updateLiability(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
 		return
 	}
+	l.UserID = currentUserID(c)
 	if err := db.UpdateLiability(&l); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -594,7 +603,7 @@ func deleteLiability(c *gin.Context) {
 // ---- 消费 CRUD ----
 
 func listConsumptionsH(c *gin.Context) {
-	out, err := db.ListConsumptions(200)
+	out, err := db.ListConsumptions(200, currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -612,6 +621,7 @@ func createConsumption(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "金额不能为 0"})
 		return
 	}
+	cc.UserID = currentUserID(c)
 	id, err := db.CreateConsumption(&cc)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -633,6 +643,7 @@ func updateConsumption(c *gin.Context) {
 		return
 	}
 	cc.ID = id
+	cc.UserID = currentUserID(c)
 	if err := db.UpdateConsumption(&cc); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -656,12 +667,13 @@ func deleteConsumption(c *gin.Context) {
 // ---- 一键 AI 总结（汇总全部资产） ----
 
 func assetSummary(c *gin.Context) {
+	uid := currentUserID(c)
 	var b aiSummaryReq
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
-	cfg, cfgErr := loadAIConfig()
+	cfg, cfgErr := loadAIConfig(uid)
 	if b.APIKey == "" {
 		b.APIKey = cfg.APIKey
 	}
@@ -682,7 +694,7 @@ func assetSummary(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先在「AI 设置」中填写 API Key、模型名称与模型地址"})
 		return
 	}
-	stats, err := buildAssetStats()
+	stats, err := buildAssetStats(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计失败: " + err.Error()})
 		return
@@ -693,13 +705,13 @@ func assetSummary(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	if err := db.SaveAISummary(content, b.Model); err != nil {
+	if err := db.SaveAISummary(content, b.Model, uid); err != nil {
 		log.Printf("warn: save asset ai summary history failed: %v", err)
 	}
 	if cfgErr == nil && b.APIKey != "" && b.APIKey != cfg.APIKey {
 		cfg.APIKey = b.APIKey
 		if raw, e := json.Marshal(cfg); e == nil {
-			if e2 := db.SaveAIConfig(string(raw)); e2 != nil {
+			if e2 := db.SaveAIConfig(uid, string(raw)); e2 != nil {
 				log.Printf("warn: persist api key from asset summary failed: %v", e2)
 			}
 		}
@@ -709,7 +721,7 @@ func assetSummary(c *gin.Context) {
 
 // buildAssetStats assembles a full text snapshot of ALL assets: equity (基金/股票),
 // wealth products (理财), liabilities (负债) and consumptions (消费).
-func buildAssetStats() (string, error) {
+func buildAssetStats(uid int64) (string, error) {
 	cnyRate, hkdRate, _ := market.FetchFXRates()
 	today := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
 
@@ -720,7 +732,7 @@ func buildAssetStats() (string, error) {
 	}
 
 	// ---- 权益类 ----
-	hs, _ := db.List()
+	hs, _ := db.List(uid)
 	var eqMV, eqCV, eqPnl, eqDay float64
 	eqViews := make([]HoldingView, 0, len(hs))
 	for _, h := range hs {
@@ -750,12 +762,12 @@ func buildAssetStats() (string, error) {
 	}
 
 	// ---- 理财 ----
-	sources, _ := db.ListSources()
+	sources, _ := db.ListSources(uid)
 	srcName := map[int64]string{}
 	for _, s := range sources {
 		srcName[s.ID] = s.Name
 	}
-	wps, _ := db.ListWealth()
+	wps, _ := db.ListWealth(uid)
 	var wTotal, wToday float64
 	b.WriteString("\n【理财（每日持仓金额口径）】\n")
 	if len(wps) == 0 {
@@ -776,7 +788,7 @@ func buildAssetStats() (string, error) {
 	b.WriteString("理财合计持仓(CNY)：" + nf(wTotal) + "  今日收益(CNY)：" + sf(wToday) + "\n")
 
 	// ---- 负债 ----
-	libs, _ := db.ListLiabilities()
+	libs, _ := db.ListLiabilities(uid)
 	var lTotal, lMonthly float64
 	b.WriteString("\n【负债】\n")
 	if len(libs) == 0 {
@@ -800,9 +812,9 @@ func buildAssetStats() (string, error) {
 	b.WriteString("负债合计(CNY)：" + nf(lTotal) + "  月供合计(CNY)：" + nf(lMonthly) + "\n")
 
 	// ---- 消费 ----
-	todayC, _ := db.ConsumptionSum(today)
-	monthC, _ := db.ConsumptionSumMonth(today[:7])
-	cons, _ := db.ListConsumptions(30)
+	todayC, _ := db.ConsumptionSum(today, uid)
+	monthC, _ := db.ConsumptionSumMonth(today[:7], uid)
+	cons, _ := db.ListConsumptions(30, uid)
 	b.WriteString("\n【消费】\n")
 	b.WriteString("今日消费(CNY)：" + nf(todayC) + "  本月消费(CNY)：" + nf(monthC) + "\n")
 	if len(cons) > 0 {
@@ -817,7 +829,7 @@ func buildAssetStats() (string, error) {
 	}
 
 	// ---- 现金 ----
-	cashs, _ := db.ListCash()
+	cashs, _ := db.ListCash(uid)
 	var cTotal float64
 	b.WriteString("\n【现金】\n")
 	if len(cashs) == 0 {

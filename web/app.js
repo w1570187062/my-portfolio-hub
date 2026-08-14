@@ -94,8 +94,10 @@ if (navToggleBtn && navDropdown) {
 
 const api = (path, opts = {}) => {
   const token = localStorage.getItem('pf_token');
+  const uid = localStorage.getItem('pf_user');
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = 'Bearer ' + token;
+  if (uid) headers['X-User-Id'] = uid;
   return fetch(path, { ...opts, headers });
 };
 
@@ -159,7 +161,8 @@ async function tokenValid() {
 }
 
 async function boot() {
-  if (!(await tokenValid())) await silentLogin();
+  // 解析当前用户（多用户：前端用 localStorage 记录选中的用户，请求头携带 X-User-Id）。
+  try { await initUser(); } catch (e) { console.warn('[user] initUser 失败:', e); }
   showApp();
 }
 
@@ -874,6 +877,22 @@ $('#confirmOk').onclick = async () => {
     pendingExport = false;
     resetConfirm();
     exportHoldingsJSON();
+    return;
+  }
+  if (pendingClearUserId) {
+    const id = pendingClearUserId;
+    pendingClearUserId = null;
+    $('#confirmModal').hidden = true;
+    try {
+      const r = await api('/api/users/' + id + '/clear', { method: 'POST' });
+      if (!r.ok) { let m = '清空失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m + ' (HTTP ' + r.status + ')', 'err'); return; }
+      toast('已清空当前用户数据', 'ok');
+      await load();
+      await loadAsset();
+      await loadAISettings();
+      await loadGuides();
+      await refreshUsers();
+    } catch (e) { toast('清空异常：' + e.message, 'err'); }
     return;
   }
   if (pendingAssetDel) {
@@ -3549,3 +3568,223 @@ document.addEventListener('keydown', function _guideEsc(e) {
   }
 }, true); // capture phase, 比现有的 ESC handler 先触发
 $('#analysisModal').addEventListener('click', (e) => { if (e.target === $('#analysisModal')) { $('#analysisModal').hidden = true; } });
+
+// ===== 多用户：用户切换 / 用户管理（底部抽屉） =====
+// 当前用户 ID 持久化在 localStorage('pf_user')；api() 会在请求头注入 X-User-Id。
+let allUsersCache = [];
+
+function setUserText(name) {
+  const t = document.getElementById('userNameText');
+  const uc = document.getElementById('ucName');
+  if (t) t.textContent = name || '默认';
+  if (uc) uc.textContent = name || '默认';
+}
+
+async function fetchUsers() {
+  try {
+    const r = await fetch('/api/users');
+    if (!r.ok) return [];
+    const d = await r.json();
+    return d.users || [];
+  } catch (e) { return []; }
+}
+
+// 启动 / 刷新时解析当前用户：优先用 localStorage 中记录的 pf_user，否则回退到首个用户。
+async function initUser() {
+  const users = await fetchUsers();
+  if (!users.length) { setUserText('默认'); return; }
+  allUsersCache = users;
+  const saved = localStorage.getItem('pf_user');
+  let cur = users.find((u) => String(u.id) === String(saved));
+  if (!cur) { cur = users[0]; localStorage.setItem('pf_user', String(cur.id)); }
+  setUserText(cur.name);
+}
+
+function closeUserSheet() {
+  const sheet = document.getElementById('userSheet');
+  if (sheet) sheet.hidden = true;
+}
+
+async function openUserSheet() {
+  const sheet = document.getElementById('userSheet');
+  if (sheet) sheet.hidden = false;
+  await refreshUsers();
+}
+
+async function refreshUsers() {
+  const users = await fetchUsers();
+  allUsersCache = users;
+  const curId = localStorage.getItem('pf_user');
+  const resolvedCur = users.find((u) => String(u.id) === String(curId)) ? curId : (users.length ? String(users[0].id) : null);
+  const statsMap = {};
+  await Promise.all(users.map(async (u) => {
+    try {
+      const r = await fetch('/api/users/' + u.id + '/stats');
+      if (r.ok) {
+        const d = await r.json();
+        statsMap[u.id] = (d.stats && typeof d.stats.total === 'number') ? d.stats.total : 0;
+      }
+    } catch (e) {}
+  }));
+  renderUserList(users, resolvedCur, statsMap);
+  const cur = users.find((u) => String(u.id) === String(resolvedCur));
+  const ucMeta = document.getElementById('ucMeta');
+  if (ucMeta) ucMeta.textContent = (statsMap[resolvedCur] != null ? statsMap[resolvedCur] : 0) + ' 条数据';
+  setUserText(cur ? cur.name : '默认');
+}
+
+function renderUserList(users, curId, statsMap) {
+  const list = document.getElementById('userList');
+  if (!list) return;
+  if (!users.length) { list.innerHTML = '<div class="user-empty">暂无用户</div>'; return; }
+  const canDelete = users.length > 1;
+  list.innerHTML = users.map((u) => {
+    const isCur = String(u.id) === String(curId);
+    const cnt = (statsMap[u.id] != null ? statsMap[u.id] : 0);
+    const delBtn = canDelete
+      ? `<button class="btn danger ur-del" type="button" data-act="delete" data-id="${u.id}" data-name="${escapeHtml(u.name)}">删除</button>`
+      : `<button class="btn danger" type="button" disabled title="至少保留一个用户">删除</button>`;
+    return `
+    <div class="user-row ${isCur ? 'active' : ''}" data-id="${u.id}">
+      <div class="ur-main">
+        <div class="ur-name">${escapeHtml(u.name)}${isCur ? ' <span class="ur-cur">当前</span>' : ''}</div>
+        <div class="ur-meta">${cnt} 条数据</div>
+      </div>
+      <div class="ur-actions">
+        ${isCur ? '' : `<button class="btn ur-switch" type="button" data-act="switch" data-id="${u.id}">切换</button>`}
+        ${delBtn}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function onUserListClick(e) {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const act = btn.dataset.act;
+  const id = btn.dataset.id;
+  const name = btn.dataset.name;
+  if (act === 'switch') switchUser(id);
+  else if (act === 'delete') deleteUser(id, name);
+}
+
+async function switchUser(id) {
+  let u = allUsersCache.find((x) => String(x.id) === String(id));
+  if (!u) { const users = await fetchUsers(); u = users.find((x) => String(x.id) === String(id)); }
+  localStorage.setItem('pf_user', String(id));
+  setUserText(u ? u.name : '默认');
+  closeUserSheet();
+  try {
+    await load();
+    await loadAsset();
+    await loadAISettings();
+    await loadGuides();
+    toast('已切换到用户：' + (u ? u.name : id), 'ok');
+  } catch (e) { toast('切换用户失败：' + e.message, 'err'); }
+}
+
+async function addUser() {
+  const inp = document.getElementById('userNameInput');
+  const name = (inp && inp.value || '').trim();
+  if (!name) { toast('请输入用户名', 'err'); return; }
+  try {
+    const r = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!r.ok) {
+      let m = '新增失败';
+      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
+      toast(m, 'err');
+      return;
+    }
+    if (inp) inp.value = '';
+    toast('已新增用户：' + name, 'ok');
+    await refreshUsers();
+  } catch (e) { toast('新增异常：' + e.message, 'err'); }
+}
+
+let pendingClearUserId = null;
+function clearUserData() {
+  const curId = localStorage.getItem('pf_user');
+  if (!curId) { toast('未选择用户', 'err'); return; }
+  pendingClearUserId = curId;
+  $('#confirmTitle').textContent = '清空当前用户数据';
+  $('#confirmMsg').textContent = '确认清空当前用户的全部账户数据（持仓 / 资产全景 / 计算器 / AI 配置 / 历史等）？此操作不可恢复。';
+  $('#confirmModal').hidden = false;
+}
+
+let pendingDeleteUserId = null;
+let pendingDeleteName = '';
+function deleteUser(id, name) {
+  pendingDeleteUserId = Number(id);
+  pendingDeleteName = name || '';
+  const msg = document.getElementById('userDeleteMsg');
+  if (msg) msg.textContent = '确认删除用户「' + name + '」及其全部账户数据？删除后该用户的所有数据将被清空，且不可恢复。';
+  const inp = document.getElementById('userDeleteInput');
+  if (inp) inp.value = '';
+  const ok = document.getElementById('userDeleteOk');
+  if (ok) ok.disabled = true;
+  const modal = document.getElementById('userDeleteModal');
+  if (modal) modal.hidden = false;
+  if (inp) setTimeout(() => inp.focus(), 50);
+}
+
+async function onUserDeleteConfirm() {
+  const id = pendingDeleteUserId;
+  const name = pendingDeleteName;
+  const modal = document.getElementById('userDeleteModal');
+  if (modal) modal.hidden = true;
+  pendingDeleteUserId = null;
+  if (!id) return;
+  try {
+    const r = await fetch('/api/users/' + id, { method: 'DELETE' });
+    if (!r.ok) {
+      let m = '删除失败';
+      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
+      toast(m + ' (HTTP ' + r.status + ')', 'err');
+      return;
+    }
+    toast('已删除用户：' + name, 'ok');
+    // 若删除的是当前用户，自动切换到剩余首个用户
+    const curId = localStorage.getItem('pf_user');
+    if (String(curId) === String(id)) {
+      const users = await fetchUsers();
+      const next = users.length ? users[0] : null;
+      if (next) { localStorage.setItem('pf_user', String(next.id)); setUserText(next.name); }
+    }
+    await load();
+    await loadAsset();
+    await loadAISettings();
+    await loadGuides();
+    await refreshUsers();
+  } catch (e) { toast('删除异常：' + e.message, 'err'); }
+}
+
+// 绑定用户切换相关 UI
+(function wireUserUI() {
+  const userBtn = document.getElementById('userBtn');
+  if (userBtn) userBtn.onclick = () => openUserSheet();
+  const closeBtn = document.getElementById('userSheetClose');
+  if (closeBtn) closeBtn.onclick = closeUserSheet;
+  const backdrop = document.getElementById('userSheetBackdrop');
+  if (backdrop) backdrop.onclick = closeUserSheet;
+  const addBtn = document.getElementById('userAddBtn');
+  if (addBtn) addBtn.onclick = addUser;
+  const clearBtn = document.getElementById('userClearBtn');
+  if (clearBtn) clearBtn.onclick = clearUserData;
+  const list = document.getElementById('userList');
+  if (list) list.addEventListener('click', onUserListClick);
+  const delInput = document.getElementById('userDeleteInput');
+  if (delInput) delInput.oninput = () => {
+    const ok = document.getElementById('userDeleteOk');
+    if (ok) ok.disabled = delInput.value.trim() !== '我已知晓';
+  };
+  const delCancel = document.getElementById('userDeleteCancel');
+  if (delCancel) delCancel.onclick = () => { const m = document.getElementById('userDeleteModal'); if (m) m.hidden = true; };
+  const delOk = document.getElementById('userDeleteOk');
+  if (delOk) delOk.onclick = onUserDeleteConfirm;
+  const delModal = document.getElementById('userDeleteModal');
+  if (delModal) delModal.addEventListener('click', (e) => { if (e.target === delModal) delModal.hidden = true; });
+})();

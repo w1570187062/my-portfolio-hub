@@ -18,7 +18,7 @@ func calcInputsGet(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "kind 必须是 equity 或 usd"})
 		return
 	}
-	payload, ok, err := db.GetCalcInput(kind)
+	payload, ok, err := db.GetCalcInput(kind, currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -53,7 +53,7 @@ func calcInputsPut(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "payload 不是合法 JSON"})
 		return
 	}
-	if err := db.SaveCalcInput(b.Kind, s); err != nil {
+	if err := db.SaveCalcInput(b.Kind, s, currentUserID(c)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -67,7 +67,7 @@ func calcInputsDelete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "kind 必须是 equity 或 usd"})
 		return
 	}
-	if err := db.DeleteCalcInput(kind); err != nil {
+	if err := db.DeleteCalcInput(kind, currentUserID(c)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
