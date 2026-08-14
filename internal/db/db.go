@@ -18,7 +18,7 @@ type Holding struct {
 	Name         string  `json:"name"`
 	Symbol       string  `json:"symbol"`
 	Category     string  `json:"category"` // stock | fund
-	Market       string  `json:"market"`   // stock: A股|美股|港股 ; fund: QDII|债券|股票
+	Market       string  `json:"market"`   // stock: 沪深|美股|港股 ; fund: QDII|债券|股票
 	Currency     string  `json:"currency"` // CNY | USD
 	Quantity     float64 `json:"quantity"`
 	CostPrice    float64 `json:"cost_price"`
@@ -497,6 +497,8 @@ func migrateMarkets() error {
 			nm = classifyFundMarket(h.Name)
 		case h.Market == "OTHER":
 			nm = "A股"
+		case h.Market == "A股":
+			nm = "沪深"
 		default:
 			continue // already a new value
 		}

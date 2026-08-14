@@ -737,7 +737,9 @@ header h1 {
 /* 汇总卡：总资产 / 总盈亏 / 涨跌平数 三列并排、竖线分割 */
 .summary .card-merged { flex: 1 1 100%; }
 .summary .card-cols { flex-direction: row; align-items: stretch; flex: 1 1 auto; gap: 0; }
-.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 18px; border-left: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 18px; border-left: 1px solid var(--border); display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 18px; text-align: left; }
+.summary .c-main { display: flex; flex-direction: column; align-items: flex-start; }
+.summary .c-detail { display: flex; flex-direction: column; }
 .summary .c-col:first-child { padding-left: 0; border-left: none; }
 .summary .c-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .summary .c-col .card-icon { width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto; }
@@ -996,6 +998,8 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 }
 .modal[hidden] { display: none; }
 #aiResultModal { z-index: 150; }
+/* 清空用户数据等确认弹框需显示在底部抽屉(z-index:200)之上，否则会被遮罩盖住 */
+#confirmModal { z-index: 1000; }
 .modal-card {
   background: var(--bg-card-solid);
   border-radius: var(--radius);
@@ -1485,7 +1489,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .summary { padding: 12px 14px; gap: 10px; }
   /* 合并卡：手机端三列改为上下堆叠，竖线改为横线分割 */
   .summary .card-cols { flex-direction: column; align-items: stretch; }
-  .summary .c-col { padding: 12px 0 0; border-left: none; border-top: 1px solid var(--border); }
+  .summary .c-col { flex-direction: column; align-items: center; text-align: center; padding: 12px 0 0; border-left: none; border-top: 1px solid var(--border); }
+  .summary .c-main { align-items: center; }
   .summary .c-col:first-child { padding-top: 0; border-top: none; }
   /* 顶部汇率/时间：手机端收窄字号，纵向跑马灯自然适配窄宽 */
   .header-fx { margin-right: 4px; gap: 2px; }
@@ -2454,24 +2459,16 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 }
 .asset-add-inline { font-size: 13px; padding: 6px 16px; }
 
-/* ===== 用户切换 / 多用户（头部用户胶囊 + 底部抽屉） ===== */
-.user-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 11px;
-  font-size: 13px;
-  line-height: 1;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text);
-  background: var(--bg-soft, rgba(255, 255, 255, .06));
-  white-space: nowrap;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* ===== 用户切换 / 多用户（头部「图标+用户名」合并按钮 + 底部抽屉） ===== */
+.act-user {
+  gap: 6px;
+  font-weight: 600;
+  padding: 8px 14px;
 }
-.user-pill b { color: var(--primary); font-weight: 600; }
+.act-user #userNameText {
+  color: var(--primary);
+  font-weight: 600;
+}
 
 .bottom-sheet {
   position: fixed;
@@ -2610,3 +2607,12 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
   font-size: 14px;
 }
 .ud-confirm-label input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+
+/* 删除用户弹框：增大中间内容（标题/提示语/输入标签/按钮）左右边距，避免文字与输入框贴边 */
+#userDeleteModal .modal-card > h2,
+#userDeleteModal .modal-card > p,
+#userDeleteModal .modal-card > label,
+#userDeleteModal .modal-card > .modal-actions {
+  padding-left: 36px;
+  padding-right: 36px;
+}

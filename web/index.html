@@ -98,10 +98,9 @@
         <div class="hf-marquee" id="hfMarquee"><div class="hf-track" id="hfTrack"></div></div>
         <div class="hf-time" id="hfTime"></div>
       </div>
-      <span id="userPill" class="user-pill" title="当前用户">👤 <b id="userNameText">默认</b></span>
       <div class="act-group">
         <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式">🌙</button>
-        <button id="userBtn" class="btn theme-toggle" type="button" title="用户切换">👤</button>
+        <button id="userBtn" class="btn act-user" type="button" title="用户切换">👤 <span id="userNameText">默认</span></button>
       </div>
     </div>
   </header>
@@ -329,7 +328,7 @@
         </label>
         <label>份额 <input id="f_quantity" type="number" step="any" required></label>
         <label>成本价 <input id="f_cost_price" type="number" step="any" required></label>
-        <label>现价 <input id="f_current_price" type="number" step="any" placeholder="美股手动填；A股/港股/基金留空刷新时自动更新"></label>
+        <label>现价 <input id="f_current_price" type="number" step="any" placeholder="美股手动填；沪深/港股/基金留空刷新时自动更新"></label>
         <label>昨收(可选) <input id="f_prev_close" type="number" step="any" placeholder="美股手动填昨收以算当日盈亏；其余留空自动取行情"></label>
         <label>备注 <input id="f_note" placeholder="可选，备忘用途"></label>
         <label>买入日期 <input id="f_buy_date" type="date"></label>
@@ -522,16 +521,6 @@
     </div>
   </div>
 
-  <div id="confirmModal" class="modal" hidden>
-    <div class="modal-card confirm-card">
-      <h2 id="confirmTitle">确认删除</h2>
-      <p id="confirmMsg" class="confirm-msg"></p>
-      <div class="modal-actions">
-        <button type="button" id="confirmOk" class="btn danger">删除</button>
-      </div>
-    </div>
-  </div>
-
   <!-- ===== 技术分析弹框 ===== -->
   <div id="analysisModal" class="modal" hidden>
     <div class="modal-card" style="width:680px; max-width:94vw;">
@@ -684,6 +673,18 @@
   </div>
 </div>
 </div>
+
+  <!-- ===== 通用确认弹框（置于根级，z-index 高于底部抽屉，避免清空数据时被遮罩盖住；含「取消」以防误清空） ===== -->
+  <div id="confirmModal" class="modal" hidden>
+    <div class="modal-card confirm-card">
+      <h2 id="confirmTitle">确认删除</h2>
+      <p id="confirmMsg" class="confirm-msg"></p>
+      <div class="modal-actions">
+        <button type="button" id="confirmCancel" class="btn">取消</button>
+        <button type="button" id="confirmOk" class="btn danger">删除</button>
+      </div>
+    </div>
+  </div>
 
 <div id="toolTipHint" class="tool-tip-hint" hidden></div>
 <div id="calJumpModal" class="modal" hidden>

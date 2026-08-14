@@ -133,7 +133,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Two-level category -> market association (二级筛选).
 const CAT_MARKETS = {
-  stock: ['A股', '美股'],
+  stock: ['沪深', '美股', '港股'],
   fund: ['QDII', '债券', '股票', '商品'],
 };
 const ALL_MARKETS = [...CAT_MARKETS.stock, ...CAT_MARKETS.fund];
@@ -482,16 +482,25 @@ function renderSummary(hs) {
   $('#summary').innerHTML = `
    <div class="card card-merged"><div class="card-body card-cols">
      <div class="c-col">
-       <div class="c-head"><div class="card-icon">${ICON.total}</div><div class="label">总资产 (CNY)</div></div>
-       <div class="value">${fmt(totalCNY)}</div><div class="c-breakdown">${br}</div>
+       <div class="c-main">
+         <div class="c-head"><div class="card-icon">${ICON.total}</div><div class="label">总资产 (CNY)</div></div>
+         <div class="value">${fmt(totalCNY)}</div>
+       </div>
+       <div class="c-detail"><div class="c-breakdown">${br}</div></div>
      </div>
      <div class="c-col">
-       <div class="c-head"><div class="card-icon">${ICON.pnl}</div><div class="label">总盈亏 (CNY)</div></div>
-       <div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div><div class="c-pnl">${pnlRows}</div>
+       <div class="c-main">
+         <div class="c-head"><div class="card-icon">${ICON.pnl}</div><div class="label">总盈亏 (CNY)</div></div>
+         <div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div>
+       </div>
+       <div class="c-detail"><div class="c-pnl">${pnlRows}</div></div>
      </div>
      <div class="c-col">
-       <div class="c-head"><div class="card-icon">${ICON.distribution}</div><div class="label">涨跌平数 (${todayStr})</div></div>
-       <div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div><div class="c-pnl">${mpRows}</div>
+       <div class="c-main">
+         <div class="c-head"><div class="card-icon">${ICON.distribution}</div><div class="label">涨跌平数 (${todayStr})</div></div>
+         <div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div>
+       </div>
+       <div class="c-detail"><div class="c-pnl">${mpRows}</div></div>
      </div>
    </div></div>`;
 }
@@ -872,6 +881,7 @@ function resetConfirm() {
   btn.classList.add('danger');
   $('#confirmTitle').textContent = '确认删除';
 }
+$('#confirmCancel').onclick = () => { resetConfirm(); };
 $('#confirmOk').onclick = async () => {
   if (pendingExport) {
     pendingExport = false;
