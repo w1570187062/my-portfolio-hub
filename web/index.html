@@ -475,13 +475,21 @@
 
       <!-- 设置 -->
       <div id="hubSettingsPanel" class="more-panel modal-card-body" hidden>
+        <label>模型配置（可保存多个）
+          <span class="ai-tpl-row">
+            <select id="ai_model_sel"></select>
+            <button type="button" id="ai_model_new" class="btn btn-sm">新增</button>
+            <button type="button" id="ai_model_del" class="btn btn-sm">删除</button>
+          </span>
+        </label>
+        <label>配置名称 <input id="ai_cfg_name" placeholder="如 默认 / DeepSeek / 备用"></label>
+        <label>模型名称 <input id="ai_model" placeholder="deepseek-v4-pro"></label>
         <label>API Key
           <span class="ai-key-row">
             <input id="ai_apikey" type="password" placeholder="sk-...">
             <button type="button" id="ai_toggleKey" class="btn btn-sm">显示</button>
           </span>
         </label>
-        <label>模型名称 <input id="ai_model" placeholder="deepseek-v4-pro"></label>
         <label>模型地址 <input id="ai_baseurl" placeholder="https://api.deepseek.com"></label>
         <label>提示词模板
           <span class="ai-tpl-row">
@@ -508,7 +516,7 @@
 
       <!-- 历史 -->
       <div id="hubHistoryPanel" class="more-panel" hidden>
-        <p class="more-history-note">AI 总结历史（最近 10 条，点击可查看全文）</p>
+        <p class="more-history-note">AI 总结历史（最近 5 条，点击可查看全文）</p>
         <div id="aiHistoryList" class="ai-history-list"></div>
       </div>
     </div>

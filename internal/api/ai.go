@@ -28,11 +28,19 @@ type aiTemplate struct {
 	Content string `json:"content"`
 }
 
+type aiModelConfig struct {
+	Name    string `json:"name"`
+	Model   string `json:"model"`
+	APIKey  string `json:"api_key"`
+	BaseURL string `json:"base_url"`
+}
+
 type aiConfig struct {
-	APIKey    string       `json:"api_key"`
-	Model     string       `json:"model"`
-	BaseURL   string       `json:"base_url"`
-	Templates []aiTemplate `json:"templates"`
+	APIKey    string          `json:"api_key"`
+	Model     string          `json:"model"`
+	BaseURL   string          `json:"base_url"`
+	Templates []aiTemplate    `json:"templates"`
+	Models    []aiModelConfig `json:"models"` // 多模型配置（名称/模型/API Key/地址）
 	// AutoDaily: 每日收盘后（21:30 定时任务，复用 21:00 基金快照）自动生成 AI 总结并存入历史。
 	AutoDaily bool `json:"auto_daily"`
 	// AutoSend: 自动生成的总结是否随净值推送一起发送到已配置的通知渠道。
@@ -427,9 +435,9 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// aiHistoryGet returns the most recent AI summary history (newest first, max 10).
+// aiHistoryGet returns the most recent AI summary history (newest first, max 5).
 func aiHistoryGet(c *gin.Context) {
-	rows, err := db.GetAISummaryHistory(10, currentUserID(c))
+	rows, err := db.GetAISummaryHistory(5, currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

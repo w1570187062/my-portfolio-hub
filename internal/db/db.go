@@ -772,7 +772,7 @@ func SaveAISummary(content, model string, userID int64) error {
 	if _, err := DB.Exec(`INSERT INTO ai_summary_history(user_id,created_at,model,content) VALUES(?,?,?,?)`, userID, now, model, content); err != nil {
 		return err
 	}
-	_, err := DB.Exec(`DELETE FROM ai_summary_history WHERE user_id=? AND id NOT IN (SELECT id FROM ai_summary_history WHERE user_id=? ORDER BY id DESC LIMIT 10)`, userID, userID)
+	_, err := DB.Exec(`DELETE FROM ai_summary_history WHERE user_id=? AND id NOT IN (SELECT id FROM ai_summary_history WHERE user_id=? ORDER BY id DESC LIMIT 5)`, userID, userID)
 	return err
 }
 

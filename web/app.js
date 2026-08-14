@@ -1802,6 +1802,7 @@ async function exportHoldingsJSON() {
 // ---- AI 持仓总结 ----
 let aiCfg = { api_key: '', model: 'deepseek-v4-pro', base_url: 'https://api.deepseek.com', templates: [] };
 let aiSelIdx = 0;
+let aiModelIdx = 0; // 当前选中的模型配置下标（models 数组）
 
 function defaultAITemplates() {
   return [
@@ -1823,12 +1824,50 @@ async function loadAISettings() {
       if (lk) aiCfg.api_key = lk;
     }
     if (!aiCfg.templates || !aiCfg.templates.length) aiCfg.templates = defaultAITemplates();
+    // 多模型：兼容旧单条配置，迁移为 models 数组（旧版仅存 api_key/model/base_url）
+    if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) {
+      aiCfg.models = [{ name: '默认', model: aiCfg.model || 'deepseek-v4-pro', api_key: aiCfg.api_key || '', base_url: aiCfg.base_url || 'https://api.deepseek.com' }];
+    }
+    if (aiModelIdx >= aiCfg.models.length) aiModelIdx = 0;
   } catch (e) { /* 忽略，使用默认值 */ }
-  $('#ai_apikey').value = aiCfg.api_key || '';
-  $('#ai_model').value = aiCfg.model || 'deepseek-v4-pro';
-  $('#ai_baseurl').value = aiCfg.base_url || 'https://api.deepseek.com';
   $('#aiAutoDaily').checked = !!aiCfg.auto_daily;
   $('#aiAutoSend').checked = !!aiCfg.auto_send;
+  renderModelSelect();
+}
+
+// 多模型配置：渲染下拉、切换选中项、同步输入框
+function renderModelSelect() {
+  const sel = $('#ai_model_sel');
+  if (!sel) return;
+  if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) {
+    aiCfg.models = [{ name: '默认', model: 'deepseek-v4-pro', api_key: '', base_url: 'https://api.deepseek.com' }];
+  }
+  if (aiModelIdx >= aiCfg.models.length) aiModelIdx = 0;
+  sel.innerHTML = aiCfg.models.map((m, i) => `<option value="${i}">${m.name || ('模型' + (i + 1))}</option>`).join('');
+  sel.value = String(aiModelIdx);
+  selectModel(aiModelIdx);
+}
+
+function selectModel(i) {
+  aiModelIdx = i;
+  const m = aiCfg.models[i];
+  if (!m) return;
+  $('#ai_cfg_name').value = m.name || '';
+  $('#ai_model').value = m.model || 'deepseek-v4-pro';
+  $('#ai_apikey').value = m.api_key || '';
+  $('#ai_baseurl').value = m.base_url || 'https://api.deepseek.com';
+}
+
+function syncModelFromInputs() {
+  if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) {
+    aiCfg.models = [{ name: '', model: '', api_key: '', base_url: '' }];
+  }
+  if (!aiCfg.models[aiModelIdx]) aiCfg.models[aiModelIdx] = { name: '', model: '', api_key: '', base_url: '' };
+  const m = aiCfg.models[aiModelIdx];
+  m.name = $('#ai_cfg_name').value.trim();
+  m.model = $('#ai_model').value.trim() || 'deepseek-v4-pro';
+  m.api_key = $('#ai_apikey').value.trim();
+  m.base_url = $('#ai_baseurl').value.trim() || 'https://api.deepseek.com';
 }
 
 function renderTplSelect() {
@@ -1859,6 +1898,8 @@ function openAIResultModal(text) {
 
 async function aiSaveSettings() {
   $('#aiErr').textContent = '';
+  // 先把当前输入写回选中的模型配置（多模型），再统一持久化
+  syncModelFromInputs();
   const boxKey = $('#ai_apikey').value.trim();
   if (boxKey) {
     // 框内有值：用框内 key 并写入 localStorage
@@ -1870,8 +1911,15 @@ async function aiSaveSettings() {
     if (lsKey) aiCfg.api_key = lsKey;
     // 否则保持 aiCfg.api_key 不变（来自库的旧值），避免覆盖成空导致下次生成 401
   }
-  aiCfg.model = $('#ai_model').value.trim() || 'deepseek-v4-pro';
-  aiCfg.base_url = $('#ai_baseurl').value.trim() || 'https://api.deepseek.com';
+  // 保持单字段与当前选中模型一致（向后兼容生成路径读取 aiCfg.model/api_key/base_url）
+  const cur = aiCfg.models[aiModelIdx];
+  if (cur) {
+    aiCfg.model = cur.model || 'deepseek-v4-pro';
+    aiCfg.base_url = cur.base_url || 'https://api.deepseek.com';
+  } else {
+    aiCfg.model = $('#ai_model').value.trim() || 'deepseek-v4-pro';
+    aiCfg.base_url = $('#ai_baseurl').value.trim() || 'https://api.deepseek.com';
+  }
   aiCfg.auto_daily = $('#aiAutoDaily').checked;
   aiCfg.auto_send = $('#aiAutoSend').checked;
   if (aiCfg.templates[aiSelIdx]) {
@@ -1887,7 +1935,7 @@ async function aiSaveSettings() {
       return;
     }
     toast('AI 设置已保存', 'ok');
-    $('#aiModal').hidden = true;
+    $('#aiHubModal').hidden = true;
   } catch (e) {
     $('#aiErr').textContent = '保存异常：' + e.message;
   }
@@ -1962,6 +2010,21 @@ $('#ai_tpl_del').onclick = () => {
   aiSelIdx = Math.max(0, aiSelIdx - 1);
   renderTplSelect();
 };
+// 多模型配置：切换 / 新增 / 删除
+$('#ai_model_sel').onchange = (e) => selectModel(parseInt(e.target.value, 10));
+$('#ai_model_new').onclick = () => {
+  syncModelFromInputs();
+  aiCfg.models.push({ name: '新模型' + (aiCfg.models.length + 1), model: 'deepseek-v4-pro', api_key: '', base_url: 'https://api.deepseek.com' });
+  aiModelIdx = aiCfg.models.length - 1;
+  renderModelSelect();
+  $('#ai_cfg_name').focus();
+};
+$('#ai_model_del').onclick = () => {
+  if (aiCfg.models.length <= 1) { toast('至少保留一个模型配置', 'err'); return; }
+  aiCfg.models.splice(aiModelIdx, 1);
+  aiModelIdx = Math.max(0, aiModelIdx - 1);
+  renderModelSelect();
+};
 $('#ai_toggleKey').onclick = () => {
   const inp = $('#ai_apikey');
   if (inp.type === 'password') { inp.type = 'text'; $('#ai_toggleKey').textContent = '隐藏'; }
@@ -1978,7 +2041,7 @@ function switchHubTab(tab) {
   $('#hubSettingsPanel').hidden = tab !== 'settings';
   $('#hubHistoryPanel').hidden = tab !== 'history';
   $('#aiHubModal').hidden = false;
-  if (tab === 'settings') renderTplSelect();
+  if (tab === 'settings') { renderTplSelect(); renderModelSelect(); }
   if (tab === 'history') loadAIHistory();
 }
 $('#aiPickBtn').onclick = () => {

@@ -737,15 +737,15 @@ header h1 {
 /* 汇总卡：总资产 / 总盈亏 / 涨跌平数 三列并排、竖线分割 */
 .summary .card-merged { flex: 1 1 100%; }
 .summary .card-cols { flex-direction: row; align-items: stretch; flex: 1 1 auto; gap: 0; }
-.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 14px; border-left: 1px solid var(--border); display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 16px; text-align: center; }
+.summary .c-col { flex: 1 1 0; min-width: 0; padding: 0 14px; border-left: 1px solid var(--border); display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 22px; text-align: center; }
 .summary .c-main { display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .summary .c-detail { display: flex; flex-direction: column; margin-bottom: 0; justify-content: center; }
 .summary .c-detail > :last-child { margin-bottom: 0; padding-bottom: 0; }
 .summary .c-col:first-child { padding-left: 14px; border-left: none; }
 .summary .c-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .summary .c-content { display: flex; flex-direction: column; min-width: 0; }
-.summary .c-col .card-icon { width: 108px; height: 108px; border-radius: 22px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
-.summary .c-col .card-icon svg { width: 56px; height: 56px; }
+.summary .c-col .card-icon { width: 96px; height: 96px; border-radius: 20px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+.summary .c-col .card-icon svg { width: 72px; height: 72px; }
 .summary .c-breakdown { margin-top: 6px; padding-top: 0; display: flex; flex-direction: column; gap: 4px; }
 .summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
 .summary .c-br-label { color: var(--text-muted); min-width: 64px; flex: 0 0 auto; font-weight: 600; }
@@ -942,6 +942,9 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 
 /* ===== 历史标签 ===== */
 .hist-tabs { display: flex; gap: 8px; margin: 6px 0 14px; }
+/* AI 中枢/history 弹框：tab 栏作为 modal-card 的直接子 div，需固定高度不参与 flex 拉伸，
+   否则会与下方面板各占一半、压缩设置面板高度导致底部按钮被裁剪 */
+.modal-card > .hist-tabs { flex: 0 0 auto; }
 .hist-tabs .tab {
   padding: 8px 18px;
   border: 1px solid var(--border);
@@ -1144,7 +1147,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   background: var(--bg-card);
   color: var(--text);
 }
-.modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 6px; }
 .confirm-card { width: 340px; }
 .confirm-msg { font-size: 14px; color: var(--text-muted); line-height: 1.6; margin: 8px 0 18px; }
 .chart-card { width: 780px; max-width: 94vw; padding-bottom: 18px; }
@@ -1336,7 +1339,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .cal-months { display: grid; gap: 4px; margin: 16px 0 4px; }
 .cal-month { font-size: 12px; color: var(--text-muted); }
 .cal-grid { display: grid; gap: 4px; }
-#calModal .modal-card { width: 560px; }
+#calModal .modal-card { width: 660px; }
 .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 16px 0 4px; }
 .cal-weekdays span { text-align: center; font-size: 12px; color: var(--text-muted); }
 .cal-title { font-size: 15px; font-weight: 600; min-width: 96px; text-align: center; color: var(--text); }

@@ -386,6 +386,12 @@ func updateHolding(c *gin.Context) {
 		return
 	}
 	h.ID = id
+	uid := currentUserID(c)
+	// 编辑时表单不回传 buy_plan / user_id：先取旧行保留，避免保存时被清空（#修复：编辑持仓导致所属用户被重置为 0、从当前用户列表消失）
+	if ex, e := db.Get(id); e == nil {
+		h.BuyPlan = ex.BuyPlan
+	}
+	h.UserID = uid
 	normalize(&h)
 	if exists, e := db.ExistsBySymbol(h.Symbol, id, currentUserID(c)); e == nil && exists {
 		c.JSON(http.StatusConflict, gin.H{"error": "该代码已存在，请勿与其他持仓重复"})
@@ -395,7 +401,6 @@ func updateHolding(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	uid := currentUserID(c)
 	v := enrich(h, uid)
 	if srcs, e := db.ListSources(uid); e == nil {
 		m := map[int64]string{}
