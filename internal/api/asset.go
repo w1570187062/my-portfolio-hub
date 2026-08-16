@@ -265,7 +265,10 @@ func createSource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
 		return
 	}
-	if s.Type != "platform" {
+	switch s.Type {
+	case "securities", "software", "platform":
+		// 合法类型，保持不变
+	default:
 		s.Type = "bank"
 	}
 	s.UserID = currentUserID(c)
@@ -295,7 +298,10 @@ func updateSource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
 		return
 	}
-	if s.Type != "platform" {
+	switch s.Type {
+	case "securities", "software", "platform":
+		// 合法类型，保持不变
+	default:
 		s.Type = "bank"
 	}
 	s.UserID = currentUserID(c)

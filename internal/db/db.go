@@ -904,7 +904,7 @@ type AssetSource struct {
 	ID        int64  `json:"id"`
 	UserID    int64  `json:"user_id"`
 	Name      string `json:"name"`
-	Type      string `json:"type"` // bank | platform
+	Type      string `json:"type"` // bank | securities | software | platform
 	Note      string `json:"note"`
 	CreatedAt string `json:"created_at"`
 }
