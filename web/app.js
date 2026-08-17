@@ -67,30 +67,43 @@ if (navToggleBtn && navDropdown) {
       closeNavDropdown();
       switch (nav) {
         case 'home':
-          showHoldingsView();
+          navigate('holdings');
           window.scrollTo({ top: 0, behavior: 'smooth' });
           break;
-        case 'calendar':
-          if ($('#calendarView').hidden) {
-            $('#holdingsView').hidden = true;
-            $('#assetView').hidden = true;
-            $('#toolsView').hidden = true;
-            $('#notifyView').hidden = true;
-            $('#calendarView').hidden = false;
-            restoreCalMonth();
-            renderCalendar();
-            setNavActive('calendar');
-          } else {
-            showHoldingsView();
-          }
-          break;
-        case 'asset': showAssetView(); break;
-        case 'tools': showToolsView(); break;
-        case 'notify': showNotifyView(); break;
+        case 'calendar': navigate('calendar'); break;
+        case 'asset': navigate('asset'); break;
+        case 'tools': navigate('tools'); break;
+        case 'notify': navigate('notify'); break;
       }
     };
   });
 }
+
+// ---- 视图路由（hash）：刷新保持当前视图，浏览器后退/前进可用 ----
+const VIEWS = ['holdings', 'asset', 'tools', 'calendar', 'notify'];
+function viewFromHash() {
+  const h = location.hash || '';
+  if (h.indexOf('#/') === 0) {
+    const v = h.slice(2);
+    if (VIEWS.indexOf(v) >= 0) return v;
+  }
+  return 'holdings';
+}
+function applyRoute() {
+  switch (viewFromHash()) {
+    case 'asset': showAssetView(); break;
+    case 'tools': showToolsView(); break;
+    case 'calendar': openCalendarView(); break;
+    case 'notify': showNotifyView(); break;
+    default: showHoldingsView();
+  }
+}
+function navigate(view) {
+  const target = VIEWS.indexOf(view) >= 0 ? view : 'holdings';
+  if (location.hash !== '#/' + target) location.hash = '/' + target; // 触发 hashchange → applyRoute
+  else applyRoute(); // hash 已一致：幂等应用（重复点击同一导航）
+}
+window.addEventListener('hashchange', applyRoute);
 
 const api = (path, opts = {}) => {
   const token = localStorage.getItem('pf_token');
@@ -1499,8 +1512,8 @@ function moveTrendTip(e) {
 function hideTrendTip() { const tip = document.getElementById('trendTip'); if (tip) tip.classList.remove('show'); }
 
 $('#assetPieBtn').onclick = () => { renderPie(); };
-$('#assetCalendarBtn').onclick = openCalendarView;
-$('#assetToolsBtn').onclick = () => showToolsView();
+$('#assetCalendarBtn').onclick = () => navigate('calendar');
+$('#assetToolsBtn').onclick = () => navigate('tools');
 $('#assetTrendBtn').onclick = renderTrend;
 // 关闭按钮已移除：右上角 ✕ 与点击遮罩均可关闭
 $('#chartModal').addEventListener('click', (e) => { if (e.target === $('#chartModal')) $('#chartModal').hidden = true; });
@@ -1515,21 +1528,20 @@ const saturdayOf = (d) => addDays(new Date(d), 6 - d.getDay());
 
 let calData = {};
 
-$('#calendarBtn').onclick = openCalendarView;
+$('#calendarBtn').onclick = () => navigate('calendar');
 
-// 打开/收起盈亏日历视图（资产全景工具栏「📅 盈亏日历」与 legacyNav 复用）
+// 打开盈亏日历视图（资产全景工具栏「📅 盈亏日历」与 legacyNav 复用）
+// 路由模式下只负责「进入」：已显示则保持（返回用浏览器后退/主页）
 async function openCalendarView() {
   if ($('#calendarView').hidden) {
     $('#holdingsView').hidden = true;
     $('#assetView').hidden = true;
     $('#toolsView').hidden = true;
+    $('#notifyView').hidden = true;
     $('#calendarView').hidden = false;
     $('#calendarBtn').classList.add('active');
-    $('#calendarBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
     calViewDate = new Date();   // 打开时回到当月
     await renderCalendar();
-  } else {
-    showHoldingsView();
   }
 }
 
@@ -1546,13 +1558,13 @@ function showHoldingsView() {
 
 // 主页按钮：回到一级页面（持仓列表）并滚到顶部
 $('#homeBtn').onclick = () => {
-  showHoldingsView();
+  navigate('holdings');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 // 「观澜」标题文本：点击回到主页（替代已隐藏的主页按钮）
 $('#brandTitle').onclick = () => {
   if (navDropdown && !navDropdown.hidden) closeNavDropdown();
-  showHoldingsView();
+  navigate('holdings');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 // ESC 键：从任意二级页（资产/速算/日历）返回主页
@@ -1574,7 +1586,7 @@ document.addEventListener('keydown', (e) => {
   if (openModals.length) return; // 让弹框内的 ESC 由各弹框自行处理
   const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#calendarView').hidden || !$('#notifyView').hidden;
   if (inSubView) {
-    showHoldingsView();
+    navigate('holdings');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 });
@@ -2299,7 +2311,7 @@ function curSymbolJS(cur) {
 }
 const moneyCur = (n, cur) => curSymbolJS(cur) + fmt(n == null ? 0 : n);
 
-$('#assetBtn').onclick = () => showAssetView();
+$('#assetBtn').onclick = () => navigate('asset');
 
 // 二级页统一页头（设计系统：标题 + 操作区；不显示返回箭头）
 function injectPageHead(viewId, title) {
@@ -2352,7 +2364,7 @@ let lastEqRmb = null, lastEqBreakdown = [];
 let lastUsdRmb = null, lastUsdDetail = null;
 let lastUsdKindAggRmb = { stock: 0, fund: 0, wealth: 0, cash: 0 };
 
-$('#toolsBtn').onclick = () => showToolsView();
+$('#toolsBtn').onclick = () => navigate('tools');
 async function showToolsView() {
   $('#holdingsView').hidden = true;
   $('#calendarView').hidden = true;
@@ -4019,3 +4031,6 @@ async function onUserDeleteConfirm() {
     });
   });
 })();
+
+// 初始路由：按 URL hash 恢复视图（刷新不退回首页；无 hash 默认持仓列表）
+applyRoute();
