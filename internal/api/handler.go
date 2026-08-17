@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1303,7 +1304,101 @@ func pnlHistory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 合并理财每日盈亏：折算 CNY 叠加进当日 total_cny（盈亏日历/走势即自动包含理财收益）；
+	// 理财有快照而持仓无 pnl_daily 记录的日期补行。detail 追加 by_wealth 供当日明细弹框展示，
+	// 原 by_symbol/by_category 结构保持不变。
+	if wd := wealthDailyPnlByDate(uid); len(wd) > 0 {
+		cnyRate, _, _ := market.GetFXRates()
+		idx := map[string]int{}
+		for i := range rows {
+			idx[rows[i].Date] = i
+		}
+		for date, wp := range wd {
+			if i, ok := idx[date]; ok {
+				rows[i].TotalCNY += wp.totalCNY
+				rows[i].Detail = mergeWealthDetail(rows[i].Detail, wp.items)
+			} else {
+				detail, _ := json.Marshal(map[string]interface{}{"by_wealth": wp.items})
+				rows = append(rows, db.PnlDay{Date: date, TotalCNY: wp.totalCNY, Rate: cnyRate, Detail: string(detail)})
+			}
+		}
+		sort.Slice(rows, func(a, b int) bool { return rows[a].Date < rows[b].Date })
+	}
 	c.JSON(http.StatusOK, gin.H{"history": rows})
+}
+
+// wealthPnlItem 理财单日盈亏条目（盈亏日历/走势合并展示用）。
+type wealthPnlItem struct {
+	Name     string  `json:"name"`
+	Currency string  `json:"currency"`
+	Pnl      float64 `json:"pnl"`
+	PnlCNY   float64 `json:"pnl_cny"`
+}
+
+type wealthDayPnl struct {
+	totalCNY float64
+	items    []wealthPnlItem
+}
+
+// wealthDailyPnlByDate 汇总该用户所有理财产品的每日盈亏（按日期分组）。
+// 单产品当日盈亏 = 当日快照金额 - 前一日快照金额 - 当日现金流（与资产全景「每日盈亏」口径一致），
+// USD/HKD 按当前汇率折算 CNY；跨产品同日期累加。
+func wealthDailyPnlByDate(uid int64) map[string]*wealthDayPnl {
+	products, err := db.ListWealth(uid)
+	if err != nil {
+		return nil
+	}
+	cnyRate, hkdRate, _ := market.GetFXRates()
+	hkdToCny := 1.0
+	if hkdRate > 0 {
+		hkdToCny = cnyRate / hkdRate
+	}
+	out := map[string]*wealthDayPnl{}
+	for _, w := range products {
+		snaps, err := db.ListWealthSnapshots(w.ID)
+		if err != nil {
+			continue
+		}
+		var prevAmt float64
+		hasPrev := false
+		for _, s := range snaps {
+			var pnl float64
+			if hasPrev {
+				pnl = s.Amount - prevAmt - s.Cashflow
+			}
+			var pnlCNY float64
+			switch strings.ToLower(w.Currency) {
+			case "usd":
+				pnlCNY = pnl * cnyRate
+			case "hkd":
+				pnlCNY = pnl * hkdToCny
+			default:
+				pnlCNY = pnl
+			}
+			d := out[s.Date]
+			if d == nil {
+				d = &wealthDayPnl{}
+				out[s.Date] = d
+			}
+			d.totalCNY += pnlCNY
+			d.items = append(d.items, wealthPnlItem{Name: w.Name, Currency: w.Currency, Pnl: pnl, PnlCNY: pnlCNY})
+			prevAmt = s.Amount
+			hasPrev = true
+		}
+	}
+	return out
+}
+
+// mergeWealthDetail 把理财条目合并进 pnl_daily 的 detail JSON（保留原 by_symbol/by_category 等字段）。
+func mergeWealthDetail(orig string, items []wealthPnlItem) string {
+	var m map[string]interface{}
+	if orig != "" && json.Unmarshal([]byte(orig), &m) == nil && m != nil {
+		m["by_wealth"] = items
+		b, _ := json.Marshal(m)
+		return string(b)
+	}
+	b, _ := json.Marshal(map[string]interface{}{"by_wealth": items})
+	return string(b)
 }
 
 // holdingPnlHistory returns the daily P&L history for a single holding, derived from

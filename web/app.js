@@ -1773,6 +1773,7 @@ function openCalDay(date) {
   }
   const v = rec.total_cny;
   let rows = '';
+  let wRows = '';
   try {
     const det = JSON.parse(rec.detail || '{}');
     const syms = det.by_symbol || [];
@@ -1785,6 +1786,13 @@ function openCalDay(date) {
         }).join('') +
         '</tbody></table>';
     } else rows = '<p style="color:#8a8f99">无个股明细。</p>';
+    // 理财当日收益（已合并进 total_cny）
+    const wts = det.by_wealth || [];
+    if (wts.length) {
+      wRows = '<table class="cal-detail-tbl" style="margin-top:10px"><thead><tr><th>理财</th><th>币种</th><th class="num">当日盈亏 (CNY)</th></tr></thead><tbody>' +
+        wts.map((w) => '<tr><td>' + (w.name || '') + '</td><td>' + (w.currency || '') + '</td><td class="num ' + cls(w.pnl_cny) + '">' + fmt(w.pnl_cny) + '</td></tr>').join('') +
+        '</tbody></table>';
+    }
   } catch (e) { rows = '<p style="color:#f5222d">明细解析失败</p>'; }
   // USD 盈亏也折算为 CNY 展示，保证弹框内全部统一为人民币口径
   const usdCNY = (typeof rec.total_usd === 'number' ? rec.total_usd : 0) * usdRate;
@@ -1793,7 +1801,7 @@ function openCalDay(date) {
       <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${cls(v)}">${fmt(v)}</div></div>
       <div><div class="cal-sub">USD 盈亏</div><div class="value">${fmt(rec.total_usd)} <span style="color:#8a8f99;font-size:13px">≈ ${fmt(usdCNY)} CNY</span></div></div>
       <div><div class="cal-sub">汇率</div><div class="value">${(rec.rate || 0).toFixed(4)}</div></div>
-    </div>${rows}`;
+    </div>${rows}${wRows}`;
   $('#calModal').hidden = false;
 }
 
