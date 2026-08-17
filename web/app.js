@@ -4002,10 +4002,12 @@ async function onUserDeleteConfirm() {
   if (delModal) delModal.addEventListener('click', (e) => { if (e.target === delModal) delModal.hidden = true; });
 })();
 
-// 卡片折叠/展开（资产总览 / 资产全景顶部卡片的帽子标题栏）
+// 卡片折叠/展开（资产总览 / 资产全景顶部卡片 / 通知渠道钉钉邮箱卡片的帽子标题栏）
 (function wireCollapse() {
   document.querySelectorAll('.collapsible > .collapse-hat').forEach((hat) => {
-    hat.addEventListener('click', () => {
+    hat.addEventListener('click', (e) => {
+      // 帽子里的交互元素（启用开关/输入/按钮/链接）点击时不触发折叠
+      if (e.target.closest('input, select, textarea, button, a, label.switch')) return;
       const card = hat.parentElement;
       if (!card || !card.classList.contains('collapsible')) return;
       card.classList.toggle('collapsed');

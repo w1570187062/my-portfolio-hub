@@ -2260,6 +2260,15 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 /* 通知底部按钮：不套独立背景框，仅右对齐排列 */
 .notify-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
 
+/* 通知渠道卡片可折叠（钉钉 / 邮箱），复用首页折叠样式，默认折叠 */
+.notify-card.collapsible { padding: 0; overflow: hidden; }
+.notify-card.collapsible .collapse-hat { padding: 13px 18px; }
+.notify-card.collapsible .collapse-body { padding: 4px 18px 16px; }
+.notify-card.collapsible .collapse-body label:last-child { margin-bottom: 0; }
+/* 帽子栏右侧：启用开关 + 折叠箭头 */
+.hat-side { display: flex; align-items: center; gap: 12px; }
+.notify-card .collapse-hat label.switch { display: inline-block; margin: 0; }
+
 /* 开关 toggle */
 .switch {
   position: relative;

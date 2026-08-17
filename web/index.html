@@ -210,26 +210,30 @@
         <p class="tool-hint">控制净值更新后何时推送通知，避免频繁打扰。</p>
       </div>
 
-      <div class="notify-card">
-        <div class="notify-card-head">
-          <h3>钉钉</h3>
-          <label class="switch"><input type="checkbox" id="dtEnabled"><span class="switch-knob"></span></label>
+      <div class="notify-card collapsible collapsed">
+        <div class="collapse-hat">
+          <span class="hat-title">钉钉</span>
+          <span class="hat-side"><label class="switch" title="启用钉钉通知"><input type="checkbox" id="dtEnabled"><span class="switch-knob"></span></label><span class="hat-chevron">▾</span></span>
         </div>
-        <label>Webhook 地址<span class="input-eye"><input type="text" id="dtWebhook" readonly placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."><button type="button" class="eye-toggle" data-eye-for="dtWebhook" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
-        <label>加签密钥（可选）<span class="input-eye"><input type="text" id="dtSecret" readonly placeholder="机器人安全设置中的加签密钥，不填则无需加签"><button type="button" class="eye-toggle" data-eye-for="dtSecret" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+        <div class="collapse-body">
+          <label>Webhook 地址<span class="input-eye"><input type="text" id="dtWebhook" readonly placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."><button type="button" class="eye-toggle" data-eye-for="dtWebhook" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+          <label>加签密钥（可选）<span class="input-eye"><input type="text" id="dtSecret" readonly placeholder="机器人安全设置中的加签密钥，不填则无需加签"><button type="button" class="eye-toggle" data-eye-for="dtSecret" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+        </div>
       </div>
 
-      <div class="notify-card">
-        <div class="notify-card-head">
-          <h3>邮箱</h3>
-          <label class="switch"><input type="checkbox" id="emEnabled"><span class="switch-knob"></span></label>
+      <div class="notify-card collapsible collapsed">
+        <div class="collapse-hat">
+          <span class="hat-title">邮箱</span>
+          <span class="hat-side"><label class="switch" title="启用邮箱通知"><input type="checkbox" id="emEnabled"><span class="switch-knob"></span></label><span class="hat-chevron">▾</span></span>
         </div>
-        <label>SMTP 服务器<input type="text" id="emHost" placeholder="smtp.qq.com"></label>
-        <label>端口<input type="number" id="emPort" value="465" step="1"></label>
-        <label>账号<input type="text" id="emUser" placeholder="1570187062@qq.com"></label>
-        <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）"></label>
-        <label>发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com"></label>
-        <label>收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com"></label>
+        <div class="collapse-body">
+          <label>SMTP 服务器<input type="text" id="emHost" placeholder="smtp.qq.com"></label>
+          <label>端口<input type="number" id="emPort" value="465" step="1"></label>
+          <label>账号<input type="text" id="emUser" placeholder="1570187062@qq.com"></label>
+          <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）"></label>
+          <label>发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com"></label>
+          <label>收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com"></label>
+        </div>
       </div>
 
       <div id="notifyErr" class="err"></div>
