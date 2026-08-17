@@ -1499,6 +1499,8 @@ function moveTrendTip(e) {
 function hideTrendTip() { const tip = document.getElementById('trendTip'); if (tip) tip.classList.remove('show'); }
 
 $('#assetPieBtn').onclick = () => { renderPie(); };
+$('#assetCalendarBtn').onclick = openCalendarView;
+$('#assetToolsBtn').onclick = () => showToolsView();
 $('#assetTrendBtn').onclick = renderTrend;
 // 关闭按钮已移除：右上角 ✕ 与点击遮罩均可关闭
 $('#chartModal').addEventListener('click', (e) => { if (e.target === $('#chartModal')) $('#chartModal').hidden = true; });
@@ -1513,7 +1515,10 @@ const saturdayOf = (d) => addDays(new Date(d), 6 - d.getDay());
 
 let calData = {};
 
-$('#calendarBtn').onclick = async () => {
+$('#calendarBtn').onclick = openCalendarView;
+
+// 打开/收起盈亏日历视图（资产全景工具栏「📅 盈亏日历」与 legacyNav 复用）
+async function openCalendarView() {
   if ($('#calendarView').hidden) {
     $('#holdingsView').hidden = true;
     $('#assetView').hidden = true;
@@ -1526,7 +1531,7 @@ $('#calendarBtn').onclick = async () => {
   } else {
     showHoldingsView();
   }
-};
+}
 
 function showHoldingsView() {
   $('#calendarView').hidden = true;
