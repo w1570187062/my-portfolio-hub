@@ -545,6 +545,10 @@ func assetWealthHistory(c *gin.Context) {
 		prevAmt = s.Amount
 		hasPrev = true
 	}
+	// 历史从新到旧展示（最新在前）；累计收益 cum 仍按快照顺序累计，反转仅影响展示顺序。
+	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
+		rows[i], rows[j] = rows[j], rows[i]
+	}
 	c.JSON(http.StatusOK, gin.H{"rows": rows})
 }
 
