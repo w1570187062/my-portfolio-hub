@@ -66,6 +66,9 @@ func main() {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.Header().Set("Cache-Control", "no-store")
 				w.Header().Set("Pragma", "no-cache")
+				// 首页经 NoRoute 兜底：gin 会先把响应状态置为 404（serveError），
+				// 这里必须显式覆盖为 200，否则首页一直以 404 状态返回（浏览器无感但 curl/监控报警）。
+				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(html))
 				return
 			}
