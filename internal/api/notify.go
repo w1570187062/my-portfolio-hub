@@ -262,7 +262,9 @@ func inScope(h db.Holding, scope string) bool {
 	case "us":
 		return h.Market == "美股"
 	case "cn":
-		return h.Market == "A股"
+		// 注意：A股持仓的 market 存的是「沪深」，须一并匹配，否则 15:15 A股快照
+		// 会把 A股持仓过滤成空，推送变成「A股 本次无持仓盈亏变动」的空通知。
+		return h.Market == "A股" || h.Market == "沪深"
 	case "fund":
 		return h.Category == "fund"
 	default:
@@ -468,6 +470,7 @@ func moneyFmt(v float64) string {
 // NotifyNetValueUpdated 在净值更新（手动或自动）完成后异步推送通知。
 // 后台 goroutine 执行，绝不阻塞刷新响应。无开启渠道时直接返回。
 // scope 限定通知范围（"" / "all" = 全量；"us"/"cn"/"fund" = 仅对应类别）；手动刷新传全量。
+// 该范围内无任何持仓时视为「无净值数据更新」，直接跳过推送，避免空通知。
 func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 	go func() {
 		cfg, err := loadNotifyConfig()
@@ -478,6 +481,10 @@ func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 		if !cfg.Dingtalk.Enabled && !cfg.Email.Enabled {
 			return
 		}
+		if !hasHoldingsInScope(uid, scope) {
+			log.Printf("[notify] 无%s持仓净值数据，跳过推送（触发：%s）", scopeLabelCN(scope), triggeredBy)
+			return
+		}
 		if !shouldSendByPolicy(uid, cfg, triggeredBy, scope) {
 			log.Printf("[notify] 按推送策略(%s)跳过本次推送（触发：%s）", policyName(cfg.Policy), triggeredBy)
 			return
@@ -485,6 +492,24 @@ func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 		text := buildNetValueNotifyText(uid, triggeredBy, scope)
 		sendToChannels(cfg, "持仓净值更新", text)
 	}()
+}
+
+// hasHoldingsInScope 判断该用户在指定范围内是否存在持仓。
+// 定时快照按资产类别分时段触发（美股07:00 / A股15:15 / 基金21:00），若对应类别
+// 无任何持仓（如没有基金持仓却在 21:00 基金快照），本次没有任何净值数据可推送，
+// 直接跳过，避免收到「XX 本次无持仓盈亏变动」之类的空通知。
+func hasHoldingsInScope(uid int64, scope string) bool {
+	hs, err := db.List(uid)
+	if err != nil {
+		log.Printf("[notify] 读取持仓失败: %v", err)
+		return false
+	}
+	for _, h := range hs {
+		if inScope(h, scope) {
+			return true
+		}
+	}
+	return false
 }
 
 // shouldSendByPolicy decides whether a net-value update should be pushed given
