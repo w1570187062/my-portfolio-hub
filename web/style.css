@@ -2242,7 +2242,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border: 1px solid var(--border, #d0d5dd);
   border-radius: 8px;
   font-size: 14px;
-  background: var(--bg-soft, #f4f5f7);
+  background: var(--bg-input, rgba(255, 255, 255, .05));
   color: var(--text, #1f2329);
 }
 .notify-card label input:focus { outline: 2px solid var(--primary, #6f9e5e); border-color: transparent; }
@@ -2256,7 +2256,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border: none; background: transparent; color: var(--text-muted, #6b7280);
   cursor: pointer; border-radius: 8px;
 }
-.eye-toggle:hover { color: var(--text, #1f2329); background: var(--bg-soft, #f4f5f7); }
+.eye-toggle:hover { color: var(--text, #1f2329); background: var(--bg-input, rgba(255, 255, 255, .05)); }
 .eye-toggle:focus-visible { outline: 2px solid var(--primary, #6f9e5e); outline-offset: 1px; }
 .eye-toggle svg { width: 18px; height: 18px; display: block; }
 .notify-card label select {
@@ -2264,7 +2264,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border: 1px solid var(--border, #d0d5dd);
   border-radius: 8px;
   font-size: 14px;
-  background: var(--bg-soft, #f4f5f7);
+  background: var(--bg-input, rgba(255, 255, 255, .05));
   color: var(--text, #1f2329);
   font-family: inherit;
   cursor: pointer;
