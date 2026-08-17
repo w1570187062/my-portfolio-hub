@@ -159,6 +159,9 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/notify/settings", notifySettingsPost)
 		g.POST("/notify/test", notifyTest)
 
+		// 数据导入（格式与「导出数据」一致）
+		g.POST("/import", importData)
+
 		// 资产全景：来源 / 理财 / 负债 / 消费 / 汇总 / AI 总结
 		g.GET("/asset/overview", assetOverview)
 		g.GET("/asset/sources", listSources)

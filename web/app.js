@@ -905,6 +905,7 @@ function resetConfirm() {
   pendingDelId = null;
   pendingAssetDel = null;
   pendingExport = false;
+  pendingImport = null;
   const btn = $('#confirmOk');
   btn.textContent = '删除';
   btn.classList.add('danger');
@@ -912,6 +913,22 @@ function resetConfirm() {
 }
 $('#confirmCancel').onclick = () => { resetConfirm(); };
 $('#confirmOk').onclick = async () => {
+  if (pendingImport) {
+    const data = pendingImport;
+    pendingImport = null;
+    $('#confirmModal').hidden = true;
+    try {
+      const r = await api('/api/import', { method: 'POST', body: JSON.stringify(data) });
+      if (!r.ok) { let m = '导入失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m + ' (HTTP ' + r.status + ')', 'err'); return; }
+      const d = await r.json();
+      const im = d.imported || {}; const sk = d.skipped || {};
+      toast(`导入完成：持仓 ${im.holdings || 0} 理财 ${im.wealth || 0} 现金 ${im.cash || 0} 负债 ${im.liability || 0} 消费 ${im.consumption || 0} 来源 ${im.sources || 0}；跳过 ${sk.holdings || 0}/${sk.wealth || 0}/${sk.cash || 0}/${sk.liability || 0}/${sk.consumption || 0}`, 'ok');
+      if (d.errors && d.errors.length) console.warn('[import]', d.errors);
+      await loadAsset();
+      await load();
+    } catch (e) { toast('导入异常：' + e.message, 'err'); }
+    return;
+  }
   if (pendingExport) {
     pendingExport = false;
     resetConfirm();
@@ -2144,6 +2161,31 @@ $('#aiPickGo').onclick = () => {
   else aiSummarize();
 };
 $('#ai_export_json').onclick = confirmExport;
+
+// ---- 数据导入（格式与导出一致，入库当前用户）----
+let pendingImport = null;
+$('#ai_import_json').onclick = () => { $('#importFile').click(); };
+$('#importFile').onchange = async (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = ''; // 允许重复选择同一文件
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const lists = ['holdings', 'wealth', 'cash', 'liability', 'consumption'];
+    if (!lists.some((k) => Array.isArray(data[k]) && data[k].length)) {
+      toast('文件不是有效的导出数据（缺少 holdings/wealth 等数组）', 'err');
+      return;
+    }
+    pendingImport = data;
+    const counts = lists.map((k) => `${k} ${(data[k] || []).length}`).join(' / ');
+    const btn = $('#confirmOk');
+    btn.textContent = '导入';
+    btn.classList.remove('danger');
+    $('#confirmTitle').textContent = '确认导入';
+    $('#confirmMsg').textContent = `将导入：${counts}。已存在的同名持仓/理财/现金/负债及相同消费流水会自动跳过，是否继续？`;
+    $('#confirmModal').hidden = false;
+  } catch (err) { toast('文件解析失败：' + err.message, 'err'); }
+};
 
 // ---- 持仓历史盈亏（每日表格 + 盈亏曲线，tab 切换） ----
 $('#histTabTable').onclick = () => switchHistTab('table');
