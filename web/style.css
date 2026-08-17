@@ -1644,6 +1644,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .asset-toolbar { padding: 0 10px 12px; gap: 8px; }
   .asset-toolbar .atool-sep { display: none; }
   .asset-toolbar .btn { flex: 1 1 auto; min-width: 0; text-align: center; }
+  /* 分区标签：移动端缩小字号，作为分区标识（竖线已隐藏） */
+  .atool-label { font-size: 10px; letter-spacing: .5px; margin-right: 4px; }
   .asset-tabs { padding: 0 10px 12px; gap: 6px; overflow-x: auto; scrollbar-width: none; }
   .asset-tabs::-webkit-scrollbar { display: none; }
   .atab { padding: 6px 12px; font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
@@ -1682,6 +1684,19 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   align-self: center;
   flex: 0 0 auto;
   background: linear-gradient(to bottom, transparent, var(--border-strong), transparent);
+}
+/* 工具栏分区文字标签：标注该分区的主要功能 */
+.atool-label {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  opacity: .85;
+  margin-right: 2px;
+  white-space: nowrap;
+  user-select: none;
 }
 .asset-tabs { display: flex; gap: 8px; padding: 0 20px 12px; border-bottom: 1px solid var(--border); }
 .atab {
