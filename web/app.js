@@ -2946,19 +2946,11 @@ function wCny(p, v) {
   if (c === 'hkd') return a * (hkdRate || 1);
   return a;
 }
-// 金额展示：RMB 优先，括号内原币种（RMB 币种不重复）
-function wMoney(p, v) {
+// 悬停 tooltip：非 RMB 币种显示"约 ¥xx"（RMB 币种返回空，不重复显示）
+function wRmbTitle(p, v) {
   const c = (p.currency || 'rmb').toLowerCase();
-  const cny = wCny(p, v);
-  if (c === 'rmb') return moneyCur(cny, 'rmb');
-  return `${moneyCur(cny, 'rmb')}（${moneyCur(v, c)}）`;
-}
-// 收益展示：RMB 优先带符号，括号内原币种（RMB 币种不重复）
-function wPnl(p, v) {
-  const c = (p.currency || 'rmb').toLowerCase();
-  const sgn = (v >= 0 ? '+' : '');
-  if (c === 'rmb') return sgn + moneyCur(wCny(p, v), 'rmb');
-  return `${sgn}${moneyCur(wCny(p, v), 'rmb')}（${sgn}${moneyCur(v, c)}）`;
+  if (c === 'rmb') return '';
+  return ` title="约 ¥${fmt(wCny(p, v))}"`;
 }
 
 function renderWealth(body) {
@@ -2981,7 +2973,7 @@ function renderWealth(body) {
           <div class="ac-idx">${i + 1}</div>
           <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span></div>
             <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
-        <div class="ac-sub">总金额：<span class="ac-amount">${wMoney(p, p.amount)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}">${wPnl(p, pnl)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}">${wPnl(p, cum)}</span></div>
+        <div class="ac-sub">总金额：<span class="ac-amount"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
         <div class="ac-actions">
           <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">📈 每日盈亏</button>
           <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">✏️ 编辑</button>
@@ -3016,9 +3008,9 @@ function renderWealthTable(w) {
       <td>${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span></td>
       <td>${esc(p.code || '-')}</td>
       <td>${esc(p.source_name || '')}</td>
-      <td class="num">${wMoney(p, p.amount)}</td>
-      <td class="num ${pnlCls(pnl)}">${wPnl(p, pnl)}</td>
-      <td class="num ${pnlCls(cum)}">${wPnl(p, cum)}</td>
+      <td class="num"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</td>
+      <td class="num ${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</td>
+      <td class="num ${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
       <td class="num">${p.snap_count || 0}</td>
       <td class="num asset-row-actions">
         <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}" title="每日盈亏">📈 每日盈亏</button>
