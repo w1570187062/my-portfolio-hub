@@ -113,7 +113,10 @@ func enrich(h db.Holding, userID int64) HoldingView {
 		dayPnl = 0
 		dayPnlPct = 0
 	}
-	return HoldingView{Holding: h, MarketValue: mv, CostValue: cv, Pnl: pnl, PnlPct: pct, DayPnl: dayPnl, DayPnlPct: dayPnlPct, HoldingDays: db.CalcHoldingDays(h.BuyDate)}
+	// 常规精度：金额/盈亏保留 2 位，避免浮点长小数进入 API/导出/AI 文本
+	return HoldingView{Holding: h,
+		MarketValue: round2(mv), CostValue: round2(cv), Pnl: round2(pnl), PnlPct: round2(pct),
+		DayPnl: round2(dayPnl), DayPnlPct: round2(dayPnlPct), HoldingDays: db.CalcHoldingDays(h.BuyDate)}
 }
 
 func RegisterRoutes(r *gin.Engine) {
@@ -800,28 +803,28 @@ func summary(c *gin.Context) {
 		"rate":                cnyRate,
 		"rate_degraded":       degraded,
 		"unsupported_currencies": unsupported,
-		"month_pnl_cny":       monthPNL,
-		"month_pnl_cny_ccy":   monthPNLCny,
-		"month_pnl_usd":       monthPNLUsd,
+		"month_pnl_cny":       round2(monthPNL),
+		"month_pnl_cny_ccy":   round2(monthPNLCny),
+		"month_pnl_usd":       round2(monthPNLUsd),
 		"hkd_rate":            hkdToCny,
-		"cny_market_value":    cnyMV,
-		"cny_cost_value":      cnyCV,
-		"cny_pnl":             cnyPnl,
-		"cny_pnl_pct":         cnyPct,
-		"usd_market_value":    usdMV,
-		"usd_cost_value":      usdCV,
-		"usd_pnl":             usdPnl,
-		"usd_pnl_pct":         usdPct,
-		"usd_market_value_cny": usdMV * cnyRate,
-		"hkd_market_value":    hkdMV,
-		"hkd_cost_value":      hkdCV,
-		"hkd_pnl":             hkdPnl,
-		"hkd_pnl_pct":         hkdPct,
-		"hkd_market_value_cny": hkdMV * hkdToCny,
-		"total_cny":           totalCNY,
-		"total_cost_cny":      totalCostCNY,
-		"total_pnl":           totalPnl,
-		"total_pnl_pct":       totalPct,
+		"cny_market_value":    round2(cnyMV),
+		"cny_cost_value":      round2(cnyCV),
+		"cny_pnl":             round2(cnyPnl),
+		"cny_pnl_pct":         round2(cnyPct),
+		"usd_market_value":    round2(usdMV),
+		"usd_cost_value":      round2(usdCV),
+		"usd_pnl":             round2(usdPnl),
+		"usd_pnl_pct":         round2(usdPct),
+		"usd_market_value_cny": round2(usdMV * cnyRate),
+		"hkd_market_value":    round2(hkdMV),
+		"hkd_cost_value":      round2(hkdCV),
+		"hkd_pnl":             round2(hkdPnl),
+		"hkd_pnl_pct":         round2(hkdPct),
+		"hkd_market_value_cny": round2(hkdMV * hkdToCny),
+		"total_cny":           round2(totalCNY),
+		"total_cost_cny":      round2(totalCostCNY),
+		"total_pnl":           round2(totalPnl),
+		"total_pnl_pct":       round2(totalPct),
 	})
 }
 
@@ -1051,11 +1054,11 @@ func doSnapshot(uid int64) error {
 		if prevClose > 0 {
 			chgPct = (h.CurrentPrice - prevClose) / prevClose * 100
 		}
-		bySym = append(bySym, symPnl{Symbol: h.Symbol, Name: h.Name, Pnl: dp, PnlCNY: dpCNY, Currency: h.Currency, CurrentPrice: h.CurrentPrice, ChangePct: chgPct})
+		bySym = append(bySym, symPnl{Symbol: h.Symbol, Name: h.Name, Pnl: round2(dp), PnlCNY: round2(dpCNY), Currency: h.Currency, CurrentPrice: round4(h.CurrentPrice), ChangePct: round2(chgPct)})
 	}
 	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
-	return db.SavePnlDaily(today, totalCNY, totalUSD, cnyRate, detail, uid)
+	return db.SavePnlDaily(today, round2(totalCNY), round2(totalUSD), cnyRate, detail, uid)
 }
 
 // DoSnapshot is the exported entry for the daily ticker / startup backfill.
@@ -1383,6 +1386,8 @@ func wealthDailyPnlByDate(uid int64) map[string]*wealthDayPnl {
 				d = &wealthDayPnl{}
 				out[s.Date] = d
 			}
+			pnl = round2(pnl)
+			pnlCNY = round2(pnlCNY)
 			d.totalCNY += pnlCNY
 			d.items = append(d.items, wealthPnlItem{Name: w.Name, Currency: w.Currency, Pnl: pnl, PnlCNY: pnlCNY})
 			prevAmt = s.Amount

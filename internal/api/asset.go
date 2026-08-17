@@ -54,7 +54,7 @@ func assetOverview(c *gin.Context) {
 	eqItems := make([]gin.H, 0, len(hs))
 	for _, h := range hs {
 		v := enrich(h, uid)
-		cmv := v.MarketValue * rateChoice(h.Currency, cnyRate, hkdRate)
+		cmv := round2(v.MarketValue * rateChoice(h.Currency, cnyRate, hkdRate))
 		eqMV += cmv
 		eqCV += v.CostValue * rateChoice(h.Currency, cnyRate, hkdRate)
 		eqPnl += v.Pnl * rateChoice(h.Currency, cnyRate, hkdRate)
@@ -66,8 +66,8 @@ func assetOverview(c *gin.Context) {
 			"category":     h.Category,
 			"market":       h.Market,
 			"market_value": cmv,
-			"day_pnl":      v.DayPnl * rateChoice(h.Currency, cnyRate, hkdRate),
-			"pnl":          v.Pnl * rateChoice(h.Currency, cnyRate, hkdRate),
+			"day_pnl":      round2(v.DayPnl * rateChoice(h.Currency, cnyRate, hkdRate)),
+			"pnl":          round2(v.Pnl * rateChoice(h.Currency, cnyRate, hkdRate)),
 		})
 	}
 
@@ -89,14 +89,16 @@ func assetOverview(c *gin.Context) {
 		if found {
 			todayPnl = computeWealthPnl(w.ID, today)
 		}
+		amt = round2(amt)
+		todayPnl = round2(todayPnl)
 		wTotal += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
 		wToday += fxToCNY(todayPnl, w.Currency, cnyRate, hkdRate)
 		wByCur[w.Currency] += amt
 		cnt, _ := db.CountWealthSnapshots(w.ID)
 		// 累计收益：手动编辑值优先（CumPnl 非 0），否则按每日快照自动累计。
-		cum := w.CumPnl
+		cum := round2(w.CumPnl)
 		if cum == 0 {
-			cum = wealthCumPnl(w.ID)
+			cum = round2(wealthCumPnl(w.ID))
 		}
 		wItems = append(wItems, gin.H{
 			"id":          w.ID,
@@ -127,7 +129,7 @@ func assetOverview(c *gin.Context) {
 			"currency":    cc.Currency,
 			"source_id":   cc.SourceID,
 			"source_name": srcName[cc.SourceID],
-			"amount":      cc.Amount,
+			"amount":      round2(cc.Amount),
 			"note":        cc.Note,
 		})
 	}
@@ -145,9 +147,9 @@ func assetOverview(c *gin.Context) {
 			"type":            l.Type,
 			"source_id":       l.SourceID,
 			"source_name":     srcName[l.SourceID],
-			"amount":          l.Amount,
+			"amount":          round2(l.Amount),
 			"rate":            l.Rate,
-			"monthly_payment": l.MonthlyPayment,
+			"monthly_payment": round2(l.MonthlyPayment),
 			"note":            l.Note,
 		})
 	}
@@ -164,41 +166,41 @@ func assetOverview(c *gin.Context) {
 			"category":    cc.Category,
 			"source_id":   cc.SourceID,
 			"source_name": srcName[cc.SourceID],
-			"amount":      cc.Amount,
+			"amount":      round2(cc.Amount),
 			"note":        cc.Note,
 		})
 	}
 
-	netAsset := eqMV + wTotal + cTotalCNY - lTotal
+	netAsset := round2(eqMV + wTotal + cTotalCNY - lTotal)
 
 	c.JSON(http.StatusOK, gin.H{
 		"equity": gin.H{
 			"count":        len(hs),
-			"market_value": eqMV,
-			"cost_value":   eqCV,
-			"pnl":          eqPnl,
-			"day_pnl":      eqDay,
+			"market_value": round2(eqMV),
+			"cost_value":   round2(eqCV),
+			"pnl":          round2(eqPnl),
+			"day_pnl":      round2(eqDay),
 			"items":        eqItems,
 		},
 		"wealth": gin.H{
-			"total":       wTotal,
-			"today_pnl":   wToday,
+			"total":       round2(wTotal),
+			"today_pnl":   round2(wToday),
 			"by_currency": wByCur,
 			"products":    wItems,
 		},
 		"cash": gin.H{
-			"total":       cTotalCNY,
+			"total":       round2(cTotalCNY),
 			"by_currency": cByCur,
 			"items":       cItems,
 		},
 		"liability": gin.H{
-			"total":           lTotal,
-			"monthly_payment": lMonthly,
+			"total":           round2(lTotal),
+			"monthly_payment": round2(lMonthly),
 			"items":           lItems,
 		},
 		"consumption": gin.H{
-			"today": todayC,
-			"month": monthC,
+			"today": round2(todayC),
+			"month": round2(monthC),
 			"items": consItems,
 		},
 		"net_asset": netAsset,
@@ -219,7 +221,7 @@ func computeWealthPnl(wealthID int64, date string) float64 {
 	if !pok {
 		return 0
 	}
-	return amt - prevAmt - cash
+	return round2(amt - prevAmt - cash)
 }
 
 // wealthCumPnl returns the cumulative P&L of a wealth product = sum of all daily
@@ -240,7 +242,7 @@ func wealthCumPnl(wealthID int64) float64 {
 		prevAmt = s.Amount
 		hasPrev = true
 	}
-	return cum
+	return round2(cum)
 }
 
 // ---- 资产来源 CRUD ----
@@ -535,10 +537,10 @@ func assetWealthHistory(c *gin.Context) {
 		cum += pnl
 		rows = append(rows, gin.H{
 			"date":     s.Date,
-			"amount":   s.Amount,
-			"cashflow": s.Cashflow,
-			"pnl":      pnl,
-			"cum_pnl":  cum,
+			"amount":   round2(s.Amount),
+			"cashflow": round2(s.Cashflow),
+			"pnl":      round2(pnl),
+			"cum_pnl":  round2(cum),
 		})
 		prevAmt = s.Amount
 		hasPrev = true
