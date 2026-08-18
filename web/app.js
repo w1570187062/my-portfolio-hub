@@ -2984,7 +2984,7 @@ function renderSources(body) {
       .filter((g) => g.items.length);
     for (const g of groups) {
       const gTotal = g.items.reduce((a, s) => a + (s.funds_cny || 0), 0);
-      html += `<div class="collapsible source-group"><div class="collapse-hat source-group-head">`;
+      html += `<div class="collapsible source-group collapsed"><div class="collapse-hat source-group-head">`;
       html += `<span class="hat-title">${typeName[g.t]}（${g.items.length}）</span>`;
       html += `<span class="hat-side"><span class="hat-total" title="该组来源关联资金合计（CNY）">¥${fmt(gTotal)}</span><span class="hat-chevron">▾</span></span></div>`;
       html += `<div class="collapse-body source-group-body"><table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联数</th><th class="num">关联资金(CNY)</th><th>备注</th><th></th></tr></thead><tbody>`;
