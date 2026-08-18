@@ -334,6 +334,12 @@ function mvOrigNote(h) {
   if (cur === 'CNY' || cur === 'RMB') return '';
   return ` <span class="mv-orig">(${curSymbolJS(h.currency)}${fmt(h.market_value || 0)})</span>`;
 }
+// 市值外币值悬停提示（表格列：主显 RMB，悬停显示原币种金额）
+function mvOrigTitle(h) {
+  const cur = (h.currency || 'CNY').toUpperCase();
+  if (cur === 'CNY' || cur === 'RMB') return '';
+  return ` title="原币种市值 ${curSymbolJS(h.currency)}${fmt(h.market_value || 0)}"`;
+}
 
 // Apply the active column sort to a filtered holding list.
 // 市值/盈亏按 RMB 折算后比较，与列表展示口径一致；盈亏率按原值。
@@ -632,7 +638,7 @@ function renderRows(hs) {
      <td class="num">${fmt(h.quantity)}</td>
      <td class="num">${fmtNav(h.cost_price, h.category)}</td>
      <td class="num">${fmtNav(h.current_price, h.category)}</td>
-     <td class="num">${fmt(toRmb(h, h.market_value))}${mvOrigNote(h)}</td>
+     <td class="num"${mvOrigTitle(h)}>${fmt(toRmb(h, h.market_value))}</td>
      <td class="num ${cls(h.day_pnl)}">${fmt(toRmb(h, h.day_pnl))} <span class="dp-pct">(${pct(h.day_pnl_pct)})</span></td>
      <td class="num ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
      <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
