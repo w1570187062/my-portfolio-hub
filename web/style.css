@@ -1769,6 +1769,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .source-group .collapse-hat { padding: 10px 14px; }
 .source-group .collapse-body { padding: 4px 12px 10px; }
 .source-group .collapse-body .asset-table { margin-bottom: 0; }
+/* 组头右侧：累计资金 + 折叠箭头 */
+.source-group .hat-total { font-size: 12px; font-weight: 600; color: var(--text-muted); }
 .asset-pill {
   padding: 4px 12px;
   border-radius: 14px;
