@@ -359,6 +359,8 @@
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
+  /* 右侧给注入的 ✕ 关闭按钮留位，避免与 ‹ › 翻页按钮重叠 */
+  padding-right: 38px;
 }
 .cal-modal-head h2 { margin: 0; }
 .cal-modal-nav { display: flex; gap: 8px; }
