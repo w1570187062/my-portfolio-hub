@@ -1916,6 +1916,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   background: var(--bg-input, rgba(255, 255, 255, .05));
   color: var(--text, #1f2329);
 }
+/* 展开的选项列表：与其它下拉一致，避免暗黑模式下白底白字看不清 */
+.fx-side select option { background: var(--bg-card, #fff); color: var(--text, #1f2329); }
 .fx-arrow { align-self: center; font-size: 18px; color: var(--text-muted); padding-bottom: 9px; }
 .tool-card h3 { margin: 0 0 6px; font-size: 16px; color: var(--text); padding-right: 30px; }
 .card-close {
