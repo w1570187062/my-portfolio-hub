@@ -346,7 +346,7 @@ function mvOrigTitle(h) {
 function sortedHoldings(hs) {
   if (!sortKey) return hs;
   const dir = sortDir === 'asc' ? 1 : -1;
-  const val = (h) => (sortKey === 'pnl_pct' ? (h.pnl_pct || 0) : toRmb(h, h[sortKey]));
+  const val = (h) => (sortKey === 'pnl_pct' || sortKey === 'day_pnl_pct' ? (h[sortKey] || 0) : toRmb(h, h[sortKey]));
   return [...hs].sort((a, b) => (val(a) - val(b)) * dir);
 }
 
@@ -639,7 +639,8 @@ function renderRows(hs) {
      <td class="num">${fmtNav(h.cost_price, h.category)}</td>
      <td class="num">${fmtNav(h.current_price, h.category)}</td>
      <td class="num"${mvOrigTitle(h)}>${fmt(toRmb(h, h.market_value))}</td>
-     <td class="num ${cls(h.day_pnl)}">${fmt(toRmb(h, h.day_pnl))} <span class="dp-pct">(${pct(h.day_pnl_pct)})</span></td>
+     <td class="num ${cls(h.day_pnl)}">${fmt(toRmb(h, h.day_pnl))}</td>
+     <td class="num ${cls(h.day_pnl_pct)}">${pct(h.day_pnl_pct)}</td>
      <td class="num ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
      <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
      <td class="num" style="font-size:12px;color:var(--text-muted)">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
