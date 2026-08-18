@@ -2005,6 +2005,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
+/* 动态行下拉的展开选项：暗黑模式下避免白底白字（权益/美元盈亏记录的币种、类别下拉） */
+.tool-table .trow select option { background: var(--bg-card, #fff); color: var(--text, #1f2329); }
 .tool-table .trow .eq-note { flex: 1.6; }
 .tool-table .trow .eq-amt { flex: 2.4; }
 .tool-table .trow .eq-kind { flex: 0 0 78px; }
