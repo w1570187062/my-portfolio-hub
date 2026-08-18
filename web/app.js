@@ -2753,9 +2753,7 @@ document.addEventListener('click', (e) => {
   const x = e.target.closest('.card-close');
   if (!x) return;
   const modal = x.closest('.modal');
-  if (modal) { modal.hidden = true; return; }
-  const card = x.closest('.tool-card');
-  if (card) card.hidden = true;
+  if (modal) modal.hidden = true;
 });
 // 部分遮罩：保留首尾若干字符，中间以 * 替代（Webhook/加签密钥 这类普通文本框默认只露头尾）
 function maskSecret(v) {

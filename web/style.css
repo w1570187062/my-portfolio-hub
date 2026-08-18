@@ -1898,9 +1898,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   padding: 20px 22px;
   backdrop-filter: blur(12px);
 }
-/* 工具卡可折叠（复用折叠样式，默认折叠；右侧给 ✕ 关闭按钮留位） */
+/* 工具卡可折叠（复用折叠样式，默认折叠） */
 .tool-card.collapsible { padding: 0; overflow: hidden; }
-.tool-card .collapse-hat { padding: 16px 44px 14px 22px; }
+.tool-card .collapse-hat { padding: 16px 22px 14px; }
 .tool-card .collapse-body { padding: 4px 22px 20px; }
 .tool-card .collapse-body > .tool-actions { margin-top: 12px; }
 /* 汇率计算工具 */
