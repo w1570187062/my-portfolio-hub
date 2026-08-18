@@ -1114,7 +1114,8 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 /* cal-modal-head 也是头部（calModal 用了自定义头部） */
 .modal-card > .cal-modal-head {
   flex-shrink: 0;
-  padding: 22px 28px 10px;
+  /* 右 38px 给注入的 ✕ 关闭按钮留位（简写会覆盖 .cal-modal-head 的 padding-right） */
+  padding: 22px 38px 10px 28px;
 }
 /* 中间滚动容器：所有 form / 直接子 div（除 modal-actions / cal-modal-head / hist-tabs） */
 .modal-card form,
