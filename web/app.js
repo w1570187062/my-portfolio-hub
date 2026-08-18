@@ -2959,9 +2959,10 @@ function renderSources(body) {
   let html = `<div class="asset-section-head"><h3>来源（${list.length}）</h3><button class="btn asset-add" id="addSourceBtn">＋ 添加来源</button></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">还没有来源，先添加一个银行、证券或软件吧。</p><button class="btn asset-add-inline" data-empty-add="source" type="button">➕ 添加来源</button></div>`;
   else {
-    html += `<table class="asset-table"><thead><tr><th>名称</th><th>类型</th><th>备注</th><th></th></tr></thead><tbody>`;
-    for (const s of list) {
-      html += `<tr><td>${esc(s.name)}</td><td>${s.type === 'securities' ? '证券' : s.type === 'software' ? '软件' : s.type === 'platform' ? '平台' : '银行'}</td><td>${esc(s.note || '')}</td>
+    html += `<table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th>备注</th><th></th></tr></thead><tbody>`;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      html += `<tr><td class="num">${i + 1}</td><td>${esc(s.name)}</td><td>${s.type === 'securities' ? '证券' : s.type === 'software' ? '软件' : s.type === 'platform' ? '平台' : '银行'}</td><td>${esc(s.note || '')}</td>
         <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-source" data-id="${s.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-source" data-id="${s.id}">🗑️ 删除</button></td></tr>`;
     }
     html += `</tbody></table>`;
@@ -3128,9 +3129,10 @@ function renderCash(body) {
   let html = `<div class="asset-section-head"><h3>现金（${list.length}）</h3><button class="btn asset-add" id="addCashBtn">＋ 添加现金</button></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">还没有现金记录，添加各账户的现金余额即可纳入总资产。</p><button class="btn asset-add-inline" data-empty-add="cash" type="button">➕ 添加现金</button></div>`;
   else {
-    html += `<table class="asset-table"><thead><tr><th>名称</th><th class="num">余额</th><th>币种</th><th>来源</th><th>备注</th><th></th></tr></thead><tbody>`;
-    for (const c of list) {
-      html += `<tr><td>${esc(c.name)}</td><td class="num">${moneyCur(c.amount || 0, c.currency)}</td><td>${curSymbolJS(c.currency)}</td><td>${esc(c.source_name || '')}</td><td>${esc(c.note || '')}</td>
+    html += `<table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th class="num">余额</th><th>币种</th><th>来源</th><th>备注</th><th></th></tr></thead><tbody>`;
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      html += `<tr><td class="num">${i + 1}</td><td>${esc(c.name)}</td><td class="num">${moneyCur(c.amount || 0, c.currency)}</td><td>${curSymbolJS(c.currency)}</td><td>${esc(c.source_name || '')}</td><td>${esc(c.note || '')}</td>
         <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-cash" data-id="${c.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-cash" data-id="${c.id}">🗑️ 删除</button></td></tr>`;
     }
     html += `</tbody></table>`;
