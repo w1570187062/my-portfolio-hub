@@ -253,7 +253,16 @@ func listSources(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"sources": out})
+	// 关联数：该来源被持仓/理财/现金/负债/消费引用的条目总数
+	items := make([]gin.H, 0, len(out))
+	for _, s := range out {
+		cnt, _ := db.SourceRefCount(s.ID)
+		items = append(items, gin.H{
+			"id": s.ID, "user_id": s.UserID, "name": s.Name, "type": s.Type, "note": s.Note, "created_at": s.CreatedAt,
+			"ref_count": cnt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"sources": items})
 }
 
 func createSource(c *gin.Context) {

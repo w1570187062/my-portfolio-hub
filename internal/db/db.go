@@ -963,6 +963,19 @@ func DeleteSource(id int64) error {
 	return err
 }
 
+// SourceRefCount 返回该来源被引用的条目总数（持仓/理财/现金/负债/消费 引用该来源的数量之和）。
+func SourceRefCount(sourceID int64) (int, error) {
+	n := 0
+	for _, tbl := range []string{"holdings", "wealth_products", "cash_accounts", "liabilities", "consumptions"} {
+		var c int
+		if err := DB.QueryRow(`SELECT COUNT(*) FROM `+tbl+` WHERE source_id=?`, sourceID).Scan(&c); err != nil {
+			return 0, err
+		}
+		n += c
+	}
+	return n, nil
+}
+
 // ---- Wealth products (理财) ----
 
 type WealthProduct struct {

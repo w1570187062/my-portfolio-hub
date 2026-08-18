@@ -1765,7 +1765,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 .empty-tip { color: var(--text-muted); font-size: 13px; padding: 20px 4px; text-align: center; }
 .asset-table { width: 100%; border-collapse: collapse; font-size: 15px; }
-.asset-table th { font-size: 13px; text-align: center; }
+/* 表头与数据对齐一致（左对齐；.num 列右对齐），避免上下错位 */
+.asset-table th { font-size: 13px; text-align: left; }
 .asset-table th, .asset-table td {
   padding: 6px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, .05);
