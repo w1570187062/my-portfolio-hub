@@ -2963,7 +2963,7 @@ function renderSources(body) {
     const typeOf = (s) => (s.type === 'securities' || s.type === 'software' || s.type === 'platform') ? s.type : 'bank';
     const typeName = { bank: '银行', securities: '证券', software: '软件', platform: '平台' };
     const groups = ['bank', 'securities', 'software', 'platform']
-      .map((t) => ({ t, items: list.filter((s) => typeOf(s) === t) }))
+      .map((t) => ({ t, items: list.filter((s) => typeOf(s) === t).sort((a, b) => (b.funds_cny || 0) - (a.funds_cny || 0)) }))
       .filter((g) => g.items.length);
     for (const g of groups) {
       const gTotal = g.items.reduce((a, s) => a + (s.funds_cny || 0), 0);
