@@ -2959,15 +2959,25 @@ function renderSources(body) {
   let html = `<div class="asset-section-head"><h3>来源（${list.length}）</h3><button class="btn asset-add" id="addSourceBtn">＋ 添加来源</button></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">还没有来源，先添加一个银行、证券或软件吧。</p><button class="btn asset-add-inline" data-empty-add="source" type="button">➕ 添加来源</button></div>`;
   else {
-    html += `<table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联数</th><th class="num">关联资金(CNY)</th><th>备注</th><th></th></tr></thead><tbody>`;
-    for (let i = 0; i < list.length; i++) {
-      const s = list[i];
-      html += `<tr><td class="num">${i + 1}</td><td>${esc(s.name)}</td><td>${s.type === 'securities' ? '证券' : s.type === 'software' ? '软件' : s.type === 'platform' ? '平台' : '银行'}</td>
-        <td class="num" title="被持仓/理财/现金/负债/消费引用的条目数">${s.ref_count || 0}</td>
-        <td class="num" title="该来源下持仓市值+理财金额+现金余额（折算 CNY）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
-        <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-source" data-id="${s.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-source" data-id="${s.id}">🗑️ 删除</button></td></tr>`;
+    // 按类型分组：银行 / 证券 / 软件 / 平台（未知类型归银行）
+    const typeOf = (s) => (s.type === 'securities' || s.type === 'software' || s.type === 'platform') ? s.type : 'bank';
+    const typeName = { bank: '银行', securities: '证券', software: '软件', platform: '平台' };
+    const groups = ['bank', 'securities', 'software', 'platform']
+      .map((t) => ({ t, items: list.filter((s) => typeOf(s) === t) }))
+      .filter((g) => g.items.length);
+    for (const g of groups) {
+      html += `<div class="collapsible source-group"><div class="collapse-hat source-group-head">`;
+      html += `<span class="hat-title">${typeName[g.t]}（${g.items.length}）</span><span class="hat-chevron">▾</span></div>`;
+      html += `<div class="collapse-body source-group-body"><table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联数</th><th class="num">关联资金(CNY)</th><th>备注</th><th></th></tr></thead><tbody>`;
+      for (let i = 0; i < g.items.length; i++) {
+        const s = g.items[i];
+        html += `<tr><td class="num">${i + 1}</td><td>${esc(s.name)}</td><td>${typeName[typeOf(s)]}</td>
+          <td class="num" title="被持仓/理财/现金/负债/消费引用的条目数">${s.ref_count || 0}</td>
+          <td class="num" title="该来源下持仓市值+理财金额+现金余额（折算 CNY）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
+          <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-source" data-id="${s.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-source" data-id="${s.id}">🗑️ 删除</button></td></tr>`;
+      }
+      html += `</tbody></table></div></div>`;
     }
-    html += `</tbody></table>`;
   }
   body.innerHTML = html;
   $('#addSourceBtn').onclick = () => openAssetSourceModal(null);
@@ -4073,18 +4083,17 @@ async function onUserDeleteConfirm() {
   if (delModal) delModal.addEventListener('click', (e) => { if (e.target === delModal) delModal.hidden = true; });
 })();
 
-// 卡片折叠/展开（资产总览 / 资产全景顶部卡片 / 通知渠道钉钉邮箱卡片的帽子标题栏）
-(function wireCollapse() {
-  document.querySelectorAll('.collapsible > .collapse-hat').forEach((hat) => {
-    hat.addEventListener('click', (e) => {
-      // 帽子里的交互元素（启用开关/输入/按钮/链接）点击时不触发折叠
-      if (e.target.closest('input, select, textarea, button, a, label.switch')) return;
-      const card = hat.parentElement;
-      if (!card || !card.classList.contains('collapsible')) return;
-      card.classList.toggle('collapsed');
-    });
-  });
-})();
+// 卡片折叠/展开（资产总览 / 资产全景顶部卡片 / 通知渠道卡片 / 来源分组表）。
+// 事件委托：动态渲染的 .collapsible（如来源分组）同样生效。
+document.addEventListener('click', (e) => {
+  const hat = e.target.closest('.collapse-hat');
+  if (!hat) return;
+  // 帽子里的交互元素（启用开关/输入/按钮/链接）点击时不触发折叠
+  if (e.target.closest('input, select, textarea, button, a, label.switch')) return;
+  const card = hat.parentElement;
+  if (!card || !card.classList.contains('collapsible')) return;
+  card.classList.toggle('collapsed');
+});
 
 // 初始路由：按 URL hash 恢复视图（刷新不退回首页；无 hash 默认持仓列表）
 applyRoute();

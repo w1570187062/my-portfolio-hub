@@ -1758,6 +1758,17 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .asset-row-actions button:last-child { margin-right: 0; }
 .asset-section-head { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 10px; }
 .asset-section-head h3 { font-size: 15px; margin: 0; color: var(--text); }
+/* 来源表按类型分组（银行/证券/软件/平台），组头可折叠 */
+.source-group {
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.source-group .collapse-hat { padding: 10px 14px; }
+.source-group .collapse-body { padding: 4px 12px 10px; }
+.source-group .collapse-body .asset-table { margin-bottom: 0; }
 .asset-pill {
   padding: 4px 12px;
   border-radius: 14px;
