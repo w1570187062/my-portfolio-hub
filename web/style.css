@@ -1898,6 +1898,25 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   padding: 20px 22px;
   backdrop-filter: blur(12px);
 }
+/* 工具卡可折叠（复用折叠样式，默认折叠；右侧给 ✕ 关闭按钮留位） */
+.tool-card.collapsible { padding: 0; overflow: hidden; }
+.tool-card .collapse-hat { padding: 16px 44px 14px 22px; }
+.tool-card .collapse-body { padding: 4px 22px 20px; }
+.tool-card .collapse-body > .tool-actions { margin-top: 12px; }
+/* 汇率计算工具 */
+.fx-row { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.fx-side { display: flex; flex-direction: column; gap: 6px; }
+.fx-side label { font-size: 12px; color: var(--text-muted); }
+.fx-side input,
+.fx-side select {
+  padding: 9px 11px;
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg-input, rgba(255, 255, 255, .05));
+  color: var(--text, #1f2329);
+}
+.fx-arrow { align-self: center; font-size: 18px; color: var(--text-muted); padding-bottom: 9px; }
 .tool-card h3 { margin: 0 0 6px; font-size: 16px; color: var(--text); padding-right: 30px; }
 .card-close {
   position: absolute;

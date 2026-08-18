@@ -89,7 +89,7 @@
     <div id="legacyNav" hidden>
       <button id="calendarBtn" class="btn">📅 盈亏日历</button>
       <button id="assetBtn" class="btn">🗂️ 资产全景</button>
-      <button id="toolsBtn" class="btn">🛠️ 盈亏工具</button>
+      <button id="toolsBtn" class="btn">🛠️ 资产工具</button>
     </div>
     <div class="actions">
       <div class="header-fx" id="headerFx">
@@ -184,7 +184,7 @@
       <button id="aiPickBtn" class="btn icon-btn" type="button" data-tip="AI中枢" aria-label="AI中枢">🤖</button>
       <span class="atool-sep"></span>
       <span class="atool-label">工具导出</span>
-      <button id="assetToolsBtn" class="btn icon-btn" type="button" data-tip="盈亏工具" aria-label="盈亏工具">🛠️</button>
+      <button id="assetToolsBtn" class="btn icon-btn" type="button" data-tip="资产工具" aria-label="资产工具">🛠️</button>
       <button id="ai_export_json" class="btn icon-btn" type="button" data-tip="导出数据" aria-label="导出数据">⬇️</button>
       <button id="ai_import_json" class="btn icon-btn" type="button" data-tip="导入数据" aria-label="导入数据">⬆️</button>
     </div>
@@ -253,63 +253,115 @@
 
   <div id="toolsView" hidden>
     <div class="tool-head">
-      <h2>🛠️ 盈亏工具</h2>
+      <h2>🛠️ 资产工具</h2>
       <button id="mergeBtn" class="btn" type="button">🔗 合并汇总（权益 + 美元）</button>
     </div>
     <div class="tools-grid">
-      <section class="tool-card">
+      <section class="tool-card collapsible collapsed">
         <button class="card-close" type="button" title="关闭此计算器" aria-label="关闭">✕</button>
-        <h3>权益资产盈亏计算器</h3>
-        <p class="tool-hint">逐笔录入每笔盈亏（正=盈利，负=亏损），选择类型与币种，自动汇总为人民币。<span id="eqFxHint" class="tool-fx"></span></p>
-        <div class="tool-table" id="eqRows"></div>
-        <button id="eqAddRow" class="btn btn-sm" type="button">＋ 添加一笔</button>
-        <div class="tool-result" id="eqResult"></div>
-        <div class="tool-actions">
-          <button id="eqCalc" class="btn" type="button">🧮 计算</button>
-          <button id="eqSave" class="btn" type="button">💾 保存</button>
-          <button id="eqClear" class="btn danger" type="button">🗑️ 清空</button>
+        <div class="collapse-hat">
+          <span class="hat-title">汇率计算</span>
+          <span class="hat-chevron">▾</span>
+        </div>
+        <div class="collapse-body">
+          <p class="tool-hint">在 CNY / HKD / USD 之间换算金额，汇率取页面实时汇率。<span class="tool-fx" id="fxRateHint"></span></p>
+          <div class="fx-calc">
+            <div class="fx-row">
+              <div class="fx-side">
+                <label>金额</label>
+                <input id="fxAmount" type="number" step="any" placeholder="0.00">
+              </div>
+              <div class="fx-side">
+                <label>从</label>
+                <select id="fxFrom">
+                  <option value="CNY">CNY 人民币</option>
+                  <option value="HKD">HKD 港币</option>
+                  <option value="USD">USD 美元</option>
+                </select>
+              </div>
+              <div class="fx-arrow">⇄</div>
+              <div class="fx-side">
+                <label>到</label>
+                <select id="fxTo">
+                  <option value="CNY">CNY 人民币</option>
+                  <option value="USD">USD 美元</option>
+                  <option value="HKD">HKD 港币</option>
+                </select>
+              </div>
+            </div>
+            <div class="tool-result" id="fxResult"></div>
+          </div>
         </div>
       </section>
 
-      <section class="tool-card">
+      <section class="tool-card collapsible collapsed">
         <button class="card-close" type="button" title="关闭此计算器" aria-label="关闭">✕</button>
-        <h3>美元资产盈亏计算器</h3>
-        <p class="tool-hint">买入与盈亏是两件独立的事：① 逐笔录入「美元买入」（金额 + 买入汇率），按金额加权得平均买入汇率；② 逐笔录入「盈亏」（USD 盈亏额）。两者与当前汇率对比，判断美元资产是否跑赢汇率贬值。</p>
-        <label class="tool-rate">当前汇率（RMB / 1 USD）<input id="usdRate" type="number" step="any" placeholder="自动填充实时汇率"></label>
-        <div class="tool-sub">① 买入美元记录</div>
-        <div class="tool-table" id="usdBuyRows"></div>
-        <button id="usdAddBuy" class="btn btn-sm" type="button">＋ 添加一笔买入</button>
-        <div class="tool-sub">② 盈亏记录（USD）</div>
-        <div class="tool-table" id="usdPnlRows"></div>
-        <button id="usdAddPnl" class="btn btn-sm" type="button">＋ 添加一笔盈亏</button>
-        <div class="tool-result" id="usdResult"></div>
-        <div class="tool-actions">
-          <button id="usdCalc" class="btn" type="button">🧮 计算</button>
-          <button id="usdSave" class="btn" type="button">💾 保存</button>
-          <button id="usdClear" class="btn danger" type="button">🗑️ 清空</button>
+        <div class="collapse-hat">
+          <span class="hat-title">权益资产盈亏计算器</span>
+          <span class="hat-chevron">▾</span>
+        </div>
+        <div class="collapse-body">
+          <p class="tool-hint">逐笔录入每笔盈亏（正=盈利，负=亏损），选择类型与币种，自动汇总为人民币。<span id="eqFxHint" class="tool-fx"></span></p>
+          <div class="tool-table" id="eqRows"></div>
+          <button id="eqAddRow" class="btn btn-sm" type="button">＋ 添加一笔</button>
+          <div class="tool-result" id="eqResult"></div>
+          <div class="tool-actions">
+            <button id="eqCalc" class="btn" type="button">🧮 计算</button>
+            <button id="eqSave" class="btn" type="button">💾 保存</button>
+            <button id="eqClear" class="btn danger" type="button">🗑️ 清空</button>
+          </div>
         </div>
       </section>
 
-      <section class="tool-card">
+      <section class="tool-card collapsible collapsed">
         <button class="card-close" type="button" title="关闭此计算器" aria-label="关闭">✕</button>
-        <h3>补仓成本计算器</h3>
-        <p class="tool-hint">填入原有持仓与一笔补仓，自动算出合并后的持仓成本、数量与净盈亏。补仓可<b>按数量</b>或<b>按金额</b>：选「按金额」时填投入总金额（买入费从金额中扣除）；选「按数量」时填买入份数。<b>补仓现价</b>同时作为买入价与盈亏参考价。数量支持非整数（如基金份数）。手续费「买卖各一笔」：买入费进成本，卖出费从盈亏扣除。</p>
-        <label class="tool-rate">原成交价（元/份）<input id="addOldPrice" type="number" step="any" placeholder="如 10.50"></label>
-        <label class="tool-rate">原持仓数量（股/份）<input id="addOldQty" type="number" step="any" placeholder="如 1000"></label>
-        <label class="tool-rate">补仓方式
-          <select id="addMode">
-            <option value="qty">按数量补仓</option>
-            <option value="amount">按金额补仓</option>
-          </select>
-        </label>
-        <label class="tool-rate" id="addQtyWrap">补仓数量（股/份）<input id="addNewQty" type="number" step="any" placeholder="如 500"></label>
-        <label class="tool-rate" id="addAmtWrap" style="display:none">补仓金额（元，含买入费）<input id="addAmount" type="number" step="any" placeholder="如 5000"></label>
-        <label class="tool-rate">交易手续费（买卖每笔，元）<input id="addFee" type="number" step="any" placeholder="如 0 或 5"></label>
-        <label class="tool-rate">补仓现价（元/份）<input id="addNewPrice" type="number" step="any" placeholder="如 9.80"></label>
-        <div class="tool-result" id="addResult"></div>
-        <div class="tool-actions">
-          <button id="addCalc" class="btn" type="button">🧮 计算</button>
-          <button id="addClear" class="btn danger" type="button">🗑️ 清空</button>
+        <div class="collapse-hat">
+          <span class="hat-title">美元资产盈亏计算器</span>
+          <span class="hat-chevron">▾</span>
+        </div>
+        <div class="collapse-body">
+          <p class="tool-hint">买入与盈亏是两件独立的事：① 逐笔录入「美元买入」（金额 + 买入汇率），按金额加权得平均买入汇率；② 逐笔录入「盈亏」（USD 盈亏额）。两者与当前汇率对比，判断美元资产是否跑赢汇率贬值。</p>
+          <label class="tool-rate">当前汇率（RMB / 1 USD）<input id="usdRate" type="number" step="any" placeholder="自动填充实时汇率"></label>
+          <div class="tool-sub">① 买入美元记录</div>
+          <div class="tool-table" id="usdBuyRows"></div>
+          <button id="usdAddBuy" class="btn btn-sm" type="button">＋ 添加一笔买入</button>
+          <div class="tool-sub">② 盈亏记录（USD）</div>
+          <div class="tool-table" id="usdPnlRows"></div>
+          <button id="usdAddPnl" class="btn btn-sm" type="button">＋ 添加一笔盈亏</button>
+          <div class="tool-result" id="usdResult"></div>
+          <div class="tool-actions">
+            <button id="usdCalc" class="btn" type="button">🧮 计算</button>
+            <button id="usdSave" class="btn" type="button">💾 保存</button>
+            <button id="usdClear" class="btn danger" type="button">🗑️ 清空</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="tool-card collapsible collapsed">
+        <button class="card-close" type="button" title="关闭此计算器" aria-label="关闭">✕</button>
+        <div class="collapse-hat">
+          <span class="hat-title">补仓成本计算器</span>
+          <span class="hat-chevron">▾</span>
+        </div>
+        <div class="collapse-body">
+          <p class="tool-hint">填入原有持仓与一笔补仓，自动算出合并后的持仓成本、数量与净盈亏。补仓可<b>按数量</b>或<b>按金额</b>：选「按金额」时填投入总金额（买入费从金额中扣除）；选「按数量」时填买入份数。<b>补仓现价</b>同时作为买入价与盈亏参考价。数量支持非整数（如基金份数）。手续费「买卖各一笔」：买入费进成本，卖出费从盈亏扣除。</p>
+          <label class="tool-rate">原成交价（元/份）<input id="addOldPrice" type="number" step="any" placeholder="如 10.50"></label>
+          <label class="tool-rate">原持仓数量（股/份）<input id="addOldQty" type="number" step="any" placeholder="如 1000"></label>
+          <label class="tool-rate">补仓方式
+            <select id="addMode">
+              <option value="qty">按数量补仓</option>
+              <option value="amount">按金额补仓</option>
+            </select>
+          </label>
+          <label class="tool-rate" id="addQtyWrap">补仓数量（股/份）<input id="addNewQty" type="number" step="any" placeholder="如 500"></label>
+          <label class="tool-rate" id="addAmtWrap" style="display:none">补仓金额（元，含买入费）<input id="addAmount" type="number" step="any" placeholder="如 5000"></label>
+          <label class="tool-rate">交易手续费（买卖每笔，元）<input id="addFee" type="number" step="any" placeholder="如 0 或 5"></label>
+          <label class="tool-rate">补仓现价（元/份）<input id="addNewPrice" type="number" step="any" placeholder="如 9.80"></label>
+          <div class="tool-result" id="addResult"></div>
+          <div class="tool-actions">
+            <button id="addCalc" class="btn" type="button">🧮 计算</button>
+            <button id="addClear" class="btn danger" type="button">🗑️ 清空</button>
+          </div>
         </div>
       </section>
 

@@ -2415,6 +2415,40 @@ let lastUsdRmb = null, lastUsdDetail = null;
 let lastUsdKindAggRmb = { stock: 0, fund: 0, wealth: 0, cash: 0 };
 
 $('#toolsBtn').onclick = () => navigate('tools');
+
+// ---- 汇率计算工具（CNY / HKD / USD 互换算，汇率取页面实时 usdRate/hkdRate）----
+function convertMoney(amt, from, to) {
+  let cny = amt;
+  if (from === 'USD') cny = amt * (usdRate || 1);
+  else if (from === 'HKD') cny = amt * (hkdRate || 1);
+  if (to === 'CNY') return cny;
+  if (to === 'USD') return cny / (usdRate || 1);
+  if (to === 'HKD') return cny / (hkdRate || 1);
+  return amt;
+}
+function fxRateText(from, to) {
+  const p = (v) => (v ? v.toFixed(4) : '—');
+  if (from === to) return '同币种';
+  if (from === 'CNY') return `1 ${to} ≈ ${p(to === 'USD' ? usdRate : hkdRate)} CNY`;
+  if (to === 'CNY') return `1 ${from} ≈ ${p(from === 'USD' ? usdRate : hkdRate)} CNY`;
+  return from === 'USD' ? `1 USD ≈ ${p((usdRate || 1) / (hkdRate || 1))} HKD` : `1 HKD ≈ ${p((hkdRate || 1) / (usdRate || 1))} USD`;
+}
+function fxCalcRun() {
+  const el = $('#fxResult');
+  if (!el) return;
+  const amt = parseFloat($('#fxAmount').value);
+  const from = $('#fxFrom').value;
+  const to = $('#fxTo').value;
+  if (!amt || isNaN(amt)) { el.innerHTML = '<p class="res-flat">请输入金额</p>'; return; }
+  const v = convertMoney(amt, from, to);
+  const sym = { CNY: '¥', HKD: 'HK$', USD: '$' }[to] || '';
+  el.innerHTML = `<div class="res-group-head">${sym}${fmt(v)}</div>
+    <div class="res-sub">${from} ${fmt(amt)} → ${to} ${fmt(v)}</div>
+    <div class="res-sub" style="color:var(--text-muted)">参考汇率：${fxRateText(from, to)}</div>`;
+}
+$('#fxAmount').oninput = fxCalcRun;
+$('#fxFrom').onchange = fxCalcRun;
+$('#fxTo').onchange = fxCalcRun;
 async function showToolsView() {
   $('#holdingsView').hidden = true;
   $('#calendarView').hidden = true;
@@ -2430,6 +2464,10 @@ async function showToolsView() {
   if (!eqOk) addEqRow();
   const usdOk = await loadUsdRows();
   if (!usdOk) { addUsdBuy(); addUsdPnl(); }
+  // 汇率计算工具：显示当前汇率并刷新结果
+  const fh = $('#fxRateHint');
+  if (fh) fh.textContent = `当前：1 USD ≈ ${(usdRate || 1).toFixed(4)} CNY，1 HKD ≈ ${(hkdRate || 1).toFixed(4)} CNY`;
+  fxCalcRun();
 }
 
 async function loadToolsFx() {
