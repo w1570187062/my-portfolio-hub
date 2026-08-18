@@ -1934,12 +1934,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   background: rgba(239, 68, 68, .12);
   color: #ef4444;
 }
-.tools-restore {
-  grid-column: 1 / -1;
-  display: flex; justify-content: center;
-  padding: 6px 0 4px;
-}
-.tools-restore[hidden] { display: none; }
 .tool-card.merge-card { grid-column: 1 / -1; background: var(--bg-glass); border-style: dashed; }
 .tool-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin: 0 0 12px; }
 .tool-fx { color: var(--primary); }

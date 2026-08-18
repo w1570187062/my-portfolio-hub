@@ -2737,18 +2737,6 @@ $('#addClear').onclick = () => {
   $('#addResult').innerHTML = '';
 };
 
-// 计算器卡片关闭 / 恢复
-function updateRestore() {
-  const hidden = document.querySelectorAll('.tool-card[hidden]').length;
-  const box = $('#toolsRestore');
-  if (!box) return;
-  if (hidden > 0) {
-    box.hidden = false;
-    $('#restoreCount').textContent = hidden;
-  } else {
-    box.hidden = true;
-  }
-}
 // 统一关闭：.card-close 同时服务弹窗（关闭模态）与工具卡（收起计算器）。
 // 设计系统要求所有弹窗关闭位统一为 .card-close（右上角 ×）。
 function injectModalClose() {
@@ -2767,7 +2755,7 @@ document.addEventListener('click', (e) => {
   const modal = x.closest('.modal');
   if (modal) { modal.hidden = true; return; }
   const card = x.closest('.tool-card');
-  if (card) { card.hidden = true; updateRestore(); }
+  if (card) card.hidden = true;
 });
 // 部分遮罩：保留首尾若干字符，中间以 * 替代（Webhook/加签密钥 这类普通文本框默认只露头尾）
 function maskSecret(v) {
@@ -2810,15 +2798,8 @@ document.addEventListener('click', (e) => {
     }
   }
 });
-const toolsRestoreBtn = $('#toolsRestoreBtn');
-if (toolsRestoreBtn) {
-  toolsRestoreBtn.onclick = () => {
-    document.querySelectorAll('.tool-card[hidden]').forEach(c => { c.hidden = false; });
-    updateRestore();
-  };
-}
 
-// 补仓成本计算器：补仓现价同时作为买入价与盈亏参考价；手续费买卖各一笔（买费进成本、卖费扣盈亏）
+
 function calcAdd() {
   const P0 = parseFloat($('#addOldPrice').value);
   const Q0 = parseFloat($('#addOldQty').value);
