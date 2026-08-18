@@ -248,7 +248,8 @@ func wealthCumPnl(wealthID int64) float64 {
 // ---- 资产来源 CRUD ----
 
 func listSources(c *gin.Context) {
-	out, err := db.ListSources(currentUserID(c))
+	uid := currentUserID(c)
+	out, err := db.ListSources(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -260,9 +261,59 @@ func listSources(c *gin.Context) {
 		items = append(items, gin.H{
 			"id": s.ID, "user_id": s.UserID, "name": s.Name, "type": s.Type, "note": s.Note, "created_at": s.CreatedAt,
 			"ref_count": cnt,
+			"funds_cny": sourceFundsCNY(uid, s.ID),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"sources": items})
+}
+
+// sourceFundsCNY 统计该来源下所有产品的资产总值（CNY）：
+// 持仓市值 + 理财最新快照金额 + 现金余额，USD/HKD 按当前汇率折算。
+// 负债与消费不计入（负债非资产、消费为流水）。
+func sourceFundsCNY(uid, sourceID int64) float64 {
+	cnyRate, hkdRate, _ := market.GetFXRates()
+	hkdToCny := 1.0
+	if hkdRate > 0 {
+		hkdToCny = cnyRate / hkdRate
+	}
+	conv := func(cur string, v float64) float64 {
+		switch strings.ToLower(cur) {
+		case "usd":
+			return v * cnyRate
+		case "hkd":
+			return v * hkdToCny
+		default:
+			return v
+		}
+	}
+	var total float64
+	// 持仓（市值 = 数量 × 现价）
+	if hs, e := db.List(uid); e == nil {
+		for _, h := range hs {
+			if h.SourceID == sourceID {
+				total += conv(h.Currency, h.Quantity*h.CurrentPrice)
+			}
+		}
+	}
+	// 理财（最新快照金额）
+	if ws, e := db.ListWealth(uid); e == nil {
+		for _, w := range ws {
+			if w.SourceID == sourceID {
+				if _, amt, ok, _ := db.GetWealthLatest(w.ID); ok {
+					total += conv(w.Currency, amt)
+				}
+			}
+		}
+	}
+	// 现金
+	if cs, e := db.ListCash(uid); e == nil {
+		for _, c := range cs {
+			if c.SourceID == sourceID {
+				total += conv(c.Currency, c.Amount)
+			}
+		}
+	}
+	return round2(total)
 }
 
 func createSource(c *gin.Context) {

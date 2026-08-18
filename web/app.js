@@ -2959,11 +2959,12 @@ function renderSources(body) {
   let html = `<div class="asset-section-head"><h3>来源（${list.length}）</h3><button class="btn asset-add" id="addSourceBtn">＋ 添加来源</button></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">还没有来源，先添加一个银行、证券或软件吧。</p><button class="btn asset-add-inline" data-empty-add="source" type="button">➕ 添加来源</button></div>`;
   else {
-    html += `<table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联</th><th>备注</th><th></th></tr></thead><tbody>`;
+    html += `<table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联数</th><th class="num">关联资金(CNY)</th><th>备注</th><th></th></tr></thead><tbody>`;
     for (let i = 0; i < list.length; i++) {
       const s = list[i];
       html += `<tr><td class="num">${i + 1}</td><td>${esc(s.name)}</td><td>${s.type === 'securities' ? '证券' : s.type === 'software' ? '软件' : s.type === 'platform' ? '平台' : '银行'}</td>
-        <td class="num" title="被持仓/理财/现金/负债/消费引用的条目数">${s.ref_count || 0}</td><td>${esc(s.note || '')}</td>
+        <td class="num" title="被持仓/理财/现金/负债/消费引用的条目数">${s.ref_count || 0}</td>
+        <td class="num" title="该来源下持仓市值+理财金额+现金余额（折算 CNY）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
         <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-source" data-id="${s.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-source" data-id="${s.id}">🗑️ 删除</button></td></tr>`;
     }
     html += `</tbody></table>`;
