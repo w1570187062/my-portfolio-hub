@@ -418,11 +418,12 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) string {
 						continue
 					}
 					scoped = append(scoped, s)
-					if strings.EqualFold(s.Currency, "USD") || strings.EqualFold(s.Currency, "HKD") {
-						sUSD += s.Pnl
-					} else {
-						sCNY += s.PnlCNY
-					}
+				if strings.EqualFold(s.Currency, "USD") || strings.EqualFold(s.Currency, "HKD") {
+					sUSD += s.Pnl
+					sCNY += s.PnlCNY // 美元/HKD 盈亏折合人民币，一并计入「当日总盈亏」展示
+				} else {
+					sCNY += s.PnlCNY
+				}
 				}
 				sb.WriteString(fmt.Sprintf("- **当日总盈亏（%s）**：¥%s\n", label, moneyFmt(sCNY)))
 				if sUSD != 0 {
