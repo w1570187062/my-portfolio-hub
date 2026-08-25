@@ -328,6 +328,79 @@
 .spark-td svg { display: block; margin: 0 auto; }
 .spark-empty { color: var(--text-muted); }
 
+/* 涨/跌方向标签（名称左侧，背景色 + 白/深字） */
+.dir-tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-right: 6px;
+  vertical-align: 1px;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+}
+.dir-tag.up { background: var(--up); color: #fff; }
+.dir-tag.down { background: var(--down); color: #0b1014; }
+.dir-tag.flat { background: var(--text-muted); color: #fff; }
+
+/* 名称单元格：dir-tag + 名称 + 加减仓 横向排列 */
+.name-cell { white-space: nowrap; }
+.act-adjust-inline { margin-left: 6px; vertical-align: middle; }
+
+/* 行操作列纯色文字链接（参考 PanWatch 表格操作按钮） */
+.row-act-cell { white-space: nowrap; text-align: right; }
+.row-act {
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  color: var(--primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color .15s, background .15s;
+  border-radius: 4px;
+}
+.row-act:hover { color: var(--primary-hover); background: var(--primary-soft); }
+.row-act.danger { color: var(--danger); }
+.row-act.danger:hover { color: var(--danger-hover); background: rgba(220, 38, 38, .12); }
+
+/* 首页持仓按来源分组的折叠卡片 */
+.holdings-by-source { margin-top: 8px; }
+.source-group.holdings-group {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--card-bg, transparent);
+}
+.holdings-group .collapse-hat.holdings-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--card-bg, transparent);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  flex-wrap: wrap;
+}
+.holdings-group .hat-title { font-weight: 600; font-size: 14px; }
+.holdings-group .hat-count { color: var(--text-muted); font-size: 12px; font-weight: 400; margin-left: 4px; }
+.holdings-group .src-ico { color: var(--primary); margin-right: 2px; }
+.holdings-group .hat-side { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.holdings-group .hat-stat { font-size: 12px; color: var(--text-muted); display: inline-flex; align-items: baseline; gap: 3px; }
+.holdings-group .hat-stat-lbl { color: var(--text-muted); }
+.holdings-group .hat-stat b { color: var(--text); font-weight: 600; }
+.holdings-group .hat-stat small { font-weight: 400; opacity: .8; }
+.holdings-group .hat-chevron { transition: transform .2s; color: var(--text-muted); margin-left: 4px; }
+.holdings-group.collapsed .hat-chevron { transform: rotate(-90deg); }
+.holdings-group.collapsed .collapse-body { display: none; }
+.holdings-group .subtable-wrap { overflow-x: auto; }
+.holdings-group .holdings-subtable { width: 100%; }
+.holdings-group .holdings-subtable th { font-size: 12px; color: var(--text-muted); padding: 8px 10px; }
+.holdings-group .holdings-subtable td { padding: 8px 10px; border-top: 1px solid var(--border); }
+
 /* 文字按钮（最轻量） */
 .btn-text {
   border: none;

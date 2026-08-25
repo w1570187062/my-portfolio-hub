@@ -389,7 +389,6 @@ function updateSortIndicators() {
 }
 
 function renderFiltered() {
-  renderSourceChips();
   const hs = filteredHoldings();
   renderSummary(hs);
   const sorted = sortedHoldings(hs);
@@ -398,20 +397,24 @@ function renderFiltered() {
   const cards = document.getElementById('cards');
   const empty = document.getElementById('holdingsEmpty');
   const tw = document.querySelector('.table-wrap');
-  // 视图以用户选择为准（holdingsView），移动端仅作为默认偏好，不再强制卡片，保证切换按钮在手机上真实生效
+  const srcBox = document.getElementById('holdingsBySource');
+  // 视图以用户选择为准（holdingsView）；移动端仅作为默认偏好
   const useCard = holdingsView === 'card';
   if (useCard) {
     if (tbl) tbl.hidden = true;
     if (tw) tw.hidden = true;
     if (pager) pager.hidden = true;
+    if (srcBox) srcBox.hidden = true;
     if (cards) cards.hidden = false;
     renderCards(sorted);
   } else {
+    // 表格视图改为「按来源分组的折叠卡片」（借鉴 PanWatch portfolio 来源分组）
     if (cards) cards.hidden = true;
-    if (tw) tw.hidden = false;
-    if (tbl) tbl.hidden = false;
-    if (pager) pager.hidden = false;
-    renderRows(sorted);
+    if (tw) tw.hidden = true;
+    if (tbl) tbl.hidden = true;
+    if (pager) pager.hidden = true;
+    if (srcBox) srcBox.hidden = false;
+    renderHoldingsBySource(sorted);
   }
   if (empty) {
     const emptyMsg = document.getElementById('emptyMsg');
@@ -428,6 +431,96 @@ function renderFiltered() {
       empty.hidden = true;
     }
   }
+}
+
+// 按来源分组渲染首页持仓为折叠卡片（每来源一张子表 + 4 列汇总）
+// 借鉴 PanWatch portfolio：来源标题 + 数量 + 右侧市值/当日/总盈亏/盈亏率 + 折叠
+function renderHoldingsBySource(hs) {
+  const box = document.getElementById('holdingsBySource');
+  if (!box) return;
+  if (!hs.length) { box.innerHTML = ''; return; }
+  const toCny = (v, cur) => cur === 'USD' ? v * usdRate : cur === 'HKD' ? v * hkdRate : v;
+  const groups = new Map();
+  for (const h of hs) {
+    const sid = h.source_id || 0;
+    const sname = h.source_name || (sid === 0 ? '未分组' : '来源' + sid);
+    if (!groups.has(sid)) groups.set(sid, { sid, name: sname, items: [], mv: 0, cost: 0, dayPnl: 0, pnl: 0 });
+    const g = groups.get(sid);
+    g.items.push(h);
+    g.mv += toCny(h.market_value || 0, h.currency);
+    g.cost += toCny(h.cost_value || 0, h.currency);
+    g.dayPnl += toCny(h.day_pnl || 0, h.currency);
+    g.pnl += toCny(h.pnl || 0, h.currency);
+  }
+  const arr = [...groups.values()].sort((a, b) => b.mv - a.mv);
+  let html = '';
+  for (const g of arr) {
+    const pnlPct = g.cost > 0 ? (g.pnl / g.cost) * 100 : 0;
+    const dayPctV = g.mv > 0 ? (g.dayPnl / g.mv) * 100 : 0;
+    html += `<div class="collapsible source-group holdings-group" data-sid="${g.sid}">`
+      + `<div class="collapse-hat holdings-group-head">`
+      + `<span class="hat-title"><span class="src-ico">▦</span> ${esc(g.name)} <span class="hat-count">${g.items.length} 只</span></span>`
+      + `<span class="hat-side">`
+      + `<span class="hat-stat" title="该来源持仓折合人民币市值"><span class="hat-stat-lbl">市值</span><b>¥${fmt(g.mv)}</b></span>`
+      + `<span class="hat-stat" title="该来源当日盈亏合计"><span class="hat-stat-lbl">当日</span><b class="${cls(g.dayPnl)}">${fmt(g.dayPnl)} <small>(${pct(dayPctV)})</small></b></span>`
+      + `<span class="hat-stat" title="该来源累计盈亏合计"><span class="hat-stat-lbl">总盈亏</span><b class="${cls(g.pnl)}">${fmt(g.pnl)}</b></span>`
+      + `<span class="hat-stat" title="该来源累计盈亏率"><span class="hat-stat-lbl">盈亏率</span><b class="${cls(pnlPct)}">${pct(pnlPct)}</b></span>`
+      + `<span class="hat-chevron">▾</span></span>`
+      + `</div>`
+      + `<div class="collapse-body source-group-body">`
+      + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
+      + `<thead><tr><th class="num">#</th><th>名称</th><th>代码</th><th class="hide-col">市场</th><th class="hide-col">币种</th>`
+      + `<th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th>`
+      + `<th class="num">市值</th><th class="num">当日</th><th class="num">当日%</th>`
+      + `<th class="num">总盈亏</th><th class="num">盈亏%</th>`
+      + `<th class="num" title="近20个交易日收盘价走势">近20日</th><th>操作</th>`
+      + `</tr></thead><tbody>${g.items.map((h, i) => renderGroupRow(h, i)).join('')}</tbody>`
+      + `</table></div></div></div>`;
+  }
+  box.innerHTML = html;
+  // 绑定每组内行事件
+  box.querySelectorAll('.holdings-group').forEach((gEl) => {
+    gEl.querySelectorAll('[data-refresh]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 刷新持仓', b.dataset.refresh); refreshHolding(b.dataset.refresh, b); });
+    gEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 编辑持仓', b.dataset.edit); editHolding(b.dataset.edit); });
+    gEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 删除持仓', b.dataset.del); delHolding(b.dataset.del); });
+    gEl.querySelectorAll('[data-adjust]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 加减仓', b.dataset.adjust); openAdjust(b.dataset.adjust); });
+    gEl.querySelectorAll('[data-hist]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 历史持仓', b.dataset.hist); openHoldingHistory(b.dataset.hist); });
+    gEl.querySelectorAll('[data-fail]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); });
+    gEl.querySelectorAll('.name-clickable').forEach((td) => td.onclick = (e) => { e.stopPropagation(); const id = td.dataset.analysis; const cat = td.dataset.category; const linked = td.dataset.linkedSymbol; if (cat === 'fund' && !linked) { toast('该基金未设置关联股票代码，不支持技术分析', 'info'); return; } console.log('[click] 技术分析', id, linked || ''); openAnalysis(id); });
+  });
+}
+
+// 来源分组子表行模板：名称左侧 dir-tag 涨/跌标签 + 名称 + 加减仓纯色按钮；操作列纯色文字链接
+function renderGroupRow(h, i) {
+  const isFail = !!failedSymbols[h.symbol];
+  const dirCls = h.day_pnl > 0 ? 'up' : (h.day_pnl < 0 ? 'down' : 'flat');
+  const dirLbl = dirCls === 'up' ? '涨' : (dirCls === 'down' ? '跌' : '平');
+  return `<tr${isFail ? ' class="row-failed"' : ''}>
+    <td class="num idx">${i + 1}${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}</td>
+    <td class="name-cell">
+      <span class="dir-tag ${dirCls}">${dirLbl}</span>
+      <span class="name-clickable" data-analysis="${h.id}" data-category="${h.category}" data-linked-symbol="${esc(h.linked_symbol || '')}" title="${h.category === 'fund' && !h.linked_symbol ? '基金未关联股票代码，不支持技术分析' : esc(h.name)}">${esc(h.name)}${h.category === 'fund' && h.linked_symbol ? ' <span class="linked-badge" title="关联 ' + esc(h.linked_symbol) + '">🔗</span>' : ''}</span>
+      <button class="btn btn-sm primary act-adjust-inline" data-adjust="${h.id}" title="加减仓">加减仓</button>
+    </td>
+    <td>${h.symbol}</td>
+    <td class="hide-col">${h.market}</td>
+    <td class="hide-col">${h.currency}</td>
+    <td class="num">${fmt(h.quantity)}</td>
+    <td class="num">${fmtNav(h.cost_price, h.category)}</td>
+    <td class="num">${fmtNav(h.current_price, h.category)}</td>
+    <td class="num"${mvOrigTitle(h)}>${fmt(toRmb(h, h.market_value))}</td>
+    <td class="num ${cls(h.day_pnl)}">${fmt(toRmb(h, h.day_pnl))}</td>
+    <td class="num ${cls(h.day_pnl_pct)}">${pct(h.day_pnl_pct)}</td>
+    <td class="num ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
+    <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
+    <td class="num spark-td">${sparkCell(h.symbol)}</td>
+    <td class="row-act-cell">
+      <button class="row-act" data-refresh="${h.id}" title="刷新行情">刷新</button>
+      <button class="row-act" data-edit="${h.id}" title="编辑持仓">编辑</button>
+      <button class="row-act" data-hist="${h.id}" title="历史走势">历史</button>
+      <button class="row-act danger" data-del="${h.id}" title="删除持仓">删除</button>
+    </td>
+  </tr>`;
 }
 
 // 卡片视图：每只持仓一张卡（名称+代码 / 现价+当日% / 市值 / 累计盈亏），点击进详情。
@@ -1125,42 +1218,6 @@ $('#emptyAddBtn').onclick = () => openModal(null);
 })();
 
 // ---- 来源筛选：点击首页持仓表表头「来源」弹出复选框，勾选后仅显示对应来源的持仓 ----
-// 表格上方来源汇总 chips（借鉴 PanWatch 关注列表市场筛选：label + count，点击单选筛选）。
-// 聚合 allHoldings 按 source_id 统计每个来源的持仓数量；再点已选来源取消、点「全部」清空。
-function renderSourceChips() {
-  const box = $('#sourceChips');
-  if (!box) return;
-  const agg = new Map(); // id -> {name, count}
-  for (const h of allHoldings) {
-    const id = h.source_id || 0;
-    const name = h.source_name || (id === 0 ? '未分组' : '来源' + id);
-    if (!agg.has(id)) agg.set(id, { name, count: 0 });
-    agg.get(id).count++;
-  }
-  const chips = [{ id: '', name: '全部', count: allHoldings.length }];
-  [...agg.entries()].forEach(([id, v]) => chips.push({ id: String(id), name: v.name, count: v.count }));
-  box.innerHTML = chips.map((c) => {
-    const active = sourceFilter.size === 0 ? c.id === '' : sourceFilter.has(c.id);
-    return `<button type="button" class="src-chip${active ? ' active' : ''}" data-src="${c.id}" title="仅显示来源「${esc(c.name)}」的持仓">${esc(c.name)} <span class="cnt">${c.count}</span></button>`;
-  }).join('');
-  box.hidden = allHoldings.length === 0;
-  box.querySelectorAll('.src-chip').forEach((b) => {
-    b.onclick = () => {
-      const id = b.dataset.src;
-      if (id === '') {
-        sourceFilter = new Set();
-      } else if (sourceFilter.size === 1 && sourceFilter.has(id)) {
-        sourceFilter = new Set(); // 再点已选来源 → 取消筛选
-      } else {
-        sourceFilter = new Set([id]);
-      }
-      updateSourceBadge();
-      curPage = 1;
-      renderFiltered();
-    };
-  });
-}
-
 function renderSourceFilterList() {
   const box = $('#sourceFilterList');
   if (!box) return;
