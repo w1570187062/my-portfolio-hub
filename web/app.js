@@ -612,38 +612,20 @@ function renderSummary(hs) {
   const mpCnyCls = cls(monthPnlCny), mpUsdCls = cls(monthPnlUsd);
   const mpRows = `<div class="c-pnl-row"><span class="c-pnl-label">RMB</span><span class="c-pnl-val ${mpCnyCls}">¥${fmt(monthPnlCny)}</span></div>` +
                  `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${mpUsdCls}">$${fmt(monthPnlUsd)}</span></div>`;
-  $('#summaryBody').innerHTML = `
-
-     <div class="c-col">
-       <div class="card-icon">${ICON.total}</div>
-       <div class="c-content">
-         <div class="c-main">
-           <div class="c-head"><div class="label">总资产 (CNY)</div></div>
-           <div class="value">${fmt(totalCNY)}</div>
-         </div>
-         <div class="c-detail"><div class="c-breakdown">${br}</div></div>
-       </div>
-     </div>
-     <div class="c-col">
-       <div class="card-icon">${ICON.pnl}</div>
-       <div class="c-content">
-         <div class="c-main">
-           <div class="c-head"><div class="label">总盈亏 (CNY)</div></div>
-           <div class="value ${pCls}">${pnlVal}</div><div class="c-sub ${pCls}">${pct(totalPct)}</div>
-         </div>
-         <div class="c-detail"><div class="c-pnl">${pnlRows}</div></div>
-       </div>
-     </div>
-     <div class="c-col">
-       <div class="card-icon">${ICON.distribution}</div>
-       <div class="c-content">
-         <div class="c-main">
-           <div class="c-head"><div class="label">涨跌数 (${todayStr})</div></div>
-           <div class="value updown-value">${updownVal}</div><div class="c-sub ${mpCls}">本月累计 ¥${fmt(monthPnlCNY)}</div>
-         </div>
-         <div class="c-detail"><div class="c-pnl">${mpRows}</div></div>
-       </div>
-     </div>`;
+  // 首页总览：由独立「资产总览」卡改为账户父卡片右侧的横排统计（参考 PanWatch portfolio 账户汇总条）
+  const card = document.getElementById('accountCard');
+  const el = document.getElementById('acSummaryData');
+  if (!el) return;
+  if (card) card.hidden = false;
+  const unEl = document.getElementById('acUserName');
+  const unSrc = document.getElementById('userNameText');
+  if (unEl) unEl.textContent = unSrc ? (unSrc.textContent || '默认') : '默认';
+  el.innerHTML = `
+    <div class="ac-stat"><span class="ac-stat-lbl">总资产</span><b>¥${fmt(totalCNY)}</b></div>
+    <div class="ac-stat"><span class="ac-stat-lbl">总盈亏</span><b class="${pCls}">${fmt(totalPnl)} <small>(${pct(totalPct)})</small></b></div>
+    <div class="ac-stat"><span class="ac-stat-lbl">今日盈亏</span><b class="${dpCls}">${fmt(dayPnlCNY)}</b></div>
+    <div class="ac-stat"><span class="ac-stat-lbl">本月盈亏</span><b class="${mpCls}">${fmt(monthPnlCNY)}</b></div>
+    <div class="ac-stat"><span class="ac-stat-lbl">涨跌</span><b><span class="up">▲${upCount}</span> <span class="down">▼${downCount}</span> <span class="flat">—${flatCount}</span></b></div>`;
 }
 
 // Build the two-level filter UI: a category slider (left-right swipeable, single

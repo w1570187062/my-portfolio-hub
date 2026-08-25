@@ -340,8 +340,8 @@
   letter-spacing: 0.5px;
   line-height: 1.5;
 }
-.dir-tag.up { background: var(--up); color: #fff; }
-.dir-tag.down { background: var(--down); color: #0b1014; }
+.dir-tag.up { background: #ef4444; color: #fff; }
+.dir-tag.down { background: #10b981; color: #fff; }
 .dir-tag.flat { background: var(--text-muted); color: #fff; }
 
 /* 名称单元格：dir-tag + 名称 + 加减仓 横向排列 */
@@ -365,7 +365,39 @@
 .row-act.danger:hover { color: var(--danger-hover); background: rgba(220, 38, 38, .12); }
 
 /* 首页持仓按来源分组的折叠卡片 */
-.holdings-by-source { margin-top: 8px; }
+.holdings-by-source {
+  margin-top: 8px;
+  padding: 0 20px 30px; /* 与资产全景 #assetTabBody 左右间距(20px)保持一致 */
+}
+
+/* 账户父卡片：左侧账户名 + 右侧资产总览横排统计（参考 PanWatch portfolio 账户汇总条） */
+.account-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 12px 20px 8px;
+  padding: 14px 18px;
+  background: var(--card-bg, var(--btn-ghost));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.ac-left { display: flex; align-items: baseline; gap: 8px; }
+.ac-label { font-size: 12px; color: var(--text-muted); }
+.ac-name { font-size: 18px; font-weight: 700; color: var(--primary); }
+.ac-right { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.ac-stat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.ac-stat .ac-stat-lbl { font-size: 11px; color: var(--text-muted); }
+.ac-stat b { font-size: 15px; color: var(--text); font-weight: 600; }
+.ac-stat small { font-weight: 400; opacity: .8; }
+
+/* 持仓子表：每列强制左对齐（表头与数据上下对齐） */
+.holdings-group .holdings-subtable th,
+.holdings-group .holdings-subtable td,
+.holdings-group .holdings-subtable .num {
+  text-align: left;
+}
 .source-group.holdings-group {
   margin-bottom: 12px;
   border: 1px solid var(--border);
