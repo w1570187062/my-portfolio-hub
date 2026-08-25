@@ -469,7 +469,7 @@ function renderHoldingsBySource(hs) {
       + `</div>`
       + `<div class="collapse-body source-group-body">`
       + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
-      + `<thead><tr><th class="num">#</th><th>名称</th><th>代码</th><th class="hide-col">市场</th><th class="hide-col">币种</th>`
+      + `<thead><tr><th>名称</th><th>代码</th><th class="hide-col">市场</th><th class="hide-col">币种</th>`
       + `<th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th>`
       + `<th class="num">市值</th><th class="num">当日</th><th class="num">当日%</th>`
       + `<th class="num">总盈亏</th><th class="num">盈亏%</th>`
@@ -490,16 +490,16 @@ function renderHoldingsBySource(hs) {
   });
 }
 
-// 来源分组子表行模板：名称左侧 dir-tag 涨/跌标签 + 名称 + 加减仓纯色按钮；操作列纯色文字链接
+// 来源分组子表行模板：名称左侧 带颜色箭头(▲/▼/—) 方向指示 + 名称(过长截断) + 加减仓纯色按钮；操作列纯色文字链接
 function renderGroupRow(h, i) {
   const isFail = !!failedSymbols[h.symbol];
   const dayPnl = Number(h.day_pnl) || 0;
   const dirCls = dayPnl > 0 ? 'up' : (dayPnl < 0 ? 'down' : 'flat');
-  const dirLbl = dirCls === 'up' ? '涨' : (dirCls === 'down' ? '跌' : '平');
+  const dirArrow = dirCls === 'up' ? '▲' : (dirCls === 'down' ? '▼' : '—');
   return `<tr${isFail ? ' class="row-failed"' : ''}>
-    <td class="num idx">${i + 1}${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}</td>
     <td class="name-cell">
-      <span class="dir-tag ${dirCls}">${dirLbl}</span>
+      ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}
+      <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : '平'}">${dirArrow}</span>
       <span class="name-clickable" data-analysis="${h.id}" data-category="${h.category}" data-linked-symbol="${esc(h.linked_symbol || '')}" title="${h.category === 'fund' && !h.linked_symbol ? '基金未关联股票代码，不支持技术分析' : esc(h.name)}">${esc(h.name)}${h.category === 'fund' && h.linked_symbol ? ' <span class="linked-badge" title="关联 ' + esc(h.linked_symbol) + '">🔗</span>' : ''}</span>
       <button class="btn btn-sm primary act-adjust-inline" data-adjust="${h.id}" title="加减仓">加减仓</button>
     </td>

@@ -328,28 +328,23 @@
 .spark-td svg { display: block; margin: 0 auto; }
 .spark-empty { color: var(--text-muted); }
 
-/* 涨/跌方向标签（名称左侧，背景实色 + 白字 + 描边，确保任意主题下文字清晰、不再发灰看不清） */
-.dir-tag {
+/* 涨/跌方向指示（名称左侧，沿用全站 ▲红涨 / ▼绿跌 / —平 配色，无文字仅图标） */
+.dir-ind {
   display: inline-block;
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-size: 9px;
+  flex: 0 0 auto;
+  font-size: 13px;
   font-weight: 700;
+  line-height: 1;
   margin-right: 6px;
-  vertical-align: 1px;
-  letter-spacing: 0.5px;
-  line-height: 1.5;
-  color: #fff;
-  border: 1px solid rgba(0, 0, 0, .18);
 }
-.dir-tag.up { background: #e23b3b; color: #fff; }      /* 鲜红：涨 */
-.dir-tag.down { background: #15b863; color: #fff; }    /* 鲜绿：跌（提亮保证白字清晰） */
-.dir-tag.flat { background: #4a5568; color: #fff; }    /* 中性石板灰：平（区别于涨红跌绿，不再发虚） */
+.dir-ind.up { color: #f87171; }    /* 红：涨 */
+.dir-ind.down { color: #4ade80; }  /* 绿：跌 */
+.dir-ind.flat { color: var(--text-muted); }  /* 中性：平（横线） */
 
-/* 名称单元格：dir-tag + 名称 + 加减仓 横向排列 */
-.name-cell { white-space: nowrap; }
-.name-cell .name-clickable { font-size: 15px; font-weight: 400; }
-.act-adjust-inline { margin-left: 6px; vertical-align: middle; }
+/* 名称单元格：方向箭头 + 名称(过长截断) + 加减仓 横向排列；fix 宽度避免长名称挤压按钮 */
+.name-cell { display: flex; align-items: center; white-space: nowrap; gap: 6px; }
+.name-cell .name-clickable { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 400; }
+.act-adjust-inline { margin-left: 0; vertical-align: middle; }
 /* 加减仓内联按钮：压缩尺寸（特异性高于 .btn-sm，避免被其 padding 覆盖） */
 .name-cell .act-adjust-inline {
   margin-left: 6px;
@@ -454,19 +449,18 @@
 /* 首页持仓子表：固定列宽，确保各来源子表的列头/列宽跨卡片完全一致对齐 */
 .holdings-group .holdings-subtable { table-layout: fixed; }
 .holdings-group .holdings-subtable th, .holdings-group .holdings-subtable td { overflow: hidden; text-overflow: ellipsis; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: 36px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(2) { width: 200px; }   /* 名称（含涨跌标签+加减仓按钮） */
-.holdings-group .holdings-subtable :is(th, td):nth-child(3) { width: 90px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(6) { width: 86px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(7) { width: 86px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(8) { width: 86px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: 104px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(10) { width: 86px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(11) { width: 74px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(12) { width: 104px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(13) { width: 74px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(14) { width: 116px; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(15) { width: 210px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: 200px; }   /* 名称（含方向箭头+加减仓按钮，过长截断） */
+.holdings-group .holdings-subtable :is(th, td):nth-child(2) { width: 90px; }    /* 代码 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(5) { width: 86px; }    /* 份额 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(6) { width: 86px; }    /* 成本价 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(7) { width: 86px; }    /* 现价 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(8) { width: 104px; }   /* 市值 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: 86px; }    /* 当日 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(10) { width: 74px; }   /* 当日% */
+.holdings-group .holdings-subtable :is(th, td):nth-child(11) { width: 104px; }  /* 总盈亏 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(12) { width: 74px; }   /* 盈亏% */
+.holdings-group .holdings-subtable :is(th, td):nth-child(13) { width: 116px; }  /* 近20日 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(14) { width: 210px; }  /* 操作 */
 
 /* 文字按钮（最轻量） */
 .btn-text {
