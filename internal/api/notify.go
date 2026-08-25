@@ -108,7 +108,7 @@ func notifyTest(c *gin.Context) {
 		return req.Channel == "" || req.Channel == ch
 	}
 	if want("dingtalk") && cfg.Dingtalk.Enabled && cfg.Dingtalk.Webhook != "" {
-		test := "## 测试通知\n\n这是一条来自「观澜·持仓管理」的**测试**消息。\n\n> 若你收到此消息，说明钉钉通知渠道配置正确 ✅"
+		test := "## 测试通知\n\n这是一条来自「观澜」的**测试**消息。\n\n> 若你收到此消息，说明钉钉通知渠道配置正确 ✅"
 		if e := sendDingtalk(cfg.Dingtalk, "持仓通知测试", test); e != nil {
 			results["dingtalk"] = "失败: " + e.Error()
 		} else {
@@ -116,7 +116,7 @@ func notifyTest(c *gin.Context) {
 		}
 	}
 	if want("email") && cfg.Email.Enabled {
-		if e := sendEmail(cfg.Email, "持仓通知测试", "这是一封来自「观澜·持仓管理」的测试邮件。\n\n若你收到此邮件，说明邮箱通知渠道配置正确。\n"); e != nil {
+		if e := sendEmail(cfg.Email, "持仓通知测试", "这是一封来自「观澜」的测试邮件。\n\n若你收到此邮件，说明邮箱通知渠道配置正确。\n"); e != nil {
 			results["email"] = "失败: " + e.Error()
 		} else {
 			results["email"] = "ok"
@@ -456,7 +456,7 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) string {
 			}
 		}
 	}
-	sb.WriteString("\n> 由「观澜·持仓管理」自动推送")
+	sb.WriteString("\n> 由「观澜」自动推送")
 	return sb.String()
 }
 
