@@ -343,8 +343,8 @@
   border: 1px solid rgba(0, 0, 0, .18);
 }
 .dir-tag.up { background: #e23b3b; color: #fff; }      /* 鲜红：涨 */
-.dir-tag.down { background: #0f9d4e; color: #fff; }    /* 鲜绿：跌（深绿保证白字对比） */
-.dir-tag.flat { background: #3b4654; color: #fff; }    /* 深石板灰：平（不再是浅灰发虚） */
+.dir-tag.down { background: #15b863; color: #fff; }    /* 鲜绿：跌（提亮保证白字清晰） */
+.dir-tag.flat { background: #4a5568; color: #fff; }    /* 中性石板灰：平（区别于涨红跌绿，不再发虚） */
 
 /* 名称单元格：dir-tag + 名称 + 加减仓 横向排列 */
 .name-cell { white-space: nowrap; }
@@ -440,12 +440,33 @@
 .holdings-group .hat-stat b { color: var(--text); font-weight: 600; }
 .holdings-group .hat-stat small { font-weight: 400; opacity: .8; }
 .holdings-group .hat-chevron { transition: transform .2s; color: var(--text-muted); margin-left: auto; }
+/* 首页持仓分组卡：4 项统计固定最小宽度，使市值/当日/总盈亏/盈亏率跨卡片严格对齐 */
+.holdings-group .hat-side .hat-stat:nth-child(1) { min-width: 96px; }
+.holdings-group .hat-side .hat-stat:nth-child(2) { min-width: 116px; }
+.holdings-group .hat-side .hat-stat:nth-child(3) { min-width: 96px; }
+.holdings-group .hat-side .hat-stat:nth-child(4) { min-width: 80px; }
 .holdings-group.collapsed .hat-chevron { transform: rotate(-90deg); }
 .holdings-group.collapsed .collapse-body { display: none; }
 .holdings-group .subtable-wrap { overflow-x: auto; }
 .holdings-group .holdings-subtable { width: 100%; }
 .holdings-group .holdings-subtable th { font-size: 12px; color: var(--text-muted); padding: 8px 10px; }
 .holdings-group .holdings-subtable td { padding: 8px 10px; border-top: 1px solid var(--border); }
+/* 首页持仓子表：固定列宽，确保各来源子表的列头/列宽跨卡片完全一致对齐 */
+.holdings-group .holdings-subtable { table-layout: fixed; }
+.holdings-group .holdings-subtable th, .holdings-group .holdings-subtable td { overflow: hidden; text-overflow: ellipsis; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: 36px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(2) { width: 200px; }   /* 名称（含涨跌标签+加减仓按钮） */
+.holdings-group .holdings-subtable :is(th, td):nth-child(3) { width: 90px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(6) { width: 86px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(7) { width: 86px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(8) { width: 86px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: 104px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(10) { width: 86px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(11) { width: 74px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(12) { width: 104px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(13) { width: 74px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(14) { width: 116px; }
+.holdings-group .holdings-subtable :is(th, td):nth-child(15) { width: 210px; }
 
 /* 文字按钮（最轻量） */
 .btn-text {
@@ -1985,6 +2006,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .source-group .collapse-body .asset-table { margin-bottom: 0; }
 /* 组头右侧：累计资金 + 折叠箭头 */
 .source-group .hat-total { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+/* 资产全景「来源」分组卡片：头部套用首页账户卡片效果（账户名左 + 横排统计右），默认折叠 */
+.source-group.asset-pano > .collapse-hat { padding: 14px 18px; }
+.source-group.asset-pano > .collapse-hat .ac-name { color: var(--primary); }
+.source-group.asset-pano > .collapse-hat .hat-chevron { color: var(--text-muted); margin-left: 14px; transition: transform .2s; }
 .asset-pill {
   padding: 4px 12px;
   border-radius: 14px;

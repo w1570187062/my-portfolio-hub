@@ -493,7 +493,8 @@ function renderHoldingsBySource(hs) {
 // 来源分组子表行模板：名称左侧 dir-tag 涨/跌标签 + 名称 + 加减仓纯色按钮；操作列纯色文字链接
 function renderGroupRow(h, i) {
   const isFail = !!failedSymbols[h.symbol];
-  const dirCls = h.day_pnl > 0 ? 'up' : (h.day_pnl < 0 ? 'down' : 'flat');
+  const dayPnl = Number(h.day_pnl) || 0;
+  const dirCls = dayPnl > 0 ? 'up' : (dayPnl < 0 ? 'down' : 'flat');
   const dirLbl = dirCls === 'up' ? '涨' : (dirCls === 'down' ? '跌' : '平');
   return `<tr${isFail ? ' class="row-failed"' : ''}>
     <td class="num idx">${i + 1}${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}</td>
@@ -3113,9 +3114,9 @@ function renderSources(body) {
       .filter((g) => g.items.length);
     for (const g of groups) {
       const gTotal = g.items.reduce((a, s) => a + (s.funds_cny || 0), 0);
-      html += `<div class="collapsible source-group collapsed"><div class="collapse-hat source-group-head">`;
-      html += `<span class="hat-title">${typeName[g.t]}（${g.items.length}）</span>`;
-      html += `<span class="hat-side"><span class="hat-total" title="该组来源关联资金合计（CNY）">¥${fmt(gTotal)}</span><span class="hat-chevron">▾</span></span></div>`;
+      html += `<div class="collapsible source-group asset-pano collapsed"><div class="collapse-hat asset-pano-head">`;
+      html += `<div class="ac-left"><span class="ac-name">${typeName[g.t]}（${g.items.length}）</span></div>`;
+      html += `<div class="ac-right"><div class="ac-stat"><span class="ac-stat-lbl">关联资金</span><b>${money(gTotal)}</b></div><span class="hat-chevron">▾</span></div></div>`;
       html += `<div class="collapse-body source-group-body"><table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联数</th><th class="num">关联资金(CNY)</th><th>备注</th><th></th></tr></thead><tbody>`;
       for (let i = 0; i < g.items.length; i++) {
         const s = g.items[i];
