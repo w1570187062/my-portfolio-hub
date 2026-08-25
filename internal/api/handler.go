@@ -151,6 +151,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/pnl/snapshot", snapshotHandler)
 		g.GET("/pnl/history", pnlHistory)
 		g.GET("/holdings/:id/pnl-history", holdingPnlHistory)
+		g.GET("/price/spark", priceSparkHandler)
 		g.GET("/ai/settings", aiSettingsGet)
 		g.POST("/ai/settings", aiSettingsPost)
 		g.POST("/ai/summary", aiSummary)
@@ -1407,6 +1408,35 @@ func mergeWealthDetail(orig string, items []wealthPnlItem) string {
 	}
 	b, _ := json.Marshal(map[string]interface{}{"by_wealth": items})
 	return string(b)
+}
+
+// priceSparkHandler 返回每只标的近 N 个交易日的收盘价序列（时间正序），
+// 供前端表格行内迷你走势线使用。symbols 用逗号分隔，一次批量返回。
+func priceSparkHandler(c *gin.Context) {
+	const days = 20
+	uid := currentUserID(c)
+	var syms []string
+	for _, s := range strings.Split(c.Query("symbols"), ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			syms = append(syms, s)
+		}
+	}
+	out := make(map[string][]float64, len(syms))
+	for _, s := range syms {
+		series, err := db.GetPriceSeries(s, uid)
+		if err != nil || len(series) == 0 {
+			continue
+		}
+		if len(series) > days {
+			series = series[len(series)-days:]
+		}
+		closes := make([]float64, 0, len(series))
+		for _, p := range series {
+			closes = append(closes, p.Close)
+		}
+		out[s] = closes
+	}
+	c.JSON(http.StatusOK, gin.H{"spark": out})
 }
 
 // holdingPnlHistory returns the daily P&L history for a single holding, derived from

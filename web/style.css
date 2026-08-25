@@ -234,6 +234,45 @@
   background: var(--btn-danger-active);
   border-color: var(--btn-danger-active);
 }
+/* 浅红危险变体（借鉴 PanWatch destructive：浅红底+红字，用于轻量危险操作，视觉弱于实心 .danger） */
+.btn.danger-soft {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: transparent;
+}
+.btn.danger-soft:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: var(--border-strong);
+}
+.btn.danger-soft:active {
+  background: var(--danger);
+  color: #fff;
+}
+/* 纯文字链接按钮（借鉴 PanWatch link 变体：主色下划线，无边框无背景） */
+.btn-link {
+  border: none;
+  background: none;
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  padding: 8px 10px;
+  box-shadow: none;
+  font-size: 14px;
+}
+.btn-link:hover {
+  color: var(--primary-hover);
+  background: none;
+}
+.btn-link:active {
+  color: var(--primary-active);
+  background: none;
+}
+
+/* 迷你走势线单元格（表格"近20日"列） */
+.spark-td { width: 120px; }
+.spark-td svg { display: block; margin: 0 auto; }
+.spark-empty { color: var(--text-muted); }
 
 /* 文字按钮（最轻量） */
 .btn-text {

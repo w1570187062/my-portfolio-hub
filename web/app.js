@@ -126,6 +126,7 @@ const fmtNav = (n, category) => {
 };
 
 let allHoldings = [];
+let sparkCache = {}; // symbol -> 近20个交易日收盘价序列（时间正序），供表格迷你走势线使用
 let curPage = 1;
 let pageSize = 10;
 let catFilter = new Set(); // selected categories; empty = all
@@ -224,10 +225,24 @@ async function load() {
     renderFreshness();
     if (!freshnessTimer) freshnessTimer = setInterval(renderFreshness, 30000);
     await loadSourcesCache();
+    sparkCache = await loadSpark(hd.holdings || []);
     buildFilters();
     renderFiltered();
   } catch (e) {
     toast('加载异常：' + e.message, 'err');
+  }
+}
+
+// 批量拉取各标的历史收盘价序列（近20日），供表格迷你走势线使用；失败降级为空对象。
+async function loadSpark(hs) {
+  const syms = [...new Set((hs || []).map(x => x.symbol).filter(Boolean))];
+  if (!syms.length) return {};
+  try {
+    const r = await api('/api/price/spark?symbols=' + encodeURIComponent(syms.join(',')));
+    const d = await r.json().catch(() => null);
+    return (d && d.spark) || {};
+  } catch (e) {
+    return {};
   }
 }
 
@@ -619,6 +634,36 @@ function applyFilter() {
   renderFiltered();
 }
 
+let sparkUid = 0;
+// 迷你走势线（借鉴 PanWatch Sparkline）：纯 SVG polyline + 渐变面积 + 尾端点圆。
+// 涨红跌绿（中国惯例），w/h 固定 1:1 用 viewBox 精确匹配，避免拉伸变形。
+function sparkline(data, opts) {
+  const w = (opts && opts.w) || 100, h = (opts && opts.h) || 28;
+  const stroke = (opts && opts.stroke) || 'currentColor';
+  const fill = (opts && opts.fill) || stroke;
+  const vals = (data || []).filter(v => Number.isFinite(v));
+  if (vals.length < 2) return '';
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (max - min < 1e-9) { max += 1; min -= 1; }
+  const padY = Math.max(1.5, h * 0.12), innerH = h - padY * 2;
+  const xAt = i => (w * i) / (vals.length - 1);
+  const yAt = v => padY + innerH - (innerH * (v - min)) / (max - min);
+  const pts = vals.map((v, i) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ');
+  const last = pts.split(' ').pop();
+  const gid = 'spk' + (++sparkUid);
+  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stroke}" stop-opacity=".32"/><stop offset="100%" stop-color="${stroke}" stop-opacity="0"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(#${gid})"/>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="${w}" height="${h}" style="vertical-align:middle;display:block" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="2.2" fill="${stroke}"/></svg>`;
+}
+
+// 表格迷你走势单元格：末价 vs 首价定涨跌色（涨红跌绿），无数据时显示占位符。
+function sparkCell(sym) {
+  const arr = sparkCache[sym];
+  if (!arr || arr.length < 2) return '<span class="spark-empty">—</span>';
+  const up = arr[arr.length - 1] >= arr[0];
+  const color = up ? 'var(--up)' : 'var(--down)';
+  return sparkline(arr, { w: 110, h: 26, stroke: color, fill: color });
+}
+
 function renderRows(hs) {
   const total = hs.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -638,6 +683,7 @@ function renderRows(hs) {
      <td class="num">${fmt(h.quantity)}</td>
      <td class="num">${fmtNav(h.cost_price, h.category)}</td>
      <td class="num">${fmtNav(h.current_price, h.category)}</td>
+     <td class="num spark-td">${sparkCell(h.symbol)}</td>
      <td class="num"${mvOrigTitle(h)}>${fmt(toRmb(h, h.market_value))}</td>
      <td class="num ${cls(h.day_pnl)}">${fmt(toRmb(h, h.day_pnl))}</td>
      <td class="num ${cls(h.day_pnl_pct)}">${pct(h.day_pnl_pct)}</td>
