@@ -389,6 +389,7 @@ function updateSortIndicators() {
 }
 
 function renderFiltered() {
+  renderSourceChips();
   const hs = filteredHoldings();
   renderSummary(hs);
   const sorted = sortedHoldings(hs);
@@ -1124,6 +1125,42 @@ $('#emptyAddBtn').onclick = () => openModal(null);
 })();
 
 // ---- 来源筛选：点击首页持仓表表头「来源」弹出复选框，勾选后仅显示对应来源的持仓 ----
+// 表格上方来源汇总 chips（借鉴 PanWatch 关注列表市场筛选：label + count，点击单选筛选）。
+// 聚合 allHoldings 按 source_id 统计每个来源的持仓数量；再点已选来源取消、点「全部」清空。
+function renderSourceChips() {
+  const box = $('#sourceChips');
+  if (!box) return;
+  const agg = new Map(); // id -> {name, count}
+  for (const h of allHoldings) {
+    const id = h.source_id || 0;
+    const name = h.source_name || (id === 0 ? '未分组' : '来源' + id);
+    if (!agg.has(id)) agg.set(id, { name, count: 0 });
+    agg.get(id).count++;
+  }
+  const chips = [{ id: '', name: '全部', count: allHoldings.length }];
+  [...agg.entries()].forEach(([id, v]) => chips.push({ id: String(id), name: v.name, count: v.count }));
+  box.innerHTML = chips.map((c) => {
+    const active = sourceFilter.size === 0 ? c.id === '' : sourceFilter.has(c.id);
+    return `<button type="button" class="src-chip${active ? ' active' : ''}" data-src="${c.id}" title="仅显示来源「${esc(c.name)}」的持仓">${esc(c.name)} <span class="cnt">${c.count}</span></button>`;
+  }).join('');
+  box.hidden = allHoldings.length === 0;
+  box.querySelectorAll('.src-chip').forEach((b) => {
+    b.onclick = () => {
+      const id = b.dataset.src;
+      if (id === '') {
+        sourceFilter = new Set();
+      } else if (sourceFilter.size === 1 && sourceFilter.has(id)) {
+        sourceFilter = new Set(); // 再点已选来源 → 取消筛选
+      } else {
+        sourceFilter = new Set([id]);
+      }
+      updateSourceBadge();
+      curPage = 1;
+      renderFiltered();
+    };
+  });
+}
+
 function renderSourceFilterList() {
   const box = $('#sourceFilterList');
   if (!box) return;

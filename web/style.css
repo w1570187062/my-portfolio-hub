@@ -268,6 +268,60 @@
   color: var(--primary-active);
   background: none;
 }
+/* 纯色主按钮（借鉴 PanWatch default variant：主色实心 + 白字，用于主要操作，与幽灵 .btn 形成主次对比） */
+.btn.primary {
+  background: var(--btn-primary);
+  color: #fafafa;
+  border-color: var(--btn-primary);
+}
+.btn.primary:hover {
+  background: var(--btn-primary-hover);
+  color: #fff;
+  border-color: var(--btn-primary-hover);
+  box-shadow: var(--btn-shadow-hover);
+}
+.btn.primary:active {
+  background: var(--btn-primary-active);
+  color: #fff;
+  border-color: var(--btn-primary-active);
+}
+
+/* 表格上方来源汇总 chips（借鉴 PanWatch 关注列表市场筛选：名称 + 数量，点击单选筛选） */
+.src-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--btn-ghost);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--btn-transition);
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.src-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.src-chip.active {
+  background: var(--btn-primary);
+  color: #fafafa;
+  border-color: var(--btn-primary);
+}
+.src-chip .cnt {
+  opacity: .75;
+  font-size: 11px;
+}
 
 /* 迷你走势线单元格（表格"近20日"列） */
 .spark-td { width: 120px; }
