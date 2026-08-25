@@ -331,9 +331,9 @@
 /* 涨/跌方向标签（名称左侧，背景实色 + 白字 + 描边，确保任意主题下文字清晰、不再发灰看不清） */
 .dir-tag {
   display: inline-block;
-  padding: 1px 7px;
+  padding: 1px 5px;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   margin-right: 6px;
   vertical-align: 1px;
@@ -348,7 +348,7 @@
 
 /* 名称单元格：dir-tag + 名称 + 加减仓 横向排列 */
 .name-cell { white-space: nowrap; }
-.name-cell .name-clickable { font-size: 15px; font-weight: 600; }
+.name-cell .name-clickable { font-size: 15px; font-weight: 400; }
 .act-adjust-inline { margin-left: 6px; vertical-align: middle; }
 /* 加减仓内联按钮：压缩尺寸（特异性高于 .btn-sm，避免被其 padding 覆盖） */
 .name-cell .act-adjust-inline {
@@ -430,7 +430,8 @@
   user-select: none;
   flex-wrap: wrap;
 }
-.holdings-group .hat-title { font-weight: 600; font-size: 14px; flex: 0 0 150px; min-width: 150px; text-align: left; }
+/* 分组标题固定宽度 + 省略号：让每个卡片的标题盒等宽，统计列(市值/当日/总盈亏/盈亏率)跨卡片严格左对齐 */
+.holdings-group .collapse-hat .hat-title { font-weight: 600; font-size: 14px; flex: 0 0 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .holdings-group .hat-count { color: var(--text-muted); font-size: 12px; font-weight: 400; margin-left: 4px; }
 .holdings-group .src-ico { color: var(--primary); margin-right: 2px; }
 .holdings-group .hat-side { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; justify-content: flex-start; }

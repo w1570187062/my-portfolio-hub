@@ -98,7 +98,7 @@
       </div>
       <div class="act-group">
         <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式">🌙</button>
-        <button id="userBtn" class="btn act-user" type="button" title="用户切换">👤 <span id="userNameText">默认</span></button>
+        <button id="userBtn" class="btn act-user" type="button" title="用户切换">👤<span id="userNameText" style="display:none">默认</span></button>
       </div>
     </div>
   </header>
@@ -120,7 +120,7 @@
         <button id="refreshBtn" class="btn">🔄 刷新行情</button>
       </div>
       <div class="action-tools">
-        <input type="search" id="filterInput" name="q" class="filter-search" placeholder="搜索名称 / 代码" aria-label="筛选持仓" autocomplete="off" spellcheck="false" enterkeyhint="search" data-1p-ignore data-lpignore="true" data-form-type="other" data-dashlane-ignored="true">
+        <input type="search" id="filterInput" name="q" class="filter-search" placeholder="搜索名称 / 代码" aria-label="筛选持仓" autocomplete="off" spellcheck="false" enterkeyhint="search" hidden data-1p-ignore data-lpignore="true" data-form-type="other" data-dashlane-ignored="true">
         <div class="view-toggle" id="viewToggle">
           <span class="vt-indicator" id="vtIndicator"></span>
           <button class="btn vt-btn active" data-view="table" type="button">表格</button>
