@@ -104,6 +104,13 @@
   </header>
 
   <div id="holdingsView">
+  <div id="accountCard" class="account-card" hidden>
+    <div class="ac-left">
+      <span class="ac-label">账户</span>
+      <span id="acUserName" class="ac-name">—</span>
+    </div>
+    <div class="ac-right" id="acSummaryData"></div>
+  </div>
   <div class="list-bar">
     <div id="filters" class="filters"></div>
     <div class="list-actions">
@@ -134,13 +141,6 @@
     </thead>
     <tbody id="rows"></tbody>
   </table>
-  </div>
-  <div id="accountCard" class="account-card" hidden>
-    <div class="ac-left">
-      <span class="ac-label">账户</span>
-      <span id="acUserName" class="ac-name">—</span>
-    </div>
-    <div class="ac-right" id="acSummaryData"></div>
   </div>
   <div id="holdingsBySource" class="holdings-by-source"></div>
   <div id="sourceFilterPop" class="src-pop" hidden>

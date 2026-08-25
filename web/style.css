@@ -328,10 +328,10 @@
 .spark-td svg { display: block; margin: 0 auto; }
 .spark-empty { color: var(--text-muted); }
 
-/* 涨/跌方向标签（名称左侧，背景实色 + 白字，确保任意主题下文字清晰为白） */
+/* 涨/跌方向标签（名称左侧，背景实色 + 白字 + 描边，确保任意主题下文字清晰、不再发灰看不清） */
 .dir-tag {
   display: inline-block;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 4px;
   font-size: 10px;
   font-weight: 700;
@@ -340,10 +340,11 @@
   letter-spacing: 0.5px;
   line-height: 1.5;
   color: #fff;
+  border: 1px solid rgba(0, 0, 0, .18);
 }
-.dir-tag.up { background: #dc2626; color: #fff; }
-.dir-tag.down { background: #059669; color: #fff; }
-.dir-tag.flat { background: #64748b; color: #fff; }
+.dir-tag.up { background: #e23b3b; color: #fff; }      /* 鲜红：涨 */
+.dir-tag.down { background: #0f9d4e; color: #fff; }    /* 鲜绿：跌（深绿保证白字对比） */
+.dir-tag.flat { background: #3b4654; color: #fff; }    /* 深石板灰：平（不再是浅灰发虚） */
 
 /* 名称单元格：dir-tag + 名称 + 加减仓 横向排列 */
 .name-cell { white-space: nowrap; }
@@ -420,8 +421,8 @@
 .holdings-group .collapse-hat.holdings-group-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 18px;
   padding: 10px 14px;
   background: var(--card-bg, transparent);
   border-bottom: 1px solid var(--border);
@@ -429,15 +430,15 @@
   user-select: none;
   flex-wrap: wrap;
 }
-.holdings-group .hat-title { font-weight: 600; font-size: 14px; }
+.holdings-group .hat-title { font-weight: 600; font-size: 14px; flex: 0 0 150px; min-width: 150px; text-align: left; }
 .holdings-group .hat-count { color: var(--text-muted); font-size: 12px; font-weight: 400; margin-left: 4px; }
 .holdings-group .src-ico { color: var(--primary); margin-right: 2px; }
-.holdings-group .hat-side { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.holdings-group .hat-stat { font-size: 12px; color: var(--text-muted); display: inline-flex; align-items: baseline; gap: 3px; }
+.holdings-group .hat-side { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; justify-content: flex-start; }
+.holdings-group .hat-stat { font-size: 12px; color: var(--text-muted); display: inline-flex; align-items: baseline; gap: 3px; white-space: nowrap; }
 .holdings-group .hat-stat-lbl { color: var(--text-muted); }
 .holdings-group .hat-stat b { color: var(--text); font-weight: 600; }
 .holdings-group .hat-stat small { font-weight: 400; opacity: .8; }
-.holdings-group .hat-chevron { transition: transform .2s; color: var(--text-muted); margin-left: 4px; }
+.holdings-group .hat-chevron { transition: transform .2s; color: var(--text-muted); margin-left: auto; }
 .holdings-group.collapsed .hat-chevron { transform: rotate(-90deg); }
 .holdings-group.collapsed .collapse-body { display: none; }
 .holdings-group .subtable-wrap { overflow-x: auto; }
