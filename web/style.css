@@ -328,25 +328,37 @@
 .spark-td svg { display: block; margin: 0 auto; }
 .spark-empty { color: var(--text-muted); }
 
-/* 涨/跌方向标签（名称左侧，背景色 + 白/深字） */
+/* 涨/跌方向标签（名称左侧，背景实色 + 白字，确保任意主题下文字清晰为白） */
 .dir-tag {
   display: inline-block;
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   margin-right: 6px;
   vertical-align: 1px;
   letter-spacing: 0.5px;
   line-height: 1.5;
+  color: #fff;
 }
-.dir-tag.up { background: #ef4444; color: #fff; }
-.dir-tag.down { background: #10b981; color: #fff; }
-.dir-tag.flat { background: var(--text-muted); color: #fff; }
+.dir-tag.up { background: #dc2626; color: #fff; }
+.dir-tag.down { background: #059669; color: #fff; }
+.dir-tag.flat { background: #64748b; color: #fff; }
 
 /* 名称单元格：dir-tag + 名称 + 加减仓 横向排列 */
 .name-cell { white-space: nowrap; }
+.name-cell .name-clickable { font-size: 15px; font-weight: 600; }
 .act-adjust-inline { margin-left: 6px; vertical-align: middle; }
+/* 加减仓内联按钮：压缩尺寸（特异性高于 .btn-sm，避免被其 padding 覆盖） */
+.name-cell .act-adjust-inline {
+  margin-left: 6px;
+  vertical-align: middle;
+  padding: 3px 8px;
+  font-size: 11px;
+  min-height: 0;
+  line-height: 1.4;
+  border-radius: 5px;
+}
 
 /* 行操作列纯色文字链接（参考 PanWatch 表格操作按钮） */
 .row-act-cell { white-space: nowrap; text-align: right; }
@@ -865,6 +877,8 @@ header h1 {
   border-radius: 8px;
   filter: drop-shadow(0 2px 8px rgba(45, 212, 167, .3));
 }
+/* 标题栏为 sticky，下方主视图内容需留出与标题栏的间距 */
+#holdingsView, #assetView, #toolsView, #calendarView, #notifyView { padding-top: 14px; }
 .actions {
   display: flex;
   align-items: center;
