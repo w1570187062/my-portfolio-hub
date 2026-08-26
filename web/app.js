@@ -3765,14 +3765,52 @@ function klineMiniHTML(bars) {
     const col = isUp ? up : down;
     const yO = y(b.Open), yC = y(b.Close);
     const top = Math.min(yO, yC), hgt = Math.max(1, Math.abs(yO - yC));
+    const px = (x / W * 100).toFixed(2);
+    const py = (yC / H * 100).toFixed(2);
+    body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '">';
     body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
     body += '<rect x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
+    body += '<rect class="kl-hit" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '" fill="rgba(0,0,0,0)"/>';
+    body += '</g>';
   });
   const last = data[data.length - 1].Close;
   const yLast = y(last);
   body += '<line x1="0" y1="' + yLast.toFixed(2) + '" x2="' + W + '" y2="' + yLast.toFixed(2) + '" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>';
-  return '<div class="kline-mini"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
+  return '<div class="kline-mini"><div class="klwrap"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
+    + '<div class="kline-mini-tip" hidden></div></div>'
     + '<div class="kline-mini-meta"><span style="color:#f59e0b">压力 ' + res.toFixed(2) + '</span><span style="color:#38bdf8">支撑 ' + sup.toFixed(2) + '</span><span class="' + (last >= data[0].Open ? 'up' : 'down') + '">最新 ' + last.toFixed(2) + '</span></div></div>';
+}
+
+// 迷你K线交互：悬停预览 / 点击固定显示 日期+收盘价；再次点击或点空白取消
+function bindKlineMini(root) {
+  const wrap = root.querySelector('.klwrap');
+  if (!wrap) return;
+  const tip = wrap.querySelector('.kline-mini-tip');
+  let pinned = null, hover = null;
+  function showTip(g) {
+    const c = Number(g.dataset.c);
+    tip.innerHTML = '<div class="kl-tip-d">' + esc(g.dataset.d) + '</div><div class="kl-tip-c ' + g.dataset.dir + '">收盘 ' + c.toFixed(2) + '</div>';
+    let px = parseFloat(g.dataset.px), py = parseFloat(g.dataset.py);
+    px = Math.max(8, Math.min(92, px));
+    tip.style.left = px + '%';
+    if (py < 14) { tip.style.top = (py + 16) + '%'; tip.style.transform = 'translate(-50%, 0)'; }
+    else { tip.style.top = py + '%'; tip.style.transform = 'translate(-50%, -130%)'; }
+    tip.hidden = false;
+  }
+  function hideTip() { tip.hidden = true; }
+  function clearSel() { wrap.querySelectorAll('.kc.sel').forEach((x) => x.classList.remove('sel')); }
+  wrap.addEventListener('mousemove', (e) => {
+    if (pinned) return;
+    const g = e.target.closest('.kc');
+    if (g) { if (hover !== g.dataset.d) { showTip(g); hover = g.dataset.d; } }
+    else if (hover) { hideTip(); hover = null; }
+  });
+  wrap.addEventListener('click', (e) => {
+    const g = e.target.closest('.kc');
+    if (!g) { pinned = null; clearSel(); hideTip(); hover = null; return; }
+    if (pinned === g.dataset.d) { pinned = null; clearSel(); hideTip(); hover = null; }
+    else { pinned = g.dataset.d; clearSel(); g.classList.add('sel'); showTip(g); hover = g.dataset.d; }
+  });
 }
 
 // 关键信号徽章（由已有指标派生，对应 PanWatch 的 TechnicalBadge 风格）
@@ -3802,6 +3840,7 @@ function renderAnalysis(a) {
     if (a.series && a.series.length) html += klineMiniHTML(a.series);
     html += '<div class="analysis-err">数据不足，无法计算指标</div>';
     $('#analysisBody').innerHTML = html;
+    bindKlineMini($('#analysisBody'));
     return;
   }
 
@@ -3875,6 +3914,7 @@ function renderAnalysis(a) {
   }
 
   $('#analysisBody').innerHTML = html;
+  bindKlineMini($('#analysisBody'));
 }
 
 // ── 弹框关闭 ──────────────────────────────────────────

@@ -2366,6 +2366,24 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .kline-mini-meta .up { color: #ff4757; }
 .kline-mini-meta .down { color: #2ed573; }
 
+/* 迷你K线交互 */
+.klwrap { position: relative; }
+.klwrap .kc { cursor: pointer; }
+.klwrap .kc .kl-hit { pointer-events: all; }
+.klwrap .kc.sel .kl-hit { fill: rgba(111,158,94,.18); }
+.klwrap .kc.sel rect[fill]:not(.kl-hit) { stroke: #fff; stroke-width: 1; }
+.kline-mini-tip {
+  position: absolute; z-index: 30; pointer-events: none;
+  transform: translate(-50%, -130%);
+  background: rgba(15,20,28,.94); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 5px 9px; min-width: 96px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.4); white-space: nowrap;
+}
+.kline-mini-tip .kl-tip-d { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+.kline-mini-tip .kl-tip-c { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kline-mini-tip .kl-tip-c.up { color: #ff4757; }
+.kline-mini-tip .kl-tip-c.down { color: #2ed573; }
+
 /* 关键信号徽章（PanWatch TechnicalBadge 风格，由已有指标派生） */
 .ana-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; }
 .ana-badge { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); background: transparent; }
