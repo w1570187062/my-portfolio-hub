@@ -2941,6 +2941,12 @@ const EYE_OPEN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" st
 const EYE_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 // 来源分组标题图标：替换原 ▦ 占位符；分层/堆叠样式对应「按来源归组的持仓集合」（feather layers）
 const SRC_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>';
+// 资产全景来源类型图标：银行=地标建筑、证券=K线蜡烛、软件=显示器；平台复用 SRC_ICON 分层图标
+const BANK_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>';
+const SEC_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M9 5v4"/><path d="M9 19v-2"/><path d="M9 9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2Z"/><path d="M15 3v2"/><path d="M15 21v-4"/><path d="M15 11a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2Z"/><path d="M21 7v3"/><path d="M21 17v2"/><path d="M21 11a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2Z"/></svg>';
+const SOFTWARE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+const SRC_TYPE_ICON = { bank: BANK_ICON, securities: SEC_ICON, software: SOFTWARE_ICON, platform: SRC_ICON };
+function srcTypeIcon(t) { return SRC_TYPE_ICON[t] || SRC_ICON; }
 document.querySelectorAll('.eye-toggle').forEach(b => { if (!b.innerHTML.trim()) b.innerHTML = EYE_OPEN; });
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.eye-toggle');
@@ -3188,12 +3194,12 @@ function renderSources(body) {
     for (const g of groups) {
       const gTotal = g.items.reduce((a, s) => a + (s.funds_cny || 0), 0);
       html += `<div class="collapsible source-group asset-pano collapsed"><div class="collapse-hat asset-pano-head">`;
-      html += `<div class="ac-left"><span class="ac-name">${typeName[g.t]}（${g.items.length}）</span></div>`;
+      html += `<div class="ac-left"><span class="ac-name"><span class="src-ico">${srcTypeIcon(g.t)}</span> ${typeName[g.t]}（${g.items.length}）</span></div>`;
       html += `<div class="ac-right"><div class="ac-stat"><span class="ac-stat-lbl">关联资金</span><b>${money(gTotal)}</b></div><span class="hat-chevron">▾</span></div></div>`;
       html += `<div class="collapse-body source-group-body"><table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联数</th><th class="num">关联资金(CNY)</th><th>备注</th><th></th></tr></thead><tbody>`;
       for (let i = 0; i < g.items.length; i++) {
         const s = g.items[i];
-        html += `<tr><td class="num">${i + 1}</td><td>${esc(s.name)}</td><td>${typeName[typeOf(s)]}</td>
+        html += `<tr><td class="num">${i + 1}</td><td><span class="src-ico">${srcTypeIcon(typeOf(s))}</span> ${esc(s.name)}</td><td>${typeName[typeOf(s)]}</td>
           <td class="num" title="被持仓/理财/现金/负债/消费引用的条目数">${s.ref_count || 0}</td>
           <td class="num" title="该来源下持仓市值+理财金额+现金余额（折算 CNY）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
           <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-source" data-id="${s.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-source" data-id="${s.id}">🗑️ 删除</button></td></tr>`;

@@ -2043,6 +2043,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .source-group.asset-pano > .collapse-hat { padding: 14px 18px; }
 .source-group.asset-pano > .collapse-hat .ac-name { color: var(--primary); }
 .source-group.asset-pano > .collapse-hat .hat-chevron { color: var(--text-muted); margin-left: 14px; transition: transform .2s; }
+.source-group.asset-pano .src-ico { color: var(--primary); margin-right: 4px; vertical-align: -1px; }
 .asset-pill {
   padding: 4px 12px;
   border-radius: 14px;
