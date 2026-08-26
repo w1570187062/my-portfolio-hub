@@ -3980,16 +3980,18 @@ function klineMiniHTML(bars, patMap) {
     let mark = '';
     if (ps.length) {
       const mc = ps[0].dir === 'bullish' ? '#ff4757' : ps[0].dir === 'bearish' ? '#2ed573' : '#f59e0b';
-      const yHigh = y(b.High);
-      const triTop = Math.max(1, yHigh - 4);
-      const triW = Math.min(cw * 1.6, step * 0.46);
+      const gap = 8, triH = 5;            // 倒三角与蜡烛最高价之间的留白 / 三角高度
+      const triW = Math.max(cw, 5);       // 底边至少为蜡烛宽度
+      const apexY = Math.max(triH + 0.5, y(b.High) - gap); // 朝下顶点，距蜡烛 gap
+      const tTop = apexY - triH;
       mark = '<polygon class="kl-patmark" points="'
-        + (x - triW / 2).toFixed(2) + ',' + triTop.toFixed(2) + ' '
-        + (x + triW / 2).toFixed(2) + ',' + triTop.toFixed(2) + ' '
-        + x.toFixed(2) + ',' + (triTop + 4).toFixed(2)
+        + (x - triW / 2).toFixed(2) + ',' + tTop.toFixed(2) + ' '
+        + (x + triW / 2).toFixed(2) + ',' + tTop.toFixed(2) + ' '
+        + x.toFixed(2) + ',' + apexY.toFixed(2)
         + '" fill="' + mc + '"/>';
     }
     body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + patAttr + '>';
+    body += '<rect class="kl-selbg" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '"/>';
     body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
     body += '<rect class="kl-body" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
     body += mark;

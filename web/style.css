@@ -2378,8 +2378,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .klwrap { position: relative; }
 .klwrap .kc { cursor: pointer; }
 .klwrap .kc .kl-hit { pointer-events: all; }
-.klwrap .kc.sel .kl-hit { fill: rgba(111,158,94,.18); }
-.klwrap .kc.sel rect[fill]:not(.kl-hit) { stroke: #fff; stroke-width: 1; }
+/* 选中蜡烛：背景半透明竖条铺满整个高度（默认透明，选中时显示） */
+.klwrap .kl-selbg { fill: transparent; }
+.klwrap .kc.sel .kl-selbg { fill: rgba(111,158,94,.22); }
+.klwrap .kc.sel .kl-body { stroke: #fff; stroke-width: 1; }
 /* 迷你K线：命中形态的蜡烛顶部倒三角标记（按方向着色，不干扰悬停） */
 .klwrap .kl-patmark { pointer-events: none; }
 .kline-mini-tip {
