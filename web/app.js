@@ -4126,13 +4126,20 @@ function detectKlinePatterns(bars) {
 
     const prevBear = prev.Close < prev.Open, prevBull = prev.Close > prev.Open;
     const curBear = b.Close < b.Open, curBull = b.Close > b.Open;
-
-    // 吞没形态：当前实体完全覆盖前一根实体
-    if (prevBear && curBull && b.Open <= prev.Close && b.Close >= prev.Open) {
+    // 前一根实体占比：用于区分“有实体内涵”的实体与近似十字星
+    const prevRange = prev.High - prev.Low;
+    const prevBodyRatio = prevRange > 0 ? Math.abs(prev.Close - prev.Open) / prevRange : 0;
+    // 吞没形态：当前实体完全覆盖前一根实体；要求两根均为“有分量”的实体
+    // （实体占振幅比 > 阈值），避免极小实体（如 1 分钱阴线被 4 分钱阳线“吞没”）
+    // 产生无意义的假信号。
+    const engulfMinRatio = 0.25;
+    if (prevBear && curBull && prevBodyRatio > engulfMinRatio && bodyRatio > engulfMinRatio
+        && b.Open <= prev.Close && b.Close >= prev.Open) {
       out.push({ idx: i, date: b.Date, name: '看涨吞没', dir: 'bullish', desc: '阳线实体完全吞没前阴线，反转向上' });
       continue;
     }
-    if (prevBull && curBear && b.Open >= prev.Close && b.Close <= prev.Open) {
+    if (prevBull && curBear && prevBodyRatio > engulfMinRatio && bodyRatio > engulfMinRatio
+        && b.Open >= prev.Close && b.Close <= prev.Open) {
       out.push({ idx: i, date: b.Date, name: '看跌吞没', dir: 'bearish', desc: '阴线实体完全吞没前阳线，反转向下' });
       continue;
     }
