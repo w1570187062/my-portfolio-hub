@@ -4265,23 +4265,7 @@ function sigListHTML(signals) {
   return h;
 }
 
-// 在迷你K线图上给命中蜡烛描边高亮
-function highlightPatternCandles(root, visible) {
-  const map = {};
-  visible.forEach((p) => { map[p.date] = p; });
-  root.querySelectorAll('.kc').forEach((g) => {
-    const p = map[g.dataset.d];
-    if (!p) return;
-    const body = g.querySelector('.kl-body');
-    if (body) {
-      const col = p.dir === 'bullish' ? '#f59e0b' : p.dir === 'bearish' ? '#a855f7' : '#38bdf8';
-      body.setAttribute('stroke', col);
-      body.setAttribute('stroke-width', '1.7');
-      body.setAttribute('stroke-opacity', '0.95');
-    }
-    g.classList.add('kc-pat');
-  });
-}
+// 命中形态仅在悬停时通过 data-pat 展示，迷你K线蜡烛不再描边/加框
 
 // 关键信号徽章（由已有指标派生，对应 PanWatch 的 TechnicalBadge 风格）
 function anaBadgesHTML(ind, prob) {
@@ -4441,7 +4425,6 @@ function renderAnalysis(a) {
 
   $('#analysisBody').innerHTML = html;
   bindKlineMini($('#analysisBody'));
-  if (patVisible.length) highlightPatternCandles($('#analysisBody'), patVisible);
   bindAnalysisTabs();
 }
 
