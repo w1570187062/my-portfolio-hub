@@ -464,7 +464,7 @@ function measureNameWidth(text) {
 function measureBtnWidth(label) {
   return _measureWidth(() => {
     const b = document.createElement('button');
-    b.className = 'btn btn-sm primary act-adjust-inline';
+    b.className = 'btn btn-sm act-adjust-inline';
     b.textContent = label;
     return b;
   });
@@ -497,7 +497,7 @@ function renderHoldingsBySource(hs) {
     if (supportsAnalysis(h)) hasAna = true;
   }
   const ARROW = 16, GAP = 6, CELLPAD = 7, BUF = 8;
-  const wAdd = measureBtnWidth('加减仓');
+  const wAdd = measureBtnWidth('修改');
   const wAna = hasAna ? measureBtnWidth('分析') : 0;
   let colW = maxName + ARROW + GAP * 2 + wAdd + (hasAna ? GAP + wAna : 0) + 18 + CELLPAD + BUF;
   box.style.setProperty('--name-col-w', Math.ceil(colW) + 'px');
@@ -539,7 +539,7 @@ function renderHoldingsBySource(hs) {
   });
 }
 
-// 来源分组子表行模板：名称左侧 带颜色箭头(▲/▼/—) 方向指示 + 名称(过长截断) + 加减仓纯色按钮；操作列纯色文字链接
+// 来源分组子表行模板：名称左侧 带颜色箭头(▲/▼) 方向指示 + 名称(过长截断) + 修改/分析 幽灵按钮；操作列纯色文字链接
 function renderGroupRow(h, i) {
   const isFail = !!failedSymbols[h.symbol];
   const dayPnl = Number(h.day_pnl) || 0;
@@ -550,7 +550,7 @@ function renderGroupRow(h, i) {
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}
       <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : ''}">${dirArrow}</span>
       <span class="name-clickable" title="${esc(h.name)}">${esc(h.name)}</span>
-      <button class="btn btn-sm primary act-adjust-inline" data-adjust="${h.id}" title="加减仓">加减仓</button>
+      <button class="btn btn-sm act-adjust-inline act-modify" data-adjust="${h.id}" title="修改">修改</button>
       ${supportsAnalysis(h) ? '<button class="btn btn-sm act-adjust-inline act-analysis" data-ana="' + h.id + '" title="技术分析">分析</button>' : ''}
     </td>
     <td>${h.symbol}</td>
@@ -658,7 +658,7 @@ function renderSummary(hs) {
   pnlRows += `<div class="c-pnl-row"><span class="c-pnl-label">RMB</span><span class="c-pnl-val ${cls(cnyPnl)}">¥${fmt(cnyPnl)}</span></div>`;
   pnlRows += `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${cls(usdPnl)}">$${fmt(usdPnl)}</span></div>`;
   if (hkdMV > 0) pnlRows += `<div class="c-pnl-row"><span class="c-pnl-label">HKD</span><span class="c-pnl-val ${cls(hkdPnl)}">${fmt(hkdPnl * hkdRate)}</span></div>`;
-  const updownVal = `<span class="up">▲ ${upCount}</span><span class="ud-sep">/</span><span class="down">▼ ${downCount}</span><span class="ud-sep">/</span><span class="flat">— ${flatCount}</span>`;
+  const updownVal = `<span class="up">▲ ${upCount}</span><span class="ud-sep">/</span><span class="down">▼ ${downCount}</span>`;
   // 本月累计：CNY 折算总额下方，再列出本月 RMB/USD 原始货币盈亏（上下排列）
   const mpCnyCls = cls(monthPnlCny), mpUsdCls = cls(monthPnlUsd);
   const mpRows = `<div class="c-pnl-row"><span class="c-pnl-label">RMB</span><span class="c-pnl-val ${mpCnyCls}">¥${fmt(monthPnlCny)}</span></div>` +
@@ -676,7 +676,7 @@ function renderSummary(hs) {
     <div class="ac-stat"><span class="ac-stat-lbl">总盈亏</span><b class="${pCls}">${fmt(totalPnl)} <small>(${pct(totalPct)})</small></b></div>
     <div class="ac-stat"><span class="ac-stat-lbl">今日盈亏</span><b class="${dpCls}">${fmt(dayPnlCNY)}</b></div>
     <div class="ac-stat"><span class="ac-stat-lbl">本月盈亏</span><b class="${mpCls}">${fmt(monthPnlCNY)}</b></div>
-    <div class="ac-stat"><span class="ac-stat-lbl">涨跌</span><b><span class="up">▲${upCount}</span> <span class="down">▼${downCount}</span> <span class="flat">—${flatCount}</span></b></div>`;
+    <div class="ac-stat"><span class="ac-stat-lbl">涨跌</span><b><span class="up">▲${upCount}</span> <span class="down">▼${downCount}</span></b></div>`;
 }
 
 // Build the two-level filter UI: a category slider (left-right swipeable, single
@@ -3728,7 +3728,14 @@ function klineMiniHTML(bars) {
   const W = 600, H = 168, step = W / n, cw = Math.max(1.5, step * 0.62);
   const y = (v) => H - ((v - lo) / (hi - lo)) * H;
   const up = '#ff4757', down = '#2ed573';
+  // 压力位 / 支撑位：可视区间内极值（根据已有日K线数据组装，不新增条目）
+  let res = -Infinity, sup = Infinity;
+  data.forEach((b) => { if (b.High > res) res = b.High; if (b.Low < sup) sup = b.Low; });
   let body = '';
+  // 压力位虚线（上）
+  if (res > lo && res < hi) body += '<line x1="0" y1="' + y(res).toFixed(2) + '" x2="' + W + '" y2="' + y(res).toFixed(2) + '" stroke="#f59e0b" stroke-width="0.9" stroke-dasharray="5 3"/>';
+  // 支撑位虚线（下）
+  if (sup > lo && sup < hi) body += '<line x1="0" y1="' + y(sup).toFixed(2) + '" x2="' + W + '" y2="' + y(sup).toFixed(2) + '" stroke="#38bdf8" stroke-width="0.9" stroke-dasharray="5 3"/>';
   data.forEach((b, i) => {
     const x = i * step + step / 2;
     const isUp = b.Close >= b.Open;
@@ -3742,7 +3749,7 @@ function klineMiniHTML(bars) {
   const yLast = y(last);
   body += '<line x1="0" y1="' + yLast.toFixed(2) + '" x2="' + W + '" y2="' + yLast.toFixed(2) + '" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>';
   return '<div class="kline-mini"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
-    + '<div class="kline-mini-meta"><span>高 ' + hi.toFixed(2) + '</span><span>低 ' + lo.toFixed(2) + '</span><span class="' + (last >= data[0].Open ? 'up' : 'down') + '">最新 ' + last.toFixed(2) + '</span></div></div>';
+    + '<div class="kline-mini-meta"><span style="color:#f59e0b">压力 ' + res.toFixed(2) + '</span><span style="color:#38bdf8">支撑 ' + sup.toFixed(2) + '</span><span class="' + (last >= data[0].Open ? 'up' : 'down') + '">最新 ' + last.toFixed(2) + '</span></div></div>';
 }
 
 // 关键信号徽章（由已有指标派生，对应 PanWatch 的 TechnicalBadge 风格）

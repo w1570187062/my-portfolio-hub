@@ -343,11 +343,11 @@
 .dir-ind.down { color: #4ade80; }  /* 绿：跌 */
 .dir-ind.flat { color: var(--text-muted); }  /* 中性：平（横线） */
 
-/* 名称单元格：方向箭头 + 名称(过长截断) + 加减仓 横向排列；fix 宽度避免长名称挤压按钮 */
+/* 名称单元格：方向箭头 + 名称(过长截断) + 修改/分析 按钮横向排列；fix 宽度避免长名称挤压按钮 */
 .name-cell { display: flex; align-items: center; white-space: nowrap; gap: 6px; }
 .name-cell .name-clickable { flex: 0 0 auto; max-width: var(--name-w, 300px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 400; }
 .act-adjust-inline { margin-left: 0; vertical-align: middle; }
-/* 加减仓内联按钮：压缩尺寸（特异性高于 .btn-sm，避免被其 padding 覆盖） */
+/* 修改/分析 内联按钮：压缩尺寸（特异性高于 .btn-sm，避免被其 padding 覆盖） */
 .name-cell .act-adjust-inline {
   margin-left: 6px;
   vertical-align: middle;
@@ -357,7 +357,7 @@
   line-height: 1.4;
   border-radius: 5px;
 }
-/* 分析按钮：紫色描边幽灵样式，与绿色实心「加减仓」形成区分（分析=洞察，关联观澜紫色箭头 logo） */
+/* 分析按钮：紫色描边幽灵样式，与「修改」形成区分（分析=洞察，关联观澜紫色箭头 logo） */
 .name-cell .act-analysis {
   background: transparent;
   color: #a78bfa;
@@ -371,6 +371,21 @@
 .name-cell .act-analysis:active {
   background: rgba(124, 58, 237, .28);
   color: #ddd6fe;
+}
+/* 修改按钮：豆沙绿描边幽灵样式，区别于紫色「分析」，且不再用纯色背景 */
+.name-cell .act-modify {
+  background: transparent;
+  color: #6f9e5e;
+  border: 1px solid #6f9e5e;
+}
+.name-cell .act-modify:hover {
+  background: rgba(111, 158, 94, .16);
+  color: #8bb678;
+  border-color: #8bb678;
+}
+.name-cell .act-modify:active {
+  background: rgba(111, 158, 94, .28);
+  color: #a9c79c;
 }
 
 /* 行操作列纯色文字链接（参考 PanWatch 表格操作按钮） */
