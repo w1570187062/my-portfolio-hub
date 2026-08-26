@@ -115,7 +115,7 @@ func CalculateProbability(ind *IndicatorsResult) *ProbabilityResult {
 		reasons = reasons[:3]
 	}
 
-	result.Summary = fmt.Sprintf("【%s】综合评分：%.1f%% 上涨概率。主要依据：%s",
+	result.Summary = fmt.Sprintf("【%s】技术面看涨指数：%.1f（满值 90）。主要依据：%s",
 		dir, upPct, strings.Join(reasons, "；"))
 
 	return result
@@ -161,6 +161,9 @@ func evalMA(ind *IndicatorsResult) (Signal, float64) {
 	case above5 && above10 && above20 && ma5above10 && ma10above20:
 		dir = "bullish"
 		reason = "多头排列，价格站上所有均线"
+	case above5 && above10 && above20:
+		dir = "bullish"
+		reason = "价格站上 MA5/10/20，但均线未完全多头排列"
 	case !above5 && !above10 && !above20 && !ma5above10:
 		dir = "bearish"
 		reason = "空头排列，价格跌破所有均线"
@@ -187,16 +190,27 @@ func evalMACD(ind *IndicatorsResult) (Signal, float64) {
 	dif := ind.MACD.DIF
 	dea := ind.MACD.DEA
 	hist := ind.MACD.HIST
+	price := ind.Price
 
 	if dif == 0 && dea == 0 {
 		return Signal{Indicator: "MACD", Direction: "neutral", Score: 0, Reason: "数据不足"}, 0
 	}
 
+	// 用相对股价的比例把"贴零轴的微正"和"强势多头"区分开：
+	// DIF/HIST 达到股价 0.3% 才算"显著"，否则按比例打折，避免 dif=0.0008 这种拿满分。
+	rel := func(v float64) float64 {
+		if price > 0 {
+			return math.Abs(v) / price
+		}
+		return 0
+	}
+	const sig = 0.003
+
 	score := 0.0
 	if dif > 0 {
-		score += 0.3
+		score += 0.3 * math.Min(1, rel(dif)/sig)
 	} else {
-		score -= 0.3
+		score -= 0.3 * math.Min(1, rel(dif)/sig)
 	}
 	if dif > dea {
 		score += 0.3
@@ -204,16 +218,20 @@ func evalMACD(ind *IndicatorsResult) (Signal, float64) {
 		score -= 0.3
 	}
 	if hist > 0 {
-		score += 0.4
+		score += 0.4 * math.Min(1, rel(hist)/sig)
 	} else {
-		score -= 0.4
+		score -= 0.4 * math.Min(1, rel(hist)/sig)
 	}
+	score = math.Max(-1, math.Min(1, score))
 
 	var dir, reason string
 	switch {
 	case dif > 0 && dif > dea && hist > 0:
-		dir = "bullish"
-		reason = "MACD金叉状态，红柱增长"
+		if rel(hist) >= sig && rel(dif) >= sig {
+			dir, reason = "bullish", "MACD金叉，红柱明显放大"
+		} else {
+			dir, reason = "bullish", "MACD刚翻红，动能尚弱"
+		}
 	case dif > 0 && dif > dea && hist < 0:
 		dir = "bullish"
 		reason = "MACD多头但动能减弱"
@@ -249,14 +267,18 @@ func evalRSI(ind *IndicatorsResult) (Signal, float64) {
 	var score float64
 
 	switch {
-	case rsi > 80:
+	case rsi >= 80:
 		dir = "bearish"
 		score = -0.8
 		reason = fmt.Sprintf("RSI=%.1f，严重超买，回调风险高", rsi)
-	case rsi > 70:
+	case rsi >= 70:
 		dir = "bearish"
 		score = -0.4
 		reason = fmt.Sprintf("RSI=%.1f，超买区域", rsi)
+	case rsi >= 65:
+		dir = "neutral"
+		score = 0
+		reason = fmt.Sprintf("RSI=%.1f，接近超买，谨慎", rsi)
 	case rsi > 50:
 		dir = "bullish"
 		score = 0.3
@@ -301,7 +323,7 @@ func evalKDJ(ind *IndicatorsResult) (Signal, float64) {
 	if jval < 0 {
 		score += 0.4
 	} else if jval > 100 {
-		score -= 0.4
+		score -= 0.5
 	} else if jval > 80 {
 		score -= 0.2
 	} else if jval < 20 {
@@ -310,6 +332,9 @@ func evalKDJ(ind *IndicatorsResult) (Signal, float64) {
 
 	var dir, reason string
 	switch {
+	case jval > 100:
+		dir = "bearish"
+		reason = fmt.Sprintf("KDJ高位钝化(J=%.1f)，超买回撤风险高", jval)
 	case k > d && jval < 20:
 		dir = "bullish"
 		reason = "KDJ低位金叉，反弹信号"

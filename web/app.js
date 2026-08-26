@@ -4304,10 +4304,10 @@ function anaBadgesHTML(ind, prob) {
   return '<div class="ana-badges">' + items.map((it) => '<span class="ana-badge ' + it.tone + '">' + esc(it.label) + '</span>').join('') + '</div>';
 }
 
-// 由看多概率推导买入评级
+// 由技术面看涨指数推导买入评级
 function buyRating(upPct) {
-  if (upPct >= 70) return { label: '强烈买入', cls: 'up' };
-  if (upPct >= 55) return { label: '买入', cls: 'up' };
+  if (upPct >= 80) return { label: '强烈买入', cls: 'up' };
+  if (upPct >= 60) return { label: '买入', cls: 'up' };
   if (upPct >= 45) return { label: '中性', cls: 'neu' };
   if (upPct >= 30) return { label: '减仓', cls: 'down' };
   return { label: '卖出', cls: 'down' };
@@ -4321,7 +4321,7 @@ function overviewScoreRatingHTML(prob, patScore, patCount) {
   let rating;
   if (prob && prob.up_pct != null) {
     const r = buyRating(prob.up_pct);
-    rating = '<div class="ana-score-val ' + r.cls + '">' + r.label + '</div><div class="ana-score-sub">看多概率 ' + prob.up_pct.toFixed(0) + '%</div>';
+    rating = '<div class="ana-score-val ' + r.cls + '">' + r.label + '</div><div class="ana-score-sub">技术面看涨 ' + prob.up_pct.toFixed(0) + '</div>';
   } else {
     rating = '<div class="ana-score-val neu">—</div><div class="ana-score-sub">数据不足</div>';
   }
@@ -4358,10 +4358,16 @@ function indicatorsTableHTML(ind) {
   h += '<tr><td>MACD DEA</td><td>' + (macd.dea ? macd.dea.toFixed(4) : '—') + '</td></tr>';
   h += '<tr><td>MACD HIST</td><td>' + (macd.hist ? macd.hist.toFixed(4) : '—') + '</td></tr>';
   const rsi = ind.rsi || 50;
-  const rsiState = rsi > 70 ? '超买↓' : rsi > 50 ? '偏强↑' : rsi > 30 ? '偏弱↓' : '超卖↑';
-  h += '<tr><td>RSI(14)</td><td>' + rsi.toFixed(1) + '</td><td class="' + (rsi > 50 ? 'up' : 'down') + '">' + rsiState + '</td><td style="font-size:12px">' + (rsi > 70 ? '超买区域，回调风险高' : rsi > 50 ? '偏强区域，趋势向好' : rsi > 30 ? '偏弱区域，趋势偏空' : '超卖区域，反弹概率高') + '</td></tr>';
+  const rsiState = rsi > 70 ? '超买↓' : rsi >= 65 ? '接近超买' : rsi > 50 ? '偏强↑' : rsi > 30 ? '偏弱↓' : '超卖↑';
+  const rsiCls = rsi > 70 ? 'down' : rsi >= 65 ? 'neu' : rsi > 50 ? 'up' : 'down';
+  const rsiTip = rsi > 70 ? '超买区域，回调风险高' : rsi >= 65 ? '接近超买，谨慎追高' : rsi > 50 ? '偏强区域，趋势向好' : rsi > 30 ? '偏弱区域，趋势偏空' : '超卖区域，反弹概率高';
+  h += '<tr><td>RSI(14)</td><td>' + rsi.toFixed(1) + '</td><td class="' + rsiCls + '">' + rsiState + '</td><td style="font-size:12px">' + rsiTip + '</td></tr>';
   const kdj = ind.kdj || {};
-  h += '<tr><td>KDJ K</td><td>' + (kdj.k ? kdj.k.toFixed(2) : '—') + '</td><td rowspan="3" class="' + (kdj.k > kdj.d ? 'up' : 'down') + '">' + (kdj.k > kdj.d ? '金叉 ↑' : '死叉 ↓') + '</td><td rowspan="3" style="font-size:12px">J=' + (kdj.j ? kdj.j.toFixed(2) : '—') + ' ' + (kdj.j > 100 ? '超买' : kdj.j < 0 ? '超卖' : '') + '</td></tr>';
+  const kdjUp = kdj.k > kdj.d && !(kdj.j > 100);
+  const kdjState = kdj.j > 100 ? '高位钝化↓' : kdj.k > kdj.d ? '金叉 ↑' : '死叉 ↓';
+  const kdjCls = kdjUp ? 'up' : 'down';
+  const kdjJTip = kdj.j > 100 ? '高位钝化(超买)' : kdj.j < 0 ? '超卖' : kdj.j > 80 ? '高位' : '';
+  h += '<tr><td>KDJ K</td><td>' + (kdj.k ? kdj.k.toFixed(2) : '—') + '</td><td rowspan="3" class="' + kdjCls + '">' + kdjState + '</td><td rowspan="3" style="font-size:12px">J=' + (kdj.j ? kdj.j.toFixed(2) : '—') + ' ' + kdjJTip + '</td></tr>';
   h += '<tr><td>KDJ D</td><td>' + (kdj.d ? kdj.d.toFixed(2) : '—') + '</td></tr>';
   h += '<tr><td>KDJ J</td><td>' + (kdj.j ? kdj.j.toFixed(2) : '—') + '</td></tr>';
   const boll = ind.boll || {};
