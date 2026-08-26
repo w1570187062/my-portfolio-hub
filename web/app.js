@@ -510,10 +510,12 @@ function renderHoldingsBySource(hs) {
       + `<div class="collapse-hat holdings-group-head">`
       + `<span class="hat-title"><span class="src-ico">${srcTypeIconForSource(g.sid)}</span> ${esc(g.name)} <span class="hat-count">${g.items.length} 只</span></span>`
       + `<span class="hat-side">`
-      + `<span class="hat-stat" title="该来源持仓折合人民币市值"><span class="hat-stat-lbl">市值</span><b>¥${fmt(g.mv)}</b></span>`
+      + `<span class="hat-stat hat-stat-mv" title="该来源持仓折合人民币市值"><span class="hat-stat-lbl">市值</span><b>¥${fmt(g.mv)}</b></span>`
+      + `<span class="hat-side-extra" title="悬停展开：当日 / 总盈亏 / 盈亏率">`
       + `<span class="hat-stat" title="该来源当日盈亏合计"><span class="hat-stat-lbl">当日</span><b class="${cls(g.dayPnl)}">${fmt(g.dayPnl)} <small>(${pct(dayPctV)})</small></b></span>`
       + `<span class="hat-stat" title="该来源累计盈亏合计"><span class="hat-stat-lbl">总盈亏</span><b class="${cls(g.pnl)}">${fmt(g.pnl)}</b></span>`
       + `<span class="hat-stat" title="该来源累计盈亏率"><span class="hat-stat-lbl">盈亏率</span><b class="${cls(pnlPct)}">${pct(pnlPct)}</b></span>`
+      + `</span>`
       + `<span class="hat-chevron">▾</span></span>`
       + `</div>`
       + `<div class="collapse-body source-group-body">`
