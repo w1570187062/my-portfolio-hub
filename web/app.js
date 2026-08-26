@@ -4013,12 +4013,22 @@ function bindKlineMini(root) {
       });
     }
     tip.innerHTML = html;
-    let px = parseFloat(g.dataset.px), py = parseFloat(g.dataset.py);
-    px = Math.max(8, Math.min(92, px));
-    tip.style.left = px + '%';
-    if (py < 14) { tip.style.top = (py + 16) + '%'; tip.style.transform = 'translate(-50%, 0)'; }
-    else { tip.style.top = py + '%'; tip.style.transform = 'translate(-50%, -130%)'; }
+    tip.style.transform = 'none';
     tip.hidden = false;
+    // 以 .klwrap 为定位上下文，用像素定位并夹取在可视区内，避免溢出/窝角
+    const wx = wrap.getBoundingClientRect();
+    const tx = tip.getBoundingClientRect();
+    const tw = tx.width, th = tx.height;
+    const px = parseFloat(g.dataset.px) / 100 * wx.width;   // 蜡烛中心 x（svg 横向填满 wrap）
+    const py = parseFloat(g.dataset.py) / 100 * wx.height;  // 蜡烛中心 y（svg 纵向拉伸填满 wrap）
+    let left = px - tw / 2;
+    let top = (py >= 16) ? (py - th - 8) : (py + 8);        // 默认悬于蜡烛上方，贴顶时改下方
+    if (left < 2) left = 2;
+    if (left + tw > wx.width - 2) left = Math.max(2, wx.width - tw - 2);
+    if (top < 2) top = 2;
+    if (top + th > wx.height - 2) top = Math.max(2, wx.height - th - 2);
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
   }
   function hideTip() { tip.hidden = true; }
   function clearSel() { wrap.querySelectorAll('.kc.sel').forEach((x) => x.classList.remove('sel')); }
@@ -4116,9 +4126,9 @@ function detectKlinePatterns(bars) {
     const lower = Math.min(b.Open, b.Close) - b.Low;
     const bodyRatio = body / range;
 
-    // 十字星：实体极小，多空僵持
-    if (bodyRatio <= 0.12) {
-      out.push({ idx: i, date: b.Date, name: '十字星', dir: 'neutral', desc: '开盘≈收盘，多空僵持，警惕变盘' });
+    // 十字星：实体极小 + 上下影线明显 + 整体振幅不可忽略，避免极窄波动误报
+    if (bodyRatio <= 0.12 && Math.min(upper, lower) > body && range > b.Close * 0.004) {
+      out.push({ idx: i, date: b.Date, name: '十字星', dir: 'neutral', desc: '开盘≈收盘、上下影线明显，多空僵持，警惕变盘' });
       continue;
     }
 
@@ -4149,23 +4159,29 @@ function detectKlinePatterns(bars) {
     // （实体占振幅比 > 阈值），避免极小实体（如 1 分钱阴线被 4 分钱阳线“吞没”）
     // 产生无意义的假信号。
     const engulfMinRatio = 0.25;
+    const minMove = b.Close * 0.006;          // 整体振幅至少 ~0.6%，过滤微幅噪音
     if (prevBear && curBull && prevBodyRatio > engulfMinRatio && bodyRatio > engulfMinRatio
+        && (b.High - b.Low) > minMove
         && b.Open <= prev.Close && b.Close >= prev.Open) {
       out.push({ idx: i, date: b.Date, name: '看涨吞没', dir: 'bullish', desc: '阳线实体完全吞没前阴线，反转向上' });
       continue;
     }
     if (prevBull && curBear && prevBodyRatio > engulfMinRatio && bodyRatio > engulfMinRatio
+        && (b.High - b.Low) > minMove
         && b.Open >= prev.Close && b.Close <= prev.Open) {
       out.push({ idx: i, date: b.Date, name: '看跌吞没', dir: 'bearish', desc: '阴线实体完全吞没前阳线，反转向下' });
       continue;
     }
 
-    // 孕线：当前小实体被前一根实体包裹
-    if (prevBear && curBull && b.Open >= prev.Close && b.Close <= prev.Open) {
+    // 孕线：当前小实体被前一根实体包裹；要求前一根为“有分量”实体，且整体振幅不可忽略
+    const haramiMinRatio = 0.25;
+    if (prevBear && curBull && prevBodyRatio > haramiMinRatio && (b.High - b.Low) > minMove
+        && b.Open >= prev.Close && b.Close <= prev.Open) {
       out.push({ idx: i, date: b.Date, name: '看涨孕线', dir: 'bullish', desc: '小阳线被前阴线包裹，下跌动能减弱' });
       continue;
     }
-    if (prevBull && curBear && b.Open <= prev.Close && b.Close >= prev.Open) {
+    if (prevBull && curBear && prevBodyRatio > haramiMinRatio && (b.High - b.Low) > minMove
+        && b.Open <= prev.Close && b.Close >= prev.Open) {
       out.push({ idx: i, date: b.Date, name: '看跌孕线', dir: 'bearish', desc: '小阴线被前阳线包裹，上涨动能减弱' });
       continue;
     }
@@ -4388,7 +4404,7 @@ function renderAnalysis(a) {
 
   // 可选标签：概览必有；K线形态需 series；信号需 prob；指标需 ind
   const tabs = [{ id: 'overview', label: '概览' }];
-  if (a.series && a.series.length) tabs.push({ id: 'patterns', label: 'K线形态' });
+  if (a.series && a.series.length >= 2) tabs.push({ id: 'patterns', label: 'K线形态' });
   if (prob) tabs.push({ id: 'signals', label: '信号' });
   if (ind) tabs.push({ id: 'indicators', label: '指标' });
   const active = tabs[0].id;
@@ -4408,7 +4424,7 @@ function renderAnalysis(a) {
   html += '</div>';
 
   // ── K线形态 ──
-  if (a.series && a.series.length) {
+  if (a.series && a.series.length >= 2) {
     html += '<div class="ana-panel" data-tab="patterns" hidden>' + patHTML + '</div>';
   }
 
