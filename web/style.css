@@ -2380,6 +2380,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .klwrap .kc .kl-hit { pointer-events: all; }
 .klwrap .kc.sel .kl-hit { fill: rgba(111,158,94,.18); }
 .klwrap .kc.sel rect[fill]:not(.kl-hit) { stroke: #fff; stroke-width: 1; }
+/* 迷你K线：命中形态的蜡烛柔和发光（非外框/描边，按方向着色） */
+.klwrap .kc.glow-up  { filter: drop-shadow(0 0 3px #ff4757); }
+.klwrap .kc.glow-down { filter: drop-shadow(0 0 3px #2ed573); }
+.klwrap .kc.glow-neu { filter: drop-shadow(0 0 3px #f59e0b); }
 .kline-mini-tip {
   position: absolute; z-index: 30; pointer-events: none;
   transform: translate(-50%, -130%);

@@ -3977,7 +3977,9 @@ function klineMiniHTML(bars, patMap) {
     const py = (yC / H * 100).toFixed(2);
     const ps = (patMap && patMap[b.Date]) || [];
     const patAttr = ps.length ? ' data-pat="' + ps.map((p) => p.dir + '~' + p.name).join('|') + '"' : '';
-    body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + patAttr + '>';
+    let glowCls = '';
+    if (ps.length) glowCls = ps[0].dir === 'bullish' ? ' glow-up' : ps[0].dir === 'bearish' ? ' glow-down' : ' glow-neu';
+    body += '<g class="kc' + glowCls + '" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + patAttr + '>';
     body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
     body += '<rect class="kl-body" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
     body += '<rect class="kl-hit" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '" fill="rgba(0,0,0,0)"/>';
