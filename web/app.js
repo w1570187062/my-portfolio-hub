@@ -491,16 +491,15 @@ function renderHoldingsBySource(hs) {
   }
   const arr = [...groups.values()].sort((a, b) => b.mv - a.mv);
   // 根据所有名称最长长度计算名称列固定宽度，使加减仓/分析按钮落在一致位置对齐
-  let maxName = 0, hasAna = false, anyFail = false;
+  let maxName = 0, hasAna = false;
   for (const h of hs) {
     maxName = Math.max(maxName, measureNameWidth(h.name || ''));
     if (supportsAnalysis(h)) hasAna = true;
-    if (failedSymbols[h.symbol]) anyFail = true;
   }
   const ARROW = 16, GAP = 6, CELLPAD = 7, BUF = 8;
   const wAdd = measureBtnWidth('加减仓');
   const wAna = hasAna ? measureBtnWidth('分析') : 0;
-  let colW = maxName + ARROW + GAP * 2 + wAdd + (hasAna ? GAP + wAna : 0) + (anyFail ? 18 : 0) + CELLPAD + BUF;
+  let colW = maxName + ARROW + GAP * 2 + wAdd + (hasAna ? GAP + wAna : 0) + 18 + CELLPAD + BUF;
   box.style.setProperty('--name-col-w', Math.ceil(colW) + 'px');
   box.style.setProperty('--name-w', Math.ceil(maxName) + 'px');
   let html = '';
