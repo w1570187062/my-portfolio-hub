@@ -1153,7 +1153,7 @@ $('#confirmOk').onclick = async () => {
       const r = await api('/api/asset/wealth/snapshots?wealth_id=' + wealth_id + '&date=' + encodeURIComponent(date), { method: 'DELETE' });
       if (!r.ok) { let m = '删除失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m + ' (HTTP ' + r.status + ')', 'err'); return; }
       toast('已删除该日快照（可在审计记录撤销）', 'ok');
-      await openWealthHist(wealth_id);
+      await openWealthHistory(wealth_id);
       await loadAsset();
     } catch (e) { toast('删除异常：' + e.message, 'err'); }
     return;
@@ -1982,6 +1982,7 @@ function openCalDay(date) {
   const v = rec.total_cny;
   let rows = '';
   let wRows = '';
+  let equityCNY = 0, wealthCNY = 0;
   try {
     const det = JSON.parse(rec.detail || '{}');
     const syms = det.by_symbol || [];
@@ -1993,6 +1994,7 @@ function openCalDay(date) {
           return '<tr><td>' + s.symbol + '</td><td>' + (s.name || '') + '</td><td>' + (s.currency || '') + '</td><td class="num ' + cls(cny) + '">' + fmt(cny) + '</td></tr>';
         }).join('') +
         '</tbody></table>';
+      syms.forEach((s) => { const c = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl); equityCNY += c; });
     } else rows = '<p style="color:#8a8f99">无个股明细。</p>';
     // 理财当日收益（已合并进 total_cny）
     const wts = det.by_wealth || [];
@@ -2000,15 +2002,14 @@ function openCalDay(date) {
       wRows = '<table class="cal-detail-tbl" style="margin-top:10px"><thead><tr><th>理财</th><th>币种</th><th class="num">当日盈亏 (CNY)</th></tr></thead><tbody>' +
         wts.map((w) => '<tr><td>' + (w.name || '') + '</td><td>' + (w.currency || '') + '</td><td class="num ' + cls(w.pnl_cny) + '">' + fmt(w.pnl_cny) + '</td></tr>').join('') +
         '</tbody></table>';
+      wts.forEach((w) => { wealthCNY += (typeof w.pnl_cny === 'number') ? w.pnl_cny : 0; });
     }
   } catch (e) { rows = '<p style="color:#f5222d">明细解析失败</p>'; }
-  // USD 盈亏也折算为 CNY 展示，保证弹框内全部统一为人民币口径
-  const usdCNY = (typeof rec.total_usd === 'number' ? rec.total_usd : 0) * usdRate;
   $('#calModalBody').innerHTML = `
     <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px">
       <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${cls(v)}">${fmt(v)}</div></div>
-      <div><div class="cal-sub">USD 盈亏</div><div class="value">${fmt(rec.total_usd)} <span style="color:#8a8f99;font-size:13px">≈ ${fmt(usdCNY)} CNY</span></div></div>
-      <div><div class="cal-sub">汇率</div><div class="value">${(rec.rate || 0).toFixed(4)}</div></div>
+      <div><div class="cal-sub">权益盈亏 (CNY)</div><div class="value ${cls(equityCNY)}">${fmt(equityCNY)}</div></div>
+      <div><div class="cal-sub">理财盈亏 (CNY)</div><div class="value ${cls(wealthCNY)}">${fmt(wealthCNY)}</div></div>
     </div>${rows}${wRows}`;
   $('#calModal').hidden = false;
 }
@@ -2515,13 +2516,15 @@ function renderHistChart(d, cur) {
 function showHistTip(e, x) {
   let tip = document.getElementById('trendTip');
   if (!tip) { tip = document.createElement('div'); tip.id = 'trendTip'; tip.className = 'trend-tip'; document.body.appendChild(tip); }
-  const cls = x.day_pnl > 0 ? 't-up' : x.day_pnl < 0 ? 't-down' : 't-muted';
-  const sign = x.day_pnl > 0 ? '+' : '';
-  const dayStr = sign + fmt(x.day_pnl);
-  const cumCls = x.total_pnl > 0 ? 't-up' : x.total_pnl < 0 ? 't-down' : 't-muted';
+  const day = (x.day_pnl !== undefined ? x.day_pnl : (x.pnl || 0));
+  const cum = (x.total_pnl !== undefined ? x.total_pnl : (x.cum_pnl || 0));
+  const cls = day > 0 ? 't-up' : day < 0 ? 't-down' : 't-muted';
+  const sign = day > 0 ? '+' : '';
+  const dayStr = sign + fmt(day);
+  const cumCls = cum > 0 ? 't-up' : cum < 0 ? 't-down' : 't-muted';
   tip.innerHTML = '<div class="t-date">' + x.date + '</div>'
     + '<div class="t-row"><span>当日盈亏</span><span class="' + cls + '">' + dayStr + '</span></div>'
-    + '<div class="t-row"><span>累计盈亏</span><span class="' + cumCls + '">' + fmt(x.total_pnl) + '</span></div>';
+    + '<div class="t-row"><span>累计盈亏</span><span class="' + cumCls + '">' + fmt(cum) + '</span></div>';
   tip.classList.add('show');
   moveTrendTip(e);
 }
@@ -3316,7 +3319,7 @@ function renderWealth(body) {
   $('#addWealthBtn').onclick = () => openWealthModal(null);
   body.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="del-wealth"]').forEach((b) => b.onclick = () => assetDel('wealth', Number(b.dataset.id)));
-  body.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHist(Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHistory(Number(b.dataset.id)));
   // 视图切换（表格 / 卡片），复用首页同款滑动切换器
   body.querySelectorAll('#wealthViewToggle .vt-btn').forEach((b) => {
     b.onclick = () => {
@@ -3441,13 +3444,22 @@ $('#cashForm').onsubmit = async (e) => {
 };
 
 let currentWealthHistId = 0;
-async function openWealthHist(id) {
+async function openWealthHistory(id) {
   currentWealthHistId = id;
   try {
     const r = await api('/api/asset/wealth/' + id + '/history');
     if (!r.ok) { toast('加载失败 (HTTP ' + r.status + ')', 'err'); return; }
     const d = await r.json();
     const rows = d.rows || [];
+    // 标题：优先取理财名称
+    let title = '理财每日盈亏';
+    if (assetData && assetData.wealth && Array.isArray(assetData.wealth.products)) {
+      const p = assetData.wealth.products.find((x) => x.id === id);
+      if (p) title = (p.name || ('理财 #' + id)) + ' 每日盈亏';
+    }
+    $('#histTitle').textContent = title;
+    $('#histModal').hidden = false;
+    switchHistTab('table');
     let html = `<div class="wh-actions"><button type="button" class="btn" id="whAuditBtn">审计记录</button></div>`;
     if (!rows.length) { html += '<p class="empty">暂无录入记录。</p>'; }
     else {
@@ -3461,9 +3473,9 @@ async function openWealthHist(id) {
       html += '</tbody></table>';
     }
     html += `<div id="whAuditPanel" hidden><h3>审计记录（修改/删除均可撤销）</h3><div id="whAuditBody"></div></div>`;
-    $('#wealthHistBody').innerHTML = html;
+    $('#histTable').innerHTML = html;
     $('#whAuditBtn').onclick = loadWealthAudit;
-    $('#wealthHistBody').querySelectorAll('[data-del-date]').forEach((b) => b.onclick = () => {
+    $('#histTable').querySelectorAll('[data-del-date]').forEach((b) => b.onclick = () => {
       pendingSnapDelete = { wealth_id: id, date: b.dataset.delDate };
       $('#confirmTitle').textContent = '删除当日快照';
       $('#confirmMsg').textContent = '确认删除 ' + b.dataset.delDate + ' 的这条持仓记录？删除后仍可在「审计记录」里撤销。';
@@ -3471,8 +3483,80 @@ async function openWealthHist(id) {
       $('#confirmOk').classList.add('danger');
       $('#confirmModal').hidden = false;
     });
-    $('#wealthHistModal').hidden = false;
+    renderWealthHistChart(d);
   } catch (err) { toast('异常：' + err.message, 'err'); }
+}
+
+// 理财每日盈亏曲线：复用权益弹框的 dual-axis SVG（当日盈亏柱 + 累计盈亏折线）
+function renderWealthHistChart(d) {
+  const rows = (d.rows || []).slice().reverse(); // 旧→新，与曲线升序一致
+  const s = rows.map((r) => ({ date: r.date, day_pnl: r.pnl || 0, total_pnl: r.cum_pnl || 0 }));
+  const body = $('#histChartBody');
+  if (s.length === 0) { body.innerHTML = '<p style="color:#8a8f99">暂无历史数据。</p>'; return; }
+  const W = 720, H = 360, mL = 60, mR = 60, mT = 20, mB = 40;
+  const plotW = W - mL - mR, plotH = H - mT - mB;
+  const n = s.length;
+  const maxBar = Math.max(1, ...s.map((x) => Math.abs(x.day_pnl)));
+  const cVals = s.map((x) => x.total_pnl);
+  const cMaxAbs = Math.max(1, ...cVals.map((v) => Math.abs(v)));
+  const zeroY = mT + plotH / 2;
+  const yBar = (v) => zeroY - (v / maxBar) * (plotH / 2);
+  const yLine = (v) => zeroY - (v / cMaxAbs) * (plotH / 2);
+  const slot = plotW / n;
+  const bw = Math.max(2, slot * 0.6);
+  const linePts = [];
+  let bars = '', line = '', area = '', dots = '', hotspots = '';
+  s.forEach((x, i) => {
+    const cx = mL + (i + 0.5) * slot;
+    hotspots += `<rect class="trend-hot" data-i="${i}" x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
+    const ly = yLine(x.total_pnl);
+    linePts.push([cx, ly]);
+    const yv = yBar(x.day_pnl);
+    const top = Math.min(zeroY, yv), hgt = Math.abs(yv - zeroY);
+    const color = x.day_pnl > 0 ? '#f5222d' : x.day_pnl < 0 ? '#00a854' : '#c9ced6';
+    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" rx="2" fill="${color}"/>`;
+    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
+    dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3" fill="#722ed1" stroke="#fff" stroke-width="1.2"/>`;
+  });
+  if (linePts.length) {
+    let ap = `M ${linePts[0][0].toFixed(2)} ${zeroY.toFixed(2)} `;
+    linePts.forEach((p) => { ap += `L ${p[0].toFixed(2)} ${p[1].toFixed(2)} `; });
+    ap += `L ${linePts[linePts.length - 1][0].toFixed(2)} ${zeroY.toFixed(2)} Z`;
+    area = `<path d="${ap}" fill="rgba(114,46,209,0.10)" stroke="none"/>`;
+  }
+  const xLabelStep = Math.max(1, Math.ceil(n / 10));
+  let xlabels = '';
+  s.forEach((x, i) => {
+    if (i % xLabelStep === 0 || i === n - 1) {
+      const cx = mL + (i + 0.5) * slot;
+      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="10" fill="#8a8f99" text-anchor="middle">${x.date.slice(5)}</text>`;
+    }
+  });
+  const yLabels = `
+    <text x="${mL - 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#f5222d" text-anchor="end">+${fmt(maxBar)}</text>
+    <text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="end">0</text>
+    <text x="${mL - 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#00a854" text-anchor="end">-${fmt(maxBar)}</text>
+    <text x="${W - mR + 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">+${fmt(cMaxAbs)}</text>
+    <text x="${W - mR + 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="start">0</text>
+    <text x="${W - mR + 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">-${fmt(cMaxAbs)}</text>`;
+  const grid = `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" stroke="#e5e6eb" stroke-width="1"/>`;
+  const legend = `
+    <div style="display:flex;gap:18px;margin-top:10px;font-size:13px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:12px;height:12px;background:#f5222d;border-radius:2px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (左轴, 红涨绿跌)</span>
+      <span><span style="display:inline-block;width:18px;height:3px;background:#722ed1;margin-right:6px;vertical-align:middle"></span>累计盈亏 (右轴)</span>
+    </div>`;
+  body.innerHTML = `
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+      ${grid}${area}${bars}${hotspots}
+      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2" stroke-linejoin="round"/>
+      ${dots}${yLabels}${xlabels}
+    </svg>${legend}`;
+  document.querySelectorAll('#histChartBody .trend-hot').forEach((r) => {
+    const i = +r.dataset.i;
+    r.addEventListener('mouseenter', (e) => showHistTip(e, s[i]));
+    r.addEventListener('mousemove', moveTrendTip);
+    r.addEventListener('mouseleave', hideTrendTip);
+  });
 }
 
 async function loadWealthAudit() {
