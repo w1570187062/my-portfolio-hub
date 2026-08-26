@@ -2089,6 +2089,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 .sr-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
 .snap-hint { font-size: 12px; color: var(--text-muted); margin: 0 0 10px; }
+.wh-actions { margin-bottom: 10px; }
+#whAuditPanel { margin-top: 14px; border-top: var(--card-border); padding-top: 12px; }
+#whAuditPanel h3 { font-size: 14px; margin: 0 0 8px; }
 .asset-summary .card {
   padding: 16px 18px;
   border: var(--card-border);

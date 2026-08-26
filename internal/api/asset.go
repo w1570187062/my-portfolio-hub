@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -561,20 +562,156 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "items 为空"})
 		return
 	}
+	uid := currentUserID(c)
+	now := time.Now().Format("2006-01-02 15:04:05")
 	for _, it := range b.Items {
 		if it.WealthID <= 0 {
 			continue
 		}
+		// 归属校验：该产品必须属于当前用户
+		if owner, e := db.WealthProductOwner(it.WealthID); e == nil && owner != 0 && owner != uid {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改该理财"})
+			return
+		}
+		if it.Amount < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "持仓金额不能为负（产品 " + strconv.FormatInt(it.WealthID, 10) + "）"})
+			return
+		}
+		// phantom 盈亏拦截：当日净存入≠0 但持仓金额与前一日完全相同，会产生错误盈亏
+		if math.Abs(it.Cashflow) > 1e-9 {
+			if prev, pe := db.GetWealthPrevSnapshot(it.WealthID, b.Date); pe == nil && prev.ok {
+				if math.Abs(prev.amount-it.Amount) < 0.005 {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "产品 " + strconv.FormatInt(it.WealthID, 10) + " 在 " + b.Date + " 的净存入不为0，但持仓金额与前一日相同，将产生错误盈亏。请同步调整持仓金额，或确认净存入应填 0。"})
+					return
+				}
+			}
+		}
+		// 写审计：记录改前/改后
+		oldAmt, oldCf, existed, _ := db.GetWealthSnapshot(it.WealthID, b.Date)
 		if err := db.UpsertWealthSnapshot(it.WealthID, b.Date, it.Amount, it.Cashflow); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		_ = db.InsertWealthAudit(db.WealthAudit{
+			WealthID: it.WealthID, Date: b.Date, Action: "upsert", Field: "row",
+			OldAmount: oldAmt, OldCash: oldCf, NewAmount: it.Amount, NewCash: it.Cashflow,
+			OldExists: existed, UserID: uid, CreatedAt: now,
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "date": b.Date})
 }
 
-// assetWealthHistory returns the daily P&L series for one product, with cumulative P&L.
-func assetWealthHistory(c *gin.Context) {
+// assetWealthSnapshotDelete 删除某产品某天的快照（带归属校验 + 审计）。
+// Query: ?wealth_id=N&date=YYYY-MM-DD
+func assetWealthSnapshotDelete(c *gin.Context) {
+	wid, err := strconv.ParseInt(c.Query("wealth_id"), 10, 64)
+	if err != nil || wid <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad wealth_id"})
+		return
+	}
+	date := c.Query("date")
+	if date == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 date"})
+		return
+	}
+	uid := currentUserID(c)
+	if owner, e := db.WealthProductOwner(wid); e == nil && owner != 0 && owner != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该理财"})
+		return
+	}
+	oldAmt, oldCf, existed, err := db.GetWealthSnapshot(wid, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !existed {
+		c.JSON(http.StatusNotFound, gin.H{"error": "该日无快照记录"})
+		return
+	}
+	if err := db.DeleteWealthSnapshot(wid, date); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	_ = db.InsertWealthAudit(db.WealthAudit{
+		WealthID: wid, Date: date, Action: "delete", Field: "row",
+		OldAmount: oldAmt, OldCash: oldCf, OldExists: true, UserID: uid,
+		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
+	})
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// assetWealthAuditList 返回某产品的快照审计记录（新→旧）。
+func assetWealthAuditList(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	uid := currentUserID(c)
+	if owner, e := db.WealthProductOwner(id); e == nil && owner != 0 && owner != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权查看该理财"})
+		return
+	}
+	rows, err := db.ListWealthAudit(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"rows": rows})
+}
+
+// assetWealthSnapshotUndo 撤销一条审计记录（恢复 upsert 前的数值 / 恢复被删行）。
+// Body: { "audit_id": N }
+func assetWealthSnapshotUndo(c *gin.Context) {
+	var b struct {
+		AuditID int64 `json:"audit_id"`
+	}
+	if err := c.ShouldBindJSON(&b); err != nil || b.AuditID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad audit_id"})
+		return
+	}
+	a, err := db.GetWealthAudit(b.AuditID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "审计记录不存在"})
+		return
+	}
+	if a.Action == "undo" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该记录已是撤销操作，不可再撤销"})
+		return
+	}
+	uid := currentUserID(c)
+	if owner, e := db.WealthProductOwner(a.WealthID); e == nil && owner != 0 && owner != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该理财"})
+		return
+	}
+	now := time.Now().Format("2006-01-02 15:04:05")
+	if a.Action == "upsert" {
+		if !a.OldExists {
+			// 原为新建行（撤销 = 删除该行）
+			if err := db.DeleteWealthSnapshot(a.WealthID, a.Date); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		} else {
+			if err := db.UpsertWealthSnapshot(a.WealthID, a.Date, a.OldAmount, a.OldCash); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+	} else if a.Action == "delete" {
+		// 恢复被删除的行
+		if err := db.UpsertWealthSnapshot(a.WealthID, a.Date, a.OldAmount, a.OldCash); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	_ = db.InsertWealthAudit(db.WealthAudit{
+		WealthID: a.WealthID, Date: a.Date, Action: "undo", Field: "row",
+		OldAmount: a.OldAmount, OldCash: a.OldCash, NewAmount: a.OldAmount, NewCash: a.OldCash,
+		OldExists: true, UserID: uid, CreatedAt: now,
+	})
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})

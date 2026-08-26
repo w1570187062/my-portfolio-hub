@@ -857,6 +857,21 @@ func initAssetTables() error {
 			cashflow REAL NOT NULL DEFAULT 0,
 			PRIMARY KEY (wealth_id, date)
 		)`,
+		// 理财快照审计：每次 upsert/delete 记录改前/改后值，支持一键撤销（补救误改/误删）。
+		`CREATE TABLE IF NOT EXISTS wealth_snapshot_audit (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			wealth_id INTEGER NOT NULL,
+			date TEXT NOT NULL,
+			action TEXT NOT NULL,
+			field TEXT NOT NULL DEFAULT 'row',
+			old_amount REAL NOT NULL DEFAULT 0,
+			old_cashflow REAL NOT NULL DEFAULT 0,
+			new_amount REAL NOT NULL DEFAULT 0,
+			new_cashflow REAL NOT NULL DEFAULT 0,
+			old_exists INTEGER NOT NULL DEFAULT 0,
+			user_id INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT ''
+		)`,
 		`CREATE TABLE IF NOT EXISTS liabilities (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			source_id INTEGER NOT NULL DEFAULT 0,
@@ -1187,6 +1202,88 @@ func CountWealthSnapshots(wealthID int64) (int, error) {
 	var n int
 	err := DB.QueryRow(`SELECT COUNT(1) FROM wealth_snapshots WHERE wealth_id=?`, wealthID).Scan(&n)
 	return n, err
+}
+
+// WealthAudit 记录一次理财快照变更（upsert/delete），用于撤销误改/误删。
+type WealthAudit struct {
+	ID         int64   `json:"id"`
+	WealthID   int64   `json:"wealth_id"`
+	Date       string  `json:"date"`
+	Action     string  `json:"action"` // 'upsert' | 'delete' | 'undo'
+	Field      string  `json:"field"`
+	OldAmount  float64 `json:"old_amount"`
+	OldCash    float64 `json:"old_cashflow"`
+	NewAmount  float64 `json:"new_amount"`
+	NewCash    float64 `json:"new_cashflow"`
+	OldExists  bool    `json:"old_exists"`
+	UserID     int64   `json:"user_id"`
+	CreatedAt  string  `json:"created_at"`
+}
+
+// WealthProductOwner 返回该产品归属的用户 ID（用于越权校验）。
+func WealthProductOwner(wealthID int64) (int64, error) {
+	var uid int64
+	err := DB.QueryRow(`SELECT user_id FROM wealth_products WHERE id=?`, wealthID).Scan(&uid)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return uid, err
+}
+
+// DeleteWealthSnapshot 删除某产品某天的快照行。
+func DeleteWealthSnapshot(wealthID int64, date string) error {
+	_, err := DB.Exec(`DELETE FROM wealth_snapshots WHERE wealth_id=? AND date=?`, wealthID, date)
+	return err
+}
+
+// InsertWealthAudit 写入一条审计记录。
+func InsertWealthAudit(a WealthAudit) error {
+	_, err := DB.Exec(`INSERT INTO wealth_snapshot_audit(wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,user_id,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		a.WealthID, a.Date, a.Action, a.Field, a.OldAmount, a.OldCash, a.NewAmount, a.NewCash, boolToInt(a.OldExists), a.UserID, a.CreatedAt)
+	return err
+}
+
+// ListWealthAudit 返回某产品的审计记录（新→旧）。
+func ListWealthAudit(wealthID int64) ([]WealthAudit, error) {
+	rows, err := DB.Query(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,user_id,created_at
+		FROM wealth_snapshot_audit WHERE wealth_id=? ORDER BY id DESC`, wealthID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WealthAudit
+	for rows.Next() {
+		var a WealthAudit
+		var oldExists int
+		if err := rows.Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &oldExists, &a.UserID, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		a.OldExists = oldExists != 0
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// GetWealthAudit 按 ID 读取一条审计记录。
+func GetWealthAudit(id int64) (WealthAudit, error) {
+	var a WealthAudit
+	var oldExists int
+	err := DB.QueryRow(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,user_id,created_at
+		FROM wealth_snapshot_audit WHERE id=?`, id).
+		Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &oldExists, &a.UserID, &a.CreatedAt)
+	if err != nil {
+		return a, err
+	}
+	a.OldExists = oldExists != 0
+	return a, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // ---- Liabilities (负债) ----

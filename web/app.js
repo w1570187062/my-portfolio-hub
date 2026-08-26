@@ -1064,6 +1064,7 @@ $('#adjustForm').onsubmit = async (e) => {
 };
 
 let pendingDelId = null;
+let pendingSnapDelete = null;
 let pendingExport = false;
 function delHolding(id) {
   pendingDelId = id;
@@ -1082,6 +1083,7 @@ function confirmExport() {
 function resetConfirm() {
   $('#confirmModal').hidden = true;
   pendingDelId = null;
+  pendingSnapDelete = null;
   pendingAssetDel = null;
   pendingExport = false;
   pendingImport = null;
@@ -1141,6 +1143,19 @@ $('#confirmOk').onclick = async () => {
     } catch (e) { toast('删除异常：' + e.message, 'err'); return; }
     toast('已删除', 'ok');
     loadAsset();
+    return;
+  }
+  if (pendingSnapDelete) {
+    const { wealth_id, date } = pendingSnapDelete;
+    $('#confirmModal').hidden = true;
+    pendingSnapDelete = null;
+    try {
+      const r = await api('/api/asset/wealth/snapshots?wealth_id=' + wealth_id + '&date=' + encodeURIComponent(date), { method: 'DELETE' });
+      if (!r.ok) { let m = '删除失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m + ' (HTTP ' + r.status + ')', 'err'); return; }
+      toast('已删除该日快照（可在审计记录撤销）', 'ok');
+      await openWealthHist(wealth_id);
+      await loadAsset();
+    } catch (e) { toast('删除异常：' + e.message, 'err'); }
     return;
   }
   const id = pendingDelId;
@@ -3425,25 +3440,74 @@ $('#cashForm').onsubmit = async (e) => {
   } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
 };
 
+let currentWealthHistId = 0;
 async function openWealthHist(id) {
+  currentWealthHistId = id;
   try {
     const r = await api('/api/asset/wealth/' + id + '/history');
     if (!r.ok) { toast('加载失败 (HTTP ' + r.status + ')', 'err'); return; }
     const d = await r.json();
     const rows = d.rows || [];
-    if (!rows.length) { $('#wealthHistBody').innerHTML = '<p class="empty">暂无录入记录。</p>'; }
+    let html = `<div class="wh-actions"><button type="button" class="btn" id="whAuditBtn">审计记录</button></div>`;
+    if (!rows.length) { html += '<p class="empty">暂无录入记录。</p>'; }
     else {
-      let html = '<table class="asset-table"><thead><tr><th>日期</th><th class="num">持仓金额</th><th class="num">净存入</th><th class="num">当日盈亏</th><th class="num">累计盈亏</th></tr></thead><tbody>';
+      html += '<table class="asset-table"><thead><tr><th>日期</th><th class="num">持仓金额</th><th class="num">净存入</th><th class="num">当日盈亏</th><th class="num">累计盈亏</th><th></th></tr></thead><tbody>';
       for (const r2 of rows) {
         const p = r2.pnl || 0, cum = r2.cum_pnl || 0;
         html += `<tr><td>${r2.date}</td><td class="num">${money(r2.amount || 0)}</td><td class="num">${money(r2.cashflow || 0)}</td>
-          <td class="num ${pnlCls(p)}">${pnlTxt(p)}</td><td class="num ${pnlCls(cum)}">${pnlTxt(cum)}</td></tr>`;
+          <td class="num ${pnlCls(p)}">${pnlTxt(p)}</td><td class="num ${pnlCls(cum)}">${pnlTxt(cum)}</td>
+          <td class="num asset-row-actions"><button class="btn btn-icon danger" data-del-date="${r2.date}">🗑️ 删除</button></td></tr>`;
       }
       html += '</tbody></table>';
-      $('#wealthHistBody').innerHTML = html;
     }
+    html += `<div id="whAuditPanel" hidden><h3>审计记录（修改/删除均可撤销）</h3><div id="whAuditBody"></div></div>`;
+    $('#wealthHistBody').innerHTML = html;
+    $('#whAuditBtn').onclick = loadWealthAudit;
+    $('#wealthHistBody').querySelectorAll('[data-del-date]').forEach((b) => b.onclick = () => {
+      pendingSnapDelete = { wealth_id: id, date: b.dataset.delDate };
+      $('#confirmTitle').textContent = '删除当日快照';
+      $('#confirmMsg').textContent = '确认删除 ' + b.dataset.delDate + ' 的这条持仓记录？删除后仍可在「审计记录」里撤销。';
+      $('#confirmOk').textContent = '删除';
+      $('#confirmOk').classList.add('danger');
+      $('#confirmModal').hidden = false;
+    });
     $('#wealthHistModal').hidden = false;
   } catch (err) { toast('异常：' + err.message, 'err'); }
+}
+
+async function loadWealthAudit() {
+  const id = currentWealthHistId;
+  const panel = $('#whAuditPanel');
+  panel.hidden = false;
+  const body = $('#whAuditBody');
+  body.innerHTML = '加载中…';
+  try {
+    const r = await api('/api/asset/wealth/' + id + '/audit');
+    if (!r.ok) { body.innerHTML = '加载失败'; return; }
+    const d = await r.json();
+    const rows = d.rows || [];
+    if (!rows.length) { body.innerHTML = '<p class="empty">暂无变更记录。</p>'; return; }
+    const label = { upsert: '修改', delete: '删除', undo: '撤销' };
+    let html = '<table class="asset-table"><thead><tr><th>时间</th><th>操作</th><th>日期</th><th class="num">旧值(金额/净存)</th><th class="num">新值(金额/净存)</th><th></th></tr></thead><tbody>';
+    for (const a of rows) {
+      const oldV = a.old_exists ? `${money(a.old_amount)} / ${money(a.old_cashflow)}` : '（无）';
+      const newV = a.action === 'delete' ? '—' : `${money(a.new_amount)} / ${money(a.new_cashflow)}`;
+      html += `<tr><td>${a.created_at}</td><td>${label[a.action] || a.action}</td><td>${a.date}</td>
+        <td class="num">${oldV}</td><td class="num">${newV}</td>
+        <td class="num asset-row-actions">${a.action === 'undo' ? '' : `<button class="btn btn-icon" data-undo="${a.id}">↩ 撤销</button>`}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+    body.querySelectorAll('[data-undo]').forEach((b) => b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r2 = await api('/api/asset/wealth/snapshots/undo', { method: 'POST', body: JSON.stringify({ audit_id: Number(b.dataset.undo) }) });
+        if (!r2.ok) { let m = '撤销失败'; try { const d2 = await r2.json(); if (d2 && d2.error) m = d2.error; } catch (_) {} toast(m, 'err'); b.disabled = false; return; }
+        toast('已撤销', 'ok');
+        await loadWealthAudit();
+      } catch (e) { toast('撤销异常：' + e.message, 'err'); b.disabled = false; }
+    });
+  } catch (e) { body.innerHTML = '异常：' + e.message; }
 }
 
 // ---- 负债 ----
@@ -3677,12 +3741,40 @@ async function openSnapModal() {
 $('#snapSave').onclick = async () => {
   const date = $('#snapModal').dataset.date || ymd(new Date());
   const items = [];
+  const diff = [];
   $('#snapBody').querySelectorAll('.snap-row').forEach((row) => {
     const amtInput = row.querySelector('.sr-amt');
     if (amtInput.value === '') return;
-    items.push({ wealth_id: Number(amtInput.dataset.id), amount: Number(amtInput.value), cashflow: Number(row.querySelector('.sr-cf').value || 0) });
+    const id = Number(amtInput.dataset.id);
+    const amount = Number(amtInput.value);
+    const cashflow = Number(row.querySelector('.sr-cf').value || 0);
+    const old = ((assetData.wealth || {}).products || []).find((p) => p.id === id);
+    const oldAmt = old ? Number(old.amount || 0) : 0;
+    items.push({ wealth_id: id, amount, cashflow });
+    if (Math.abs(amount - oldAmt) > 0.005 || Math.abs(cashflow) > 0.005) {
+      diff.push({ name: old ? old.name : ('#' + id), currency: old ? old.currency : 'rmb', oldAmt, amount, cashflow });
+    }
   });
   if (!items.length) { toast('没有可保存的数据', 'err'); return; }
+  if (!diff.length) { toast('数值未变化，无需保存', 'err'); return; }
+  renderSnapConfirm(date, diff, items);
+};
+
+let pendingSnapSave = null;
+function renderSnapConfirm(date, diff, items) {
+  pendingSnapSave = { date, items };
+  const body = $('#snapConfirmBody');
+  body.innerHTML = `<p class="snap-hint">请核对以下 ${diff.length} 项「旧值 → 新值」，确认无误后保存。保存后若录错，可到该理财「每日盈亏 → 审计记录」里一键撤销或删除。</p>
+    <table class="asset-table"><thead><tr><th>理财</th><th class="num">旧持仓</th><th></th><th class="num">新持仓</th><th class="num">当日净存入</th></tr></thead><tbody>
+    ${diff.map((d) => `<tr><td>${esc(d.name)}</td><td class="num">${moneyCur(d.oldAmt, d.currency)}</td><td class="num">→</td><td class="num">${moneyCur(d.amount, d.currency)}</td><td class="num ${d.cashflow >= 0 ? 'up' : 'down'}">${d.cashflow >= 0 ? '+' : ''}${moneyCur(d.cashflow, d.currency)}</td></tr>`).join('')}
+    </tbody></table>`;
+  $('#snapConfirmModal').hidden = false;
+}
+$('#snapConfirmOk').onclick = async () => {
+  if (!pendingSnapSave) return;
+  const { date, items } = pendingSnapSave;
+  pendingSnapSave = null;
+  $('#snapConfirmModal').hidden = true;
   try {
     const r = await api('/api/asset/wealth/snapshots', { method: 'POST', body: JSON.stringify({ date, items }) });
     if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m, 'err'); return; }
@@ -3691,6 +3783,7 @@ $('#snapSave').onclick = async () => {
     await loadAsset();
   } catch (err) { toast('保存异常：' + err.message, 'err'); }
 };
+$('#snapConfirmCancel').onclick = () => { pendingSnapSave = null; $('#snapConfirmModal').hidden = true; };
 
 // ---- 一键 AI 总结（汇总全部资产） ----
 async function assetAiSummarize() {
