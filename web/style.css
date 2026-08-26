@@ -336,6 +336,8 @@
   font-weight: 700;
   line-height: 1;
   margin-right: 6px;
+  min-width: 14px;
+  text-align: center;
 }
 .dir-ind.up { color: #f87171; }    /* 红：涨 */
 .dir-ind.down { color: #4ade80; }  /* 绿：跌 */
@@ -354,6 +356,21 @@
   min-height: 0;
   line-height: 1.4;
   border-radius: 5px;
+}
+/* 分析按钮：紫色描边幽灵样式，与绿色实心「加减仓」形成区分（分析=洞察，关联观澜紫色箭头 logo） */
+.name-cell .act-analysis {
+  background: transparent;
+  color: #a78bfa;
+  border: 1px solid #7c3aed;
+}
+.name-cell .act-analysis:hover {
+  background: rgba(124, 58, 237, .16);
+  color: #c4b5fd;
+  border-color: #8b5cf6;
+}
+.name-cell .act-analysis:active {
+  background: rgba(124, 58, 237, .28);
+  color: #ddd6fe;
 }
 
 /* 行操作列纯色文字链接（参考 PanWatch 表格操作按钮） */

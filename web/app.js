@@ -436,7 +436,7 @@ function renderFiltered() {
 // 判断某持仓是否支持技术分析（股票始终支持；基金需关联股票代码）
 function supportsAnalysis(h) {
   if (h.category === 'fund') return !!(h.linked_symbol && String(h.linked_symbol).trim());
-  return true;
+  return !!(h.symbol && String(h.symbol).trim());
 }
 // 临时在页面实际字体下测量元素渲染宽度（用于按最长名称计算名称列固定间距）
 function _measureWidth(makeEl) {
@@ -544,14 +544,14 @@ function renderGroupRow(h, i) {
   const isFail = !!failedSymbols[h.symbol];
   const dayPnl = Number(h.day_pnl) || 0;
   const dirCls = dayPnl > 0 ? 'up' : (dayPnl < 0 ? 'down' : 'flat');
-  const dirArrow = dirCls === 'up' ? '▲' : (dirCls === 'down' ? '▼' : '—');
+  const dirArrow = dirCls === 'up' ? '▲' : (dirCls === 'down' ? '▼' : '');
   return `<tr${isFail ? ' class="row-failed"' : ''}>
     <td class="name-cell">
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}
-      <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : '平'}">${dirArrow}</span>
+      <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : ''}">${dirArrow}</span>
       <span class="name-clickable" title="${esc(h.name)}">${esc(h.name)}</span>
       <button class="btn btn-sm primary act-adjust-inline" data-adjust="${h.id}" title="加减仓">加减仓</button>
-      ${supportsAnalysis(h) ? '<button class="btn btn-sm primary act-adjust-inline act-analysis" data-ana="' + h.id + '" title="技术分析">分析</button>' : ''}
+      ${supportsAnalysis(h) ? '<button class="btn btn-sm act-adjust-inline act-analysis" data-ana="' + h.id + '" title="技术分析">分析</button>' : ''}
     </td>
     <td>${h.symbol}</td>
     <td class="hide-col">${h.market}</td>
