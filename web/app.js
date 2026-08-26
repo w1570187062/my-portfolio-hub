@@ -3961,7 +3961,7 @@ function klineMiniHTML(bars) {
     const py = (yC / H * 100).toFixed(2);
     body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '">';
     body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
-    body += '<rect x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
+    body += '<rect class="kl-body" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
     body += '<rect class="kl-hit" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '" fill="rgba(0,0,0,0)"/>';
     body += '</g>';
   });
@@ -4005,6 +4005,127 @@ function bindKlineMini(root) {
   });
 }
 
+// ── K线形态识别 ──────────────────────────────────────────
+// 基于分析接口返回的日K线(series)做纯前端形态识别，无需后端改动。
+function trendContext(bars, i, n) {
+  if (i < n) return 'neutral';
+  let sum = 0;
+  for (let k = i - n; k < i; k++) sum += bars[k].Close;
+  const sma = sum / n;
+  const c = bars[i].Close;
+  if (c < sma * 0.995) return 'down';
+  if (c > sma * 1.005) return 'up';
+  return 'neutral';
+}
+
+// 返回数组：{ idx, date, name, dir('bullish'|'bearish'|'neutral'), desc }
+function detectKlinePatterns(bars) {
+  if (!bars || bars.length < 2) return [];
+  const out = [];
+  for (let i = 1; i < bars.length; i++) {
+    const b = bars[i], prev = bars[i - 1];
+    const body = Math.abs(b.Close - b.Open);
+    const range = b.High - b.Low;
+    if (range <= 0) continue;
+    const upper = b.High - Math.max(b.Open, b.Close);
+    const lower = Math.min(b.Open, b.Close) - b.Low;
+    const bodyRatio = body / range;
+
+    // 十字星：实体极小，多空僵持
+    if (bodyRatio <= 0.12) {
+      out.push({ idx: i, date: b.Date, name: '十字星', dir: 'neutral', desc: '开盘≈收盘，多空僵持，警惕变盘' });
+      continue;
+    }
+
+    // 锤子系：实体小、下影线长、上影线极短
+    if (lower >= 2 * body && upper <= body && bodyRatio <= 0.5) {
+      const ctx = trendContext(bars, i, 20);
+      if (ctx === 'down') out.push({ idx: i, date: b.Date, name: '锤子线', dir: 'bullish', desc: '实体小、下影线长，下跌末端见底反转信号' });
+      else if (ctx === 'up') out.push({ idx: i, date: b.Date, name: '上吊线', dir: 'bearish', desc: '形态同锤子但处上涨末端，见顶回落风险' });
+      else out.push({ idx: i, date: b.Date, name: '锤子线', dir: 'neutral', desc: '实体小、下影线长' });
+      continue;
+    }
+
+    // 倒锤子系：实体小、上影线长、下影线极短
+    if (upper >= 2 * body && lower <= body && bodyRatio <= 0.5) {
+      const ctx = trendContext(bars, i, 20);
+      if (ctx === 'down') out.push({ idx: i, date: b.Date, name: '倒锤子线', dir: 'bullish', desc: '实体小、上影线长，下跌末端可能反弹' });
+      else if (ctx === 'up') out.push({ idx: i, date: b.Date, name: '射击之星', dir: 'bearish', desc: '形态同倒锤但处上涨末端，见顶回落' });
+      else out.push({ idx: i, date: b.Date, name: '倒锤子线', dir: 'neutral', desc: '实体小、上影线长' });
+      continue;
+    }
+
+    const prevBear = prev.Close < prev.Open, prevBull = prev.Close > prev.Open;
+    const curBear = b.Close < b.Open, curBull = b.Close > b.Open;
+
+    // 吞没形态：当前实体完全覆盖前一根实体
+    if (prevBear && curBull && b.Open <= prev.Close && b.Close >= prev.Open) {
+      out.push({ idx: i, date: b.Date, name: '看涨吞没', dir: 'bullish', desc: '阳线实体完全吞没前阴线，反转向上' });
+      continue;
+    }
+    if (prevBull && curBear && b.Open >= prev.Close && b.Close <= prev.Open) {
+      out.push({ idx: i, date: b.Date, name: '看跌吞没', dir: 'bearish', desc: '阴线实体完全吞没前阳线，反转向下' });
+      continue;
+    }
+
+    // 孕线：当前小实体被前一根实体包裹
+    if (prevBear && curBull && b.Open >= prev.Close && b.Close <= prev.Open) {
+      out.push({ idx: i, date: b.Date, name: '看涨孕线', dir: 'bullish', desc: '小阳线被前阴线包裹，下跌动能减弱' });
+      continue;
+    }
+    if (prevBull && curBear && b.Open <= prev.Close && b.Close >= prev.Open) {
+      out.push({ idx: i, date: b.Date, name: '看跌孕线', dir: 'bearish', desc: '小阴线被前阳线包裹，上涨动能减弱' });
+      continue;
+    }
+  }
+  return out;
+}
+
+// 仅在迷你K线可见窗口(近60根)内汇总，返回 { visible, html }
+function buildPatterns(bars) {
+  const all = detectKlinePatterns(bars);
+  const n = Math.min(bars.length, 60);
+  const startIdx = bars.length - n;
+  const visible = all.filter((p) => p.idx >= startIdx);
+  visible.sort((a, b) => b.idx - a.idx);
+  return { visible, html: patternsListHTML(visible, n) };
+}
+
+function patternsListHTML(visible, n) {
+  if (!visible.length) return '';
+  const top = visible.slice(0, 14);
+  const items = top.map((p) => {
+    const tone = p.dir === 'bullish' ? 'up' : p.dir === 'bearish' ? 'down' : 'neu';
+    const arrow = p.dir === 'bullish' ? '▲' : p.dir === 'bearish' ? '▼' : '◆';
+    return '<div class="pat-item ' + tone + '"><span class="pat-date">' + esc(p.date) + '</span>'
+      + '<span class="pat-name">' + arrow + ' ' + esc(p.name) + '</span>'
+      + '<span class="pat-desc">' + esc(p.desc) + '</span></div>';
+  }).join('');
+  return '<div class="pat-card"><div class="pat-head">K线形态识别'
+    + '<span class="pat-sub">近 ' + n + ' 根 · 命中 ' + visible.length + ' 处</span></div>'
+    + '<div class="pat-list">' + items + '</div>'
+    + (visible.length > top.length ? '<div class="pat-more">…另有 ' + (visible.length - top.length) + ' 处更早形态</div>' : '')
+    + '</div>';
+}
+
+// 在迷你K线图上给命中蜡烛描边高亮
+function highlightPatternCandles(root, visible) {
+  const map = {};
+  visible.forEach((p) => { map[p.date] = p; });
+  root.querySelectorAll('.kc').forEach((g) => {
+    const p = map[g.dataset.d];
+    if (!p) return;
+    const body = g.querySelector('.kl-body');
+    if (body) {
+      const col = p.dir === 'bullish' ? '#f59e0b' : p.dir === 'bearish' ? '#a855f7' : '#38bdf8';
+      body.setAttribute('stroke', col);
+      body.setAttribute('stroke-width', '1.7');
+      body.setAttribute('stroke-opacity', '0.95');
+    }
+    g.classList.add('kc-pat');
+  });
+}
+
 // 关键信号徽章（由已有指标派生，对应 PanWatch 的 TechnicalBadge 风格）
 function anaBadgesHTML(ind, prob) {
   const items = [];
@@ -4029,19 +4150,33 @@ function renderAnalysis(a) {
   const prob = a.probability;
   if (!ind || !prob) {
     let html = '';
-    if (a.series && a.series.length) html += klineMiniHTML(a.series);
+    let patVisible = [];
+    if (a.series && a.series.length) {
+      html += klineMiniHTML(a.series);
+      const bp = buildPatterns(a.series);
+      html += bp.html; patVisible = bp.visible;
+    }
     html += '<div class="analysis-err">数据不足，无法计算指标</div>';
     $('#analysisBody').innerHTML = html;
     bindKlineMini($('#analysisBody'));
+    if (patVisible.length) highlightPatternCandles($('#analysisBody'), patVisible);
     return;
   }
 
   const upColor = '#ff4757', downColor = '#2ed573';
 
   let html = '';
+  let patVisible = [];
+  let patHTML = '';
+  if (a.series && a.series.length) {
+    const bp = buildPatterns(a.series);
+    patVisible = bp.visible;
+    patHTML = bp.html;
+  }
 
   // 迷你K线（使用已有日K线数据组装）
   if (a.series && a.series.length) html += klineMiniHTML(a.series);
+  html += patHTML;
 
   // Probability card
 
@@ -4107,6 +4242,7 @@ function renderAnalysis(a) {
 
   $('#analysisBody').innerHTML = html;
   bindKlineMini($('#analysisBody'));
+  if (patVisible.length) highlightPatternCandles($('#analysisBody'), patVisible);
 }
 
 // ── 弹框关闭 ──────────────────────────────────────────

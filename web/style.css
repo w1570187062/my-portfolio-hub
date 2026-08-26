@@ -2388,6 +2388,21 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .kline-mini-tip .kl-tip-c.up { color: #ff4757; }
 .kline-mini-tip .kl-tip-c.down { color: #2ed573; }
 
+/* K线形态识别卡片 */
+.pat-card { background: var(--bg-card); border: var(--card-border); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+.pat-head { font-weight: 600; font-size: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: baseline; }
+.pat-sub { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.pat-list { display: flex; flex-direction: column; gap: 6px; }
+.pat-item { display: grid; grid-template-columns: 86px 96px 1fr; align-items: baseline; gap: 6px; font-size: 13px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.pat-item:last-child { border-bottom: none; }
+.pat-date { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 12px; }
+.pat-name { font-weight: 600; }
+.pat-desc { color: var(--text-muted); font-size: 12px; line-height: 1.4; }
+.pat-item.up .pat-name { color: #ff4757; }
+.pat-item.down .pat-name { color: #2ed573; }
+.pat-item.neu .pat-name { color: #38bdf8; }
+.pat-more { font-size: 11px; color: var(--text-faint); margin-top: 6px; text-align: right; }
+
 /* 关键信号徽章（PanWatch TechnicalBadge 风格，由已有指标派生） */
 .ana-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; }
 .ana-badge { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); background: transparent; }
