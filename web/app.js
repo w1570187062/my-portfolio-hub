@@ -3998,8 +3998,8 @@ function bindKlineMini(root) {
   const wrap = root.querySelector('.klwrap');
   if (!wrap) return;
   const tip = wrap.querySelector('.kline-mini-tip');
-  let pinned = null, hover = null;
-  function showTip(g) {
+  let pinned = null, hover = null, tipTimer = null;
+  function showTip(g, stay) {
     const c = Number(g.dataset.c);
     let html = '<div class="kl-tip-d">' + esc(g.dataset.d) + '</div><div class="kl-tip-c ' + g.dataset.dir + '">收盘 ' + c.toFixed(2) + '</div>';
     const pat = g.dataset.pat;
@@ -4015,6 +4015,9 @@ function bindKlineMini(root) {
     tip.innerHTML = html;
     tip.style.transform = 'none';
     tip.hidden = false;
+    // 悬停态 3 秒后自动隐藏，避免遮挡 K 线；pin(点击钉住)态 stay=true 常驻
+    if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+    if (!stay) tipTimer = setTimeout(hideTip, 3000);
     // 以 .klwrap 为定位上下文，用像素定位并夹取在可视区内，避免溢出/窝角
     const wx = wrap.getBoundingClientRect();
     const tx = tip.getBoundingClientRect();
@@ -4030,7 +4033,7 @@ function bindKlineMini(root) {
     tip.style.left = left + 'px';
     tip.style.top = top + 'px';
   }
-  function hideTip() { tip.hidden = true; }
+  function hideTip() { if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; } tip.hidden = true; hover = null; }
   function clearSel() { wrap.querySelectorAll('.kc.sel').forEach((x) => x.classList.remove('sel')); }
   wrap.addEventListener('mousemove', (e) => {
     if (pinned) return;
@@ -4042,8 +4045,9 @@ function bindKlineMini(root) {
     const g = e.target.closest('.kc');
     if (!g) { pinned = null; clearSel(); hideTip(); hover = null; return; }
     if (pinned === g.dataset.d) { pinned = null; clearSel(); hideTip(); hover = null; }
-    else { pinned = g.dataset.d; clearSel(); g.classList.add('sel'); showTip(g); hover = g.dataset.d; }
+    else { pinned = g.dataset.d; clearSel(); g.classList.add('sel'); showTip(g, true); hover = g.dataset.d; }
   });
+  wrap.addEventListener('mouseleave', () => { hideTip(); });
 }
 
 // ── K线形态识别 ──────────────────────────────────────────
