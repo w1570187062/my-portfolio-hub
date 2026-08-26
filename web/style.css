@@ -2930,9 +2930,15 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 
 /* ===== 用户切换 / 多用户（头部「图标+用户名」合并按钮 + 底部抽屉） ===== */
 .act-user {
-  gap: 6px;
-  font-weight: 600;
-  padding: 8px 14px;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  border-radius: 50%;
 }
 .act-user #userNameText {
   color: var(--primary);
