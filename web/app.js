@@ -3947,7 +3947,7 @@ async function openAnalysis(id) {
 }
 
 // 迷你K线（纯SVG蜡烛图，使用分析接口返回的已有日K线数据组装）
-// patMap: { [date]: [{name, dir}] } —— 命中形态的日期→形态列表，用于加外边框与悬停提示
+// patMap: { [date]: [{name, dir}] } —— 命中形态的日期→形态列表，用于悬停提示（不在蜡烛上加外边框）
 function klineMiniHTML(bars, patMap) {
   const n = Math.min(bars.length, 60);
   const data = bars.slice(bars.length - n);
@@ -3959,7 +3959,6 @@ function klineMiniHTML(bars, patMap) {
   const W = 600, H = 168, step = W / n, cw = Math.max(1.5, step * 0.62);
   const y = (v) => H - ((v - lo) / (hi - lo)) * H;
   const up = '#ff4757', down = '#2ed573';
-  const patCol = (d) => d === 'bullish' ? up : d === 'bearish' ? down : '#f59e0b';
   // 压力位 / 支撑位：可视区间内极值（根据已有日K线数据组装，不新增条目）
   let res = -Infinity, sup = Infinity;
   data.forEach((b) => { if (b.High > res) res = b.High; if (b.Low < sup) sup = b.Low; });
@@ -3978,13 +3977,9 @@ function klineMiniHTML(bars, patMap) {
     const py = (yC / H * 100).toFixed(2);
     const ps = (patMap && patMap[b.Date]) || [];
     const patAttr = ps.length ? ' data-pat="' + ps.map((p) => p.dir + '~' + p.name).join('|') + '"' : '';
-    body += '<g class="kc' + (ps.length ? ' kc-pat' : '') + '" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '"' + patAttr + '>';
+    body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + patAttr + '>';
     body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
     body += '<rect class="kl-body" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
-    if (ps.length) {
-      const bc = patCol(ps[0].dir);
-      body += '<rect class="kl-patbox" x="' + (x - cw / 2 - 1.6).toFixed(2) + '" y="' + (y(b.High) - 1.6).toFixed(2) + '" width="' + (cw + 3.2).toFixed(2) + '" height="' + ((y(b.Low) - y(b.High)) + 3.2).toFixed(2) + '" rx="2" fill="none" stroke="' + bc + '" stroke-width="1.4"/>';
-    }
     body += '<rect class="kl-hit" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '" fill="rgba(0,0,0,0)"/>';
     body += '</g>';
   });
