@@ -343,7 +343,7 @@
 
 /* 名称单元格：方向箭头 + 名称(过长截断) + 加减仓 横向排列；fix 宽度避免长名称挤压按钮 */
 .name-cell { display: flex; align-items: center; white-space: nowrap; gap: 6px; }
-.name-cell .name-clickable { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 400; }
+.name-cell .name-clickable { flex: 0 0 auto; max-width: var(--name-w, 300px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 400; }
 .act-adjust-inline { margin-left: 0; vertical-align: middle; }
 /* 加减仓内联按钮：压缩尺寸（特异性高于 .btn-sm，避免被其 padding 覆盖） */
 .name-cell .act-adjust-inline {
@@ -449,7 +449,7 @@
 /* 首页持仓子表：固定列宽，确保各来源子表的列头/列宽跨卡片完全一致对齐 */
 .holdings-group .holdings-subtable { table-layout: fixed; }
 .holdings-group .holdings-subtable th, .holdings-group .holdings-subtable td { overflow: hidden; text-overflow: ellipsis; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: 340px; }   /* 名称（含方向箭头+加减仓按钮，过长截断） */
+.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: var(--name-col-w, 340px); }   /* 名称列宽=按所有名称最长长度计算的固定间距，使加减仓/分析按钮对齐 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(2) { width: 86px; }    /* 代码 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(5) { width: 78px; }    /* 份额 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(6) { width: 80px; }    /* 成本价 */
@@ -2319,6 +2319,20 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .analysis-loading { text-align: center; padding: 40px; color: var(--text-muted); font-size: 15px; }
 .analysis-err { text-align: center; padding: 30px; color: #f44336; font-size: 14px; }
 .analysis-time { font-size: 12px; color: var(--text-faint); margin: -4px 0 10px; letter-spacing: .3px; }
+
+/* 迷你K线（纯SVG蜡烛图，涨红跌绿） */
+.kline-mini { background: var(--bg-card); border: var(--card-border); border-radius: 12px; padding: 8px 10px 4px; margin-bottom: 14px; }
+.kline-mini svg { width: 100%; height: 158px; display: block; }
+.kline-mini-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.kline-mini-meta .up { color: #ff4757; }
+.kline-mini-meta .down { color: #2ed573; }
+
+/* 关键信号徽章（PanWatch TechnicalBadge 风格，由已有指标派生） */
+.ana-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; }
+.ana-badge { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); background: transparent; }
+.ana-badge.up { color: #ff4757; border-color: rgba(255,71,87,.4); background: rgba(255,71,87,.1); }
+.ana-badge.down { color: #2ed573; border-color: rgba(46,213,115,.4); background: rgba(46,213,115,.1); }
+.ana-badge.neu { color: var(--text-muted); }
 
 /* 涨跌概率卡片 */
 .prob-card { background: var(--bg-card); border-radius: 14px; padding: 20px; margin-bottom: 16px; border: var(--card-border); }

@@ -433,6 +433,43 @@ function renderFiltered() {
   }
 }
 
+// 判断某持仓是否支持技术分析（股票始终支持；基金需关联股票代码）
+function supportsAnalysis(h) {
+  if (h.category === 'fund') return !!(h.linked_symbol && String(h.linked_symbol).trim());
+  return true;
+}
+// 临时在页面实际字体下测量元素渲染宽度（用于按最长名称计算名称列固定间距）
+function _measureWidth(makeEl) {
+  const el = makeEl();
+  el.style.position = 'absolute';
+  el.style.left = '-9999px';
+  el.style.top = '0';
+  el.style.visibility = 'hidden';
+  el.style.whiteSpace = 'nowrap';
+  document.body.appendChild(el);
+  const w = el.getBoundingClientRect().width || el.offsetWidth || 0;
+  document.body.removeChild(el);
+  return w;
+}
+function measureNameWidth(text) {
+  return _measureWidth(() => {
+    const s = document.createElement('span');
+    s.style.fontSize = '15px';
+    s.style.fontWeight = '400';
+    s.style.fontFamily = 'inherit';
+    s.textContent = text;
+    return s;
+  });
+}
+function measureBtnWidth(label) {
+  return _measureWidth(() => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-sm primary act-adjust-inline';
+    b.textContent = label;
+    return b;
+  });
+}
+
 // 按来源分组渲染首页持仓为折叠卡片（每来源一张子表 + 4 列汇总）
 // 借鉴 PanWatch portfolio：来源标题 + 数量 + 右侧市值/当日/总盈亏/盈亏率 + 折叠
 function renderHoldingsBySource(hs) {
@@ -453,6 +490,19 @@ function renderHoldingsBySource(hs) {
     g.pnl += toCny(h.pnl || 0, h.currency);
   }
   const arr = [...groups.values()].sort((a, b) => b.mv - a.mv);
+  // 根据所有名称最长长度计算名称列固定宽度，使加减仓/分析按钮落在一致位置对齐
+  let maxName = 0, hasAna = false, anyFail = false;
+  for (const h of hs) {
+    maxName = Math.max(maxName, measureNameWidth(h.name || ''));
+    if (supportsAnalysis(h)) hasAna = true;
+    if (failedSymbols[h.symbol]) anyFail = true;
+  }
+  const ARROW = 16, GAP = 6, CELLPAD = 7, BUF = 8;
+  const wAdd = measureBtnWidth('加减仓');
+  const wAna = hasAna ? measureBtnWidth('分析') : 0;
+  let colW = maxName + ARROW + GAP * 2 + wAdd + (hasAna ? GAP + wAna : 0) + (anyFail ? 18 : 0) + CELLPAD + BUF;
+  box.style.setProperty('--name-col-w', Math.ceil(colW) + 'px');
+  box.style.setProperty('--name-w', Math.ceil(maxName) + 'px');
   let html = '';
   for (const g of arr) {
     const pnlPct = g.cost > 0 ? (g.pnl / g.cost) * 100 : 0;
@@ -486,7 +536,7 @@ function renderHoldingsBySource(hs) {
     gEl.querySelectorAll('[data-adjust]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 加减仓', b.dataset.adjust); openAdjust(b.dataset.adjust); });
     gEl.querySelectorAll('[data-hist]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 历史持仓', b.dataset.hist); openHoldingHistory(b.dataset.hist); });
     gEl.querySelectorAll('[data-fail]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); });
-    gEl.querySelectorAll('.name-clickable').forEach((td) => td.onclick = (e) => { e.stopPropagation(); const id = td.dataset.analysis; const cat = td.dataset.category; const linked = td.dataset.linkedSymbol; if (cat === 'fund' && !linked) { toast('该基金未设置关联股票代码，不支持技术分析', 'info'); return; } console.log('[click] 技术分析', id, linked || ''); openAnalysis(id); });
+    gEl.querySelectorAll('[data-ana]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 技术分析', b.dataset.ana); openAnalysis(b.dataset.ana); });
   });
 }
 
@@ -500,8 +550,9 @@ function renderGroupRow(h, i) {
     <td class="name-cell">
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}
       <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : '平'}">${dirArrow}</span>
-      <span class="name-clickable" data-analysis="${h.id}" data-category="${h.category}" data-linked-symbol="${esc(h.linked_symbol || '')}" title="${h.category === 'fund' && !h.linked_symbol ? '基金未关联股票代码，不支持技术分析' : esc(h.name)}">${esc(h.name)}${h.category === 'fund' && h.linked_symbol ? ' <span class="linked-badge" title="关联 ' + esc(h.linked_symbol) + '">🔗</span>' : ''}</span>
+      <span class="name-clickable" title="${esc(h.name)}">${esc(h.name)}</span>
       <button class="btn btn-sm primary act-adjust-inline" data-adjust="${h.id}" title="加减仓">加减仓</button>
+      ${supportsAnalysis(h) ? '<button class="btn btn-sm primary act-adjust-inline act-analysis" data-ana="' + h.id + '" title="技术分析">分析</button>' : ''}
     </td>
     <td>${h.symbol}</td>
     <td class="hide-col">${h.market}</td>
@@ -756,7 +807,7 @@ function renderRows(hs) {
     if (isFail) tr.className = 'row-failed';
     tr.innerHTML = `
      <td class="num idx">${start + i + 1}${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}</td>
-     <td class="name-clickable ${h.day_pnl_pct > 0 ? 'name-up' : (h.day_pnl_pct < 0 ? 'name-down' : '')}" data-analysis="${h.id}" data-category="${h.category}" data-linked-symbol="${esc(h.linked_symbol || '')}" title="${h.category === 'fund' && !h.linked_symbol ? '基金未关联股票代码，不支持技术分析' : esc(h.name)}">${h.day_pnl_pct > 0 ? '<span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? '<span class="name-arrow-down">▼</span>' : '')}<span class="name-text">${esc(h.name)}</span>${h.category === 'fund' && h.linked_symbol ? ' <span class="linked-badge" title="关联 ' + esc(h.linked_symbol) + '">🔗</span>' : ''}</td><td>${h.symbol}</td><td>${esc(h.source_name || '')}</td><td class="hide-col">${cat(h.category)}</td><td class="hide-col">${h.market}</td><td class="hide-col">${h.currency}</td>
+     <td class="name-clickable ${h.day_pnl_pct > 0 ? 'name-up' : (h.day_pnl_pct < 0 ? 'name-down' : '')}" title="${esc(h.name)}">${h.day_pnl_pct > 0 ? '<span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? '<span class="name-arrow-down">▼</span>' : '')}<span class="name-text">${esc(h.name)}</span></td><td>${h.symbol}</td><td>${esc(h.source_name || '')}</td><td class="hide-col">${cat(h.category)}</td><td class="hide-col">${h.market}</td><td class="hide-col">${h.currency}</td>
      <td class="num">${fmt(h.quantity)}</td>
      <td class="num">${fmtNav(h.cost_price, h.category)}</td>
      <td class="num">${fmtNav(h.current_price, h.category)}</td>
@@ -777,7 +828,6 @@ function renderRows(hs) {
   tb.querySelectorAll('[data-adjust]').forEach((b) => (b.onclick = () => { console.log('[click] 加减仓', b.dataset.adjust); openAdjust(b.dataset.adjust); }));
   tb.querySelectorAll('[data-hist]').forEach((b) => (b.onclick = () => { console.log('[click] 历史持仓', b.dataset.hist); openHoldingHistory(b.dataset.hist); }));
   tb.querySelectorAll('[data-fail]').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); }));
-  tb.querySelectorAll('.name-clickable').forEach((td) => (td.onclick = () => { const id = td.dataset.analysis; const cat = td.dataset.category; const linked = td.dataset.linkedSymbol; if (cat === 'fund' && !linked) { toast('该基金未设置关联股票代码，不支持技术分析', 'info'); return; } console.log('[click] 技术分析', id, linked || ''); openAnalysis(id); }));
   renderPager(total, totalPages);
 }
 
@@ -3658,26 +3708,82 @@ async function openAnalysis(id) {
       body.innerHTML = '<div class="analysis-err">该基金未设置关联股票代码，不支持技术分析</div>';
       return;
     }
-    $('#analysisTitle').textContent = '📊 ' + a.name + (a.category === 'fund' ? ' (关联 ' + a.symbol + ' 分析)' : ' (' + a.symbol + ') 技术分析');
+    $('#analysisTitle').textContent = '📊 ' + a.name + (a.category === 'fund' ? ' (关联 ' + a.symbol + ')' : ' (' + a.symbol + ')') + ' 技术分析';
     renderAnalysis(a);
     const tsEl = document.getElementById('analysisTime');
-    if (tsEl) tsEl.textContent = a.generated_at ? '分析时间：' + a.generated_at : '';
+    if (tsEl) tsEl.textContent = (a.market ? a.market + ' · ' : '') + '周期 1d · 数据截至 ' + (a.generated_at || '—');
   } catch (e) {
     body.innerHTML = '<div class="analysis-err">异常：' + e.message + '</div>';
   }
+}
+
+// 迷你K线（纯SVG蜡烛图，使用分析接口返回的已有日K线数据组装）
+function klineMiniHTML(bars) {
+  const n = Math.min(bars.length, 60);
+  const data = bars.slice(bars.length - n);
+  if (!data.length) return '';
+  let hi = -Infinity, lo = Infinity;
+  data.forEach((b) => { if (b.High > hi) hi = b.High; if (b.Low < lo) lo = b.Low; });
+  if (!(hi > lo)) { hi = lo + 1; }
+  const pad = (hi - lo) * 0.08; hi += pad; lo -= pad;
+  const W = 600, H = 168, step = W / n, cw = Math.max(1.5, step * 0.62);
+  const y = (v) => H - ((v - lo) / (hi - lo)) * H;
+  const up = '#ff4757', down = '#2ed573';
+  let body = '';
+  data.forEach((b, i) => {
+    const x = i * step + step / 2;
+    const isUp = b.Close >= b.Open;
+    const col = isUp ? up : down;
+    const yO = y(b.Open), yC = y(b.Close);
+    const top = Math.min(yO, yC), hgt = Math.max(1, Math.abs(yO - yC));
+    body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
+    body += '<rect x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
+  });
+  const last = data[data.length - 1].Close;
+  const yLast = y(last);
+  body += '<line x1="0" y1="' + yLast.toFixed(2) + '" x2="' + W + '" y2="' + yLast.toFixed(2) + '" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>';
+  return '<div class="kline-mini"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
+    + '<div class="kline-mini-meta"><span>高 ' + hi.toFixed(2) + '</span><span>低 ' + lo.toFixed(2) + '</span><span class="' + (last >= data[0].Open ? 'up' : 'down') + '">最新 ' + last.toFixed(2) + '</span></div></div>';
+}
+
+// 关键信号徽章（由已有指标派生，对应 PanWatch 的 TechnicalBadge 风格）
+function anaBadgesHTML(ind, prob) {
+  const items = [];
+  const maUp = ind.price > ind.ma20 && ind.ma20 > 0;
+  const maDown = ind.price < ind.ma20 && ind.ma20 > 0;
+  items.push({ label: maUp ? '均线 多头' : maDown ? '均线 空头' : '均线 交织', tone: maUp ? 'up' : maDown ? 'down' : 'neu' });
+  const macd = ind.macd || {};
+  if (macd.hist != null) items.push({ label: 'MACD ' + (macd.hist > 0 ? '金叉' : '死叉'), tone: macd.hist > 0 ? 'up' : 'down' });
+  const rsi = ind.rsi || 50;
+  items.push({ label: 'RSI ' + rsi.toFixed(0), tone: rsi > 70 ? 'down' : rsi > 50 ? 'up' : rsi > 30 ? 'down' : 'up' });
+  const kdj = ind.kdj || {};
+  if (kdj.k != null && kdj.d != null) items.push({ label: 'KDJ ' + (kdj.k > kdj.d ? '金叉' : '死叉'), tone: kdj.k > kdj.d ? 'up' : 'down' });
+  const boll = ind.boll || {};
+  if (boll.mid) { const pctB = boll.mid > 0 ? ((ind.price - boll.lower) / (boll.upper - boll.lower) * 100) : 50; items.push({ label: 'BOLL ' + (pctB > 50 ? '中上轨' : '中下轨'), tone: pctB > 50 ? 'up' : 'down' }); }
+  const upPct = prob.up_pct || 50;
+  items.push({ label: '看涨 ' + upPct.toFixed(0) + '%', tone: upPct >= 50 ? 'up' : 'down' });
+  return '<div class="ana-badges">' + items.map((it) => '<span class="ana-badge ' + it.tone + '">' + esc(it.label) + '</span>').join('') + '</div>';
 }
 
 function renderAnalysis(a) {
   const ind = a.indicators;
   const prob = a.probability;
   if (!ind || !prob) {
-    $('#analysisBody').innerHTML = '<div class="analysis-err">数据不足</div>';
+    let html = '';
+    if (a.series && a.series.length) html += klineMiniHTML(a.series);
+    html += '<div class="analysis-err">数据不足，无法计算指标</div>';
+    $('#analysisBody').innerHTML = html;
     return;
   }
 
   const upColor = '#ff4757', downColor = '#2ed573';
 
   let html = '';
+
+  // 迷你K线（使用已有日K线数据组装）
+  if (a.series && a.series.length) html += klineMiniHTML(a.series);
+
+  // Probability card
 
   // Probability card
   const upPct = prob.up_pct || 50;
@@ -3686,6 +3792,9 @@ function renderAnalysis(a) {
   html += '<div class="prob-summary">' + esc(prob.summary) + '</div>';
   html += '<div class="prob-conf">置信度：' + '★'.repeat(prob.confidence || 0) + '☆'.repeat(5 - (prob.confidence || 0)) + '</div>';
   html += '</div>';
+
+  // 关键信号徽章（PanWatch TechnicalBadge 风格，由已有指标派生）
+  html += anaBadgesHTML(ind, prob);
 
   // Indicators table
   html += '<div class="ind-table-wrap"><table class="ind-table">';

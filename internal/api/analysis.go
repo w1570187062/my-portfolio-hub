@@ -25,6 +25,7 @@ type AnalysisResponse struct {
 	Probability *market.ProbabilityResult `json:"probability,omitempty"`
 	Error       string                    `json:"error,omitempty"`
 	GeneratedAt string                    `json:"generated_at"` // 分析生成时间（本地时区）
+	Series      []market.KlineBar         `json:"series,omitempty"` // 已拉取的日K线(OHLC)，用于前端迷你K线展示
 }
 
 // getAnalysis returns technical analysis for a holding.
@@ -61,6 +62,7 @@ func getAnalysis(c *gin.Context) {
 		// Use linked symbol for K-line analysis
 		symbol := resolveSymbol(h.LinkedSymbol, h.Market)
 	bars, err := market.FetchKline(symbol)
+	resp.Series = bars
 	if err != nil {
 		log.Printf("[analysis] fund linked kline for %s -> %s failed: %v", h.Name, symbol, err)
 		resp.Error = "获取关联股票K线数据失败：" + err.Error()
@@ -92,6 +94,7 @@ func getAnalysis(c *gin.Context) {
 
 	// Fetch K-line data
 	bars, err := market.FetchKline(symbol)
+	resp.Series = bars
 	if err != nil {
 		log.Printf("[analysis] fetch kline for %s (%s) failed: %v", h.Name, symbol, err)
 		resp.Error = "获取K线数据失败：" + err.Error()
