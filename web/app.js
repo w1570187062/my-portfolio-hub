@@ -4266,98 +4266,143 @@ function anaBadgesHTML(ind, prob) {
   return '<div class="ana-badges">' + items.map((it) => '<span class="ana-badge ' + it.tone + '">' + esc(it.label) + '</span>').join('') + '</div>';
 }
 
-function renderAnalysis(a) {
-  const ind = a.indicators;
-  const prob = a.probability;
-  if (!ind || !prob) {
-    let html = '';
-    let patVisible = [];
-    let patScore = 0;
-    if (a.series && a.series.length) {
-      const bp = buildPatterns(a.series);
-      patVisible = bp.visible; patScore = bp.score;
-      html += klineMiniHTML(a.series);
-      html += sigListHTML(buildMergedSignals(null, patScore, patVisible.length));
-      html += bp.html;
-    }
-    html += '<div class="analysis-err">数据不足，无法计算指标</div>';
-    $('#analysisBody').innerHTML = html;
-    bindKlineMini($('#analysisBody'));
-    if (patVisible.length) highlightPatternCandles($('#analysisBody'), patVisible);
-    return;
+// 由看多概率推导买入评级
+function buyRating(upPct) {
+  if (upPct >= 70) return { label: '强烈买入', cls: 'up' };
+  if (upPct >= 55) return { label: '买入', cls: 'up' };
+  if (upPct >= 45) return { label: '中性', cls: 'neu' };
+  if (upPct >= 30) return { label: '减仓', cls: 'down' };
+  return { label: '卖出', cls: 'down' };
+}
+
+// 概览标签：技术评分（形态净评分）+ 买入评级
+function overviewScoreRatingHTML(prob, patScore, patCount) {
+  const dir = patScore > 0.3 ? 'up' : patScore < -0.3 ? 'down' : 'neu';
+  const arrow = patScore > 0.3 ? '▲' : patScore < -0.3 ? '▼' : '◆';
+  const tone = patScore > 0.3 ? '偏多' : patScore < -0.3 ? '偏空' : '均衡';
+  let rating;
+  if (prob && prob.up_pct != null) {
+    const r = buyRating(prob.up_pct);
+    rating = '<div class="ana-score-val ' + r.cls + '">' + r.label + '</div><div class="ana-score-sub">看多概率 ' + prob.up_pct.toFixed(0) + '%</div>';
+  } else {
+    rating = '<div class="ana-score-val neu">—</div><div class="ana-score-sub">数据不足</div>';
   }
+  const score = '<div class="ana-score-val ' + dir + '">' + arrow + ' ' + (patScore > 0 ? '+' : '') + patScore.toFixed(2) + '</div><div class="ana-score-sub">' + tone + ' · 近60根命中 ' + patCount + ' 处</div>';
+  return '<div class="ana-score-grid">'
+    + '<div class="ana-score-box"><div class="ana-score-label">形态净评分</div>' + score + '</div>'
+    + '<div class="ana-score-box"><div class="ana-score-label">买入评级</div>' + rating + '</div>'
+    + '</div>';
+}
 
-  const upColor = '#ff4757', downColor = '#2ed573';
-
-  let html = '';
-  let patVisible = [];
-  let patHTML = '';
-  let patScore = 0;
-  if (a.series && a.series.length) {
-    const bp = buildPatterns(a.series);
-    patVisible = bp.visible;
-    patHTML = bp.html;
-    patScore = bp.score;
-  }
-
-  // 迷你K线（使用已有日K线数据组装）
-  if (a.series && a.series.length) html += klineMiniHTML(a.series);
-  // 信号分解（已并入K线形态评分）置于 K线形态识别 之上
-  html += sigListHTML(buildMergedSignals(prob, patScore, patVisible.length));
-  html += patHTML;
-
-  // Probability card
+// 涨跌概率卡片
+function probCardHTML(prob) {
   const upPct = prob.up_pct || 50;
-  html += '<div class="prob-card">';
-  html += '<div class="prob-bar-wrap"><div class="prob-bar"><div class="prob-up" style="width:' + upPct + '%">▲ ' + upPct.toFixed(1) + '%</div><div class="prob-down" style="width:' + (100-upPct) + '%">▼ ' + (100-upPct).toFixed(1) + '%</div></div></div>';
-  html += '<div class="prob-summary">' + esc(prob.summary) + '</div>';
-  html += '<div class="prob-conf">置信度：' + '★'.repeat(prob.confidence || 0) + '☆'.repeat(5 - (prob.confidence || 0)) + '</div>';
-  html += '</div>';
+  let h = '<div class="prob-card">';
+  h += '<div class="prob-bar-wrap"><div class="prob-bar"><div class="prob-up" style="width:' + upPct + '%">▲ ' + upPct.toFixed(1) + '%</div><div class="prob-down" style="width:' + (100 - upPct) + '%">▼ ' + (100 - upPct).toFixed(1) + '%</div></div></div>';
+  h += '<div class="prob-summary">' + esc(prob.summary) + '</div>';
+  h += '<div class="prob-conf">置信度：' + '★'.repeat(prob.confidence || 0) + '☆'.repeat(5 - (prob.confidence || 0)) + '</div>';
+  h += '</div>';
+  return h;
+}
 
-  // 关键信号徽章（PanWatch TechnicalBadge 风格，由已有指标派生）
-  html += anaBadgesHTML(ind, prob);
-
-  // Indicators table
-  html += '<div class="ind-table-wrap"><table class="ind-table">';
-  html += '<thead><tr><th>指标</th><th>数值</th><th>信号</th><th>依据</th></tr></thead><tbody>';
-
-  // Price vs MA
-  html += '<tr><td>最新价</td><td>' + ind.price.toFixed(2) + '</td><td colspan="2"></td></tr>';
-  html += '<tr><td>MA5</td><td>' + (ind.ma5 ? ind.ma5.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma5 ? 'up' : 'down') + '">' + (ind.price > ind.ma5 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
-  html += '<tr><td>MA10</td><td>' + (ind.ma10 ? ind.ma10.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma10 ? 'up' : 'down') + '">' + (ind.price > ind.ma10 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
-  html += '<tr><td>MA20</td><td>' + (ind.ma20 ? ind.ma20.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma20 ? 'up' : 'down') + '">' + (ind.price > ind.ma20 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
-  html += '<tr><td>MA60</td><td>' + (ind.ma60 ? ind.ma60.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma60 ? 'up' : 'down') + '">' + (ind.price > ind.ma60 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
-
-  // MACD
+// 指标表格
+function indicatorsTableHTML(ind) {
+  let h = '<div class="ind-table-wrap"><table class="ind-table">';
+  h += '<thead><tr><th>指标</th><th>数值</th><th>信号</th><th>依据</th></tr></thead><tbody>';
+  h += '<tr><td>最新价</td><td>' + ind.price.toFixed(2) + '</td><td colspan="2"></td></tr>';
+  h += '<tr><td>MA5</td><td>' + (ind.ma5 ? ind.ma5.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma5 ? 'up' : 'down') + '">' + (ind.price > ind.ma5 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
+  h += '<tr><td>MA10</td><td>' + (ind.ma10 ? ind.ma10.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma10 ? 'up' : 'down') + '">' + (ind.price > ind.ma10 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
+  h += '<tr><td>MA20</td><td>' + (ind.ma20 ? ind.ma20.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma20 ? 'up' : 'down') + '">' + (ind.price > ind.ma20 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
+  h += '<tr><td>MA60</td><td>' + (ind.ma60 ? ind.ma60.toFixed(2) : '—') + '</td><td class="' + (ind.price > ind.ma60 ? 'up' : 'down') + '">' + (ind.price > ind.ma60 ? '多头 ↑' : '空头 ↓') + '</td><td></td></tr>';
   const macd = ind.macd || {};
   const macdDir = macd.hist > 0 ? 'up' : 'down';
-  html += '<tr><td>MACD DIF</td><td>' + (macd.dif ? macd.dif.toFixed(4) : '—') + '</td><td rowspan="3" class="' + macdDir + '">' + (macd.hist > 0 ? '金叉 ↑' : '死叉 ↓') + '</td><td rowspan="3" style="font-size:12px">DIF=' + (macd.dif ? macd.dif.toFixed(4) : '—') + ' DEA=' + (macd.dea ? macd.dea.toFixed(4) : '—') + ' HIST=' + (macd.hist ? macd.hist.toFixed(4) : '—') + '</td></tr>';
-  html += '<tr><td>MACD DEA</td><td>' + (macd.dea ? macd.dea.toFixed(4) : '—') + '</td></tr>';
-  html += '<tr><td>MACD HIST</td><td>' + (macd.hist ? macd.hist.toFixed(4) : '—') + '</td></tr>';
-
-  // RSI
+  h += '<tr><td>MACD DIF</td><td>' + (macd.dif ? macd.dif.toFixed(4) : '—') + '</td><td rowspan="3" class="' + macdDir + '">' + (macd.hist > 0 ? '金叉 ↑' : '死叉 ↓') + '</td><td rowspan="3" style="font-size:12px">DIF=' + (macd.dif ? macd.dif.toFixed(4) : '—') + ' DEA=' + (macd.dea ? macd.dea.toFixed(4) : '—') + ' HIST=' + (macd.hist ? macd.hist.toFixed(4) : '—') + '</td></tr>';
+  h += '<tr><td>MACD DEA</td><td>' + (macd.dea ? macd.dea.toFixed(4) : '—') + '</td></tr>';
+  h += '<tr><td>MACD HIST</td><td>' + (macd.hist ? macd.hist.toFixed(4) : '—') + '</td></tr>';
   const rsi = ind.rsi || 50;
   const rsiState = rsi > 70 ? '超买↓' : rsi > 50 ? '偏强↑' : rsi > 30 ? '偏弱↓' : '超卖↑';
-  html += '<tr><td>RSI(14)</td><td>' + rsi.toFixed(1) + '</td><td class="' + (rsi > 50 ? 'up' : 'down') + '">' + rsiState + '</td><td style="font-size:12px">' + (rsi > 70 ? '超买区域，回调风险高' : rsi > 50 ? '偏强区域，趋势向好' : rsi > 30 ? '偏弱区域，趋势偏空' : '超卖区域，反弹概率高') + '</td></tr>';
-
-  // KDJ
+  h += '<tr><td>RSI(14)</td><td>' + rsi.toFixed(1) + '</td><td class="' + (rsi > 50 ? 'up' : 'down') + '">' + rsiState + '</td><td style="font-size:12px">' + (rsi > 70 ? '超买区域，回调风险高' : rsi > 50 ? '偏强区域，趋势向好' : rsi > 30 ? '偏弱区域，趋势偏空' : '超卖区域，反弹概率高') + '</td></tr>';
   const kdj = ind.kdj || {};
-  html += '<tr><td>KDJ K</td><td>' + (kdj.k ? kdj.k.toFixed(2) : '—') + '</td><td rowspan="3" class="' + (kdj.k > kdj.d ? 'up' : 'down') + '">' + (kdj.k > kdj.d ? '金叉 ↑' : '死叉 ↓') + '</td><td rowspan="3" style="font-size:12px">J=' + (kdj.j ? kdj.j.toFixed(2) : '—') + ' ' + (kdj.j > 100 ? '超买' : kdj.j < 0 ? '超卖' : '') + '</td></tr>';
-  html += '<tr><td>KDJ D</td><td>' + (kdj.d ? kdj.d.toFixed(2) : '—') + '</td></tr>';
-  html += '<tr><td>KDJ J</td><td>' + (kdj.j ? kdj.j.toFixed(2) : '—') + '</td></tr>';
-
-  // BOLL
+  h += '<tr><td>KDJ K</td><td>' + (kdj.k ? kdj.k.toFixed(2) : '—') + '</td><td rowspan="3" class="' + (kdj.k > kdj.d ? 'up' : 'down') + '">' + (kdj.k > kdj.d ? '金叉 ↑' : '死叉 ↓') + '</td><td rowspan="3" style="font-size:12px">J=' + (kdj.j ? kdj.j.toFixed(2) : '—') + ' ' + (kdj.j > 100 ? '超买' : kdj.j < 0 ? '超卖' : '') + '</td></tr>';
+  h += '<tr><td>KDJ D</td><td>' + (kdj.d ? kdj.d.toFixed(2) : '—') + '</td></tr>';
+  h += '<tr><td>KDJ J</td><td>' + (kdj.j ? kdj.j.toFixed(2) : '—') + '</td></tr>';
   const boll = ind.boll || {};
   const bollPos = boll.mid > 0 ? ((ind.price - boll.lower) / (boll.upper - boll.lower) * 100) : 50;
-  html += '<tr><td>BOLL 上轨</td><td>' + (boll.upper ? boll.upper.toFixed(2) : '—') + '</td><td rowspan="3" class="' + (bollPos > 50 ? 'up' : 'down') + '">' + (bollPos > 80 ? '上轨压力↓' : bollPos > 50 ? '中上轨↑' : bollPos > 20 ? '中下轨↓' : '下轨支撑↑') + '</td><td rowspan="3" style="font-size:12px">带宽：' + (boll.width ? boll.width.toFixed(1) + '%' : '—') + ' ' + (boll.width > 20 ? '宽幅震荡' : boll.width < 5 ? '即将变盘' : '') + '</td></tr>';
-  html += '<tr><td>BOLL 中轨</td><td>' + (boll.mid ? boll.mid.toFixed(2) : '—') + '</td></tr>';
-  html += '<tr><td>BOLL 下轨</td><td>' + (boll.lower ? boll.lower.toFixed(2) : '—') + '</td></tr>';
+  h += '<tr><td>BOLL 上轨</td><td>' + (boll.upper ? boll.upper.toFixed(2) : '—') + '</td><td rowspan="3" class="' + (bollPos > 50 ? 'up' : 'down') + '">' + (bollPos > 80 ? '上轨压力↓' : bollPos > 50 ? '中上轨↑' : bollPos > 20 ? '中下轨↓' : '下轨支撑↑') + '</td><td rowspan="3" style="font-size:12px">带宽：' + (boll.width ? boll.width.toFixed(1) + '%' : '—') + ' ' + (boll.width > 20 ? '宽幅震荡' : boll.width < 5 ? '即将变盘' : '') + '</td></tr>';
+  h += '<tr><td>BOLL 中轨</td><td>' + (boll.mid ? boll.mid.toFixed(2) : '—') + '</td></tr>';
+  h += '<tr><td>BOLL 下轨</td><td>' + (boll.lower ? boll.lower.toFixed(2) : '—') + '</td></tr>';
+  h += '</tbody></table></div>';
+  return h;
+}
 
-  html += '</tbody></table></div>';
+// 标签栏（仿 Panwatch 个股详情 概览/建议/报告 按钮：小圆角胶囊）
+function analysisTabBarHTML(tabs, active) {
+  return '<div class="ana-tabs">' + tabs.map((t) =>
+    '<button type="button" class="ana-tab-btn' + (t.id === active ? ' active' : '') + '" data-tab="' + t.id + '">' + esc(t.label) + '</button>'
+  ).join('') + '</div>';
+}
+
+// 标签切换：点击切换 active 并显隐对应面板
+function bindAnalysisTabs() {
+  const bar = document.querySelector('#analysisBody .ana-tabs');
+  if (!bar) return;
+  bar.querySelectorAll('.ana-tab-btn').forEach((btn) => {
+    btn.onclick = () => {
+      const id = btn.dataset.tab;
+      bar.querySelectorAll('.ana-tab-btn').forEach((x) => x.classList.toggle('active', x === btn));
+      document.querySelectorAll('#analysisBody .ana-panel').forEach((p) => { p.hidden = (p.dataset.tab !== id); });
+    };
+  });
+}
+
+// 技术分析弹框：概览（评分+评级+K线）+ 其它选项 slider 切换
+function renderAnalysis(a) {
+  const ind = a.indicators, prob = a.probability;
+  let patVisible = [], patHTML = '', patScore = 0;
+  if (a.series && a.series.length) {
+    const bp = buildPatterns(a.series);
+    patVisible = bp.visible; patHTML = bp.html; patScore = bp.score;
+  }
+
+  // 可选标签：概览必有；K线形态需 series；信号需 prob；指标需 ind
+  const tabs = [{ id: 'overview', label: '概览' }];
+  if (a.series && a.series.length) tabs.push({ id: 'patterns', label: 'K线形态' });
+  if (prob) tabs.push({ id: 'signals', label: '信号' });
+  if (ind) tabs.push({ id: 'indicators', label: '指标' });
+  const active = tabs[0].id;
+
+  let html = analysisTabBarHTML(tabs, active);
+
+  // ── 概览：迷你K线 + 徽章 + 评分/评级 ──
+  html += '<div class="ana-panel" data-tab="overview">';
+  if (a.series && a.series.length) html += klineMiniHTML(a.series);
+  if (ind && prob) html += anaBadgesHTML(ind, prob);
+  html += overviewScoreRatingHTML(prob, patScore, patVisible.length);
+  if (!ind || !prob) html += '<div class="analysis-err">数据不足，部分评分/评级暂不可用</div>';
+  html += '</div>';
+
+  // ── K线形态 ──
+  if (a.series && a.series.length) {
+    html += '<div class="ana-panel" data-tab="patterns" hidden>' + patHTML + '</div>';
+  }
+
+  // ── 信号：信号分解 + 涨跌概率 ──
+  if (prob) {
+    html += '<div class="ana-panel" data-tab="signals" hidden>';
+    html += sigListHTML(buildMergedSignals(prob, patScore, patVisible.length));
+    html += probCardHTML(prob);
+    html += '</div>';
+  }
+
+  // ── 指标 ──
+  if (ind) {
+    html += '<div class="ana-panel" data-tab="indicators" hidden>' + indicatorsTableHTML(ind) + '</div>';
+  }
 
   $('#analysisBody').innerHTML = html;
   bindKlineMini($('#analysisBody'));
   if (patVisible.length) highlightPatternCandles($('#analysisBody'), patVisible);
+  bindAnalysisTabs();
 }
 
 // ── 弹框关闭 ──────────────────────────────────────────
