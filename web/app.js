@@ -4019,6 +4019,41 @@ function trendContext(bars, i, n) {
 }
 
 // 返回数组：{ idx, date, name, dir('bullish'|'bearish'|'neutral'), desc }
+// 头肩底（简化启发式）：在 bar i 背后 30 根窗口内寻找 左肩-头-右肩 结构，
+// 且当前(或近 4 根内)向上突破颈线。仅在「首次突破」那根标记为信号，避免连续重复命中。
+function detectHSBottom(bars, i) {
+  const w = 30;
+  if (i - w < 0) return null;
+  const seg = bars.slice(i - w, i + 1); // 长 31，末尾(索引30)即 bar i
+  const L = seg.length;
+  // 头：中间区域 [8,22] 最低 Low
+  let headPos = -1, headLow = Infinity;
+  for (let k = 8; k <= 22; k++) { if (seg[k].Low < headLow) { headLow = seg[k].Low; headPos = k; } }
+  if (headPos < 0) return null;
+  // 左肩：头之前区域最低 Low
+  let lsPos = -1, lsLow = Infinity;
+  for (let k = 0; k <= headPos - 3; k++) { if (seg[k].Low < lsLow) { lsLow = seg[k].Low; lsPos = k; } }
+  // 右肩：头之后区域最低 Low
+  let rsPos = -1, rsLow = Infinity;
+  for (let k = headPos + 3; k <= L - 3; k++) { if (seg[k].Low < rsLow) { rsLow = seg[k].Low; rsPos = k; } }
+  if (lsPos < 0 || rsPos < 0) return null;
+  // 头必须最低于两肩
+  if (!(headLow < lsLow - 1e-6 && headLow < rsLow - 1e-6)) return null;
+  // 两肩低点大致相当（容差 7%）
+  if (lsLow > 0 && Math.abs(lsLow - rsLow) / lsLow > 0.07) return null;
+  // 颈线 = 两肩间两个峰(High)的平均值（左肩→头、头→右肩）
+  let peakL = -Infinity;
+  for (let k = lsPos; k <= headPos; k++) { if (seg[k].High > peakL) peakL = seg[k].High; }
+  let peakR = -Infinity;
+  for (let k = headPos; k <= rsPos; k++) { if (seg[k].High > peakR) peakR = seg[k].High; }
+  const neck = (peakL + peakR) / 2;
+  const cur = seg[L - 1];
+  // 突破：当前收盘站上颈线，且约 4 根前仍在颈线下方（首次突破）
+  if (!(cur.Close > neck)) return null;
+  if (!(seg[L - 4].Close <= neck)) return null;
+  return { idx: i, date: cur.Date, name: '头肩底', dir: 'bullish', desc: '左肩-头-右肩结构完成并向上突破颈线，中期底部反转信号' };
+}
+
 function detectKlinePatterns(bars) {
   if (!bars || bars.length < 2) return [];
   const out = [];
@@ -4027,6 +4062,25 @@ function detectKlinePatterns(bars) {
     const body = Math.abs(b.Close - b.Open);
     const range = b.High - b.Low;
     if (range <= 0) continue;
+
+    // 三只乌鸦：连续三根长阴线，逐根收盘价更低，第三根开盘落在前一根实体之内
+    if (i >= 3) {
+      const c1 = bars[i - 2], c2 = bars[i - 1], c3 = b;
+      const blk = (x) => x.Close < x.Open;
+      const lng = (x) => (x.High - x.Low) > 0 && Math.abs(x.Close - x.Open) / (x.High - x.Low) > 0.5;
+      if (blk(c1) && blk(c2) && blk(c3) && lng(c1) && lng(c2) && lng(c3)
+        && c3.Close < c2.Close && c2.Close < c1.Close
+        && c3.Open <= c2.Open && c3.Open >= c2.Close) {
+        out.push({ idx: i, date: c3.Date, name: '三只乌鸦', dir: 'bearish', desc: '连续三根长阴线逐根走低，强烈看跌延续/见顶信号' });
+        continue;
+      }
+    }
+    // 头肩底（简化）：背后存在 左肩-头-右肩 结构且当前向上突破颈线
+    if (i >= 30) {
+      const hs = detectHSBottom(bars, i);
+      if (hs) { out.push(hs); continue; }
+    }
+
     const upper = b.High - Math.max(b.Open, b.Close);
     const lower = Math.min(b.Open, b.Close) - b.Low;
     const bodyRatio = body / range;
@@ -4081,31 +4135,98 @@ function detectKlinePatterns(bars) {
   return out;
 }
 
-// 仅在迷你K线可见窗口(近60根)内汇总，返回 { visible, html }
+// 仅在迷你K线可见窗口(近60根)内汇总，返回 { visible, html, score }
 function buildPatterns(bars) {
   const all = detectKlinePatterns(bars);
   const n = Math.min(bars.length, 60);
   const startIdx = bars.length - n;
   const visible = all.filter((p) => p.idx >= startIdx);
   visible.sort((a, b) => b.idx - a.idx);
-  return { visible, html: patternsListHTML(visible, n) };
+  const score = computePatternScore(visible);
+  return { visible, html: patternsListHTML(visible, n, score), score };
 }
 
-function patternsListHTML(visible, n) {
+// 形态权重：方向 × 强度。多头为 +，空头为 −。
+function patternWeight(name) {
+  switch (name) {
+    case '头肩底': return 2.8;
+    case '三只乌鸦': return -2.6;
+    case '看涨吞没': return 1.2;
+    case '看跌吞没': return -1.2;
+    case '锤子线': return 1.0;
+    case '上吊线': return -1.0;
+    case '倒锤子线': return 0.7;
+    case '射击之星': return -0.7;
+    case '看涨孕线': return 0.5;
+    case '看跌孕线': return -0.5;
+    case '十字星': return 0;
+    default: return 0;
+  }
+}
+
+// 由可见窗口命中形态汇总出净评分：牛/熊权重差除以总权重，归一到 (-1,1) 后乘 4，
+// 得到“近期多空偏倚”而非“形态数量”，落在 (-4,4)。平衡≈0，单边倾向→±4。
+function computePatternScore(patterns) {
+  if (!patterns || !patterns.length) return 0;
+  let bull = 0, bear = 0;
+  patterns.forEach((p) => {
+    const w = Math.abs(patternWeight(p.name));
+    if (p.dir === 'bullish') bull += w;
+    else if (p.dir === 'bearish') bear += w;
+  });
+  const denom = bull + bear + 0.5;
+  let score = ((bull - bear) / denom) * 4;
+  if (score > 4) score = 4;
+  if (score < -4) score = -4;
+  return Math.round(score * 100) / 100;
+}
+
+function patternsListHTML(visible, n, score) {
   if (!visible.length) return '';
+  const dir = score > 0.3 ? 'up' : score < -0.3 ? 'down' : 'neu';
+  const arrow = score > 0.3 ? '▲' : score < -0.3 ? '▼' : '◆';
+  const tone = score > 0.3 ? '偏多' : score < -0.3 ? '偏空' : '均衡';
   const top = visible.slice(0, 14);
   const items = top.map((p) => {
-    const tone = p.dir === 'bullish' ? 'up' : p.dir === 'bearish' ? 'down' : 'neu';
-    const arrow = p.dir === 'bullish' ? '▲' : p.dir === 'bearish' ? '▼' : '◆';
-    return '<div class="pat-item ' + tone + '"><span class="pat-date">' + esc(p.date) + '</span>'
-      + '<span class="pat-name">' + arrow + ' ' + esc(p.name) + '</span>'
+    const pt = p.dir === 'bullish' ? 'up' : p.dir === 'bearish' ? 'down' : 'neu';
+    const pa = p.dir === 'bullish' ? '▲' : p.dir === 'bearish' ? '▼' : '◆';
+    return '<div class="pat-item ' + pt + '"><span class="pat-date">' + esc(p.date) + '</span>'
+      + '<span class="pat-name">' + pa + ' ' + esc(p.name) + '</span>'
       + '<span class="pat-desc">' + esc(p.desc) + '</span></div>';
   }).join('');
   return '<div class="pat-card"><div class="pat-head">K线形态识别'
-    + '<span class="pat-sub">近 ' + n + ' 根 · 命中 ' + visible.length + ' 处</span></div>'
+    + '<span class="pat-sub">近 ' + n + ' 根 · 命中 ' + visible.length + ' 处</span>'
+    + '<span class="pat-score ' + dir + '">' + arrow + ' 形态净评分 ' + (score > 0 ? '+' : '') + score.toFixed(2) + ' ' + tone + '</span></div>'
     + '<div class="pat-list">' + items + '</div>'
     + (visible.length > top.length ? '<div class="pat-more">…另有 ' + (visible.length - top.length) + ' 处更早形态</div>' : '')
     + '</div>';
+}
+
+// 信号分解（合并模型信号 + 形态评分）渲染
+function buildMergedSignals(prob, patScore, patCount) {
+  const arr = [];
+  if (prob && prob.signals && prob.signals.length) arr.push(...prob.signals);
+  const dir = patScore > 0.3 ? 'bullish' : patScore < -0.3 ? 'bearish' : 'neutral';
+  arr.push({
+    indicator: 'K线形态',
+    direction: dir,
+    reason: '近60根命中 ' + patCount + ' 处形态，净方向' + (dir === 'bullish' ? '偏多' : dir === 'bearish' ? '偏空' : '均衡'),
+    score: patScore,
+  });
+  return arr;
+}
+
+function sigListHTML(signals) {
+  if (!signals || !signals.length) return '';
+  let h = '<div class="sig-list"><h4>信号分解</h4>';
+  signals.forEach((s) => {
+    const cls = s.direction === 'bullish' ? 'sig-up' : s.direction === 'bearish' ? 'sig-down' : 'sig-neutral';
+    const arrow = s.direction === 'bullish' ? '▲' : s.direction === 'bearish' ? '▼' : '—';
+    const sc = (typeof s.score === 'number') ? s.score : 0;
+    h += '<div class="sig-item ' + cls + '"><span class="sig-ind">' + esc(s.indicator) + '</span><span class="sig-arrow">' + arrow + '</span><span class="sig-reason">' + esc(s.reason) + '</span><span class="sig-score">' + (sc > 0 ? '+' : '') + sc.toFixed(2) + '</span></div>';
+  });
+  h += '</div>';
+  return h;
 }
 
 // 在迷你K线图上给命中蜡烛描边高亮
@@ -4151,10 +4272,13 @@ function renderAnalysis(a) {
   if (!ind || !prob) {
     let html = '';
     let patVisible = [];
+    let patScore = 0;
     if (a.series && a.series.length) {
-      html += klineMiniHTML(a.series);
       const bp = buildPatterns(a.series);
-      html += bp.html; patVisible = bp.visible;
+      patVisible = bp.visible; patScore = bp.score;
+      html += klineMiniHTML(a.series);
+      html += sigListHTML(buildMergedSignals(null, patScore, patVisible.length));
+      html += bp.html;
     }
     html += '<div class="analysis-err">数据不足，无法计算指标</div>';
     $('#analysisBody').innerHTML = html;
@@ -4168,17 +4292,19 @@ function renderAnalysis(a) {
   let html = '';
   let patVisible = [];
   let patHTML = '';
+  let patScore = 0;
   if (a.series && a.series.length) {
     const bp = buildPatterns(a.series);
     patVisible = bp.visible;
     patHTML = bp.html;
+    patScore = bp.score;
   }
 
   // 迷你K线（使用已有日K线数据组装）
   if (a.series && a.series.length) html += klineMiniHTML(a.series);
+  // 信号分解（已并入K线形态评分）置于 K线形态识别 之上
+  html += sigListHTML(buildMergedSignals(prob, patScore, patVisible.length));
   html += patHTML;
-
-  // Probability card
 
   // Probability card
   const upPct = prob.up_pct || 50;
@@ -4228,17 +4354,6 @@ function renderAnalysis(a) {
   html += '<tr><td>BOLL 下轨</td><td>' + (boll.lower ? boll.lower.toFixed(2) : '—') + '</td></tr>';
 
   html += '</tbody></table></div>';
-
-  // Signal breakdown
-  if (prob.signals && prob.signals.length) {
-    html += '<div class="sig-list"><h4>信号分解</h4>';
-    prob.signals.forEach(s => {
-      const cls = s.direction === 'bullish' ? 'sig-up' : s.direction === 'bearish' ? 'sig-down' : 'sig-neutral';
-      const arrow = s.direction === 'bullish' ? '▲' : s.direction === 'bearish' ? '▼' : '—';
-      html += '<div class="sig-item ' + cls + '"><span class="sig-ind">' + esc(s.indicator) + '</span><span class="sig-arrow">' + arrow + '</span><span class="sig-reason">' + esc(s.reason) + '</span><span class="sig-score">' + (s.score > 0 ? '+' : '') + (s.score || 0).toFixed(2) + '</span></div>';
-    });
-    html += '</div>';
-  }
 
   $('#analysisBody').innerHTML = html;
   bindKlineMini($('#analysisBody'));

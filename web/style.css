@@ -2390,8 +2390,12 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 
 /* K线形态识别卡片 */
 .pat-card { background: var(--bg-card); border: var(--card-border); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
-.pat-head { font-weight: 600; font-size: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: baseline; }
+.pat-head { font-weight: 600; font-size: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
 .pat-sub { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.pat-score { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.pat-score.up { color: #ff4757; background: rgba(255,71,87,.12); }
+.pat-score.down { color: #2ed573; background: rgba(46,213,115,.12); }
+.pat-score.neu { color: #38bdf8; background: rgba(56,189,248,.12); }
 .pat-list { display: flex; flex-direction: column; gap: 6px; }
 .pat-item { display: grid; grid-template-columns: 86px 96px 1fr; align-items: baseline; gap: 6px; font-size: 13px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
 .pat-item:last-child { border-bottom: none; }
