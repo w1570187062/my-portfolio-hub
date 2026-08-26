@@ -132,26 +132,35 @@ func resolveSymbol(symbol, market string) string {
 		return sym
 	}
 
-	// A-shares: if user typed "600519", prepend "sh"; if "000001", prepend "sz"
-	if market == "A股" || market == "港股" {
-		if !strings.HasPrefix(sym, "sh") && !strings.HasPrefix(sym, "sz") {
-			// Detect Shanghai vs Shenzhen by first digit
-			if len(sym) == 6 {
-				switch sym[0] {
-				case '6', '5', '9':
-					sym = "sh" + sym
-				case '0', '2', '3':
-					sym = "sz" + sym
-				}
-			}
+	// 6 位纯数字 → 视为 A 股，按首位判定上交所(sh)/深交所(sz)。
+	// 不依赖 market 字段（market 缺失或写法不一致时仍能正确取数）。
+	if len(sym) == 6 && isAllDigits(sym) {
+		switch sym[0] {
+		case '6', '5', '9':
+			return "sh" + sym
+		case '0', '2', '3':
+			return "sz" + sym
 		}
+		return sym
 	}
-	// H-shares: use prefix "hk"
-	if market == "港股" {
-		if !strings.HasPrefix(sym, "hk") {
-			sym = "hk" + sym
-		}
+
+	// 港股：纯数字补 hk 前缀（兼容 market 字段缺失/不一致）
+	if (market == "港股" || market == "HK") && isAllDigits(sym) {
+		return "hk" + sym
 	}
 
 	return sym
+}
+
+// isAllDigits reports whether s consists solely of ASCII digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

@@ -3899,28 +3899,39 @@ async function assetAiSummarize() {
 }
 
 // ── 技术分析 ──────────────────────────────────────────
+let analysisGenId = 0; // 防止并发打开时旧请求覆盖新请求渲染
 async function openAnalysis(id) {
+  const myGen = ++analysisGenId;
   const modal = $('#analysisModal');
   const body = $('#analysisBody');
+  // 打开即重置标题与时间，避免残留上一次标的的信息
+  $('#analysisTitle').textContent = '📊 技术分析（加载中…）';
+  const tsPre = document.getElementById('analysisTime');
+  if (tsPre) tsPre.textContent = '';
   body.innerHTML = '<div class="analysis-loading">⏳ 正在获取技术分析数据…</div>';
   modal.hidden = false;
   try {
     const r = await api('/api/holdings/' + id + '/analysis');
+    if (myGen !== analysisGenId) return; // 已有更新的请求，放弃本次渲染
     if (!r.ok) {
       let msg = '获取技术分析失败 (HTTP ' + r.status + ')';
       try { const e = await r.json(); if (e.error) msg += '：' + e.error; } catch (_) {}
+      $('#analysisTitle').textContent = '📊 技术分析';
       body.innerHTML = '<div class="analysis-err">' + msg + '</div>';
       return;
     }
     const d = await r.json();
+    if (myGen !== analysisGenId) return;
     const a = d.analysis;
     if (a.error) {
+      $('#analysisTitle').textContent = '📊 技术分析';
       body.innerHTML = '<div class="analysis-err">' + a.error + '</div>';
       return;
     }
     // 基金：仅当后端未返回指标（未关联股票代码/数据不足）时才提示不支持；
     // 有关联代码且分析成功的基金应正常渲染。
     if (a.category === 'fund' && !a.indicators) {
+      $('#analysisTitle').textContent = '📊 技术分析';
       body.innerHTML = '<div class="analysis-err">该基金未设置关联股票代码，不支持技术分析</div>';
       return;
     }
@@ -3929,6 +3940,8 @@ async function openAnalysis(id) {
     const tsEl = document.getElementById('analysisTime');
     if (tsEl) tsEl.textContent = (a.market ? a.market + ' · ' : '') + '周期 1d · 数据截至 ' + (a.generated_at || '—');
   } catch (e) {
+    if (myGen !== analysisGenId) return;
+    $('#analysisTitle').textContent = '📊 技术分析';
     body.innerHTML = '<div class="analysis-err">异常：' + e.message + '</div>';
   }
 }
