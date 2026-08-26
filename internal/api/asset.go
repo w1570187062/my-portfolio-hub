@@ -579,8 +579,9 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 		}
 		// phantom 盈亏拦截：当日净存入≠0 但持仓金额与前一日完全相同，会产生错误盈亏
 		if math.Abs(it.Cashflow) > 1e-9 {
-			if prev, pe := db.GetWealthPrevSnapshot(it.WealthID, b.Date); pe == nil && prev.ok {
-				if math.Abs(prev.amount-it.Amount) < 0.005 {
+			_, prevAmt, prevOk, pe := db.GetWealthPrevSnapshot(it.WealthID, b.Date)
+			if pe == nil && prevOk {
+				if math.Abs(prevAmt-it.Amount) < 0.005 {
 					c.JSON(http.StatusBadRequest, gin.H{"error": "产品 " + strconv.FormatInt(it.WealthID, 10) + " 在 " + b.Date + " 的净存入不为0，但持仓金额与前一日相同，将产生错误盈亏。请同步调整持仓金额，或确认净存入应填 0。"})
 					return
 				}
@@ -712,6 +713,9 @@ func assetWealthSnapshotUndo(c *gin.Context) {
 	})
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
+
+// assetWealthHistory returns the daily P&L series for one product, with cumulative P&L.
+func assetWealthHistory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
