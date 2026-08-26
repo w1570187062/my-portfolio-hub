@@ -3357,7 +3357,8 @@ $('#wealthForm').onsubmit = async (e) => {
 
 // ---- 现金 ----
 function renderCash(body) {
-  const list = (assetData.cash || {}).items || [];
+  // 按金额(CNY 等值：USD/HKD 按页面汇率折算)从大到小排序
+  const list = ((assetData.cash || {}).items || []).slice().sort((a, b) => toRmb(b, b.amount || 0) - toRmb(a, a.amount || 0));
   let html = `<div class="asset-section-head"><h3>现金（${list.length}）</h3><button class="btn asset-add" id="addCashBtn">＋ 添加现金</button></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">还没有现金记录，添加各账户的现金余额即可纳入总资产。</p><button class="btn asset-add-inline" data-empty-add="cash" type="button">➕ 添加现金</button></div>`;
   else {
