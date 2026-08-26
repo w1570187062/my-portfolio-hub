@@ -2391,6 +2391,11 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .kline-mini-tip .kl-tip-c { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .kline-mini-tip .kl-tip-c.up { color: #ff4757; }
 .kline-mini-tip .kl-tip-c.down { color: #2ed573; }
+.kline-mini-tip .kl-tip-pat { font-size: 12px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.kline-mini-tip .kl-tip-pat.up { color: #ff4757; }
+.kline-mini-tip .kl-tip-pat.down { color: #2ed573; }
+.kline-mini-tip .kl-tip-pat.neu { color: #f59e0b; }
+.klwrap .kc.kc-pat:hover .kl-patbox { stroke-width: 2.2; }
 
 /* K线形态识别卡片 */
 .pat-card { background: var(--bg-card); border: var(--card-border); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }

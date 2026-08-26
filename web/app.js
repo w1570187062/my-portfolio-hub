@@ -3947,7 +3947,8 @@ async function openAnalysis(id) {
 }
 
 // 迷你K线（纯SVG蜡烛图，使用分析接口返回的已有日K线数据组装）
-function klineMiniHTML(bars) {
+// patMap: { [date]: [{name, dir}] } —— 命中形态的日期→形态列表，用于加外边框与悬停提示
+function klineMiniHTML(bars, patMap) {
   const n = Math.min(bars.length, 60);
   const data = bars.slice(bars.length - n);
   if (!data.length) return '';
@@ -3958,6 +3959,7 @@ function klineMiniHTML(bars) {
   const W = 600, H = 168, step = W / n, cw = Math.max(1.5, step * 0.62);
   const y = (v) => H - ((v - lo) / (hi - lo)) * H;
   const up = '#ff4757', down = '#2ed573';
+  const patCol = (d) => d === 'bullish' ? up : d === 'bearish' ? down : '#f59e0b';
   // 压力位 / 支撑位：可视区间内极值（根据已有日K线数据组装，不新增条目）
   let res = -Infinity, sup = Infinity;
   data.forEach((b) => { if (b.High > res) res = b.High; if (b.Low < sup) sup = b.Low; });
@@ -3974,9 +3976,15 @@ function klineMiniHTML(bars) {
     const top = Math.min(yO, yC), hgt = Math.max(1, Math.abs(yO - yC));
     const px = (x / W * 100).toFixed(2);
     const py = (yC / H * 100).toFixed(2);
-    body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '">';
+    const ps = (patMap && patMap[b.Date]) || [];
+    const patAttr = ps.length ? ' data-pat="' + ps.map((p) => p.dir + '~' + p.name).join('|') + '"' : '';
+    body += '<g class="kc' + (ps.length ? ' kc-pat' : '') + '" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '"' + patAttr + '>';
     body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
     body += '<rect class="kl-body" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
+    if (ps.length) {
+      const bc = patCol(ps[0].dir);
+      body += '<rect class="kl-patbox" x="' + (x - cw / 2 - 1.6).toFixed(2) + '" y="' + (y(b.High) - 1.6).toFixed(2) + '" width="' + (cw + 3.2).toFixed(2) + '" height="' + ((y(b.Low) - y(b.High)) + 3.2).toFixed(2) + '" rx="2" fill="none" stroke="' + bc + '" stroke-width="1.4"/>';
+    }
     body += '<rect class="kl-hit" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '" fill="rgba(0,0,0,0)"/>';
     body += '</g>';
   });
@@ -3996,7 +4004,18 @@ function bindKlineMini(root) {
   let pinned = null, hover = null;
   function showTip(g) {
     const c = Number(g.dataset.c);
-    tip.innerHTML = '<div class="kl-tip-d">' + esc(g.dataset.d) + '</div><div class="kl-tip-c ' + g.dataset.dir + '">收盘 ' + c.toFixed(2) + '</div>';
+    let html = '<div class="kl-tip-d">' + esc(g.dataset.d) + '</div><div class="kl-tip-c ' + g.dataset.dir + '">收盘 ' + c.toFixed(2) + '</div>';
+    const pat = g.dataset.pat;
+    if (pat) {
+      pat.split('|').forEach((seg) => {
+        const parts = seg.split('~');
+        const d = parts[0], name = parts.slice(1).join('~');
+        const cls = d === 'bullish' ? 'up' : d === 'bearish' ? 'down' : 'neu';
+        const ar = d === 'bullish' ? '▲' : d === 'bearish' ? '▼' : '◆';
+        html += '<div class="kl-tip-pat ' + cls + '">' + ar + ' ' + esc(name) + '</div>';
+      });
+    }
+    tip.innerHTML = html;
     let px = parseFloat(g.dataset.px), py = parseFloat(g.dataset.py);
     px = Math.max(8, Math.min(92, px));
     tip.style.left = px + '%';
@@ -4397,7 +4416,11 @@ function renderAnalysis(a) {
 
   // ── 概览：迷你K线 + 徽章 + 评分/评级 ──
   html += '<div class="ana-panel" data-tab="overview">';
-  if (a.series && a.series.length) html += klineMiniHTML(a.series);
+  if (a.series && a.series.length) {
+    const pmap = {};
+    patVisible.forEach((p) => { (pmap[p.date] = pmap[p.date] || []).push(p); });
+    html += klineMiniHTML(a.series, pmap);
+  }
   if (ind && prob) html += anaBadgesHTML(ind, prob);
   html += overviewScoreRatingHTML(prob, patScore, patVisible.length);
   if (!ind || !prob) html += '<div class="analysis-err">数据不足，部分评分/评级暂不可用</div>';
