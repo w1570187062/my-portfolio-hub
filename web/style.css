@@ -419,7 +419,7 @@
   flex-wrap: wrap;
   margin: 12px 20px 8px;
   padding: 14px 18px;
-  background: var(--card-bg, var(--btn-ghost));
+  background: var(--card-bg, transparent);
   border: 1px solid var(--border);
   border-radius: 12px;
 }
@@ -438,6 +438,13 @@
 .holdings-group .holdings-subtable .num {
   text-align: left;
 }
+
+/* 资产全景「资产总览」卡片：复用 account-card 布局（资产全景标签+用户名 左；净资产/权益/理财/现金/负债 右横排）。
+   外层 .summary.collapsible 已提供卡片底色/边框，故内层去边框去底色，避免卡片套卡片。 */
+.asset-overview-card { margin: 0; width: 100%; background: transparent; border: none; padding: 4px 0; }
+.asset-overview-card .ac-name { color: var(--primary); }
+.asset-overview-card .ov-net { color: var(--primary); font-size: 17px; }
+.asset-overview-card .ov-liab { color: var(--danger); }
 .source-group.holdings-group {
   margin-bottom: 12px;
   border: 1px solid var(--border);

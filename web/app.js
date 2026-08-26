@@ -1707,10 +1707,7 @@ function moveTrendTip(e) {
 }
 function hideTrendTip() { const tip = document.getElementById('trendTip'); if (tip) tip.classList.remove('show'); }
 
-$('#assetPieBtn').onclick = () => { renderPie(); };
-$('#assetCalendarBtn').onclick = () => navigate('calendar');
-$('#assetToolsBtn').onclick = () => navigate('tools');
-$('#assetTrendBtn').onclick = renderTrend;
+// 资产工具栏按钮改由 #assetToolbar 事件委托（见下方 document.getElementById('assetToolbar').addEventListener）
 // 关闭按钮已移除：右上角 ✕ 与点击遮罩均可关闭
 $('#chartModal').addEventListener('click', (e) => { if (e.target === $('#chartModal')) $('#chartModal').hidden = true; });
 $('#histModal').addEventListener('click', (e) => { if (e.target === $('#histModal')) $('#histModal').hidden = true; });
@@ -2324,11 +2321,7 @@ function switchHubTab(tab) {
   if (tab === 'settings') { renderTplSelect(); renderModelSelect(); }
   if (tab === 'history') loadAIHistory();
 }
-$('#aiPickBtn').onclick = () => {
-  $('#aiPickErr').textContent = '';
-  $('#aiPickGo').disabled = false;
-  switchHubTab('summary');
-};
+// aiPickBtn 已改由 #assetToolbar 事件委托处理
 $('#hubTabSummary').onclick = () => switchHubTab('summary');
 $('#hubTabSettings').onclick = () => switchHubTab('settings');
 $('#hubTabHistory').onclick = () => switchHubTab('history');
@@ -2339,11 +2332,11 @@ $('#aiPickGo').onclick = () => {
   if (type === 'all') assetAiSummarize();
   else aiSummarize();
 };
-$('#ai_export_json').onclick = confirmExport;
+// ai_export_json 已改由 #assetToolbar 事件委托处理
 
 // ---- 数据导入（格式与导出一致，入库当前用户）----
 let pendingImport = null;
-$('#ai_import_json').onclick = () => { $('#importFile').click(); };
+// ai_import_json 已改由 #assetToolbar 事件委托处理
 $('#importFile').onchange = async (e) => {
   const f = e.target.files && e.target.files[0];
   e.target.value = ''; // 允许重复选择同一文件
@@ -3092,37 +3085,50 @@ async function loadSourcesCache() {
 
 function renderAssetSummary() {
   const d = assetData; if (!d) return;
-  const eq = d.equity || {}, w = d.wealth || {}, l = d.liability || {}, c = d.consumption || {}, cash = d.cash || {};
-  const wBy = w.by_currency || {};
-  const cBy = cash.by_currency || {};
-  const byCurHtml = (m) => Object.keys(m).map((k) => `${curSymbolJS(k)}${fmt(m[k] || 0)}`).join(' | ');
-  const total = (eq.market_value || 0) + (w.total || 0) + (cash.total || 0);
-  // 合并卡片：总资产（含 权益市值 / 理财持仓 明细）
-  const equityRow =
-    `<div class="c-br"><span class="c-br-label">权益市值</span>` +
-    `<span class="c-br-val">${money(eq.market_value || 0)}</span>` +
-    `<span class="c-br-delta ${pnlCls(eq.day_pnl || 0)}">当日 ${pnlTxt(eq.day_pnl || 0)}</span></div>`;
-  const wealthRow =
-    `<div class="c-br"><span class="c-br-label">理财持仓</span>` +
-    `<span class="c-br-val">${money(w.total || 0)}</span>` +
-    `<span class="c-br-delta ${pnlCls(w.today_pnl || 0)}">${(w.snap_date && w.snap_date !== new Date().toLocaleDateString('en-CA') ? '今日未录入' : '今日收益 ' + pnlTxt(w.today_pnl || 0))}</span></div>`;
-  const cashRow =
-    `<div class="c-br"><span class="c-br-label">现金</span>` +
-    `<span class="c-br-val">${money(cash.total || 0)}</span>` +
-    `<span class="c-br-delta">${byCurHtml(cBy) ? byCurHtml(cBy) : '—'}</span></div>`;
+  const eq = d.equity || {}, w = d.wealth || {}, l = d.liability || {}, cash = d.cash || {};
+  const eqMV = eq.market_value || 0, wTotal = w.total || 0, cTotal = cash.total || 0, lTotal = l.total || 0;
+  // 净资产 = 总资产(权益+理财+现金) − 负债（满足"上方总资产减掉负债"）
+  const net = eqMV + wTotal + cTotal - lTotal;
+  const unSrc = document.getElementById('userNameText');
+  const un = unSrc ? (unSrc.textContent || '默认') : '默认';
+  // 资产全览改为 accountCard 布局：左=资产全景+用户名，右=净资产/权益/理财/现金/负债 横排统计（标签上、数值下）
   $('#assetSummaryBody').innerHTML =
-    `<div class="c-label">总资产</div>` +
-    `<div class="c-value">${money(total)}</div>` +
-    `<div class="c-breakdown">${equityRow}${wealthRow}${cashRow}</div>`;
+    `<div class="account-card asset-overview-card">
+      <div class="ac-left"><span class="ac-label">资产全景</span><span class="ac-name">${esc(un)}</span></div>
+      <div class="ac-right">
+        <div class="ac-stat"><span class="ac-stat-lbl">净资产</span><b class="ov-net">${money(net)}</b></div>
+        <div class="ac-stat"><span class="ac-stat-lbl">权益</span><b>${money(eqMV)}</b></div>
+        <div class="ac-stat"><span class="ac-stat-lbl">理财</span><b>${money(wTotal)}</b></div>
+        <div class="ac-stat"><span class="ac-stat-lbl">现金</span><b>${money(cTotal)}</b></div>
+        <div class="ac-stat"><span class="ac-stat-lbl">负债</span><b class="ov-liab">${money(lTotal)}</b></div>
+      </div>
+    </div>`;
 }
 
 function renderAssetTab() {
   const body = $('#assetTabBody');
+  renderAssetToolbar(assetTab);
   if (assetTab === 'sources') return renderSources(body);
   if (assetTab === 'wealth') return renderWealth(body);
   if (assetTab === 'cash') return renderCash(body);
   if (assetTab === 'liability') return renderLiability(body);
   if (assetTab === 'consume') return renderConsume(body);
+}
+
+// 资产工具栏：随当前 tab 动态渲染"响应类别"的按钮（数据录入仅理财有；图表分析/AI/导出通用）
+function renderAssetToolbar(tab) {
+  const t = document.getElementById('assetToolbar');
+  if (!t) return;
+  const L = (s) => `<span class="atool-label">${s}</span>`;
+  const B = (id, icon, tip) => `<button id="${id}" class="btn icon-btn" type="button" data-tip="${tip}" aria-label="${tip}">${icon}</button>`;
+  let h = '';
+  if (tab === 'wealth') {
+    h += L('数据录入') + B('assetSnapBtn', '📥', '更新理财持仓') + '<span class="atool-sep"></span>';
+  }
+  h += L('图表分析') + B('assetCalendarBtn', '📅', '盈亏日历') + B('assetTrendBtn', '📈', '盈亏走势') + B('assetPieBtn', '🥧', '资产构成') + '<span class="atool-sep"></span>';
+  h += L('AI 智能') + B('aiPickBtn', '🤖', 'AI中枢') + '<span class="atool-sep"></span>';
+  h += L('工具导出') + B('assetToolsBtn', '🛠️', '资产工具') + B('ai_export_json', '⬇️', '导出数据') + B('ai_import_json', '⬆️', '导入数据');
+  t.innerHTML = h;
 }
 
 document.querySelectorAll('#assetTabs .atab').forEach((b) => {
@@ -3134,6 +3140,22 @@ document.querySelectorAll('#assetTabs .atab').forEach((b) => {
     // 切 tab 后滚动到标签栏位置，避免内容高度变化导致页面跳动
     $('#assetTabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+});
+
+// 资产工具栏按钮改由 #assetToolbar 事件委托（按钮随 tab 动态渲染，见 renderAssetToolbar）
+document.getElementById('assetToolbar').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || !b.id) return;
+  switch (b.id) {
+    case 'assetSnapBtn': openSnapModal(); break;
+    case 'assetCalendarBtn': navigate('calendar'); break;
+    case 'assetTrendBtn': renderTrend(); break;
+    case 'assetPieBtn': renderPie(); break;
+    case 'assetToolsBtn': navigate('tools'); break;
+    case 'aiPickBtn': $('#aiPickErr').textContent = ''; $('#aiPickGo').disabled = false; switchHubTab('summary'); break;
+    case 'ai_export_json': confirmExport(); break;
+    case 'ai_import_json': $('#importFile').click(); break;
+  }
 });
 
 function assetDel(type, id) {
@@ -3521,7 +3543,7 @@ $('#consumeForm').onsubmit = async (e) => {
 };
 
 // ---- 每日持仓金额录入（自动算每日盈亏） ----
-$('#assetSnapBtn').onclick = openSnapModal;
+// assetSnapBtn 已改由 #assetToolbar 事件委托处理
 
 // ---- 通知渠道二级页 ----
 function showNotifyView() {

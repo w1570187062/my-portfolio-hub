@@ -164,38 +164,22 @@
   </div>
 
   <div id="assetView" hidden>
-    <section id="assetSummary" class="summary asset-summary collapsible collapsed">
+    <section id="assetSummary" class="summary asset-summary collapsible">
       <div class="collapse-hat">
         <span class="hat-title">资产总览</span>
         <span class="hat-chevron">▾</span>
       </div>
       <div class="collapse-body" id="assetSummaryBody"></div>
     </section>
-    <div class="asset-toolbar">
-      <span class="atool-label">数据录入</span>
-      <button id="assetSnapBtn" class="btn icon-btn" type="button" data-tip="更新理财持仓" aria-label="更新理财持仓">📥</button>
-      <span class="atool-sep"></span>
-      <span class="atool-label">图表分析</span>
-      <button id="assetCalendarBtn" class="btn icon-btn" type="button" data-tip="盈亏日历" aria-label="盈亏日历">📅</button>
-      <button id="assetTrendBtn" class="btn icon-btn" type="button" data-tip="盈亏走势" aria-label="盈亏走势">📈</button>
-      <button id="assetPieBtn" class="btn icon-btn" type="button" data-tip="资产构成" aria-label="资产构成">🥧</button>
-      <span class="atool-sep"></span>
-      <span class="atool-label">AI 智能</span>
-      <button id="aiPickBtn" class="btn icon-btn" type="button" data-tip="AI中枢" aria-label="AI中枢">🤖</button>
-      <span class="atool-sep"></span>
-      <span class="atool-label">工具导出</span>
-      <button id="assetToolsBtn" class="btn icon-btn" type="button" data-tip="资产工具" aria-label="资产工具">🛠️</button>
-      <button id="ai_export_json" class="btn icon-btn" type="button" data-tip="导出数据" aria-label="导出数据">⬇️</button>
-      <button id="ai_import_json" class="btn icon-btn" type="button" data-tip="导入数据" aria-label="导入数据">⬆️</button>
-    </div>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
     <div class="asset-tabs" id="assetTabs">
       <button class="btn atab active" data-tab="wealth" type="button">理财</button>
       <button class="btn atab" data-tab="cash" type="button">现金</button>
-      <button class="btn atab" data-tab="liability" type="button" style="display:none">负债</button>
+      <button class="btn atab" data-tab="liability" type="button">负债</button>
       <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
       <button class="btn atab" data-tab="sources" type="button">来源</button>
     </div>
+    <div class="asset-toolbar" id="assetToolbar"></div>
     <div id="assetTabBody"></div>
   </div>
 
