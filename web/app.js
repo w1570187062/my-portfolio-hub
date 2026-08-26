@@ -508,7 +508,7 @@ function renderHoldingsBySource(hs) {
     const dayPctV = g.mv > 0 ? (g.dayPnl / g.mv) * 100 : 0;
     html += `<div class="collapsible source-group holdings-group" data-sid="${g.sid}">`
       + `<div class="collapse-hat holdings-group-head">`
-      + `<span class="hat-title"><span class="src-ico">${SRC_ICON}</span> ${esc(g.name)} <span class="hat-count">${g.items.length} 只</span></span>`
+      + `<span class="hat-title"><span class="src-ico">${srcTypeIconForSource(g.sid)}</span> ${esc(g.name)} <span class="hat-count">${g.items.length} 只</span></span>`
       + `<span class="hat-side">`
       + `<span class="hat-stat" title="该来源持仓折合人民币市值"><span class="hat-stat-lbl">市值</span><b>¥${fmt(g.mv)}</b></span>`
       + `<span class="hat-stat" title="该来源当日盈亏合计"><span class="hat-stat-lbl">当日</span><b class="${cls(g.dayPnl)}">${fmt(g.dayPnl)} <small>(${pct(dayPctV)})</small></b></span>`
@@ -2947,6 +2947,13 @@ const SEC_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" st
 const SOFTWARE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
 const SRC_TYPE_ICON = { bank: BANK_ICON, securities: SEC_ICON, software: SOFTWARE_ICON, platform: SRC_ICON };
 function srcTypeIcon(t) { return SRC_TYPE_ICON[t] || SRC_ICON; }
+// 首页持仓分组：按来源 id 取来源类型，返回对应特色图标；未分组/未知来源回退 SRC_ICON
+function srcTypeIconForSource(sid) {
+  const s = assetSources.find((x) => x.id === sid);
+  if (!s) return SRC_ICON;
+  const t = (s.type === 'securities' || s.type === 'software' || s.type === 'platform') ? s.type : 'bank';
+  return srcTypeIcon(t);
+}
 document.querySelectorAll('.eye-toggle').forEach(b => { if (!b.innerHTML.trim()) b.innerHTML = EYE_OPEN; });
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.eye-toggle');
