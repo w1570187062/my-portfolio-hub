@@ -28,9 +28,12 @@ type Holding struct {
 	Note         string  `json:"note"`
 	LinkedSymbol string  `json:"linked_symbol"` // 基金关��的股票代码，非空时点击基金可做技术分析
 	BuyDate      string  `json:"buy_date"`       // 买入日期，YYYY-MM-DD，为空则不计持有天数
-	BuyPlan      string  `json:"buy_plan"`       // 基金补仓计划 JSON（净值刷新时计算，不写 note 列）
-	UserID       int64   `json:"user_id"`
-	UpdatedAt    string  `json:"updated_at"`
+	BuyPlan       string  `json:"buy_plan"`       // 基金补仓计划 JSON（净值刷新时计算，不写 note 列）
+	Closed        bool    `json:"closed"`          // 是否已清仓（份额已归零）
+	LastQuantity  float64 `json:"last_quantity"`   // 清仓前最后份额（供历史盈亏重算基准）
+	LastCostPrice float64 `json:"last_cost_price"` // 清仓前最后成本价（供历史盈亏重算基准）
+	UserID        int64   `json:"user_id"`
+	UpdatedAt     string  `json:"updated_at"`
 }
 
 func Init(path string) error {
