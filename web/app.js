@@ -493,11 +493,11 @@ function renderHoldingsBySource(hs) {
     maxName = Math.max(maxName, measureNameWidth(h.name || ''));
     if (supportsAnalysis(h)) hasAna = true;
   }
-  const ARROW = 16, GAP = 3, CELLPAD = 4, BUF = 8;
+  const ARROW = 16, GAP = 3, CELLPAD = 4;
   const wAdd = measureBtnWidth('修改');
   const wAna = hasAna ? measureBtnWidth('分析') : 0;
   const SPARK_W = 110 + GAP;  // 迷你图宽度 + 最后一个间隙
-  let colW = maxName + ARROW + GAP + SPARK_W + wAdd + (hasAna ? GAP + wAna : 0) + CELLPAD * 2 + BUF;
+  let colW = maxName + ARROW + GAP + SPARK_W + wAdd + (hasAna ? GAP + wAna : 0) + CELLPAD * 2 + CELLPAD;
   box.style.setProperty('--name-col-w', Math.ceil(colW) + 'px');
   box.style.setProperty('--name-w', Math.ceil(maxName) + 'px');
   let html = '';
