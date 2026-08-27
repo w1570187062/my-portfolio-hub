@@ -2004,11 +2004,13 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .asset-summary .c-value { font-size: 18px; }
   /* 工具栏：按钮流式排布，隐藏分隔符让按钮自然换行 */
   .asset-toolbar { padding: 0 10px 12px; gap: 8px; }
+  .asset-local-toolbar { padding: 0; }
   .asset-toolbar .atool-sep { display: none; }
   .asset-toolbar .btn { flex: 1 1 auto; min-width: 0; text-align: center; }
   /* 分区标签：移动端缩小字号，作为分区标识（竖线已隐藏） */
   .atool-label { font-size: 10px; letter-spacing: .5px; margin-right: 4px; }
-  .asset-tabs { padding: 0 10px 12px; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .asset-tabs-row { padding: 0 10px 12px; }
+  .asset-tabs { padding: 0; gap: 6px; overflow-x: auto; scrollbar-width: none; }
   .asset-tabs::-webkit-scrollbar { display: none; }
   .atab { padding: 6px 12px; font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
   /* 内容区 padding 收窄 */
@@ -2060,7 +2062,12 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   white-space: nowrap;
   user-select: none;
 }
-.asset-tabs { display: flex; gap: 8px; padding: 0 20px 12px; border-bottom: 1px solid var(--border); }
+.asset-tabs-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 20px 12px; border-bottom: 1px solid var(--border); }
+.asset-tabs { display: flex; gap: 8px; }
+.asset-local-toolbar { padding: 0; }
+/* 资产总览：去掉 collapsible 卡片底色/边框（背景色取消），标题常驻不再折叠 */
+#assetSummary { display: block; margin: 12px 20px 4px; padding: 0; background: none; border: none; box-shadow: none; border-radius: 0; }
+#assetSummaryBody { padding: 0; }
 .atab {
   padding: 8px 16px;
   border: none;

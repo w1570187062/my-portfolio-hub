@@ -165,22 +165,20 @@
   </div>
 
   <div id="assetView" hidden>
-    <section id="assetSummary" class="summary asset-summary collapsible">
-      <div class="collapse-hat">
-        <span class="hat-title">资产总览</span>
-        <span class="hat-chevron">▾</span>
-      </div>
+    <section id="assetSummary" class="summary asset-summary">
       <div class="collapse-body" id="assetSummaryBody"></div>
     </section>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
-    <div class="asset-tabs" id="assetTabs">
-      <button class="btn atab active" data-tab="wealth" type="button">理财</button>
-      <button class="btn atab" data-tab="cash" type="button">现金</button>
-      <button class="btn atab" data-tab="liability" type="button">负债</button>
-      <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
-      <button class="btn atab" data-tab="sources" type="button">来源</button>
+    <div class="asset-tabs-row">
+      <div class="asset-tabs" id="assetTabs">
+        <button class="btn atab active" data-tab="wealth" type="button">理财</button>
+        <button class="btn atab" data-tab="cash" type="button">现金</button>
+        <button class="btn atab" data-tab="liability" type="button">负债</button>
+        <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
+        <button class="btn atab" data-tab="sources" type="button">来源</button>
+      </div>
+      <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar"></div>
     </div>
-    <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar"></div>
     <div id="assetTabBody"></div>
   </div>
 
