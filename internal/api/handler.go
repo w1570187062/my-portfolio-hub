@@ -593,6 +593,8 @@ func refreshOne(c *gin.Context) {
 			log.Printf("[refreshOne] %s(%s) stock 失败: %s", h.Name, h.Symbol, e.Error())
 		}
 	}
+	// 自动技术分析（best-effort）：刷新行情后对该持仓跑一次，结果写入 analysis_signal 供前端角标读取
+	autoAnalyzeAndStore(*h)
 	if qErr != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": qErr.Error()})
 		return
@@ -605,7 +607,7 @@ func refreshOne(c *gin.Context) {
 		}
 	}
 	_ = doSnapshot(h.UserID)
-	NotifyNetValueUpdated(h.UserID, "手动刷新单只持仓", "")
+	NotifySingleHoldingUpdated(h.UserID, "手动刷新单只持仓", h.ID)
 	c.JSON(http.StatusOK, gin.H{"holding": enrich(*h, h.UserID)})
 }
 
@@ -903,6 +905,52 @@ func isTradingDayCN(t time.Time) bool {
 // CurrentPrice/PrevClose to the DB, and returns the updated slice plus any
 // symbols that failed to refresh. Used by both the manual refresh endpoint and
 // the scheduled/time-triggered snapshots so each snapshot computes from fresh prices.
+// runAutoAnalysis performs technical analysis for a holding (if it supports analysis)
+// and returns a normalized signal: "buy", "sell", "hold", or "" if not applicable.
+// "Supported" mirrors supportsAnalysis: a stock (has symbol) or a fund with a linked_symbol.
+// Funds without a linked_symbol cannot be analyzed and return "".
+func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
+	if h.Category == "fund" && strings.TrimSpace(h.LinkedSymbol) == "" {
+		return "", 0
+	}
+	symbol := h.Symbol
+	if h.Category == "fund" {
+		symbol = h.LinkedSymbol // 基金用关联股票做技术分析
+	}
+	sym := resolveSymbol(symbol, h.Market)
+	bars, err := market.FetchKline(sym)
+	if err != nil || len(bars) < 30 {
+		log.Printf("[autoAnalysis] %s(%s) 跳过：K线获取失败或不足30根", h.Name, symbol)
+		return "", 0
+	}
+	ind := market.CalculateIndicators(bars)
+	prob := market.CalculateProbability(ind)
+	if prob == nil {
+		return "", 0
+	}
+	upPct = prob.UpPct
+	switch {
+	case upPct >= 60:
+		signal = "buy"
+	case upPct < 40:
+		signal = "sell"
+	default:
+		signal = "hold"
+	}
+	return signal, upPct
+}
+
+// autoAnalyzeAndStore 对一只持仓跑自动技术分析并落库（best-effort：网络失败/数据不足仅记日志，不阻断刷新）。
+func autoAnalyzeAndStore(h db.Holding) {
+	sig, up := runAutoAnalysis(h)
+	if sig == "" {
+		return
+	}
+	if err := db.UpdateAnalysis(h.ID, sig, up, time.Now().Format("2006-01-02 15:04:05")); err != nil {
+		log.Printf("[autoAnalysis] 落库失败 id=%d: %v", h.ID, err)
+	}
+}
+
 func refreshAllQuotes(uid int64) ([]db.Holding, []string, error) {
 	hs, err := db.List(uid)
 	if err != nil {
@@ -929,6 +977,7 @@ func refreshAllQuotes(uid int64) ([]db.Holding, []string, error) {
 					}
 				}
 				recomputeBuyPlan(&hs[i])
+				autoAnalyzeAndStore(hs[i])
 			} else {
 				failed = append(failed, fmt.Sprintf("%s: %s", hs[i].Symbol, e.Error()))
 			}
@@ -942,6 +991,7 @@ func refreshAllQuotes(uid int64) ([]db.Holding, []string, error) {
 						hs[i].Name = q.Name
 					}
 				}
+				autoAnalyzeAndStore(hs[i])
 			} else {
 				failed = append(failed, fmt.Sprintf("%s: %s", hs[i].Symbol, e.Error()))
 			}

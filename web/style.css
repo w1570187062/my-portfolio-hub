@@ -363,6 +363,16 @@
   color: #a78bfa;
   border: 1px solid #7c3aed;
 }
+/* 分析按钮左上角买卖信号角标（红涨绿跌，带背景色圆角） */
+.ana-wrap { position: relative; display: inline-flex; vertical-align: middle; }
+.ana-badge {
+  position: absolute; top: -9px; left: -10px; z-index: 3;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+  color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); pointer-events: none;
+}
+.ana-badge.buy { background: #e53935; }
+.ana-badge.sell { background: #2e9e4f; }
 .name-cell .act-analysis:hover {
   background: rgba(124, 58, 237, .16);
   color: #c4b5fd;

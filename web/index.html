@@ -317,32 +317,8 @@
         </div>
       </section>
 
-      <section class="tool-card collapsible collapsed">
-        <div class="collapse-hat">
-          <span class="hat-title">补仓成本计算器</span>
-          <span class="hat-chevron">▾</span>
-        </div>
-        <div class="collapse-body">
-          <p class="tool-hint">填入原有持仓与一笔补仓，自动算出合并后的持仓成本、数量与净盈亏。补仓可<b>按数量</b>或<b>按金额</b>：选「按金额」时填投入总金额（买入费从金额中扣除）；选「按数量」时填买入份数。<b>补仓现价</b>同时作为买入价与盈亏参考价。数量支持非整数（如基金份数）。手续费「买卖各一笔」：买入费进成本，卖出费从盈亏扣除。</p>
-          <label class="tool-rate">原成交价（元/份）<input id="addOldPrice" type="number" step="any" placeholder="如 10.50"></label>
-          <label class="tool-rate">原持仓数量（股/份）<input id="addOldQty" type="number" step="any" placeholder="如 1000"></label>
-          <label class="tool-rate">补仓方式
-            <select id="addMode">
-              <option value="qty">按数量补仓</option>
-              <option value="amount">按金额补仓</option>
-            </select>
-          </label>
-          <label class="tool-rate" id="addQtyWrap">补仓数量（股/份）<input id="addNewQty" type="number" step="any" placeholder="如 500"></label>
-          <label class="tool-rate" id="addAmtWrap" style="display:none">补仓金额（元，含买入费）<input id="addAmount" type="number" step="any" placeholder="如 5000"></label>
-          <label class="tool-rate">交易手续费（买卖每笔，元）<input id="addFee" type="number" step="any" placeholder="如 0 或 5"></label>
-          <label class="tool-rate">补仓现价（元/份）<input id="addNewPrice" type="number" step="any" placeholder="如 9.80"></label>
-          <div class="tool-result" id="addResult"></div>
-          <div class="tool-actions">
-            <button id="addCalc" class="btn" type="button">🧮 计算</button>
-            <button id="addClear" class="btn danger" type="button">🗑️ 清空</button>
-          </div>
-        </div>
-      </section>
+      <!-- 补仓成本计算器已迁移至首页持仓「计算」按钮弹框（见 #calcCostModal），避免与工具页其它计算器 ID 冲突 -->
+
 
     </div>
   </div>
@@ -600,6 +576,31 @@
       <h2 id="analysisTitle">技术分析</h2>
       <div id="analysisTime" class="analysis-time"></div>
       <div id="analysisBody" class="analysis-body"></div>
+    </div>
+  </div>
+
+  <div id="calcCostModal" class="modal" hidden>
+    <div class="modal-card" style="width:520px; max-width:94vw;">
+      <button class="card-close" type="button" title="关闭">✕</button>
+      <h2>补仓成本计算器</h2>
+      <p class="tool-hint">填入原有持仓与一笔补仓，自动算出合并后的持仓成本、数量与净盈亏。补仓可<b>按数量</b>或<b>按金额</b>：选「按金额」时填投入总金额（买入费从金额中扣除）；选「按数量」时填买入份数。<b>补仓现价</b>同时作为买入价与盈亏参考价。数量支持非整数（如基金份数）。手续费「买卖各一笔」：买入费进成本，卖出费从盈亏扣除。</p>
+      <label class="tool-rate">原成交价（元/份）<input id="addOldPrice" type="number" step="any" placeholder="如 10.50"></label>
+      <label class="tool-rate">原持仓数量（股/份）<input id="addOldQty" type="number" step="any" placeholder="如 1000"></label>
+      <label class="tool-rate">补仓方式
+        <select id="addMode">
+          <option value="qty">按数量补仓</option>
+          <option value="amount">按金额补仓</option>
+        </select>
+      </label>
+      <label class="tool-rate" id="addQtyWrap">补仓数量（股/份）<input id="addNewQty" type="number" step="any" placeholder="如 500"></label>
+      <label class="tool-rate" id="addAmtWrap" style="display:none">补仓金额（元，含买入费）<input id="addAmount" type="number" step="any" placeholder="如 5000"></label>
+      <label class="tool-rate">交易手续费（买卖每笔，元）<input id="addFee" type="number" step="any" placeholder="如 0 或 5"></label>
+      <label class="tool-rate">补仓现价（元/份）<input id="addNewPrice" type="number" step="any" placeholder="如 9.80"></label>
+      <div class="tool-result" id="addResult"></div>
+      <div class="tool-actions">
+        <button id="addCalc" class="btn" type="button">🧮 计算</button>
+        <button id="addClear" class="btn danger" type="button">🗑️ 清空</button>
+      </div>
     </div>
   </div>
 </div>

@@ -32,6 +32,9 @@ type Holding struct {
 	Closed        bool    `json:"closed"`          // 是否已清仓（份额已归零）
 	LastQuantity  float64 `json:"last_quantity"`   // 清仓前最后份额（供历史盈亏重算基准）
 	LastCostPrice float64 `json:"last_cost_price"` // 清仓前最后成本价（供历史盈亏重算基准）
+	AnalysisSignal string `json:"analysis_signal"`  // 自动技术分析信号：buy/sell/hold（刷新时计算）
+	AnalysisUpPct  float64 `json:"analysis_up_pct"` // 自动分析看涨概率 up_pct（刷新时计算）
+	AnalysisAt     string `json:"analysis_at"`      // 自动分析生成时间（本地时区）
 	UserID        int64   `json:"user_id"`
 	UpdatedAt     string  `json:"updated_at"`
 }
@@ -103,6 +106,17 @@ func Init(path string) error {
 	}
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='last_cost_price'`).Scan(&lcc); e == nil && lcc == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN last_cost_price REAL NOT NULL DEFAULT 0`)
+	}
+	// 兼容旧库：新增 自动技术分析结果（买/卖/持信号 + 看涨概率 + 生成时间），由刷新时计算、前端角标读取
+	var ansig, anup, anat int
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='analysis_signal'`).Scan(&ansig); e == nil && ansig == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN analysis_signal TEXT NOT NULL DEFAULT ''`)
+	}
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='analysis_up_pct'`).Scan(&anup); e == nil && anup == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN analysis_up_pct REAL NOT NULL DEFAULT 0`)
+	}
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='analysis_at'`).Scan(&anat); e == nil && anat == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN analysis_at TEXT NOT NULL DEFAULT ''`)
 	}
 	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 		date    TEXT NOT NULL,
@@ -537,7 +551,7 @@ func migrateMarkets() error {
 
 // List returns holdings for a user (userID). Pass 0 to get all (used by scheduled jobs).
 func List(userID int64) ([]Holding, error) {
-	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at FROM holdings"
+	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,analysis_signal,analysis_up_pct,analysis_at FROM holdings"
 	var args []interface{}
 	if userID > 0 {
 		q += " WHERE user_id=?"
@@ -552,7 +566,7 @@ func List(userID int64) ([]Holding, error) {
 	var out []Holding
 	for rows.Next() {
 		var h Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -562,8 +576,8 @@ func List(userID int64) ([]Holding, error) {
 
 func Get(id int64) (*Holding, error) {
 	var h Holding
-	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price FROM holdings WHERE id=?", id).
-		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice)
+	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,analysis_signal,analysis_up_pct,analysis_at FROM holdings WHERE id=?", id).
+		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt)
 	if err != nil {
 		return nil, err
 	}
@@ -598,6 +612,17 @@ func SaveBuyPlan(id int64, plan string) error {
 func UpdatePrice(id int64, price, prevClose float64) error {
 	_, err := DB.Exec("UPDATE holdings SET current_price=?, prev_close=?, updated_at=? WHERE id=?",
 		price, prevClose, time.Now().Format("2006-01-02 15:04:05"), id)
+	return err
+}
+
+// UpdateAnalysis persists the latest auto-computed technical-analysis signal
+// (buy/sell/hold) and the up_pct for a holding. Computed during quote refresh
+// (see api.autoAnalyzeAndStore) so the frontend can render a 买/卖 badge without
+// re-running analysis. These columns are only ever written here, so db.Update's
+// narrower column list never clobbers them.
+func UpdateAnalysis(id int64, signal string, upPct float64, at string) error {
+	_, err := DB.Exec("UPDATE holdings SET analysis_signal=?, analysis_up_pct=?, analysis_at=? WHERE id=?",
+		signal, upPct, at, id)
 	return err
 }
 

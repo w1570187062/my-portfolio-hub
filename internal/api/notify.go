@@ -490,9 +490,107 @@ func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 			log.Printf("[notify] 按推送策略(%s)跳过本次推送（触发：%s）", policyName(cfg.Policy), triggeredBy)
 			return
 		}
-		text := buildNetValueNotifyText(uid, triggeredBy, scope)
+	text := buildNetValueNotifyText(uid, triggeredBy, scope)
+	sendToChannels(cfg, "持仓净值更新", text)
+	}()
+}
+
+// NotifySingleHoldingUpdated 单只持仓刷新后的精准推送：通知正文仅包含该持仓，
+// 不再像 NotifyNetValueUpdated("","") 那样列出全量持仓盈亏。满足「刷新单个持仓只推一个」的需求。
+func NotifySingleHoldingUpdated(uid int64, triggeredBy string, hid int64) {
+	go func() {
+		cfg, err := loadNotifyConfig()
+		if err != nil {
+			log.Printf("[notify] 读取配置失败: %v", err)
+			return
+		}
+		if !cfg.Dingtalk.Enabled && !cfg.Email.Enabled {
+			return
+		}
+		h, e := db.Get(hid)
+		if e != nil {
+			log.Printf("[notify] 单只持仓读取失败 id=%d: %v", hid, e)
+			return
+		}
+		// 仅补仓信号策略：该持仓有补仓信号才推（避免无信号的单只刷新打扰）
+		if cfg.Policy == "only_signal" {
+			has := false
+			for _, s := range collectBuySignals(uid, "all") {
+				if s.Symbol == h.Symbol {
+					has = true
+					break
+				}
+			}
+			if !has {
+				log.Printf("[notify] 仅补仓信号策略：%s 无信号，跳过单只推送", h.Name)
+				return
+			}
+		}
+		text := buildSingleHoldingNotifyText(uid, triggeredBy, h)
 		sendToChannels(cfg, "持仓净值更新", text)
 	}()
+}
+
+// buildSingleHoldingNotifyText 构造单只持仓刷新通知正文（仅含该持仓）。
+func buildSingleHoldingNotifyText(uid int64, triggeredBy string, h db.Holding) string {
+	date := time.Now().Format("2006-01-02")
+	var sb strings.Builder
+	sb.WriteString("## 持仓净值已更新\n\n")
+	sb.WriteString(fmt.Sprintf("- **触发**：%s\n", triggeredBy))
+	sb.WriteString(fmt.Sprintf("- **更新范围**：%s（%s · %s）\n", h.Name, h.Symbol, h.Market))
+	sb.WriteString(fmt.Sprintf("- **日期**：%s\n", date))
+
+	// 该持仓的补仓信号（按 symbol 过滤）
+	if sigs := collectBuySignals(uid, "all"); len(sigs) > 0 {
+		var mine []buySignal
+		for _, s := range sigs {
+			if s.Symbol == h.Symbol {
+				mine = append(mine, s)
+			}
+		}
+		if len(mine) > 0 {
+			sb.WriteString(fmt.Sprintf("\n## 🚨 补仓信号（%d 档已到补仓点位）\n\n", len(mine)))
+			for _, s := range mine {
+				sb.WriteString(fmt.Sprintf("- **%s**（%s · 联接 %s）\n", s.Name, s.Symbol, s.LinkedSymbol))
+				sb.WriteString(fmt.Sprintf("  触发档：`%s`　触发价 %.3f　自高点回撤 %.1f%%　建议投入 ¥%.2f\n", s.TierLabel, s.TierPrice, math.Abs(s.Drawdown), s.Amount))
+				sb.WriteString("  > 信号：" + s.Signal + "\n")
+			}
+		}
+	}
+
+	// 该持仓当日盈亏（从最新快照明细中按 symbol 取）
+	if row, err := db.GetPnlLatest(uid); err == nil && row != nil && row.Detail != "" {
+		var d struct {
+			BySymbol []struct {
+				Symbol       string  `json:"symbol"`
+				Name         string  `json:"name"`
+				Pnl          float64 `json:"pnl"`
+				PnlCNY       float64 `json:"pnl_cny"`
+				Currency     string  `json:"currency"`
+				CurrentPrice float64 `json:"current_price"`
+				ChangePct    float64 `json:"change_pct"`
+			} `json:"by_symbol"`
+		}
+		if json.Unmarshal([]byte(row.Detail), &d) == nil {
+			for _, s := range d.BySymbol {
+				if s.Symbol != h.Symbol {
+					continue
+				}
+				amt := s.PnlCNY
+				if strings.EqualFold(s.Currency, "USD") || strings.EqualFold(s.Currency, "HKD") {
+					amt = s.Pnl
+				}
+				priceStr := fmt.Sprintf("%s%.2f", curSymbol(s.Currency), s.CurrentPrice)
+				chgStr := "—"
+				if s.ChangePct >= 0.005 || s.ChangePct <= -0.005 {
+					chgStr = moneyFmt(s.ChangePct) + "%"
+				}
+				sb.WriteString(fmt.Sprintf("\n- **当日盈亏**：现价%s 涨跌%s 当日%s%s\n", priceStr, chgStr, curSymbol(s.Currency), moneyFmt(amt)))
+			}
+		}
+	}
+	sb.WriteString("\n> 由「观澜」自动推送")
+	return sb.String()
 }
 
 // hasHoldingsInScope 判断该用户在指定范围内是否存在持仓。

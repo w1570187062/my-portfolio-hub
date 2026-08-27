@@ -445,6 +445,34 @@ function supportsAnalysis(h) {
   if (h.category === 'fund') return !!(h.linked_symbol && String(h.linked_symbol).trim());
   return !!(h.symbol && String(h.symbol).trim());
 }
+
+// 分析按钮角标：根据持仓自动技术分析的买卖信号展示 买/卖（红涨绿跌），hold 不展示。
+function anaBadge(sig) {
+  if (!sig) return '';
+  if (sig === 'buy') return '<span class="ana-badge buy" title="自动分析：看涨">买</span>';
+  if (sig === 'sell') return '<span class="ana-badge sell" title="自动分析：看跌">卖</span>';
+  return '';
+}
+
+// 打开补仓成本计算器弹框，并带入选中持仓的成本价/现价/数量。
+function openCalcCost(id) {
+  const h = HOLDINGS_BY_ID[id];
+  const modal = document.getElementById('calcCostModal');
+  if (!modal) return;
+  modal.hidden = false;
+  const set = (iid, v) => { const el = document.getElementById(iid); if (el) el.value = (v == null || v === '' ? '' : v); };
+  if (h) {
+    set('addOldPrice', h.cost_price);
+    set('addOldQty', h.quantity);
+    set('addNewPrice', h.current_price);
+  }
+  set('addNewQty', '');
+  set('addAmount', '');
+  const feeEl = document.getElementById('addFee');
+  set('addFee', feeEl && feeEl.value ? feeEl.value : 0);
+  const res = document.getElementById('addResult');
+  if (res) res.innerHTML = '<span class="tool-empty">已带入该持仓的成本价 / 现价 / 数量，请填写补仓信息后点击「计算」</span>';
+}
 // 临时在页面实际字体下测量元素渲染宽度（用于按最长名称计算名称列固定间距）
 function _measureWidth(makeEl) {
   const el = makeEl();
@@ -479,10 +507,14 @@ function measureBtnWidth(label) {
 
 // 按来源分组渲染首页持仓为折叠卡片（每来源一张子表 + 4 列汇总）
 // 借鉴 PanWatch portfolio：来源标题 + 数量 + 右侧市值/当日/总盈亏/盈亏率 + 折叠
+// 持仓按 id 索引，供首页「计算」按钮快速取用成本/现价/数量（避免二次请求）
+let HOLDINGS_BY_ID = {};
 function renderHoldingsBySource(hs) {
   const box = document.getElementById('holdingsBySource');
   if (!box) return;
   if (!hs.length) { box.innerHTML = ''; return; }
+  HOLDINGS_BY_ID = {};
+  for (const h of hs) HOLDINGS_BY_ID[h.id] = h;
   const toCny = (v, cur) => cur === 'USD' ? v * usdRate : cur === 'HKD' ? v * hkdRate : v;
   const groups = new Map();
   for (const h of hs) {
@@ -545,6 +577,7 @@ function renderHoldingsBySource(hs) {
     gEl.querySelectorAll('[data-hist]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 历史持仓', b.dataset.hist); openHoldingHistory(b.dataset.hist); });
     gEl.querySelectorAll('[data-fail]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); });
     gEl.querySelectorAll('[data-ana]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 技术分析', b.dataset.ana); openAnalysis(b.dataset.ana); });
+    gEl.querySelectorAll('[data-calc]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 补仓成本计算', b.dataset.calc); openCalcCost(b.dataset.calc); });
   });
 }
 
@@ -560,7 +593,7 @@ function renderGroupRow(h, i) {
       <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : ''}">${dirArrow}</span>
       <span class="name-clickable" title="${esc(h.name)}">${esc(h.name)}</span>
       <button class="btn btn-sm act-adjust-inline act-modify" data-adjust="${h.id}" title="修改">修改</button>
-      ${supportsAnalysis(h) ? '<button class="btn btn-sm act-adjust-inline act-analysis" data-ana="' + h.id + '" title="技术分析">分析</button>' : ''}
+      ${supportsAnalysis(h) ? '<span class="ana-wrap">' + anaBadge(h.analysis_signal) + '<button class="btn btn-sm act-adjust-inline act-analysis" data-ana="' + h.id + '" title="技术分析">分析</button></span>' : ''}
     </td>
     <td>${h.symbol}</td>
     <td class="hide-col">${h.market}</td>
@@ -577,6 +610,7 @@ function renderGroupRow(h, i) {
     <td class="row-act-cell">
       <button class="row-act" data-refresh="${h.id}" title="刷新行情">刷新</button>
       <button class="row-act" data-edit="${h.id}" title="编辑持仓">编辑</button>
+      <button class="row-act" data-calc="${h.id}" title="补仓成本计算">计算</button>
       <button class="row-act" data-hist="${h.id}" title="历史走势">历史</button>
       <button class="row-act danger" data-del="${h.id}" title="删除持仓">删除</button>
     </td>
