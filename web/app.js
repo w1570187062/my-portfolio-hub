@@ -496,7 +496,7 @@ function renderHoldingsBySource(hs) {
   const ARROW = 16, GAP = 4, CELLPAD = 4, BUF = 6;
   const wAdd = measureBtnWidth('修改');
   const wAna = hasAna ? measureBtnWidth('分析') : 0;
-  let colW = maxName + ARROW + GAP * 2 + wAdd + (hasAna ? GAP + wAna : 0) + 18 + CELLPAD + BUF;
+  let colW = maxName + ARROW + GAP * 2 + wAdd + (hasAna ? GAP + wAna : 0) + 10 + CELLPAD + BUF;
   box.style.setProperty('--name-col-w', Math.ceil(colW) + 'px');
   box.style.setProperty('--name-w', Math.ceil(maxName) + 'px');
   let html = '';
@@ -536,6 +536,19 @@ function renderHoldingsBySource(hs) {
     gEl.querySelectorAll('[data-fail]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); });
     gEl.querySelectorAll('[data-ana]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 技术分析', b.dataset.ana); openAnalysis(b.dataset.ana); });
     gEl.querySelectorAll('[data-calc]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 补仓成本计算', b.dataset.calc); openCalcCost(b.dataset.calc); });
+    gEl.querySelectorAll('[data-copy]').forEach((el) => el.onclick = (e) => {
+      e.stopPropagation();
+      const txt = el.dataset.copy;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(txt).then(() => toast('已复制: ' + txt, 'ok'));
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+        toast('已复制: ' + txt, 'ok');
+      }
+    });
   });
 }
 
@@ -549,7 +562,7 @@ function renderGroupRow(h, i) {
     <td class="name-cell">
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}
       <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : ''}">${dirArrow}</span>
-      <span class="name-clickable" title="${esc(h.name)}">${esc(h.name)}</span>
+      <span class="name-clickable" data-copy="${esc(h.name)}" title="${esc(h.name)}">${esc(h.name)}</span>
       <button class="btn btn-sm act-adjust-inline act-modify" data-adjust="${h.id}" title="修改">修改</button>
       ${supportsAnalysis(h) ? '<span class="ana-wrap">' + anaBadge(h.analysis_signal) + '<button class="btn btn-sm act-adjust-inline act-analysis" data-ana="' + h.id + '" title="技术分析">分析</button></span>' : ''}
     </td>

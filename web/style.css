@@ -545,7 +545,7 @@
 .holdings-group .holdings-subtable { table-layout: fixed; }
 .holdings-group .holdings-subtable th, .holdings-group .holdings-subtable td { overflow: hidden; text-overflow: ellipsis; }
 .holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: var(--name-col-w, 340px); }   /* 名称列宽=按所有名称最长长度计算的固定间距，使加减仓/分析按钮对齐 */
-.holdings-group .holdings-subtable :is(th, td):nth-child(2) { width: 82px; }    /* 代码 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(2) { width: 72px; }    /* 代码 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(5) { width: 72px; }    /* 份额 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(6) { width: 74px; }    /* 成本价 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(7) { width: 74px; }    /* 现价 */
