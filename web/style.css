@@ -137,7 +137,7 @@
 :root[data-theme="light"] .updown-pnl.down { color: #16a34a; }
 :root[data-theme="light"] .sum-card { background: #ffffff; }
 :root[data-theme="light"] .summary.collapsible { background: transparent; }
-:root[data-theme="light"] .account-card { background: transparent; }
+
 :root[data-theme="light"] .asset-table .up { color: #dc2626; }
 :root[data-theme="light"] .asset-table .down { color: #16a34a; }
 :root[data-theme="light"] .asset-summary .card.up .c-value { color: #dc2626; }
@@ -437,7 +437,6 @@
   flex-wrap: wrap;
   margin: 12px 28px 8px;
   padding: 0;
-  background: var(--bg-card);
   backdrop-filter: blur(12px);
   border: none;
   border-radius: 12px;
