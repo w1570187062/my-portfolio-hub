@@ -445,6 +445,21 @@
 .asset-overview-card .ac-name { color: var(--primary); }
 .asset-overview-card .ov-net { color: var(--primary); font-size: 17px; }
 .asset-overview-card .ov-liab { color: var(--danger); }
+/* 净资产 2 行：第一行 境内/境外资产，第二行 总净资产 */
+.asset-overview-card .ac-net-block { align-items: flex-start; }
+.ov-net-rows { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.ov-net-row { display: flex; align-items: baseline; gap: 6px; }
+.ov-net-sub { color: var(--text-muted); font-size: 11px; min-width: 52px; }
+.ov-net-row b { font-size: 14px; font-weight: 600; }
+.ov-dom { color: var(--primary); }
+.ov-ovs { color: #38bdf8; }
+.ov-net-total { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 4px; }
+.ov-net-total .ov-net-sub { font-weight: 600; color: var(--text); }
+.ov-net-total .ov-net { font-size: 17px; }
+/* 来源列表行内区域标记（境内/境外） */
+.src-region { font-size: 10px; padding: 1px 5px; border-radius: 6px; margin-left: 4px; vertical-align: middle; white-space: nowrap; }
+.src-region.dom { background: rgba(111,158,94,.18); color: #6f9e5e; }
+.src-region.ovs { background: rgba(56,189,248,.18); color: #38bdf8; }
 .source-group.holdings-group {
   margin-bottom: 12px;
   border: 1px solid var(--border);

@@ -60,6 +60,11 @@ func assetOverview(c *gin.Context) {
 		eqCV += v.CostValue * rateChoice(h.Currency, cnyRate, hkdRate)
 		eqPnl += v.Pnl * rateChoice(h.Currency, cnyRate, hkdRate)
 		eqDay += v.DayPnl * rateChoice(h.Currency, cnyRate, hkdRate)
+		if regionOf(h.SourceID) == "overseas" {
+			ovsAssets += cmv
+		} else {
+			domAssets += cmv
+		}
 		eqItems = append(eqItems, gin.H{
 			"id":           h.ID,
 			"name":         h.Name,
@@ -75,9 +80,19 @@ func assetOverview(c *gin.Context) {
 	// 2) 资产来源名映射
 	sources, _ := db.ListSources(uid)
 	srcName := map[int64]string{}
+	srcRegion := map[int64]string{}
 	for _, s := range sources {
 		srcName[s.ID] = s.Name
+		srcRegion[s.ID] = s.Region
 	}
+	// 来源未归集(source_id=0)或区域未知时默认计入境内，确保 境内+境外=总资产(未减负债前)。
+	regionOf := func(sid int64) string {
+		if r, ok := srcRegion[sid]; ok && (r == "overseas" || r == "domestic") {
+			return r
+		}
+		return "domestic"
+	}
+	var domAssets, ovsAssets float64
 
 	// 3) 理财（最新持仓金额 + 今日盈亏），按币种分类
 	wps, _ := db.ListWealth(uid)
@@ -93,6 +108,11 @@ func assetOverview(c *gin.Context) {
 		amt = round2(amt)
 		todayPnl = round2(todayPnl)
 		wTotal += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
+		if regionOf(w.SourceID) == "overseas" {
+			ovsAssets += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
+		} else {
+			domAssets += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
+		}
 		wToday += fxToCNY(todayPnl, w.Currency, cnyRate, hkdRate)
 		wByCur[w.Currency] += amt
 		cnt, _ := db.CountWealthSnapshots(w.ID)
@@ -123,6 +143,11 @@ func assetOverview(c *gin.Context) {
 	cItems := make([]gin.H, 0, len(cashs))
 	for _, cc := range cashs {
 		cTotalCNY += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
+		if regionOf(cc.SourceID) == "overseas" {
+			ovsAssets += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
+		} else {
+			domAssets += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
+		}
 		cByCur[cc.Currency] += cc.Amount
 		cItems = append(cItems, gin.H{
 			"id":          cc.ID,
@@ -205,8 +230,10 @@ func assetOverview(c *gin.Context) {
 			"items": consItems,
 		},
 		"net_asset": netAsset,
-		"rate":      cnyRate,
-		"day":       today,
+		"domestic_assets":  round2(domAssets),
+		"overseas_assets": round2(ovsAssets),
+		"rate":             cnyRate,
+		"day":              today,
 	})
 }
 
@@ -260,7 +287,7 @@ func listSources(c *gin.Context) {
 	for _, s := range out {
 		cnt, _ := db.SourceRefCount(s.ID)
 		items = append(items, gin.H{
-			"id": s.ID, "user_id": s.UserID, "name": s.Name, "type": s.Type, "note": s.Note, "created_at": s.CreatedAt,
+			"id": s.ID, "user_id": s.UserID, "name": s.Name, "type": s.Type, "region": s.Region, "note": s.Note, "created_at": s.CreatedAt,
 			"ref_count": cnt,
 			"funds_cny": sourceFundsCNY(uid, s.ID),
 		})
@@ -334,6 +361,12 @@ func createSource(c *gin.Context) {
 	default:
 		s.Type = "bank"
 	}
+	switch s.Region {
+	case "overseas":
+		// 合法区域，保持不变
+	default:
+		s.Region = "domestic"
+	}
 	s.UserID = currentUserID(c)
 	id, err := db.CreateSource(&s)
 	if err != nil {
@@ -366,6 +399,12 @@ func updateSource(c *gin.Context) {
 		// 合法类型，保持不变
 	default:
 		s.Type = "bank"
+	}
+	switch s.Region {
+	case "overseas":
+		// 合法区域，保持不变
+	default:
+		s.Region = "domestic"
 	}
 	s.UserID = currentUserID(c)
 	if err := db.UpdateSource(&s); err != nil {

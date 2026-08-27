@@ -3124,14 +3124,23 @@ function renderAssetSummary() {
   const eqMV = eq.market_value || 0, wTotal = w.total || 0, cTotal = cash.total || 0, lTotal = l.total || 0;
   // 净资产 = 总资产(权益+理财+现金) − 负债（满足"上方总资产减掉负债"）
   const net = eqMV + wTotal + cTotal - lTotal;
+  // 境内/境外资产：后端已按来源 region 归集（domestic_assets / overseas_assets，CNY）
+  const dom = d.domestic_assets || 0, ovs = d.overseas_assets || 0;
   const unSrc = document.getElementById('userNameText');
   const un = unSrc ? (unSrc.textContent || '默认') : '默认';
-  // 资产全览改为 accountCard 布局：左=资产全景+用户名，右=净资产/权益/理财/现金/负债 横排统计（标签上、数值下）
+  // 资产全览改为 accountCard 布局：左=资产全景+用户名，右=净资产(2行: 境内/境外资产 + 总净资产)/权益/理财/现金/负债
   $('#assetSummaryBody').innerHTML =
     `<div class="account-card asset-overview-card">
       <div class="ac-left"><span class="ac-label">资产全景</span><span class="ac-name">${esc(un)}</span></div>
       <div class="ac-right">
-        <div class="ac-stat"><span class="ac-stat-lbl">净资产</span><b class="ov-net">${money(net)}</b></div>
+        <div class="ac-stat ac-net-block">
+          <span class="ac-stat-lbl">净资产</span>
+          <div class="ov-net-rows">
+            <div class="ov-net-row"><span class="ov-net-sub">境内</span><b class="ov-dom">${money(dom)}</b></div>
+            <div class="ov-net-row"><span class="ov-net-sub">境外</span><b class="ov-ovs">${money(ovs)}</b></div>
+            <div class="ov-net-row ov-net-total"><span class="ov-net-sub">总净资产</span><b class="ov-net">${money(net)}</b></div>
+          </div>
+        </div>
         <div class="ac-stat"><span class="ac-stat-lbl">权益</span><b>${money(eqMV)}</b></div>
         <div class="ac-stat"><span class="ac-stat-lbl">理财</span><b>${money(wTotal)}</b></div>
         <div class="ac-stat"><span class="ac-stat-lbl">现金</span><b>${money(cTotal)}</b></div>
@@ -3226,7 +3235,7 @@ function renderSources(body) {
       html += `<div class="collapse-body source-group-body"><table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联数</th><th class="num">关联资金(CNY)</th><th>备注</th><th></th></tr></thead><tbody>`;
       for (let i = 0; i < g.items.length; i++) {
         const s = g.items[i];
-        html += `<tr><td class="num">${i + 1}</td><td><span class="src-ico">${srcTypeIcon(typeOf(s))}</span> ${esc(s.name)}</td><td>${typeName[typeOf(s)]}</td>
+        html += `<tr><td class="num">${i + 1}</td><td><span class="src-ico">${srcTypeIcon(typeOf(s))}</span> ${esc(s.name)}</td><td>${typeName[typeOf(s)]} <span class="src-region ${s.region === 'overseas' ? 'ovs' : 'dom'}">${s.region === 'overseas' ? '境外' : '境内'}</span></td>
           <td class="num" title="被持仓/理财/现金/负债/消费引用的条目数">${s.ref_count || 0}</td>
           <td class="num" title="该来源下持仓市值+理财金额+现金余额（折算 CNY）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
           <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-source" data-id="${s.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-source" data-id="${s.id}">🗑️ 删除</button></td></tr>`;
@@ -3246,6 +3255,7 @@ function openAssetSourceModal(id) {
   $('#as_id').value = s ? s.id : '';
   $('#as_name').value = s ? s.name : '';
   $('#as_type').value = s ? s.type : 'bank';
+  $('#as_region').value = s ? (s.region || 'domestic') : 'domestic';
   $('#as_note').value = s ? (s.note || '') : '';
   $('#assetSourceErr').textContent = '';
   $('#assetSourceModal').hidden = false;
@@ -3253,7 +3263,7 @@ function openAssetSourceModal(id) {
 $('#assetSourceForm').onsubmit = async (e) => {
   e.preventDefault();
   const id = $('#as_id').value ? Number($('#as_id').value) : 0;
-  const payload = { name: $('#as_name').value.trim(), type: $('#as_type').value, note: $('#as_note').value.trim() };
+  const payload = { name: $('#as_name').value.trim(), type: $('#as_type').value, region: $('#as_region').value, note: $('#as_note').value.trim() };
   if (!payload.name) { $('#assetSourceErr').textContent = '名称不能为空'; return; }
   try {
     const r = id ? await api('/api/asset/sources/' + id, { method: 'PUT', body: JSON.stringify(payload) })

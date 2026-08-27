@@ -837,6 +837,7 @@ func initAssetTables() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL DEFAULT '',
 			type TEXT NOT NULL DEFAULT 'bank',
+			region TEXT NOT NULL DEFAULT 'domestic',
 			note TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT ''
 		)`,
@@ -910,6 +911,7 @@ func initAssetTables() error {
 	// Migrations for columns added after first release.
 	addColumnIfMissing("wealth_products", "currency", "TEXT NOT NULL DEFAULT 'rmb'")
 	addColumnIfMissing("wealth_products", "cum_pnl", "REAL NOT NULL DEFAULT 0")
+	addColumnIfMissing("asset_sources", "region", "TEXT NOT NULL DEFAULT 'domestic'")
 	return nil
 }
 
@@ -920,12 +922,13 @@ type AssetSource struct {
 	UserID    int64  `json:"user_id"`
 	Name      string `json:"name"`
 	Type      string `json:"type"` // bank | securities | software | platform
+	Region    string `json:"region"` // domestic 境内 | overseas 境外
 	Note      string `json:"note"`
 	CreatedAt string `json:"created_at"`
 }
 
 func ListSources(userID int64) ([]AssetSource, error) {
-	rows, err := DB.Query(`SELECT id,user_id,name,type,note,created_at FROM asset_sources WHERE user_id=? ORDER BY id DESC`, userID)
+	rows, err := DB.Query(`SELECT id,user_id,name,type,region,note,created_at FROM asset_sources WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -933,7 +936,7 @@ func ListSources(userID int64) ([]AssetSource, error) {
 	var out []AssetSource
 	for rows.Next() {
 		var s AssetSource
-		if err := rows.Scan(&s.ID, &s.UserID, &s.Name, &s.Type, &s.Note, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.UserID, &s.Name, &s.Type, &s.Region, &s.Note, &s.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -943,8 +946,8 @@ func ListSources(userID int64) ([]AssetSource, error) {
 
 func CreateSource(s *AssetSource) (int64, error) {
 	s.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO asset_sources(user_id,name,type,note,created_at) VALUES(?,?,?,?,?)`,
-		s.UserID, s.Name, s.Type, s.Note, s.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO asset_sources(user_id,name,type,region,note,created_at) VALUES(?,?,?,?,?,?)`,
+		s.UserID, s.Name, s.Type, s.Region, s.Note, s.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -952,7 +955,7 @@ func CreateSource(s *AssetSource) (int64, error) {
 }
 
 func UpdateSource(s *AssetSource) error {
-	_, err := DB.Exec(`UPDATE asset_sources SET user_id=?,name=?,type=?,note=? WHERE id=?`, s.UserID, s.Name, s.Type, s.Note, s.ID)
+	_, err := DB.Exec(`UPDATE asset_sources SET user_id=?,name=?,type=?,region=?,note=? WHERE id=?`, s.UserID, s.Name, s.Type, s.Region, s.Note, s.ID)
 	return err
 }
 
