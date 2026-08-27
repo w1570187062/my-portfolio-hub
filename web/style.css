@@ -326,6 +326,7 @@
 /* 迷你走势线单元格（表格"近20日"列） */
 .spark-td { width: 120px; }
 .spark-td svg { display: block; margin: 0 auto; }
+.spark-inline { display: inline-flex; vertical-align: middle; align-items: center; flex: 0 0 auto; }
 .spark-empty { color: var(--text-muted); }
 
 /* 涨/跌方向指示（名称左侧，沿用全站 ▲红涨 / ▼绿跌 / —平 配色，无文字仅图标） */
@@ -344,7 +345,7 @@
 .dir-ind.flat { color: var(--text-muted); }  /* 中性：平（横线） */
 
 /* 名称单元格：方向箭头 + 名称(过长截断) + 修改/分析 按钮横向排列；fix 宽度避免长名称挤压按钮 */
-.name-cell { display: flex; align-items: center; white-space: nowrap; gap: 4px; }
+.name-cell { display: flex; align-items: center; white-space: nowrap; gap: 3px; }
 .name-cell .name-clickable { flex: 0 0 auto; max-width: var(--name-w, 300px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 400; }
 .act-adjust-inline { margin-left: 0; vertical-align: middle; }
 /* 修改/分析 内联按钮：压缩尺寸（特异性高于 .btn-sm，避免被其 padding 覆盖） */
@@ -554,8 +555,7 @@
 .holdings-group .holdings-subtable :is(th, td):nth-child(10) { width: 58px; }   /* 当日% */
 .holdings-group .holdings-subtable :is(th, td):nth-child(11) { width: 92px; }  /* 总盈亏 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(12) { width: 58px; }   /* 盈亏% */
-.holdings-group .holdings-subtable :is(th, td):nth-child(13) { width: 96px; }  /* 近20日 */
-.holdings-group .holdings-subtable :is(th, td):nth-child(14) { width: 160px; }  /* 操作 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(13) { width: 160px; }  /* 操作 */
 
 /* 文字按钮（最轻量） */
 .btn-text {

@@ -493,10 +493,10 @@ function renderHoldingsBySource(hs) {
     maxName = Math.max(maxName, measureNameWidth(h.name || ''));
     if (supportsAnalysis(h)) hasAna = true;
   }
-  const ARROW = 16, GAP = 4, CELLPAD = 4, BUF = 6;
+  const ARROW = 16, GAP = 4, CELLPAD = 4, BUF = 4;
   const wAdd = measureBtnWidth('修改');
   const wAna = hasAna ? measureBtnWidth('分析') : 0;
-  let colW = maxName + ARROW + GAP * 2 + wAdd + (hasAna ? GAP + wAna : 0) + 10 + CELLPAD + BUF;
+  let colW = maxName + ARROW + GAP * 2 + wAdd + (hasAna ? GAP + wAna : 0) + 4 + CELLPAD + BUF;
   box.style.setProperty('--name-col-w', Math.ceil(colW) + 'px');
   box.style.setProperty('--name-w', Math.ceil(maxName) + 'px');
   let html = '';
@@ -521,7 +521,7 @@ function renderHoldingsBySource(hs) {
       + `<th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th>`
       + `<th class="num">市值</th><th class="num">当日</th><th class="num">当日%</th>`
       + `<th class="num">总盈亏</th><th class="num">盈亏%</th>`
-      + `<th class="num" title="近20个交易日收盘价走势">近20日</th><th>操作</th>`
+      + `<th>操作</th>`
       + `</tr></thead><tbody>${g.items.map((h, i) => renderGroupRow(h, i)).join('')}</tbody>`
       + `</table></div></div></div>`;
   }
@@ -563,6 +563,7 @@ function renderGroupRow(h, i) {
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}
       <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : ''}">${dirArrow}</span>
       <span class="name-clickable" data-copy="${esc(h.name)}" title="${esc(h.name)}">${esc(h.name)}</span>
+      <div class="spark-inline">${sparkCell(h.symbol)}</div>
       <button class="btn btn-sm act-adjust-inline act-modify" data-adjust="${h.id}" title="修改">修改</button>
       ${supportsAnalysis(h) ? '<span class="ana-wrap">' + anaBadge(h.analysis_signal) + '<button class="btn btn-sm act-adjust-inline act-analysis" data-ana="' + h.id + '" title="技术分析">分析</button></span>' : ''}
     </td>
@@ -577,7 +578,6 @@ function renderGroupRow(h, i) {
     <td class="num ${cls(h.day_pnl_pct)}">${pct(h.day_pnl_pct)}</td>
     <td class="num ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
     <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
-    <td class="num spark-td">${sparkCell(h.symbol)}</td>
     <td class="row-act-cell">
       <button class="row-act" data-refresh="${h.id}" title="刷新行情">刷新</button>
       <button class="row-act" data-edit="${h.id}" title="编辑持仓">编辑</button>
