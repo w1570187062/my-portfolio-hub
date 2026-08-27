@@ -420,7 +420,7 @@
   margin: 12px 20px 8px;
   padding: 14px 18px;
   background: var(--card-bg, transparent);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 12px;
 }
 .ac-left { display: flex; align-items: baseline; gap: 8px; flex: 0 0 auto; }
@@ -429,11 +429,11 @@
 /* 首页顶部：多个独立指标卡片（总市值/总盈亏/当日盈亏/本月盈亏/涨跌），横排、窄屏换行 */
 .ac-summary-cards { display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap; flex: 1 1 auto; }
 .sum-card {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-  min-width: 132px; flex: 1 1 132px;
-  padding: 10px 14px;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px;
+  min-width: 132px; min-height: 100px; flex: 1 1 132px;
+  padding: 12px 16px;
   background: var(--bg-input, rgba(255,255,255,.03));
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 10px;
 }
 .sum-lbl { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
@@ -470,6 +470,14 @@
 .ov-net-total { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 4px; }
 .ov-net-total .ov-net-sub { font-weight: 600; color: var(--text); }
 .ov-net-total .ov-net { font-size: 17px; }
+/* 颜色类提升为全局（供资产全景小卡片复用，不再依赖 .asset-overview-card 作用域） */
+.ov-dom { color: var(--primary); }
+.ov-ovs { color: #38bdf8; }
+.ov-liab { color: var(--danger); }
+/* 资产全景小卡片标题（资产全景 · 用户名） */
+.asset-ov-head { font-size: 13px; color: var(--text-muted); margin: 4px 2px 2px; }
+.asset-ov-head b { color: var(--primary); font-weight: 700; }
+.asset-cards { width: 100%; }
 /* 来源列表行内区域标记（境内/境外） */
 .src-region { font-size: 10px; padding: 1px 5px; border-radius: 6px; margin-left: 4px; vertical-align: middle; white-space: nowrap; }
 .src-region.dom { background: rgba(111,158,94,.18); color: #6f9e5e; }
@@ -1655,6 +1663,11 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 .mb-time.stale { color: var(--text-faint, #6b7280); opacity: .8; }
 .mb-fx { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mb-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mb-account { display: inline-flex; align-items: baseline; gap: 5px; font-size: 13px; color: var(--text); }
+.mb-acc-lbl { font-size: 12px; color: var(--text-muted); }
+.mb-account b { font-size: 14px; font-weight: 700; color: var(--primary); }
+.mb-sep { color: var(--text-muted); }
 .fx-cell {
   display: inline-flex;
   align-items: baseline;

@@ -677,9 +677,9 @@ function renderSummary(hs) {
   const el = document.getElementById('acSummaryData');
   if (!el) return;
   if (card) card.hidden = false;
-  const unEl = document.getElementById('acUserName');
   const unSrc = document.getElementById('userNameText');
-  if (unEl) unEl.textContent = unSrc ? (unSrc.textContent || '默认') : '默认';
+  const mbName = document.getElementById('mbUserName');
+  if (mbName) mbName.textContent = unSrc ? (unSrc.textContent || '默认') : '默认';
   // 独立卡片：标签在上、大号数值在下；涨跌数用 ▲/▼ 着色；总盈亏/当日/本月带涨跌色。
   el.innerHTML = `
     <div class="sum-card"><span class="sum-lbl">总市值</span><b class="sum-val">¥${fmt(totalCNY)}</b></div>
@@ -1759,7 +1759,6 @@ async function openCalendarView() {
     $('#calendarView').hidden = false;
     $('#calendarBtn').classList.add('active');
     const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
-    const at = document.getElementById('assetToolbar'); if (at) at.hidden = true;
     calViewDate = new Date();   // 打开时回到当月
     await renderCalendar();
   }
@@ -1774,9 +1773,8 @@ function showHoldingsView() {
   $('#calendarBtn').classList.remove('active');
   setNavActive('home');
   syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
-  // 首页：显示更新时间+汇率行，隐藏资产全景工具条（已移至 header）
+  // 首页：显示更新时间+汇率行（资产工具按钮常驻 header，不在此隐藏）
   const mb = document.getElementById('marketBar'); if (mb) mb.hidden = false;
-  const at = document.getElementById('assetToolbar'); if (at) at.hidden = true;
 }
 
 // 主页按钮：回到一级页面（持仓列表）并滚到顶部
@@ -2661,9 +2659,8 @@ async function showToolsView() {
   $('#assetView').hidden = true;
   $('#notifyView').hidden = true;
   $('#toolsView').hidden = false;
-  // 工具视图：隐藏首页汇率/更新时间行与资产全景工具条
+  // 工具视图：隐藏首页汇率/更新时间行（资产工具按钮常驻 header，不隐藏）
   const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
-  const at = document.getElementById('assetToolbar'); if (at) at.hidden = true;
   injectPageHead('toolsView', '');
   $('#calendarBtn').classList.remove('active');
   $('#toolsBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
@@ -3145,25 +3142,17 @@ function renderAssetSummary() {
   const dom = d.domestic_assets || 0, ovs = d.overseas_assets || 0;
   const unSrc = document.getElementById('userNameText');
   const un = unSrc ? (unSrc.textContent || '默认') : '默认';
-  // 资产全览改为 accountCard 布局：左=资产全景+用户名，右=净资产(2行: 境内/境外资产 + 总净资产)/权益/理财/现金/负债
-  $('#assetSummaryBody').innerHTML =
-    `<div class="account-card asset-overview-card">
-      <div class="ac-left"><span class="ac-label">资产全景</span><span class="ac-name">${esc(un)}</span></div>
-      <div class="ac-right">
-        <div class="ac-stat ac-net-block">
-          <span class="ac-stat-lbl">净资产</span>
-          <div class="ov-net-rows">
-            <div class="ov-net-row"><span class="ov-net-sub">境内</span><b class="ov-dom">${money(dom)}</b></div>
-            <div class="ov-net-row"><span class="ov-net-sub">境外</span><b class="ov-ovs">${money(ovs)}</b></div>
-            <div class="ov-net-row ov-net-total"><span class="ov-net-sub">总净资产</span><b class="ov-net">${money(net)}</b></div>
-          </div>
-        </div>
-        <div class="ac-stat"><span class="ac-stat-lbl">权益</span><b>${money(eqMV)}</b></div>
-        <div class="ac-stat"><span class="ac-stat-lbl">理财</span><b>${money(wTotal)}</b></div>
-        <div class="ac-stat"><span class="ac-stat-lbl">现金</span><b>${money(cTotal)}</b></div>
-        <div class="ac-stat"><span class="ac-stat-lbl">负债</span><b class="ov-liab">${money(lTotal)}</b></div>
-      </div>
-    </div>`;
+  // 资产全览拆成独立小卡片（与首页一致：无边框、标签在上数值在下）；净资产/境内/境外/权益/理财/现金/负债
+  const head = `<div class="asset-ov-head">资产全景 · <b>${esc(un)}</b></div>`;
+  const cards =
+    `<div class="sum-card"><span class="sum-lbl">净资产</span><b class="sum-val">${money(net)}</b></div>` +
+    `<div class="sum-card"><span class="sum-lbl">境内资产</span><b class="sum-val ov-dom">${money(dom)}</b></div>` +
+    `<div class="sum-card"><span class="sum-lbl">境外资产</span><b class="sum-val ov-ovs">${money(ovs)}</b></div>` +
+    `<div class="sum-card"><span class="sum-lbl">权益</span><b class="sum-val">${money(eqMV)}</b></div>` +
+    `<div class="sum-card"><span class="sum-lbl">理财</span><b class="sum-val">${money(wTotal)}</b></div>` +
+    `<div class="sum-card"><span class="sum-lbl">现金</span><b class="sum-val">${money(cTotal)}</b></div>` +
+    `<div class="sum-card"><span class="sum-lbl">负债</span><b class="sum-val ov-liab">${money(lTotal)}</b></div>`;
+  $('#assetSummaryBody').innerHTML = head + `<div class="ac-summary-cards asset-cards">${cards}</div>`;
 }
 
 function renderAssetTab() {
@@ -3176,9 +3165,10 @@ function renderAssetTab() {
   if (assetTab === 'consume') return renderConsume(body);
 }
 
-// 资产工具栏：随当前 tab 动态渲染"响应类别"的按钮（数据录入仅理财有；图表分析/AI/导出通用）
+// 资产工具栏：其余按钮（数据录入/图表分析/AI/导出导入）渲染到资产全景页内的本地工具条；
+// 仅「资产工具」常驻 header 全局工具条（见 renderGlobalAssetToolbar）。
 function renderAssetToolbar(tab) {
-  const t = document.getElementById('assetToolbar');
+  const t = document.getElementById('assetLocalToolbar');
   if (!t) return;
   const L = (s) => `<span class="atool-label">${s}</span>`;
   const B = (id, icon, tip) => `<button id="${id}" class="btn icon-btn" type="button" data-tip="${tip}" aria-label="${tip}">${icon}</button>`;
@@ -3188,9 +3178,17 @@ function renderAssetToolbar(tab) {
   }
   h += L('图表分析') + B('assetCalendarBtn', '📅', '盈亏日历') + B('assetTrendBtn', '📈', '盈亏走势') + B('assetPieBtn', '🥧', '资产构成') + '<span class="atool-sep"></span>';
   h += L('AI 智能') + B('aiPickBtn', '🤖', 'AI中枢') + '<span class="atool-sep"></span>';
-  h += L('工具导出') + B('assetToolsBtn', '🛠️', '资产工具') + B('ai_export_json', '⬇️', '导出数据') + B('ai_import_json', '⬆️', '导入数据');
+  h += L('工具导出') + B('ai_export_json', '⬇️', '导出数据') + B('ai_import_json', '⬆️', '导入数据');
   t.innerHTML = h;
 }
+// 全局 header 工具条：仅「资产工具」一个按钮，常驻暗黑模式切换按钮右侧（其它按钮回资产全景页内）
+function renderGlobalAssetToolbar() {
+  const t = document.getElementById('assetToolbar');
+  if (!t) return;
+  t.innerHTML = `<button id="assetToolsBtn" class="btn icon-btn" type="button" data-tip="资产工具" aria-label="资产工具">🛠️</button>`;
+  t.hidden = false;
+}
+renderGlobalAssetToolbar();
 
 document.querySelectorAll('#assetTabs .atab').forEach((b) => {
   b.onclick = () => {
@@ -3203,8 +3201,8 @@ document.querySelectorAll('#assetTabs .atab').forEach((b) => {
   };
 });
 
-// 资产工具栏按钮改由 #assetToolbar 事件委托（按钮随 tab 动态渲染，见 renderAssetToolbar）
-document.getElementById('assetToolbar').addEventListener('click', (e) => {
+// 资产工具栏按钮事件委托：全局 header(#assetToolbar，仅资产工具) 与 资产全景页内(#assetLocalToolbar，其余按钮) 共用同一处理逻辑
+function onAssetToolbarClick(e) {
   const b = e.target.closest('button');
   if (!b || !b.id) return;
   switch (b.id) {
@@ -3217,7 +3215,9 @@ document.getElementById('assetToolbar').addEventListener('click', (e) => {
     case 'ai_export_json': confirmExport(); break;
     case 'ai_import_json': $('#importFile').click(); break;
   }
-});
+}
+document.getElementById('assetToolbar').addEventListener('click', onAssetToolbarClick);
+document.getElementById('assetLocalToolbar').addEventListener('click', onAssetToolbarClick);
 
 function assetDel(type, id) {
   const msg = {
@@ -3746,7 +3746,6 @@ function showNotifyView() {
   $('#calendarView').hidden = true;
   $('#notifyView').hidden = false;
   const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
-  const at = document.getElementById('assetToolbar'); if (at) at.hidden = true;
   injectPageHead('notifyView', '🔔 通知渠道');
   setNavActive('notify');
   loadNotifySettings();

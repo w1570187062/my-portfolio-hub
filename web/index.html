@@ -102,14 +102,14 @@
 
   <div id="holdingsView">
   <div class="market-bar" id="marketBar" hidden>
-    <div class="mb-time" id="mbTime"></div>
+    <div class="mb-left">
+      <span class="mb-account"><span class="mb-acc-lbl">账户</span><b id="mbUserName">默认</b></span>
+      <span class="mb-sep">·</span>
+      <span class="mb-time" id="mbTime"></span>
+    </div>
     <div class="mb-fx" id="mbFx"></div>
   </div>
   <div id="accountCard" class="account-card" hidden>
-    <div class="ac-left">
-      <span class="ac-label">账户</span>
-      <span id="acUserName" class="ac-name">—</span>
-    </div>
     <div class="ac-summary-cards" id="acSummaryData"></div>
   </div>
   <div class="list-bar">
@@ -180,6 +180,7 @@
       <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
       <button class="btn atab" data-tab="sources" type="button">来源</button>
     </div>
+    <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar"></div>
     <div id="assetTabBody"></div>
   </div>
 
