@@ -365,14 +365,19 @@
 }
 /* 分析按钮右上角买卖信号角标（红涨绿跌，带背景色圆角，白字） */
 .ana-wrap { position: relative; display: inline-flex; vertical-align: middle; }
-.ana-badge {
-  position: absolute; top: -9px; right: -10px; z-index: 3;
+.ana-wrap .ana-badge {
+  position: absolute; top: -9px; right: -9px; z-index: 3;
   min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+  font-size: 11px; font-weight: 700; text-align: center;
+  display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+  border: none;
   color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); pointer-events: none;
 }
-.ana-badge.buy { background: #e53935; color: #fff; }
-.ana-badge.sell { background: #2e9e4f; color: #fff; }
+.ana-wrap .ana-badge.buy { background: #e53935; color: #fff; }
+.ana-wrap .ana-badge.sell { background: #2e9e4f; color: #fff; }
+/* 分析角标部分超出 name-cell 右上角，须允许该单元格溢出显示；
+   名称省略号已由内部 .name-clickable 自身处理，放开 td 的 overflow 不影响截断 */
+.holdings-group .holdings-subtable td.name-cell { overflow: visible; }
 .name-cell .act-analysis:hover {
   background: rgba(124, 58, 237, .16);
   color: #c4b5fd;
@@ -2440,6 +2445,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .tool-result .tool-empty { color: var(--text-muted); font-size: 13px; }
 .tool-result b { color: var(--text); }
 .tool-actions { display: flex; gap: 10px; }
+/* 首页「计算」补仓弹框：操作按钮左右居中，并与下方留间距（通用 .tool-actions 默认左对齐且无下边距） */
+#calcCostModal .tool-actions { justify-content: center; padding-top: 6px; padding-bottom: 22px; }
 
 /* 小工具页：手机端适配（窄屏 ≤ 640px） */
 @media (max-width: 640px) {
