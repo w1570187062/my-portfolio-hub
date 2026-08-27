@@ -1193,7 +1193,7 @@ $('#refreshBtn').onclick = async () => {
   $('#refreshBtn').textContent = '⏳ 刷新中…';
   try {
     const r = await api('/api/refresh', { method: 'POST' });
-    $('#refreshBtn').textContent = '🔄 刷新行情';
+    $('#refreshBtn').textContent = '🔄 刷新';
     if (r.ok) {
       const d = await r.json();
       // 刷新失败标的持久标记：重置为本次失败集合（成功者下次刷新自动清除）
@@ -1211,7 +1211,7 @@ $('#refreshBtn').onclick = async () => {
       toast('刷新请求失败 (HTTP ' + r.status + ')', 'err');
     }
   } catch (e) {
-    $('#refreshBtn').textContent = '🔄 刷新行情';
+    $('#refreshBtn').textContent = '🔄 刷新';
     toast('刷新异常：' + e.message, 'err');
   }
   load();
@@ -1747,7 +1747,6 @@ async function openCalendarView() {
     $('#holdingsView').hidden = true;
     $('#assetView').hidden = true;
     $('#toolsView').hidden = true;
-    $('#notifyView').hidden = true;
     $('#calendarView').hidden = false;
     $('#calendarBtn').classList.add('active');
     const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
@@ -1760,7 +1759,6 @@ function showHoldingsView() {
   $('#calendarView').hidden = true;
   $('#assetView').hidden = true;
   $('#toolsView').hidden = true;
-  $('#notifyView').hidden = true;
   $('#holdingsView').hidden = false;
   $('#calendarBtn').classList.remove('active');
   syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
@@ -1785,10 +1783,13 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key !== 'Escape') return;
-  // 弹框优先（已有各自的关闭按钮，但 ESC 顺手关弹框更友好）
+  // 弹框优先（含通知弹框），ESC 直接关闭
   const openModals = document.querySelectorAll('.modal:not([hidden])');
-  if (openModals.length) return; // 让弹框内的 ESC 由各弹框自行处理
-  const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#calendarView').hidden || !$('#notifyView').hidden;
+  if (openModals.length) {
+    openModals.forEach((m) => { m.hidden = true; });
+    return;
+  }
+  const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#calendarView').hidden;
   if (inSubView) {
     navigate('holdings');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2333,7 +2334,12 @@ function switchHubTab(tab) {
   if (tab === 'settings') { renderTplSelect(); renderModelSelect(); }
   if (tab === 'history') loadAIHistory();
 }
-// aiPickBtn 已改由 #assetToolbar 事件委托处理
+// 首页 AI 按钮：打开 AI 中枢弹框
+$('#aiHomeBtn').onclick = () => {
+  $('#aiPickErr').textContent = '';
+  $('#aiPickGo').disabled = false;
+  switchHubTab('summary');
+};
 $('#hubTabSummary').onclick = () => switchHubTab('summary');
 $('#hubTabSettings').onclick = () => switchHubTab('settings');
 $('#hubTabHistory').onclick = () => switchHubTab('history');
@@ -2563,7 +2569,6 @@ async function showAssetView() {
   $('#holdingsView').hidden = true;
   $('#calendarView').hidden = true;
   $('#toolsView').hidden = true;
-  $('#notifyView').hidden = true;
   $('#assetView').hidden = false;
   // 资产工具条已移至 header 暗黑按钮右侧（全局 #assetToolbar）：进入资产全景时显示，离开时隐藏
   const at = document.getElementById('assetToolbar');
@@ -2638,7 +2643,6 @@ async function showToolsView() {
   $('#holdingsView').hidden = true;
   $('#calendarView').hidden = true;
   $('#assetView').hidden = true;
-  $('#notifyView').hidden = true;
   $('#toolsView').hidden = false;
   // 工具视图：隐藏首页汇率/更新时间行（资产工具按钮常驻 header，不隐藏）
   const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
@@ -3145,15 +3149,14 @@ function renderAssetTab() {
   if (assetTab === 'consume') return renderConsume(body);
 }
 
-// 资产全景页内本地工具条：图表分析 / AI 智能（数据录入迁至理财区「添加理财」旁；导入导出迁至用户抽屉）
+// 资产全景页内本地工具条：仅图表分析（AI中枢已迁至首页「添加」旁；数据录入迁至理财区；导入导出迁至用户抽屉）
 function renderAssetToolbar(tab) {
   const t = document.getElementById('assetLocalToolbar');
   if (!t) return;
   const L = (s) => `<span class="atool-label">${s}</span>`;
   const B = (id, icon, tip) => `<button id="${id}" class="btn icon-btn" type="button" data-tip="${tip}" aria-label="${tip}">${icon}</button>`;
   t.innerHTML =
-    L('图表分析') + B('assetCalendarBtn', '📅', '盈亏日历') + B('assetTrendBtn', '📈', '盈亏走势') + B('assetPieBtn', '🥧', '资产构成') + '<span class="atool-sep"></span>'
-    + L('AI 智能') + B('aiPickBtn', '🤖', 'AI中枢');
+    L('图表分析') + B('assetCalendarBtn', '📅', '盈亏日历') + B('assetTrendBtn', '📈', '盈亏走势') + B('assetPieBtn', '🥧', '资产构成');
 }
 // 全局 header 工具条：资产工具 + 资产全景 + 通知渠道三个图标按钮，常驻暗黑模式切换按钮右侧
 function renderGlobalAssetToolbar() {
@@ -3195,7 +3198,6 @@ function onAssetToolbarClick(e) {
       navigate('notify');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       break;
-    case 'aiPickBtn': $('#aiPickErr').textContent = ''; $('#aiPickGo').disabled = false; switchHubTab('summary'); break;
   }
 }
 document.getElementById('assetToolbar').addEventListener('click', onAssetToolbarClick);
@@ -3364,9 +3366,10 @@ function renderWealthTable(w) {
       </td>
     </tr>`;
   }).join('');
-  return `<div class="table-wrap"><table class="asset-table"><thead><tr>
+  // 不包 .table-wrap：与现金等其它资产表格保持一致的左右间距
+  return `<table class="asset-table"><thead><tr>
     <th class="num">#</th><th>名称</th><th>代码</th><th>来源</th><th class="num">总金额</th><th class="num">今日收益</th><th class="num">累计收益</th><th class="num">录入天数</th><th>操作</th>
-  </tr></thead><tbody>${rows}</tbody></table></div>`;
+  </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 async function openWealthModal(id) {
@@ -3722,14 +3725,21 @@ $('#consumeForm').onsubmit = async (e) => {
 // assetSnapBtn 已迁至理财区「添加理财」旁（renderWealth 中直接绑定）
 
 // ---- 通知渠道二级页 ----
+// 通知渠道：改为弹框展示（保留 #/notify 路由，打开时叠加在当前视图上）
+function switchNotifyTab(tab) {
+  $('#ntTabPolicy').classList.toggle('active', tab === 'policy');
+  $('#ntTabDt').classList.toggle('active', tab === 'dt');
+  $('#ntTabEm').classList.toggle('active', tab === 'em');
+  $('#ntPanelPolicy').hidden = tab !== 'policy';
+  $('#ntPanelDt').hidden = tab !== 'dt';
+  $('#ntPanelEm').hidden = tab !== 'em';
+}
 function showNotifyView() {
-  $('#holdingsView').hidden = true;
-  $('#assetView').hidden = true;
-  $('#toolsView').hidden = true;
-  $('#calendarView').hidden = true;
-  $('#notifyView').hidden = false;
-  const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
-  injectPageHead('notifyView', '🔔 通知渠道');
+  // 无可见视图（如刷新后直接落在 #/notify）时，先落回首页作弹框背景
+  if ($('#holdingsView').hidden && $('#assetView').hidden && $('#toolsView').hidden && $('#calendarView').hidden) {
+    showHoldingsView();
+  }
+  $('#notifyModal').hidden = false;
   loadNotifySettings();
 }
 async function loadNotifySettings() {
@@ -3806,6 +3816,12 @@ $('#notifyTestBtn').onclick = async () => {
   toast('测试结果 — ' + parts.join('；'), okAll ? 'ok' : 'err');
   $('#notifyErr').textContent = '测试结果：' + parts.join('；');
 };
+// 通知弹框：tab 切换 / 关闭（✕ 与点击遮罩）
+$('#ntTabPolicy').onclick = () => switchNotifyTab('policy');
+$('#ntTabDt').onclick = () => switchNotifyTab('dt');
+$('#ntTabEm').onclick = () => switchNotifyTab('em');
+$('#notifyClose').onclick = () => { $('#notifyModal').hidden = true; };
+$('#notifyModal').addEventListener('click', (e) => { if (e.target === $('#notifyModal')) $('#notifyModal').hidden = true; });
 
 async function openSnapModal() {
   await loadAsset();

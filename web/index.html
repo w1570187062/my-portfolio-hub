@@ -86,9 +86,10 @@
     <div id="filters" class="filters"></div>
     <div class="list-actions">
       <div class="action-btns">
-        <button id="addBtn" class="btn">➕ 添加持仓</button>
-        <button id="guideBtn" class="btn">📋 补仓计划</button>
-        <button id="refreshBtn" class="btn">🔄 刷新行情</button>
+        <button id="aiHomeBtn" class="btn" type="button">🤖 AI</button>
+        <button id="addBtn" class="btn">➕ 添加</button>
+        <button id="guideBtn" class="btn">📋 计划</button>
+        <button id="refreshBtn" class="btn">🔄 刷新</button>
       </div>
       <div class="action-tools">
         <input type="search" id="filterInput" name="q" class="filter-search" placeholder="搜索名称 / 代码" aria-label="筛选持仓" autocomplete="off" spellcheck="false" enterkeyhint="search" hidden data-1p-ignore data-lpignore="true" data-form-type="other" data-dashlane-ignored="true">
@@ -152,14 +153,19 @@
     <div id="assetTabBody"></div>
   </div>
 
-  <div id="notifyView" hidden>
-    <div class="notify-wrap">
+  <div id="notifyModal" class="modal" hidden>
+    <div class="modal-card" style="width:560px; max-width:94vw;">
+      <h2>🔔 通知渠道</h2>
+      <button class="card-close" type="button" id="notifyClose" title="关闭" aria-label="关闭">✕</button>
       <p class="tool-hint">配置净值更新后的通知方式，并用开关启用。点「保存配置」生效；点「测试通知」可验证渠道是否可用。手动或自动更新净值数据后会自动推送。</p>
+      <div class="hist-tabs">
+        <button id="ntTabPolicy" class="btn tab active" type="button">推送策略</button>
+        <button id="ntTabDt" class="btn tab" type="button">钉钉</button>
+        <button id="ntTabEm" class="btn tab" type="button">邮箱</button>
+      </div>
 
-      <div class="notify-card">
-        <div class="notify-card-head">
-          <h3>推送策略</h3>
-        </div>
+      <!-- 推送策略 -->
+      <div id="ntPanelPolicy">
         <label>推送频率
           <select id="ntfPolicy">
             <option value="every">每次净值更新都推送</option>
@@ -170,34 +176,30 @@
         <p class="tool-hint">控制净值更新后何时推送通知，避免频繁打扰。</p>
       </div>
 
-      <div class="notify-card collapsible collapsed">
-        <div class="collapse-hat">
-          <span class="hat-title">钉钉</span>
-          <span class="hat-side"><label class="switch" title="启用钉钉通知"><input type="checkbox" id="dtEnabled"><span class="switch-knob"></span></label><span class="hat-chevron">▾</span></span>
-        </div>
-        <div class="collapse-body">
-          <label>Webhook 地址<span class="input-eye"><input type="text" id="dtWebhook" readonly placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."><button type="button" class="eye-toggle" data-eye-for="dtWebhook" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
-          <label>加签密钥（可选）<span class="input-eye"><input type="text" id="dtSecret" readonly placeholder="机器人安全设置中的加签密钥，不填则无需加签"><button type="button" class="eye-toggle" data-eye-for="dtSecret" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
-        </div>
+      <!-- 钉钉 -->
+      <div id="ntPanelDt" hidden>
+        <label>启用钉钉通知
+          <label class="switch"><input type="checkbox" id="dtEnabled"><span class="switch-knob"></span></label>
+        </label>
+        <label>Webhook 地址<span class="input-eye"><input type="text" id="dtWebhook" readonly placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."><button type="button" class="eye-toggle" data-eye-for="dtWebhook" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+        <label>加签密钥（可选）<span class="input-eye"><input type="text" id="dtSecret" readonly placeholder="机器人安全设置中的加签密钥，不填则无需加签"><button type="button" class="eye-toggle" data-eye-for="dtSecret" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
       </div>
 
-      <div class="notify-card collapsible collapsed">
-        <div class="collapse-hat">
-          <span class="hat-title">邮箱</span>
-          <span class="hat-side"><label class="switch" title="启用邮箱通知"><input type="checkbox" id="emEnabled"><span class="switch-knob"></span></label><span class="hat-chevron">▾</span></span>
-        </div>
-        <div class="collapse-body">
-          <label>SMTP 服务器<input type="text" id="emHost" placeholder="smtp.qq.com"></label>
-          <label>端口<input type="number" id="emPort" value="465" step="1"></label>
-          <label>账号<input type="text" id="emUser" placeholder="1570187062@qq.com"></label>
-          <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）"></label>
-          <label>发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com"></label>
-          <label>收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com"></label>
-        </div>
+      <!-- 邮箱 -->
+      <div id="ntPanelEm" hidden>
+        <label>启用邮箱通知
+          <label class="switch"><input type="checkbox" id="emEnabled"><span class="switch-knob"></span></label>
+        </label>
+        <label>SMTP 服务器<input type="text" id="emHost" placeholder="smtp.qq.com"></label>
+        <label>端口<input type="number" id="emPort" value="465" step="1"></label>
+        <label>账号<input type="text" id="emUser" placeholder="1570187062@qq.com"></label>
+        <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）"></label>
+        <label>发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com"></label>
+        <label>收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com"></label>
       </div>
 
       <div id="notifyErr" class="err"></div>
-      <div class="notify-actions">
+      <div class="modal-actions">
         <button class="btn" type="button" id="notifyTestBtn">📨 测试通知</button>
         <button class="btn" type="button" id="notifySaveBtn">💾 保存配置</button>
       </div>
