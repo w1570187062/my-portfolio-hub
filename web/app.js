@@ -277,12 +277,12 @@ function renderFreshness() {
   }
 }
 
-// 汇率展示：从原 header 跑马灯改为「首页卡片上方更新时间同一行」的静态表格展示（不滚动）。
-// 三项汇率（USD/HKD/CNY）横向排列，含涨跌幅；由 #marketBar 承载。
+// 顶部汇率跑马灯（横向滚动）+ 行情更新时间，位于 header 左侧（主题切换按钮之前）。
+// 内容复制一份首尾相接，配合 CSS translateX(-50%) 无缝循环。
 function renderFx(d) {
-  const box = document.getElementById('mbFx');
-  if (!box) return;
-  if (!d) { box.innerHTML = ''; return; }
+  const track = document.getElementById('hfTrack');
+  if (!track) return;
+  if (!d) { track.innerHTML = ''; return; }
 
   // Per-item day-over-day comparison (red=up/涨，green=down/跌，Chinese convention)
   let usdChg = null, hkdChg = null, cnyChg = null;
@@ -301,7 +301,7 @@ function renderFx(d) {
     const abs = Math.abs(chg.pct);
     const sign = chg.pct >= 0 ? '+' : '';
     const dir = chg.pct > 0.01 ? '▲' : (chg.pct < -0.01 ? '▼' : '');
-    return ' <span class="fx-chg" style="color:' + (chg.pct > 0.01 ? 'var(--up)' : (chg.pct < -0.01 ? 'var(--down)' : 'var(--text-muted)')) + '">(' + dir + sign + abs.toFixed(dec) + '%)</span>';
+    return ' <span class="fx-chg" style="color:' + (chg.pct > 0.01 ? 'var(--up)' : (chg.pct < -0.01 ? 'var(--down)' : 'var(--text-muted)')) + '">(' + sign + abs.toFixed(dec) + '% ' + dir + ')</span>';
   }
 
   const items = [
@@ -310,11 +310,14 @@ function renderFx(d) {
     { code: 'CNY', val: d.cny_usd || 0, dec: 4, unit: '$', chg: chgStr(cnyChg, 2) },
   ];
 
-  // 静态横向：三项汇率以表格化小格并排（含涨跌幅），不滚动。
-  box.innerHTML = items.map((it) =>
-    '<span class="fx-cell"><b class="fx-code">' + it.code + '</b>' +
-    '<span class="fx-val"><b>' + it.val.toFixed(it.dec) + '</b> ' + it.unit + '</span>' + it.chg + '</span>'
-  ).join('');
+  // 单份内容：三项汇率用「·」分隔，末尾再补一个「·」便于无缝循环。
+  const itemHtml = items.map((it) =>
+    '<span class="hf-item"><b>1 ' + it.code +
+    ' = <span class="hf-num">' + it.val.toFixed(it.dec) + '</span> ' + it.unit + '</b>' + it.chg + '</span>'
+  ).join('<span class="hf-dot">·</span>');
+  const unit = itemHtml + '<span class="hf-dot">·</span>';
+  // 复制一份首尾相接，translateX(-50%) 正好偏移一个 unit 宽度，实现无缝滚动。
+  track.innerHTML = unit + unit;
 
   // 行情更新时间 pill（由 renderFreshness 填充，30s 刷新一次）
   renderFreshness();

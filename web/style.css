@@ -363,16 +363,16 @@
   color: #a78bfa;
   border: 1px solid #7c3aed;
 }
-/* 分析按钮左上角买卖信号角标（红涨绿跌，带背景色圆角） */
+/* 分析按钮右上角买卖信号角标（红涨绿跌，带背景色圆角，白字） */
 .ana-wrap { position: relative; display: inline-flex; vertical-align: middle; }
 .ana-badge {
-  position: absolute; top: -9px; left: -10px; z-index: 3;
+  position: absolute; top: -9px; right: -10px; z-index: 3;
   min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
   font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
   color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); pointer-events: none;
 }
-.ana-badge.buy { background: #e53935; }
-.ana-badge.sell { background: #2e9e4f; }
+.ana-badge.buy { background: #e53935; color: #fff; }
+.ana-badge.sell { background: #2e9e4f; color: #fff; }
 .name-cell .act-analysis:hover {
   background: rgba(124, 58, 237, .16);
   color: #c4b5fd;
@@ -1692,31 +1692,35 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .fx-cell .fx-val { color: var(--text); }
 .fx-cell .fx-chg { font-weight: 600; }
 
-/* ===== 原 header 跑马灯（已弃用，保留空壳避免误引用） ===== */
-.header-fx { display: none; }
-.hf-marquee {
-  height: 20px;
-  overflow: hidden;
-  min-width: 0;
-}
-.hf-track {
+/* ===== 顶部汇率 / 行情时间（位于主题切换按钮左侧，横向无缝滚动跑马灯） ===== */
+.header-fx {
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  margin-right: 6px;
+  min-width: 0;
+}
+.hf-marquee {
+  width: 250px;
+  max-width: 42vw;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);
+}
+.hf-track {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
   will-change: transform;
-  animation: hf-marquee 12s linear infinite;
+  animation: hf-marquee 26s linear infinite;
 }
 .hf-track:hover { animation-play-state: paused; }
-/* 纵向跑马灯：三项汇率纵向堆叠，复制一份首尾相接；translateY 步进 -20px(单项高) 至 -60px(-3 项=-50%) 无缝循环，每段停留便于阅读 */
 @keyframes hf-marquee {
-  0%, 30% { transform: translateY(0); }
-  33.33%, 63.33% { transform: translateY(-20px); }
-  66.66%, 96.66% { transform: translateY(-40px); }
-  100% { transform: translateY(-60px); }
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
 }
 .hf-item {
-  height: 20px;
-  line-height: 20px;
-  white-space: nowrap;
   font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -1724,6 +1728,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 .hf-item b { color: var(--text); font-weight: 600; }
 .hf-num { color: var(--text); }
+.hf-dot { color: var(--border-strong, #3a4150); margin: 0 12px; }
 .hf-time {
   display: inline-flex;
   align-items: center;
@@ -1950,9 +1955,11 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .summary .c-col { flex-direction: column; align-items: center; text-align: center; padding: 12px 0 0; border-left: none; border-top: none; }
   .summary .c-main { align-items: center; }
   .summary .c-col:first-child { padding-top: 0; border-top: none; }
-  /* 顶部汇率/时间：手机端隐藏纵向汇率跑马灯（其横向宽度≈整段汇率文本，会把 header 撑出屏幕），仅保留更新时间 */
-  .hf-marquee { display: none; }
+  /* 顶部汇率跑马灯：手机端收窄，不隐藏 */
+  .hf-marquee { width: 116px; max-width: 38vw; }
   .header-fx { margin-right: 4px; gap: 2px; }
+  .hf-item { font-size: 11px; }
+  .hf-dot { margin: 0 8px; }
   .hf-time { font-size: 10px; padding: 1px 7px; }
   .card {
     min-width: 140px;
@@ -2333,7 +2340,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .tool-card.merge-card { grid-column: 1 / -1; background: var(--bg-glass); border-style: dashed; }
 .tool-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin: 0 0 12px; }
 .tool-fx { color: var(--primary); }
-.tool-rate { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+.tool-rate { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 12px; padding: 0 28px; }
 .tool-rate input {
   width: 200px;
   max-width: 100%;
