@@ -49,6 +49,23 @@ func assetOverview(c *gin.Context) {
 	cnyRate, hkdRate, _ := market.FetchFXRates()
 	today := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
 
+	// 0) 资产来源名/区域映射（供后续按来源 region 归集境内/境外资产）
+	sources, _ := db.ListSources(uid)
+	srcName := map[int64]string{}
+	srcRegion := map[int64]string{}
+	for _, s := range sources {
+		srcName[s.ID] = s.Name
+		srcRegion[s.ID] = s.Region
+	}
+	// 来源未归集(source_id=0)或区域未知时默认计入境内，确保 境内+境外=总资产(未减负债前)。
+	regionOf := func(sid int64) string {
+		if r, ok := srcRegion[sid]; ok && (r == "overseas" || r == "domestic") {
+			return r
+		}
+		return "domestic"
+	}
+	var domAssets, ovsAssets float64
+
 	// 1) 权益类（基金/股票）
 	hs, _ := db.List(uid)
 	var eqMV, eqCV, eqPnl, eqDay float64
@@ -76,23 +93,6 @@ func assetOverview(c *gin.Context) {
 			"pnl":          round2(v.Pnl * rateChoice(h.Currency, cnyRate, hkdRate)),
 		})
 	}
-
-	// 2) 资产来源名映射
-	sources, _ := db.ListSources(uid)
-	srcName := map[int64]string{}
-	srcRegion := map[int64]string{}
-	for _, s := range sources {
-		srcName[s.ID] = s.Name
-		srcRegion[s.ID] = s.Region
-	}
-	// 来源未归集(source_id=0)或区域未知时默认计入境内，确保 境内+境外=总资产(未减负债前)。
-	regionOf := func(sid int64) string {
-		if r, ok := srcRegion[sid]; ok && (r == "overseas" || r == "domestic") {
-			return r
-		}
-		return "domestic"
-	}
-	var domAssets, ovsAssets float64
 
 	// 3) 理财（最新持仓金额 + 今日盈亏），按币种分类
 	wps, _ := db.ListWealth(uid)
