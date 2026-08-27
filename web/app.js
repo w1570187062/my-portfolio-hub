@@ -496,10 +496,14 @@ function renderHoldingsBySource(hs) {
   const ARROW = 16, GAP = 3, CELLPAD = 4;
   const wAdd = measureBtnWidth('修改');
   const wAna = hasAna ? measureBtnWidth('分析') : 0;
-  const SPARK_W = 110 + GAP;  // 迷你图宽度 + 最后一个间隙
-  let colW = maxName + ARROW + GAP + SPARK_W + wAdd + (hasAna ? GAP + wAna : 0) + CELLPAD * 2 + CELLPAD;
+  // 固定名称列最大宽度为300px，保证修改/分析按钮始终完整显示
+  // 公式：左边距 + 箭头 + 间距 + (maxName上限) + 间距 + 修改按钮 + (间距 + 分析按钮) + 右边距
+  const maxNameCap = Math.min(maxName, 200); // 名称文字最多占200px，超过截断
+  let colW = CELLPAD + ARROW + GAP + maxNameCap + GAP + wAdd + (hasAna ? GAP + wAna : 0) + CELLPAD;
+  // 整体列宽上限300px
+  colW = Math.min(colW, 300);
   box.style.setProperty('--name-col-w', Math.ceil(colW) + 'px');
-  box.style.setProperty('--name-w', Math.ceil(maxName) + 'px');
+  box.style.setProperty('--name-w', Math.ceil(Math.min(maxName, 200)) + 'px');
   let html = '';
   for (const g of arr) {
     const pnlPct = g.cost > 0 ? (g.pnl / g.cost) * 100 : 0;
