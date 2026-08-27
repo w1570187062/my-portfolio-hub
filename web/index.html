@@ -148,9 +148,9 @@
         <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
         <button class="btn atab" data-tab="sources" type="button">来源</button>
       </div>
+      <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar"></div>
     </div>
     <div id="assetTabBody"></div>
-    <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar"></div>
   </div>
 
   <div id="notifyModal" class="modal" hidden>
@@ -288,24 +288,26 @@
     <div class="modal-card" style="width:min(900px, 96vw); max-width:96vw;">
       <h2>盈亏日历</h2>
       <button class="card-close" type="button" id="calClose" title="关闭" aria-label="关闭">✕</button>
-      <div class="cal-head">
-        <div class="cal-nav">
-          <button id="calPrev" class="btn cal-nav-btn" type="button">‹</button>
-          <span id="calTitle" class="cal-title"></span>
-          <button id="calNext" class="btn cal-nav-btn" type="button">›</button>
+      <div class="cal-body">
+        <div class="cal-head">
+          <div class="cal-nav">
+            <button id="calPrev" class="btn cal-nav-btn" type="button">‹</button>
+            <span id="calTitle" class="cal-title"></span>
+            <button id="calNext" class="btn cal-nav-btn" type="button">›</button>
+          </div>
+          <div id="calMonthSummary" class="cal-month-summary"></div>
+          <div class="cal-legend">
+            <span class="lg-text">跌</span>
+            <span class="lg lg-down4"></span><span class="lg lg-down3"></span><span class="lg lg-down2"></span><span class="lg lg-down1"></span>
+            <span class="lg lg-zero"></span>
+            <span class="lg lg-up1"></span><span class="lg lg-up2"></span><span class="lg lg-up3"></span><span class="lg lg-up4"></span>
+            <span class="lg-text">涨</span>
+            <span class="lg lg-none"></span><span class="lg-text">无数据</span>
+          </div>
         </div>
-        <div id="calMonthSummary" class="cal-month-summary"></div>
-        <div class="cal-legend">
-          <span class="lg-text">跌</span>
-          <span class="lg lg-down4"></span><span class="lg lg-down3"></span><span class="lg lg-down2"></span><span class="lg lg-down1"></span>
-          <span class="lg lg-zero"></span>
-          <span class="lg lg-up1"></span><span class="lg lg-up2"></span><span class="lg lg-up3"></span><span class="lg lg-up4"></span>
-          <span class="lg-text">涨</span>
-          <span class="lg lg-none"></span><span class="lg-text">无数据</span>
-        </div>
+        <div id="calWeekdays" class="cal-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+        <div id="calGrid" class="cal-grid"></div>
       </div>
-      <div id="calWeekdays" class="cal-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
-      <div id="calGrid" class="cal-grid"></div>
     </div>
   </div>
 

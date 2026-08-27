@@ -193,7 +193,7 @@
   background: var(--btn-ghost);
   color: var(--primary);
   border-radius: var(--btn-radius);
-  padding: 8px 16px;
+  padding: 4px 8px;
   min-height: var(--btn-h);
   font-size: 14px;
   line-height: 1.3;
@@ -849,7 +849,7 @@
   border: 1px solid var(--border, #e3e6eb);
   background: #fff;
   border-radius: 999px;
-  padding: 6px 18px;
+  padding: 3px 9px;
   font-size: 14px;
   color: var(--btn-text);
   cursor: pointer;
@@ -1462,7 +1462,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 }
 /* 中间滚动容器：所有 form / 直接子 div（除 modal-actions / cal-modal-head / hist-tabs） */
 .modal-card form,
-.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.hist-tabs):not(.cal-head):not(.cal-weekdays):not(.cal-grid):not([id^="tlPanel"]) {
+.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.hist-tabs) {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -1474,11 +1474,11 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   box-sizing: border-box;
 }
 .modal-card form::-webkit-scrollbar,
-.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.cal-head):not(.cal-weekdays):not(.cal-grid):not([id^="tlPanel"])::-webkit-scrollbar { width: 8px; }
+.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.hist-tabs)::-webkit-scrollbar { width: 8px; }
 .modal-card form::-webkit-scrollbar-track,
-.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.cal-head):not(.cal-weekdays):not(.cal-grid):not([id^="tlPanel"])::-webkit-scrollbar-track { background: transparent; }
+.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.hist-tabs)::-webkit-scrollbar-track { background: transparent; }
 .modal-card form::-webkit-scrollbar-thumb,
-.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.cal-head):not(.cal-weekdays):not(.cal-grid):not([id^="tlPanel"])::-webkit-scrollbar-thumb {
+.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.hist-tabs)::-webkit-scrollbar-thumb {
   background: var(--primary);
   border-radius: 4px;
 }
@@ -1608,7 +1608,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border: 1px solid var(--border);
   background: var(--bg-card);
   border-radius: 999px;
-  padding: 8px 20px;
+  padding: 4px 10px;
   font-size: 14px;
   color: var(--text-muted);
   cursor: pointer;
@@ -1758,7 +1758,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 /* ===== 日历 ===== */
 .cal-wrap { width: 100%; margin: 0 auto; }
 #calendarModal .modal-card { width: min(900px, 96vw); max-width: 96vw; }
-.cal-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 8px 28px 0; }
+.cal-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 8px 0 0; }
 .cal-head > * { margin: 0; }
 .cal-legend { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
 .lg { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
@@ -1773,9 +1773,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .cal-months { display: grid; gap: 4px; margin: 16px 0 4px; }
 .cal-month { font-size: 12px; color: var(--text-muted); }
 #calModal .modal-card { width: 660px; }
-.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 16px 28px 4px; }
+.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 16px 0 4px; }
 .cal-weekdays span { text-align: center; font-size: 12px; color: var(--text-muted); }
-.cal-grid { display: grid; gap: 4px; margin: 0 28px 20px; }
+.cal-grid { display: grid; gap: 4px; margin: 0 0 20px; }
 .cal-title { font-size: 15px; font-weight: 600; min-width: 96px; text-align: center; color: var(--text); }
 .cal-nav { display: flex; align-items: center; gap: 8px; margin-left: 8px; }
 .cal-cell.cal-out { background: rgba(255, 255, 255, .02); }
@@ -2035,7 +2035,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .asset-summary .c-value { font-size: 18px; }
   /* 工具栏：按钮流式排布，隐藏分隔符让按钮自然换行 */
   .asset-toolbar { padding: 0 10px 12px; gap: 8px; }
-  .asset-local-toolbar { padding: 0; margin-top: 16px; }
+  .asset-local-toolbar { padding: 0; margin-left: auto; }
   .asset-toolbar .atool-sep { display: none; }
   .asset-toolbar .btn { flex: 1 1 auto; min-width: 0; text-align: center; }
   /* 分区标签：移动端缩小字号，作为分区标识（竖线已隐藏） */
@@ -2095,7 +2095,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 .asset-tabs-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 20px 12px; border-bottom: 1px solid var(--border); }
 .asset-tabs { display: flex; gap: 8px; }
-.asset-local-toolbar { padding: 0; }
+.asset-local-toolbar { padding: 0; margin-left: auto; }
 /* 资产总览：去掉 collapsible 卡片底色/边框（背景色取消），标题常驻不再折叠 */
 #assetSummary { display: block; margin: 12px 20px 4px; padding: 0; background: none; border: none; box-shadow: none; border-radius: 0; }
 #assetSummaryBody { padding: 0; }

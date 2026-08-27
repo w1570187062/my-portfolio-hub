@@ -3159,7 +3159,7 @@ function renderAssetToolbar(tab) {
   const L = (s) => `<span class="atool-label">${s}</span>`;
   const B = (id, icon, tip) => `<button id="${id}" class="btn icon-btn" type="button" data-tip="${tip}" aria-label="${tip}">${icon}</button>`;
   t.innerHTML =
-    L('图表分析') + B('assetCalendarBtn', '📅', '盈亏日历') + B('assetTrendBtn', '📈', '盈亏走势') + B('assetPieBtn', '🥧', '资产构成');
+    B('assetCalendarBtn', '📅', '盈亏日历') + B('assetTrendBtn', '📈', '盈亏走势') + B('assetPieBtn', '🥧', '资产构成');
 }
 // 全局 header 工具条：资产工具 + 资产全景 + 通知渠道三个图标按钮，常驻暗黑模式切换按钮右侧
 function renderGlobalAssetToolbar() {
