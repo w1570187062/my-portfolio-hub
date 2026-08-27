@@ -92,24 +92,25 @@
       <button id="toolsBtn" class="btn">🛠️ 资产工具</button>
     </div>
     <div class="actions">
-      <div class="header-fx" id="headerFx">
-        <div class="hf-marquee" id="hfMarquee"><div class="hf-track" id="hfTrack"></div></div>
-        <div class="hf-time" id="hfTime"></div>
-      </div>
       <div class="act-group">
         <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式">🌙</button>
+        <div class="asset-toolbar header-toolbar" id="assetToolbar" hidden></div>
         <button id="userBtn" class="btn act-user" type="button" title="用户切换">👤<span id="userNameText" style="display:none">默认</span></button>
       </div>
     </div>
   </header>
 
   <div id="holdingsView">
+  <div class="market-bar" id="marketBar" hidden>
+    <div class="mb-time" id="mbTime"></div>
+    <div class="mb-fx" id="mbFx"></div>
+  </div>
   <div id="accountCard" class="account-card" hidden>
     <div class="ac-left">
       <span class="ac-label">账户</span>
       <span id="acUserName" class="ac-name">—</span>
     </div>
-    <div class="ac-right" id="acSummaryData"></div>
+    <div class="ac-summary-cards" id="acSummaryData"></div>
   </div>
   <div class="list-bar">
     <div id="filters" class="filters"></div>
@@ -179,7 +180,6 @@
       <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
       <button class="btn atab" data-tab="sources" type="button">来源</button>
     </div>
-    <div class="asset-toolbar" id="assetToolbar"></div>
     <div id="assetTabBody"></div>
   </div>
 

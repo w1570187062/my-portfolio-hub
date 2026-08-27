@@ -414,8 +414,8 @@
 .account-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  justify-content: flex-start;
+  gap: 14px 20px;
   flex-wrap: wrap;
   margin: 12px 20px 8px;
   padding: 14px 18px;
@@ -423,9 +423,23 @@
   border: 1px solid var(--border);
   border-radius: 12px;
 }
-.ac-left { display: flex; align-items: baseline; gap: 8px; }
+.ac-left { display: flex; align-items: baseline; gap: 8px; flex: 0 0 auto; }
 .ac-label { font-size: 12px; color: var(--text-muted); }
 .ac-name { font-size: 18px; font-weight: 700; color: var(--primary); }
+/* 首页顶部：多个独立指标卡片（总市值/总盈亏/当日盈亏/本月盈亏/涨跌），横排、窄屏换行 */
+.ac-summary-cards { display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap; flex: 1 1 auto; }
+.sum-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  min-width: 132px; flex: 1 1 132px;
+  padding: 10px 14px;
+  background: var(--bg-input, rgba(255,255,255,.03));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.sum-lbl { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.sum-val { font-size: 19px; font-weight: 700; color: var(--text); line-height: 1.15; font-variant-numeric: tabular-nums; }
+.sum-val small { font-size: 12px; font-weight: 500; opacity: .85; }
+/* 兼容其它页面仍使用 .ac-right/.ac-stat 的场合（如资产全景沿用旧结构时） */
 .ac-right { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
 .ac-stat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .ac-stat .ac-stat-lbl { font-size: 11px; color: var(--text-muted); }
@@ -635,6 +649,25 @@
   justify-content: center;
   font-size: 18px;
   border-radius: 50%;
+}
+
+/* 资产全景工具条移入 header 暗黑按钮右侧：与主题按钮同组、背景保持一致 */
+.asset-toolbar.header-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  padding: 0;
+  margin: 0;
+}
+.asset-toolbar.header-toolbar[hidden] { display: none; }
+/* 暗黑按钮与工具条之间加一道细分隔，视觉上与其它按钮区分但背景一致 */
+.asset-toolbar.header-toolbar::before {
+  content: '';
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: var(--border);
 }
 
 /* 日历弹框头部：标题 + 前后切换 */
@@ -1603,15 +1636,41 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .toast.ok { background: rgba(74, 222, 128, .9); }
 .toast.info { background: rgba(45, 212, 167, .9); }
 
-/* ===== 顶部汇率 / 行情时间（位于主题切换按钮左侧） ===== */
-.header-fx {
+/* ===== 首页顶部：更新时间 + 汇率 同行（位于首页卡片上方） ===== */
+.market-bar {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
-  margin-right: 6px;
-  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 20px 0;
+  padding: 0 2px;
 }
+.mb-time {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.mb-time.stale { color: var(--text-faint, #6b7280); opacity: .8; }
+.mb-fx { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.fx-cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+.fx-cell .fx-code { font-weight: 700; color: var(--text); }
+.fx-cell .fx-val { color: var(--text); }
+.fx-cell .fx-chg { font-weight: 600; }
+
+/* ===== 原 header 跑马灯（已弃用，保留空壳避免误引用） ===== */
+.header-fx { display: none; }
 .hf-marquee {
   height: 20px;
   overflow: hidden;

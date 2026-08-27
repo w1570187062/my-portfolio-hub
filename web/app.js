@@ -250,30 +250,39 @@ async function loadSpark(hs) {
 // 显示在 header 左侧（主题切换按钮之前）的第二行圆角 pill，超 30 分钟仅变灰。
 let freshnessTimer = null;
 function renderFreshness() {
+  const txt = (() => {
+    if (!updatedAtMax) return '';
+    const parts = String(updatedAtMax).split(' ');
+    const full = parts[1] || updatedAtMax;
+    const hhmm = full.length >= 8 ? full.slice(0, 5) : full; // 精确到分钟，去秒
+    const dayFull = parts[0] || '';
+    const dayMD = dayFull.length >= 10 ? dayFull.slice(5) : dayFull; // 取 MM-DD
+    const t = new Date(String(updatedAtMax).replace(' ', 'T'));
+    const now = new Date();
+    const diffMs = now - t;
+    const stale = isNaN(diffMs) ? false : diffMs > 30 * 60 * 1000;
+    return { txt: dayMD + ' ' + hhmm + ' 更新', stale };
+  })();
+  // 首页卡片上方单独一行的更新时间
+  const mb = document.getElementById('mbTime');
+  if (mb) {
+    if (!txt.txt) { mb.textContent = ''; mb.hidden = true; }
+    else { mb.hidden = false; mb.textContent = txt.txt; mb.className = 'mb-time' + (txt.stale ? ' stale' : ''); }
+  }
+  // 兼容旧引用（若仍存在于页面）
   const el = document.getElementById('hfTime');
-  if (!el) return;
-  if (!updatedAtMax) { el.textContent = ''; el.hidden = true; return; }
-  el.hidden = false;
-  const parts = String(updatedAtMax).split(' ');
-  const full = parts[1] || updatedAtMax;
-  const hhmm = full.length >= 8 ? full.slice(0, 5) : full; // 精确到分钟，去秒
-  const dayFull = parts[0] || '';
-  const dayMD = dayFull.length >= 10 ? dayFull.slice(5) : dayFull; // 取 MM-DD
-  const t = new Date(String(updatedAtMax).replace(' ', 'T'));
-  const now = new Date();
-  const diffMs = now - t;
-  const stale = isNaN(diffMs) ? false : diffMs > 30 * 60 * 1000;
-  // 简化：「行情更新于」改为「MM-DD HH:MM 更新」，精确到分钟。
-  el.textContent = dayMD + ' ' + hhmm + ' 更新';
-  el.className = 'hf-time' + (stale ? ' stale' : '');
+  if (el) {
+    if (!txt.txt) { el.textContent = ''; el.hidden = true; }
+    else { el.hidden = false; el.textContent = txt.txt; el.className = 'hf-time' + (txt.stale ? ' stale' : ''); }
+  }
 }
 
-// 顶部汇率跑马灯（纵向上下滚动）+ 行情更新时间，已移至 header 左侧（主题切换按钮之前）。
-// 上方为汇率跑马灯（三项纵向堆叠，复制一份首尾相接，配合 CSS translateY 步进无缝循环），下方为行情更新时间。
+// 汇率展示：从原 header 跑马灯改为「首页卡片上方更新时间同一行」的静态表格展示（不滚动）。
+// 三项汇率（USD/HKD/CNY）横向排列，含涨跌幅；由 #marketBar 承载。
 function renderFx(d) {
-  const track = document.getElementById('hfTrack');
-  if (!track) return;
-  if (!d) { track.innerHTML = ''; return; }
+  const box = document.getElementById('mbFx');
+  if (!box) return;
+  if (!d) { box.innerHTML = ''; return; }
 
   // Per-item day-over-day comparison (red=up/涨，green=down/跌，Chinese convention)
   let usdChg = null, hkdChg = null, cnyChg = null;
@@ -292,7 +301,6 @@ function renderFx(d) {
     const abs = Math.abs(chg.pct);
     const sign = chg.pct >= 0 ? '+' : '';
     const dir = chg.pct > 0.01 ? '▲' : (chg.pct < -0.01 ? '▼' : '');
-    // 三角箭头放在涨跌幅前面：如 (▲+0.12%)
     return ' <span class="fx-chg" style="color:' + (chg.pct > 0.01 ? 'var(--up)' : (chg.pct < -0.01 ? 'var(--down)' : 'var(--text-muted)')) + '">(' + dir + sign + abs.toFixed(dec) + '%)</span>';
   }
 
@@ -302,12 +310,11 @@ function renderFx(d) {
     { code: 'CNY', val: d.cny_usd || 0, dec: 4, unit: '$', chg: chgStr(cnyChg, 2) },
   ];
 
-  // 纵向跑马灯：三项汇率纵向堆叠成一组，复制一份首尾相接；CSS 步进 -20px(单项高) → -60px(-3 项) 实现无缝循环。
-  const oneSet = items.map((it) =>
-    '<div class="hf-item"><b>1 ' + it.code +
-    ' = <span class="hf-num">' + it.val.toFixed(it.dec) + '</span> ' + it.unit + '</b>' + it.chg + '</div>'
+  // 静态横向：三项汇率以表格化小格并排（含涨跌幅），不滚动。
+  box.innerHTML = items.map((it) =>
+    '<span class="fx-cell"><b class="fx-code">' + it.code + '</b>' +
+    '<span class="fx-val"><b>' + it.val.toFixed(it.dec) + '</b> ' + it.unit + '</span>' + it.chg + '</span>'
   ).join('');
-  track.innerHTML = oneSet + oneSet;
 
   // 行情更新时间 pill（由 renderFreshness 填充，30s 刷新一次）
   renderFreshness();
@@ -665,7 +672,7 @@ function renderSummary(hs) {
   const mpCnyCls = cls(monthPnlCny), mpUsdCls = cls(monthPnlUsd);
   const mpRows = `<div class="c-pnl-row"><span class="c-pnl-label">RMB</span><span class="c-pnl-val ${mpCnyCls}">¥${fmt(monthPnlCny)}</span></div>` +
                  `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${mpUsdCls}">$${fmt(monthPnlUsd)}</span></div>`;
-  // 首页总览：由独立「资产总览」卡改为账户父卡片右侧的横排统计（参考 PanWatch portfolio 账户汇总条）
+  // 首页总览：账户父卡片内，把总资产/总盈亏/当日盈亏/本月盈亏/涨跌数拆成多个独立卡片（参考 PanWatch 持仓页）。总资产→总市值。
   const card = document.getElementById('accountCard');
   const el = document.getElementById('acSummaryData');
   if (!el) return;
@@ -673,12 +680,13 @@ function renderSummary(hs) {
   const unEl = document.getElementById('acUserName');
   const unSrc = document.getElementById('userNameText');
   if (unEl) unEl.textContent = unSrc ? (unSrc.textContent || '默认') : '默认';
+  // 独立卡片：标签在上、大号数值在下；涨跌数用 ▲/▼ 着色；总盈亏/当日/本月带涨跌色。
   el.innerHTML = `
-    <div class="ac-stat"><span class="ac-stat-lbl">总资产</span><b>¥${fmt(totalCNY)}</b></div>
-    <div class="ac-stat"><span class="ac-stat-lbl">总盈亏</span><b class="${pCls}">${fmt(totalPnl)} <small>(${pct(totalPct)})</small></b></div>
-    <div class="ac-stat"><span class="ac-stat-lbl">今日盈亏</span><b class="${dpCls}">${fmt(dayPnlCNY)}</b></div>
-    <div class="ac-stat"><span class="ac-stat-lbl">本月盈亏</span><b class="${mpCls}">${fmt(monthPnlCNY)}</b></div>
-    <div class="ac-stat"><span class="ac-stat-lbl">涨跌</span><b><span class="up">▲${upCount}</span> <span class="down">▼${downCount}</span></b></div>`;
+    <div class="sum-card"><span class="sum-lbl">总市值</span><b class="sum-val">¥${fmt(totalCNY)}</b></div>
+    <div class="sum-card"><span class="sum-lbl">总盈亏</span><b class="sum-val ${pCls}">${fmt(totalPnl)} <small>(${pct(totalPct)})</small></b></div>
+    <div class="sum-card"><span class="sum-lbl">当日盈亏</span><b class="sum-val ${dpCls}">${fmt(dayPnlCNY)}</b></div>
+    <div class="sum-card"><span class="sum-lbl">本月盈亏</span><b class="sum-val ${mpCls}">${fmt(monthPnlCNY)}</b></div>
+    <div class="sum-card"><span class="sum-lbl">涨跌</span><b class="sum-val"><span class="up">▲${upCount}</span> <span class="down">▼${downCount}</span></b></div>`;
 }
 
 // Build the two-level filter UI: a category slider (left-right swipeable, single
@@ -1750,6 +1758,8 @@ async function openCalendarView() {
     $('#notifyView').hidden = true;
     $('#calendarView').hidden = false;
     $('#calendarBtn').classList.add('active');
+    const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
+    const at = document.getElementById('assetToolbar'); if (at) at.hidden = true;
     calViewDate = new Date();   // 打开时回到当月
     await renderCalendar();
   }
@@ -1764,6 +1774,9 @@ function showHoldingsView() {
   $('#calendarBtn').classList.remove('active');
   setNavActive('home');
   syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
+  // 首页：显示更新时间+汇率行，隐藏资产全景工具条（已移至 header）
+  const mb = document.getElementById('marketBar'); if (mb) mb.hidden = false;
+  const at = document.getElementById('assetToolbar'); if (at) at.hidden = true;
 }
 
 // 主页按钮：回到一级页面（持仓列表）并滚到顶部
@@ -2572,10 +2585,11 @@ async function showAssetView() {
   $('#notifyView').hidden = true;
   $('#assetView').hidden = false;
   injectPageHead('assetView', '🗂️ 资产全景');
-  // 将工具栏整排移入页头右侧 actions（与「资产全景」同一行末尾）
-  const tb = document.querySelector('#assetView .asset-toolbar');
-  const acts = document.querySelector('#assetView .page-head__actions');
-  if (tb && acts && tb.parentElement !== acts) acts.appendChild(tb);
+  // 资产全景工具条已移至 header 暗黑按钮右侧（全局 #assetToolbar）：进入资产全景时显示，离开时隐藏
+  const at = document.getElementById('assetToolbar');
+  if (at) at.hidden = false;
+  const mb = document.getElementById('marketBar');
+  if (mb) mb.hidden = true;
   $('#calendarBtn').classList.remove('active');
   $('#assetBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
   setNavActive('asset');
@@ -2647,6 +2661,9 @@ async function showToolsView() {
   $('#assetView').hidden = true;
   $('#notifyView').hidden = true;
   $('#toolsView').hidden = false;
+  // 工具视图：隐藏首页汇率/更新时间行与资产全景工具条
+  const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
+  const at = document.getElementById('assetToolbar'); if (at) at.hidden = true;
   injectPageHead('toolsView', '');
   $('#calendarBtn').classList.remove('active');
   $('#toolsBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
@@ -3728,6 +3745,8 @@ function showNotifyView() {
   $('#toolsView').hidden = true;
   $('#calendarView').hidden = true;
   $('#notifyView').hidden = false;
+  const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
+  const at = document.getElementById('assetToolbar'); if (at) at.hidden = true;
   injectPageHead('notifyView', '🔔 通知渠道');
   setNavActive('notify');
   loadNotifySettings();
