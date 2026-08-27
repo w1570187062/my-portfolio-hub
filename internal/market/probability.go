@@ -224,10 +224,11 @@ func evalMACD(ind *IndicatorsResult) (Signal, float64) {
 	}
 	score = math.Max(-1, math.Min(1, score))
 
-	// "刚翻红"上限约束：金叉但红柱/动能尚弱（相对强度未达 sig）时，不应给满分——
-	// 这类状态极易回踩，历史上（如邮储）曾因此拿 0.74 高分却次日下跌。
-	// 显著翻红（强度>=sig）才保留原分；刚翻红则把总分压到不超过刚翻红上限。
-	justTurnedRed := dif > 0 && dif > dea && hist > 0 && rel(hist) < sig && rel(dif) < sig
+	// "刚翻红"上限约束：金叉（DIF 上穿 DEA、红柱初现）但红柱/动能尚弱（相对强度未达 sig）时，
+	// 不应给高分——这类状态极易回踩，历史上（如邮储）曾因此拿 0.74 高分却次日下跌。
+	// 注意：不要求 DIF>0。零轴下方金叉（DIF<0 但 DIF>DEA、hist>0）同样是"刚翻红"且往往更弱，
+	// 同样该被压制；显著翻红（强度>=sig）才保留原分。
+	justTurnedRed := dif > dea && hist > 0 && rel(hist) < sig && rel(dif) < sig
 	const justRedCap = 0.55
 	if justTurnedRed && score > justRedCap {
 		score = justRedCap
