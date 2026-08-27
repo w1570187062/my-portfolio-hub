@@ -1924,9 +1924,11 @@ function drawCalMonth() {
     } else {
       const msCls = monthPnl > 0 ? 'up' : monthPnl < 0 ? 'down' : 'flat';
       const sign = monthPnl >= 0 ? '+' : '';
+      let emoji = '😐';
+      if (monthPnl > 0) emoji = '📈';
+      else if (monthPnl < 0) emoji = '📉';
       ms.innerHTML = '<span class="cal-ms-label">本月总盈亏</span>'
-        + `<span class="cal-ms-val ${msCls}">¥${sign}${fmt(monthPnl)}</span>`
-        + `<span class="cal-ms-sub">${monthDays} 天有数据</span>`;
+        + `<span class="cal-ms-val ${msCls}">${emoji}¥${sign}${fmt(monthPnl)}</span>`;
     }
   }
 
@@ -2592,6 +2594,20 @@ async function showAssetView() {
   if (mb) mb.hidden = true;
   $('#calendarBtn').classList.remove('active');
   $('#assetBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
+  // 注入面包屑导航（首页 / 资产全景）
+  const v = document.getElementById('assetView');
+  let ph = v.querySelector(':scope > .page-head');
+  if (!ph) {
+    ph = document.createElement('div');
+    ph.className = 'page-head';
+    v.insertBefore(ph, v.firstChild);
+  }
+  ph.innerHTML = '<div class="breadcrumb">'
+    + '<span class="breadcrumb-item" data-home>首页</span>'
+    + '<span class="breadcrumb-sep">/</span>'
+    + '<span class="breadcrumb-item breadcrumb-current">资产全景</span>'
+    + '</div>';
+  ph.querySelector('[data-home]').onclick = (e) => { e.preventDefault(); showHoldingsView(); navigate('holdings'); };
   await loadAsset();
 }
 
@@ -3145,10 +3161,7 @@ function renderAssetSummary() {
   const net = eqMV + wTotal + cTotal - lTotal;
   // 境内/境外资产：后端已按来源 region 归集（domestic_assets / overseas_assets，CNY）
   const dom = d.domestic_assets || 0, ovs = d.overseas_assets || 0;
-  const unSrc = document.getElementById('userNameText');
-  const un = unSrc ? (unSrc.textContent || '默认') : '默认';
   // 资产全览拆成独立小卡片（与首页一致：无边框、标签在上数值在下）；净资产/境内/境外/权益/理财/现金/负债
-  const head = `<div class="asset-ov-head">资产全景 · <b>${esc(un)}</b></div>`;
   const cards =
     `<div class="sum-card"><span class="sum-lbl">净资产</span><b class="sum-val">${money(net)}</b></div>` +
     `<div class="sum-card"><span class="sum-lbl">境内资产</span><b class="sum-val ov-dom">${money(dom)}</b></div>` +
@@ -3157,7 +3170,7 @@ function renderAssetSummary() {
     `<div class="sum-card"><span class="sum-lbl">理财</span><b class="sum-val">${money(wTotal)}</b></div>` +
     `<div class="sum-card"><span class="sum-lbl">现金</span><b class="sum-val">${money(cTotal)}</b></div>` +
     `<div class="sum-card"><span class="sum-lbl">负债</span><b class="sum-val ov-liab">${money(lTotal)}</b></div>`;
-  $('#assetSummaryBody').innerHTML = head + `<div class="ac-summary-cards asset-cards">${cards}</div>`;
+  $('#assetSummaryBody').innerHTML = `<div class="ac-summary-cards asset-cards">${cards}</div>`;
 }
 
 function renderAssetTab() {
@@ -4054,6 +4067,26 @@ function klineMiniHTML(bars, patMap) {
     body += mark;
     body += '</g>';
   });
+  // 计算 MA 线：MA5 / MA10 / MA20（SMA，不足周期时从首个有值位置开始）
+  const mas = [
+    { period: 5, color: '#f97316', label: 'MA5' },
+    { period: 10, color: '#22c55e', label: 'MA10' },
+    { period: 20, color: '#eab308', label: 'MA20' },
+  ];
+  mas.forEach((ma) => {
+    let pts = '';
+    data.forEach((b, i) => {
+      if (i + 1 < ma.period) return;
+      let sum = 0;
+      for (let j = i - ma.period + 1; j <= i; j++) sum += data[j].Close;
+      const avg = sum / ma.period;
+      const x = (i * step + step / 2).toFixed(2);
+      const yv = y(avg).toFixed(2);
+      pts += (pts ? ' ' : '') + x + ',' + yv;
+    });
+    if (pts) body += '<polyline points="' + pts + '" fill="none" stroke="' + ma.color + '" stroke-width="1.2" stroke-linejoin="round" opacity="0.75"/>';
+  });
+
   const last = data[data.length - 1].Close;
   const yLast = y(last);
   body += '<line x1="0" y1="' + yLast.toFixed(2) + '" x2="' + W + '" y2="' + yLast.toFixed(2) + '" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>';

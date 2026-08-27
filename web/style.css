@@ -135,6 +135,7 @@
 :root[data-theme="light"] .updown-value .down { color: #16a34a; }
 :root[data-theme="light"] .updown-pnl.up { color: #dc2626; }
 :root[data-theme="light"] .updown-pnl.down { color: #16a34a; }
+:root[data-theme="light"] .sum-card { background: #ffffff; }
 :root[data-theme="light"] .asset-table .up { color: #dc2626; }
 :root[data-theme="light"] .asset-table .down { color: #16a34a; }
 :root[data-theme="light"] .asset-summary .card.up .c-value { color: #dc2626; }
@@ -432,9 +433,10 @@
   justify-content: flex-start;
   gap: 14px 20px;
   flex-wrap: wrap;
-  margin: 12px 20px 8px;
-  padding: 14px 18px;
-  background: var(--card-bg, transparent);
+  margin: 12px 28px 8px;
+  padding: 0;
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
   border: none;
   border-radius: 12px;
 }
@@ -502,7 +504,7 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
-  background: var(--card-bg, transparent);
+  background: var(--bg-card);
 }
 .holdings-group .collapse-hat.holdings-group-head {
   display: flex;
@@ -2021,7 +2023,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .cal-wrap { width: 92vw; }
   .cal-month-summary .cal-ms-val { font-size: 15px; }
   .cal-month-summary .cal-ms-label { font-size: 12px; }
-  .cal-month-summary .cal-ms-sub { font-size: 11px; }
   .cal-hint { font-size: 12px; }
   .cal-sub { font-size: 11px; }
   #calModal .modal-card { width:auto; max-width:92vw; }
@@ -2865,10 +2866,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   justify-content: center;
   gap: 10px;
   margin: 6px 0 2px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, .05);
-  border: 1px solid rgba(255, 255, 255, .09);
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  border: none;
 }
 .cal-month-summary .cal-ms-label { font-size: 13px; color: var(--text-muted, #8a8f98); }
 .cal-month-summary .cal-ms-val {
@@ -2880,7 +2881,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .cal-month-summary .cal-ms-val.up { color: var(--danger, #f87171); }
 .cal-month-summary .cal-ms-val.down { color: var(--success, #4ade80); }
 .cal-month-summary .cal-ms-val.flat { color: var(--text-muted, #8a8f98); }
-.cal-month-summary .cal-ms-sub { font-size: 12px; color: var(--text-muted, #8a8f98); }
 
 /* ===== 资产全景工具栏：图标按钮 + 悬停提示 ===== */
 .asset-toolbar .btn.icon-btn {
@@ -3097,6 +3097,14 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .page-head { display: flex; align-items: center; gap: 10px; padding: 8px 28px 4px; }
 .page-head__title { font-size: 18px; font-weight: 700; margin: 0; }
 .page-head__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* 面包屑导航（仿 Element el-breadcrumb） */
+.breadcrumb { display: flex; align-items: center; gap: 4px; font-size: 14px; }
+.breadcrumb-item { color: var(--text-muted, #8a8f98); cursor: default; }
+.breadcrumb-item[data-home] { color: var(--primary, #3b82f6); cursor: pointer; }
+.breadcrumb-item[data-home]:hover { text-decoration: underline; }
+.breadcrumb-sep { color: var(--text-muted, #8a8f98); margin: 0 2px; user-select: none; }
+.breadcrumb-current { color: var(--text, #e5e7eb); font-weight: 500; }
 
 /* 空态语义别名 */
 .empty--initial { padding: 48px 16px; }
