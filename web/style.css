@@ -1009,7 +1009,7 @@ header h1 {
   filter: drop-shadow(0 2px 8px rgba(45, 212, 167, .3));
 }
 /* 标题栏为 sticky，下方主视图内容需留出与标题栏的间距 */
-#holdingsView, #assetView, #toolsView, #calendarView, #notifyView { padding-top: 14px; }
+#holdingsView, #assetView { padding-top: 14px; }
 .actions {
   display: flex;
   align-items: center;
@@ -1462,7 +1462,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 }
 /* 中间滚动容器：所有 form / 直接子 div（除 modal-actions / cal-modal-head / hist-tabs） */
 .modal-card form,
-.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.hist-tabs) {
+.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.hist-tabs):not(.cal-head):not(.cal-weekdays):not(.cal-grid):not([id^="tlPanel"]) {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -1474,11 +1474,11 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   box-sizing: border-box;
 }
 .modal-card form::-webkit-scrollbar,
-.modal-card > div:not(.modal-actions):not(.cal-modal-head)::-webkit-scrollbar { width: 8px; }
+.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.cal-head):not(.cal-weekdays):not(.cal-grid):not([id^="tlPanel"])::-webkit-scrollbar { width: 8px; }
 .modal-card form::-webkit-scrollbar-track,
-.modal-card > div:not(.modal-actions):not(.cal-modal-head)::-webkit-scrollbar-track { background: transparent; }
+.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.cal-head):not(.cal-weekdays):not(.cal-grid):not([id^="tlPanel"])::-webkit-scrollbar-track { background: transparent; }
 .modal-card form::-webkit-scrollbar-thumb,
-.modal-card > div:not(.modal-actions):not(.cal-modal-head)::-webkit-scrollbar-thumb {
+.modal-card > div:not(.modal-actions):not(.cal-modal-head):not(.cal-head):not(.cal-weekdays):not(.cal-grid):not([id^="tlPanel"])::-webkit-scrollbar-thumb {
   background: var(--primary);
   border-radius: 4px;
 }
@@ -1756,9 +1756,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .hf-time.stale { color: var(--text-faint, #6b7280); opacity: .8; }
 
 /* ===== 日历 ===== */
-.cal-wrap { width: 60vw; margin: 0 auto; }
-.cal-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 8px 0 0; }
-.cal-head h2 { margin: 0; font-size: 18px; color: var(--text); }
+.cal-wrap { width: 100%; margin: 0 auto; }
+#calendarModal .modal-card { width: min(900px, 96vw); max-width: 96vw; }
+.cal-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 8px 28px 0; }
+.cal-head > * { margin: 0; }
 .cal-legend { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
 .lg { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
 .lg-text { margin: 0 2px; }
@@ -1771,10 +1772,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .cal-cell.lg-down1 { background: #4ade80; } .cal-cell.lg-down2 { background: #22c55e; } .cal-cell.lg-down3 { background: #16a34a; } .cal-cell.lg-down4 { background: #14532d; }
 .cal-months { display: grid; gap: 4px; margin: 16px 0 4px; }
 .cal-month { font-size: 12px; color: var(--text-muted); }
-.cal-grid { display: grid; gap: 4px; }
 #calModal .modal-card { width: 660px; }
-.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 16px 0 4px; }
+.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 16px 28px 4px; }
 .cal-weekdays span { text-align: center; font-size: 12px; color: var(--text-muted); }
+.cal-grid { display: grid; gap: 4px; margin: 0 28px 20px; }
 .cal-title { font-size: 15px; font-weight: 600; min-width: 96px; text-align: center; color: var(--text); }
 .cal-nav { display: flex; align-items: center; gap: 8px; margin-left: 8px; }
 .cal-cell.cal-out { background: rgba(255, 255, 255, .02); }
@@ -2034,7 +2035,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .asset-summary .c-value { font-size: 18px; }
   /* 工具栏：按钮流式排布，隐藏分隔符让按钮自然换行 */
   .asset-toolbar { padding: 0 10px 12px; gap: 8px; }
-  .asset-local-toolbar { padding: 0; }
+  .asset-local-toolbar { padding: 0; margin-top: 16px; }
   .asset-toolbar .atool-sep { display: none; }
   .asset-toolbar .btn { flex: 1 1 auto; min-width: 0; text-align: center; }
   /* 分区标签：移动端缩小字号，作为分区标识（竖线已隐藏） */
@@ -2863,7 +2864,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   align-items: baseline;
   justify-content: center;
   gap: 10px;
-  margin: 10px 0 2px;
+  margin: 6px 0 2px;
   padding: 8px 14px;
   border-radius: 10px;
   background: rgba(255, 255, 255, .05);

@@ -1743,22 +1743,17 @@ $('#calendarBtn').onclick = () => navigate('calendar');
 // 打开盈亏日历视图（资产全景工具栏「📅 盈亏日历」与 legacyNav 复用）
 // 路由模式下只负责「进入」：已显示则保持（返回用浏览器后退/主页）
 async function openCalendarView() {
-  if ($('#calendarView').hidden) {
-    $('#holdingsView').hidden = true;
-    $('#assetView').hidden = true;
-    $('#toolsView').hidden = true;
-    $('#calendarView').hidden = false;
-    $('#calendarBtn').classList.add('active');
-    const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
-    calViewDate = new Date();   // 打开时回到当月
-    await renderCalendar();
+  // 无可见视图时，先落回首页作弹框背景
+  if ($('#holdingsView').hidden && $('#assetView').hidden) {
+    showHoldingsView();
   }
+  $('#calendarModal').hidden = false;
+  calViewDate = new Date();   // 打开时回到当月
+  await renderCalendar();
 }
 
 function showHoldingsView() {
-  $('#calendarView').hidden = true;
   $('#assetView').hidden = true;
-  $('#toolsView').hidden = true;
   $('#holdingsView').hidden = false;
   $('#calendarBtn').classList.remove('active');
   syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
@@ -1789,7 +1784,7 @@ document.addEventListener('keydown', (e) => {
     openModals.forEach((m) => { m.hidden = true; });
     return;
   }
-  const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#calendarView').hidden;
+  const inSubView = !$('#assetView').hidden;
   if (inSubView) {
     navigate('holdings');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2567,9 +2562,11 @@ function injectPageHead(viewId, title) {
 }
 async function showAssetView() {
   $('#holdingsView').hidden = true;
-  $('#calendarView').hidden = true;
-  $('#toolsView').hidden = true;
   $('#assetView').hidden = false;
+  // 关闭可能打开的弹框（日历/工具/通知）
+  $('#calendarModal').hidden = true;
+  $('#toolsModal').hidden = true;
+  $('#notifyModal').hidden = true;
   // 资产工具条已移至 header 暗黑按钮右侧（全局 #assetToolbar）：进入资产全景时显示，离开时隐藏
   const at = document.getElementById('assetToolbar');
   if (at) at.hidden = false;
@@ -2640,15 +2637,13 @@ $('#fxAmount').oninput = fxCalcRun;
 $('#fxFrom').onchange = fxCalcRun;
 $('#fxTo').onchange = fxCalcRun;
 async function showToolsView() {
-  $('#holdingsView').hidden = true;
-  $('#calendarView').hidden = true;
-  $('#assetView').hidden = true;
-  $('#toolsView').hidden = false;
-  // 工具视图：隐藏首页汇率/更新时间行（资产工具按钮常驻 header，不隐藏）
-  const mb = document.getElementById('marketBar'); if (mb) mb.hidden = true;
-  injectPageHead('toolsView', '');
-  $('#calendarBtn').classList.remove('active');
-  $('#toolsBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
+  // 无可见视图时，先落回首页作弹框背景
+  if ($('#holdingsView').hidden && $('#assetView').hidden && $('#calendarModal').hidden) {
+    showHoldingsView();
+  }
+  $('#toolsModal').hidden = false;
+  // 默认切到汇率面板
+  switchToolsTab('fx');
   await loadToolsFx();
   const eqOk = await loadEqRows();
   if (!eqOk) addEqRow();
@@ -2658,6 +2653,14 @@ async function showToolsView() {
   const fh = $('#fxRateHint');
   if (fh) fh.textContent = `当前：1 USD ≈ ${(usdRate || 1).toFixed(4)} CNY，1 HKD ≈ ${(hkdRate || 1).toFixed(4)} CNY`;
   fxCalcRun();
+}
+function switchToolsTab(tab) {
+  $('#tlTabFx').classList.toggle('active', tab === 'fx');
+  $('#tlTabEq').classList.toggle('active', tab === 'eq');
+  $('#tlTabUsd').classList.toggle('active', tab === 'usd');
+  $('#tlPanelFx').hidden = tab !== 'fx';
+  $('#tlPanelEq').hidden = tab !== 'eq';
+  $('#tlPanelUsd').hidden = tab !== 'usd';
 }
 
 async function loadToolsFx() {
@@ -3186,17 +3189,16 @@ function onAssetToolbarClick(e) {
   const b = e.target.closest('button');
   if (!b || !b.id) return;
   switch (b.id) {
-    case 'assetCalendarBtn': navigate('calendar'); break;
+    case 'assetCalendarBtn': openCalendarView(); break;
     case 'assetTrendBtn': renderTrend(); break;
     case 'assetPieBtn': renderPie(); break;
-    case 'assetToolsBtn': navigate('tools'); break;
+    case 'assetToolsBtn': showToolsView(); break;
     case 'assetPanoNavBtn':
       navigate('asset');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       break;
     case 'notifyNavBtn':
-      navigate('notify');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showNotifyView();
       break;
   }
 }
@@ -3307,7 +3309,7 @@ function renderWealth(body) {
       <button class="btn vt-btn ${wealthView === 'table' ? 'active' : ''}" data-wview="table" type="button">表格</button>
       <button class="btn vt-btn ${wealthView === 'card' ? 'active' : ''}" data-wview="card" type="button">卡片</button>
     </div>` : '';
-  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn asset-add" id="assetSnapBtn" title="更新理财持仓">📥</button><button class="btn asset-add" id="addWealthBtn">＋ 添加理财</button>${toggleHtml}</div></div>`;
+  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn asset-add" id="assetSnapBtn" title="更新理财持仓">📥 更新</button><button class="btn asset-add" id="addWealthBtn">＋ 添加</button>${toggleHtml}</div></div>`;
   if (!w.length) html += `<div class="empty-block"><p class="empty">还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn asset-add-inline" data-empty-add="wealth" type="button">➕ 添加第一笔理财</button></div>`;
   else if (wealthView === 'table') html += renderWealthTable(w);
   else {
@@ -3736,7 +3738,7 @@ function switchNotifyTab(tab) {
 }
 function showNotifyView() {
   // 无可见视图（如刷新后直接落在 #/notify）时，先落回首页作弹框背景
-  if ($('#holdingsView').hidden && $('#assetView').hidden && $('#toolsView').hidden && $('#calendarView').hidden) {
+  if ($('#holdingsView').hidden && $('#assetView').hidden) {
     showHoldingsView();
   }
   $('#notifyModal').hidden = false;
@@ -3822,6 +3824,17 @@ $('#ntTabDt').onclick = () => switchNotifyTab('dt');
 $('#ntTabEm').onclick = () => switchNotifyTab('em');
 $('#notifyClose').onclick = () => { $('#notifyModal').hidden = true; };
 $('#notifyModal').addEventListener('click', (e) => { if (e.target === $('#notifyModal')) $('#notifyModal').hidden = true; });
+
+// 资产工具弹框：tab 切换 / 关闭
+$('#tlTabFx').onclick = () => switchToolsTab('fx');
+$('#tlTabEq').onclick = () => switchToolsTab('eq');
+$('#tlTabUsd').onclick = () => switchToolsTab('usd');
+$('#toolsClose').onclick = () => { $('#toolsModal').hidden = true; };
+$('#toolsModal').addEventListener('click', (e) => { if (e.target === $('#toolsModal')) $('#toolsModal').hidden = true; });
+
+// 盈亏日历弹框：关闭
+$('#calClose').onclick = () => { $('#calendarModal').hidden = true; };
+$('#calendarModal').addEventListener('click', (e) => { if (e.target === $('#calendarModal')) $('#calendarModal').hidden = true; });
 
 async function openSnapModal() {
   await loadAsset();

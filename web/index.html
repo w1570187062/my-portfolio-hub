@@ -148,9 +148,9 @@
         <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
         <button class="btn atab" data-tab="sources" type="button">来源</button>
       </div>
-      <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar"></div>
     </div>
     <div id="assetTabBody"></div>
+    <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar"></div>
   </div>
 
   <div id="notifyModal" class="modal" hidden>
@@ -206,99 +206,89 @@
     </div>
   </div>
 
-  <div id="toolsView" hidden>
-    <div class="tool-head">
+  <div id="toolsModal" class="modal" hidden>
+    <div class="modal-card" style="width:720px; max-width:94vw;">
       <h2>🛠️ 资产工具</h2>
-      <button id="mergeBtn" class="btn" type="button">🔗 合并汇总（权益 + 美元）</button>
-    </div>
-    <div class="tools-grid">
-      <section class="tool-card collapsible collapsed">
-        <div class="collapse-hat">
-          <span class="hat-title">汇率计算</span>
-          <span class="hat-chevron">▾</span>
-        </div>
-        <div class="collapse-body">
-          <p class="tool-hint">在 CNY / HKD / USD 之间换算金额，汇率取页面实时汇率。<span class="tool-fx" id="fxRateHint"></span></p>
-          <div class="fx-calc">
-            <div class="fx-row">
-              <div class="fx-side">
-                <label>金额</label>
-                <input id="fxAmount" type="number" step="any" placeholder="0.00">
-              </div>
-              <div class="fx-side">
-                <label>从</label>
-                <select id="fxFrom">
-                  <option value="CNY">CNY 人民币</option>
-                  <option value="HKD">HKD 港币</option>
-                  <option value="USD">USD 美元</option>
-                </select>
-              </div>
-              <div class="fx-arrow">⇄</div>
-              <div class="fx-side">
-                <label>到</label>
-                <select id="fxTo">
-                  <option value="CNY">CNY 人民币</option>
-                  <option value="USD">USD 美元</option>
-                  <option value="HKD">HKD 港币</option>
-                </select>
-              </div>
+      <button class="card-close" type="button" id="toolsClose" title="关闭" aria-label="关闭">✕</button>
+      <div class="hist-tabs">
+        <button id="tlTabFx" class="btn tab active" type="button">汇率计算</button>
+        <button id="tlTabEq" class="btn tab" type="button">权益盈亏</button>
+        <button id="tlTabUsd" class="btn tab" type="button">美元盈亏</button>
+      </div>
+
+      <!-- 汇率计算 -->
+      <div id="tlPanelFx">
+        <p class="tool-hint">在 CNY / HKD / USD 之间换算金额，汇率取页面实时汇率。<span class="tool-fx" id="fxRateHint"></span></p>
+        <div class="fx-calc">
+          <div class="fx-row">
+            <div class="fx-side">
+              <label>金额</label>
+              <input id="fxAmount" type="number" step="any" placeholder="0.00">
             </div>
-            <div class="tool-result" id="fxResult"></div>
+            <div class="fx-side">
+              <label>从</label>
+              <select id="fxFrom">
+                <option value="CNY">CNY 人民币</option>
+                <option value="HKD">HKD 港币</option>
+                <option value="USD">USD 美元</option>
+              </select>
+            </div>
+            <div class="fx-arrow">⇄</div>
+            <div class="fx-side">
+              <label>到</label>
+              <select id="fxTo">
+                <option value="CNY">CNY 人民币</option>
+                <option value="USD">USD 美元</option>
+                <option value="HKD">HKD 港币</option>
+              </select>
+            </div>
           </div>
+          <div class="tool-result" id="fxResult"></div>
         </div>
-      </section>
+      </div>
 
-      <section class="tool-card collapsible collapsed">
-        <div class="collapse-hat">
-          <span class="hat-title">权益资产盈亏计算器</span>
-          <span class="hat-chevron">▾</span>
+      <!-- 权益资产盈亏计算器 -->
+      <div id="tlPanelEq" hidden>
+        <p class="tool-hint">逐笔录入每笔盈亏（正=盈利，负=亏损），选择类型与币种，自动汇总为人民币。<span id="eqFxHint" class="tool-fx"></span></p>
+        <div class="tool-table" id="eqRows"></div>
+        <button id="eqAddRow" class="btn btn-sm" type="button">＋ 添加一笔</button>
+        <div class="tool-result" id="eqResult"></div>
+        <div class="tool-actions">
+          <button id="eqCalc" class="btn" type="button">🧮 计算</button>
+          <button id="eqSave" class="btn" type="button">💾 保存</button>
+          <button id="eqClear" class="btn danger" type="button">🗑️ 清空</button>
         </div>
-        <div class="collapse-body">
-          <p class="tool-hint">逐笔录入每笔盈亏（正=盈利，负=亏损），选择类型与币种，自动汇总为人民币。<span id="eqFxHint" class="tool-fx"></span></p>
-          <div class="tool-table" id="eqRows"></div>
-          <button id="eqAddRow" class="btn btn-sm" type="button">＋ 添加一笔</button>
-          <div class="tool-result" id="eqResult"></div>
-          <div class="tool-actions">
-            <button id="eqCalc" class="btn" type="button">🧮 计算</button>
-            <button id="eqSave" class="btn" type="button">💾 保存</button>
-            <button id="eqClear" class="btn danger" type="button">🗑️ 清空</button>
-          </div>
+      </div>
+
+      <!-- 美元资产盈亏计算器 -->
+      <div id="tlPanelUsd" hidden>
+        <p class="tool-hint">买入与盈亏是两件独立的事：① 逐笔录入「美元买入」（金额 + 买入汇率），按金额加权得平均买入汇率；② 逐笔录入「盈亏」（USD 盈亏额）。两者与当前汇率对比，判断美元资产是否跑赢汇率贬值。</p>
+        <label class="tool-rate">当前汇率（RMB / 1 USD）<input id="usdRate" type="number" step="any" placeholder="自动填充实时汇率"></label>
+        <div class="tool-sub">① 买入美元记录</div>
+        <div class="tool-table" id="usdBuyRows"></div>
+        <button id="usdAddBuy" class="btn btn-sm" type="button">＋ 添加一笔买入</button>
+        <div class="tool-sub">② 盈亏记录（USD）</div>
+        <div class="tool-table" id="usdPnlRows"></div>
+        <button id="usdAddPnl" class="btn btn-sm" type="button">＋ 添加一笔盈亏</button>
+        <div class="tool-result" id="usdResult"></div>
+        <div class="tool-actions">
+          <button id="usdCalc" class="btn" type="button">🧮 计算</button>
+          <button id="usdSave" class="btn" type="button">💾 保存</button>
+          <button id="usdClear" class="btn danger" type="button">🗑️ 清空</button>
         </div>
-      </section>
+      </div>
 
-      <section class="tool-card collapsible collapsed">
-        <div class="collapse-hat">
-          <span class="hat-title">美元资产盈亏计算器</span>
-          <span class="hat-chevron">▾</span>
-        </div>
-        <div class="collapse-body">
-          <p class="tool-hint">买入与盈亏是两件独立的事：① 逐笔录入「美元买入」（金额 + 买入汇率），按金额加权得平均买入汇率；② 逐笔录入「盈亏」（USD 盈亏额）。两者与当前汇率对比，判断美元资产是否跑赢汇率贬值。</p>
-          <label class="tool-rate">当前汇率（RMB / 1 USD）<input id="usdRate" type="number" step="any" placeholder="自动填充实时汇率"></label>
-          <div class="tool-sub">① 买入美元记录</div>
-          <div class="tool-table" id="usdBuyRows"></div>
-          <button id="usdAddBuy" class="btn btn-sm" type="button">＋ 添加一笔买入</button>
-          <div class="tool-sub">② 盈亏记录（USD）</div>
-          <div class="tool-table" id="usdPnlRows"></div>
-          <button id="usdAddPnl" class="btn btn-sm" type="button">＋ 添加一笔盈亏</button>
-          <div class="tool-result" id="usdResult"></div>
-          <div class="tool-actions">
-            <button id="usdCalc" class="btn" type="button">🧮 计算</button>
-            <button id="usdSave" class="btn" type="button">💾 保存</button>
-            <button id="usdClear" class="btn danger" type="button">🗑️ 清空</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- 补仓成本计算器已迁移至首页持仓「计算」按钮弹框（见 #calcCostModal），避免与工具页其它计算器 ID 冲突 -->
-
-
+      <div class="modal-actions">
+        <button id="mergeBtn" class="btn" type="button">🔗 合并汇总（权益 + 美元）</button>
+      </div>
     </div>
   </div>
 
-  <div id="calendarView" hidden>
-    <div class="cal-wrap">
+  <div id="calendarModal" class="modal" hidden>
+    <div class="modal-card" style="width:min(900px, 96vw); max-width:96vw;">
+      <h2>盈亏日历</h2>
+      <button class="card-close" type="button" id="calClose" title="关闭" aria-label="关闭">✕</button>
       <div class="cal-head">
-        <h2>盈亏日历</h2>
         <div class="cal-nav">
           <button id="calPrev" class="btn cal-nav-btn" type="button">‹</button>
           <span id="calTitle" class="cal-title"></span>
@@ -316,7 +306,6 @@
       </div>
       <div id="calWeekdays" class="cal-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
       <div id="calGrid" class="cal-grid"></div>
-    </div>
     </div>
   </div>
 
