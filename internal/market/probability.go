@@ -315,9 +315,11 @@ func evalKDJ(ind *IndicatorsResult) (Signal, float64) {
 	}
 
 	score := 0.0
-	if k > d {
+	// 高位超买区判定：K 进入超买区(>75)或 J 超买(>80)即视为高位，此时"金叉"是风险信号而非买入信号
+	overbought := k > 75 || jval > 80
+	if k > d && !overbought {
 		score += 0.4
-	} else {
+	} else if k < d {
 		score -= 0.4
 	}
 	// 高位超买惩罚：K 进入超买区(>80)直接扣分，避免"高位金叉"被误判为买入信号
@@ -339,18 +341,15 @@ func evalKDJ(ind *IndicatorsResult) (Signal, float64) {
 	case jval > 100:
 		dir = "bearish"
 		reason = fmt.Sprintf("KDJ高位钝化(J=%.1f)，超买回撤风险高", jval)
-	case k > 80:
+	case overbought:
 		dir = "bearish"
-		reason = fmt.Sprintf("KDJ高位(K=%.1f)，超买回撤风险高", k)
+		reason = fmt.Sprintf("KDJ高位超买(K=%.1f,J=%.1f)，回撤风险高", k, jval)
 	case k > d && jval < 20:
 		dir = "bullish"
 		reason = "KDJ低位金叉，反弹信号"
 	case k > d:
 		dir = "bullish"
 		reason = "KDJ金叉向上"
-	case k < d && jval > 80:
-		dir = "bearish"
-		reason = "KDJ高位死叉，回调信号"
 	case k < d:
 		dir = "bearish"
 		reason = "KDJ死叉向下"
