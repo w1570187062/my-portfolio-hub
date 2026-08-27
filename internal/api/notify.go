@@ -526,7 +526,7 @@ func NotifySingleHoldingUpdated(uid int64, triggeredBy string, hid int64) {
 				return
 			}
 		}
-		text := buildSingleHoldingNotifyText(uid, triggeredBy, h)
+		text := buildSingleHoldingNotifyText(uid, triggeredBy, *h)
 		sendToChannels(cfg, "持仓净值更新", text)
 	}()
 }

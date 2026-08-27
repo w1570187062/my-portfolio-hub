@@ -31,30 +31,8 @@
   .adj-rl.down { color:#16a34a; }
   .adj-detail { margin-top:4px; color:var(--text-muted,#6b7280); word-break:break-all; }
 
-  /* 导航下拉菜单 */
+  /* 导航区 */
   .brand-nav { position:relative; display:flex; align-items:center; gap:10px; }
-  .nav-toggle-btn { padding:8px 10px; }
-  .nav-toggle-btn.open { background:var(--btn-ghost-active,rgba(255,255,255,.14)); border-color:var(--primary,#6f9e5e); color:var(--primary,#6f9e5e); }
-  .hamburger-icon { display:block; }
-  .nav-dropdown {
-    position:absolute; top:calc(100% + 8px); left:0; min-width:172px;
-    background:var(--bg-card-solid,#141a24); backdrop-filter:blur(20px);
-    border:1px solid var(--border); border-radius:12px;
-    box-shadow:0 8px 32px rgba(0,0,0,.4);
-    padding:6px; z-index:100;
-    display:flex; flex-direction:column; gap:2px;
-  }
-  .nav-dropdown[hidden] { display:none; }
-  .nav-item {
-    display:flex; align-items:center; gap:8px;
-    padding:9px 14px; border:none; background:transparent;
-    color:var(--text); border-radius:8px; font-size:14px;
-    cursor:pointer; transition:all .15s ease; text-align:left; white-space:nowrap;
-  }
-  .nav-item:hover { background:var(--bg-hover,rgba(110,156,122,.08)); color:var(--primary); }
-  .nav-item.active { background:var(--primary-soft,rgba(111,158,94,.14)); color:var(--primary); font-weight:600; }
-  .nav-home-btn { padding:8px 14px; background:var(--primary-soft,rgba(111,158,94,.14)); border-color:var(--primary,#6f9e5e); color:var(--primary,#6f9e5e); font-weight:600; }
-  .nav-home-btn:hover { background:var(--primary,#6f9e5e); color:#fff; }
 
   /* 操作指南 */
   .guide-list { max-height:360px; overflow-y:auto; margin-bottom:12px; }
@@ -76,14 +54,6 @@
   <header>
     <div class="brand-nav">
       <h1 id="brandTitle" title="点击回到主页" style="cursor:pointer"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>观澜</h1>
-      <button id="navToggle" class="btn nav-toggle-btn" type="button" title="导航菜单" aria-label="菜单" aria-expanded="false">
-        <svg class="hamburger-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
-      </button>
-      <button id="homeBtn" class="btn nav-home-btn" title="回到主页" type="button" style="display:none">🏠 主页</button>
-      <div id="navDropdown" class="nav-dropdown" hidden>
-        <button class="nav-item" data-nav="asset" type="button">🗂️ <span>资产全景</span></button>
-      <button class="nav-item" data-nav="notify" type="button">🔔 <span>通知渠道</span></button>
-      </div>
     </div>
     <!-- 原 nav 按钮（隐藏，保留供 JS 绑定兼容） -->
     <div id="legacyNav" hidden>
@@ -91,15 +61,10 @@
       <button id="assetBtn" class="btn">🗂️ 资产全景</button>
       <button id="toolsBtn" class="btn">🛠️ 资产工具</button>
     </div>
-    <div class="actions">
-      <div class="header-fx" id="headerFx">
-        <div class="hf-marquee" id="hfMarquee"><div class="hf-track" id="hfTrack"></div></div>
-      </div>
-      <div class="act-group">
-        <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式">🌙</button>
-        <div class="asset-toolbar header-toolbar" id="assetToolbar" hidden></div>
-        <button id="userBtn" class="btn act-user" type="button" title="用户切换">👤<span id="userNameText" style="display:none">默认</span></button>
-      </div>
+    <div class="act-group">
+      <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式">🌙</button>
+      <div class="asset-toolbar header-toolbar" id="assetToolbar" hidden></div>
+      <button id="userBtn" class="btn act-user" type="button" title="用户切换">👤<span id="userNameText" style="display:none">默认</span></button>
     </div>
   </header>
 
@@ -109,6 +74,9 @@
       <span class="mb-account"><span class="mb-acc-lbl">账户</span><b id="mbUserName">默认</b></span>
       <span class="mb-sep">·</span>
       <span class="mb-time" id="mbTime"></span>
+    </div>
+    <div class="header-fx" id="headerFx">
+      <div class="hf-marquee" id="hfMarquee"><div class="hf-track" id="hfTrack"></div></div>
     </div>
   </div>
   <div id="accountCard" class="account-card" hidden>
@@ -737,6 +705,10 @@
       <input id="userNameInput" type="text" placeholder="新用户名" maxlength="20" autocomplete="off" spellcheck="false">
       <button class="btn" type="button" id="userAddBtn">新增</button>
     </div>
+  <div class="user-data">
+    <button class="btn" type="button" id="ai_export_json">⬇️ 导出数据</button>
+    <button class="btn" type="button" id="ai_import_json">⬆️ 导入数据</button>
+  </div>
   <div class="user-clear">
     <button class="btn danger" type="button" id="userClearBtn">清空当前用户数据</button>
   </div>

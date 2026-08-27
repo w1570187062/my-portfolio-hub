@@ -661,11 +661,11 @@
   background: #4f7a5e;
 }
 
-/* 主题切换按钮（右上角圆形，视觉样式由 .btn 统一提供） */
+/* 主题切换按钮（右上角图标按钮，与「资产工具」同大小） */
 .theme-toggle {
   flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -1667,7 +1667,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   gap: 12px;
   flex-wrap: wrap;
   margin: 12px 20px 0;
-  padding: 0 2px;
 }
 .mb-time {
   font-size: 12px;
@@ -1697,41 +1696,46 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .fx-cell .fx-val { color: var(--text); }
 .fx-cell .fx-chg { font-weight: 600; }
 
-/* ===== 顶部汇率 / 行情时间（位于主题切换按钮左侧，横向无缝滚动跑马灯） ===== */
+/* ===== 汇率轮播（更新时间行右侧，纵向上下切换） ===== */
 .header-fx {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
-  margin-right: 6px;
+  align-items: center;
   min-width: 0;
 }
 .hf-marquee {
-  width: 250px;
-  max-width: 42vw;
+  --hf-h: 18px;
+  height: var(--hf-h);
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);
 }
+/* 纵向无缝循环：内容复制两份，按单份高度分步上移，末尾正好回到起点 */
 .hf-track {
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   will-change: transform;
-  animation: hf-marquee 26s linear infinite;
+  animation: hf-flip 9s linear infinite;
 }
 .hf-track:hover { animation-play-state: paused; }
-@keyframes hf-marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
+@keyframes hf-flip {
+  0%, 26%   { transform: translateY(0); }
+  33%, 59%  { transform: translateY(calc(-1 * var(--hf-h))); }
+  66%, 92%  { transform: translateY(calc(-2 * var(--hf-h))); }
+  100%      { transform: translateY(calc(-3 * var(--hf-h))); }
 }
 .hf-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: var(--hf-h);
   font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
+  white-space: nowrap;
 }
 .hf-item b { color: var(--text); font-weight: 600; }
+.hf-dot { display: none; }
 .hf-num { color: var(--text); }
 .hf-dot { color: var(--border-strong, #3a4150); margin: 0 12px; }
 .hf-time {
@@ -1951,6 +1955,13 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
     font-size: 14px;
     min-height: 44px;
   }
+  /* 顶部操作图标按钮：移动端也保持与「资产工具」同尺寸 */
+  .theme-toggle, .act-user, .asset-toolbar.header-toolbar .btn.icon-btn {
+    width: var(--icon-btn);
+    height: var(--icon-btn);
+    min-height: 0;
+    padding: 0;
+  }
   /* 汇总卡片：一行两张、更紧凑 */
   .summary { padding: 12px 14px; gap: 10px; }
   /* 折叠卡：手机端收窄外边距，避免贴边又不过度内缩 */
@@ -1960,12 +1971,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .summary .c-col { flex-direction: column; align-items: center; text-align: center; padding: 12px 0 0; border-left: none; border-top: none; }
   .summary .c-main { align-items: center; }
   .summary .c-col:first-child { padding-top: 0; border-top: none; }
-  /* 顶部汇率跑马灯：手机端收窄，不隐藏 */
-  .hf-marquee { width: 116px; max-width: 38vw; }
-  .header-fx { margin-right: 4px; gap: 2px; }
+  /* 汇率轮播：手机端收窄，不隐藏 */
+  .hf-marquee { --hf-h: 16px; }
   .hf-item { font-size: 11px; }
-  .hf-dot { margin: 0 8px; }
-  .hf-time { font-size: 10px; padding: 1px 7px; }
   .card {
     min-width: 140px;
     flex: 1 1 calc(50% - 5px);
@@ -3102,8 +3110,8 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 /* ===== 用户切换 / 多用户（头部「图标+用户名」合并按钮 + 底部抽屉） ===== */
 .act-user {
   flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -3234,6 +3242,8 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 }
 .user-add input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .user-clear { margin-top: 2px; }
+.user-data { display: flex; gap: 8px; margin-bottom: 8px; }
+.user-data .btn { flex: 1; }
 .user-clear .btn { width: 100%; }
 
 .ud-confirm-label {
