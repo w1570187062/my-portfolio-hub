@@ -326,7 +326,6 @@
 /* 迷你走势线单元格（表格"近20日"列） */
 .spark-td { width: 120px; }
 .spark-td svg { display: block; margin: 0 auto; }
-.spark-inline { display: inline-flex; vertical-align: middle; align-items: center; flex: 0 0 auto; }
 .spark-empty { color: var(--text-muted); }
 
 /* 涨/跌方向指示（名称左侧，沿用全站 ▲红涨 / ▼绿跌 / —平 配色，无文字仅图标） */
@@ -555,7 +554,8 @@
 .holdings-group .holdings-subtable :is(th, td):nth-child(10) { width: 58px; }   /* 当日% */
 .holdings-group .holdings-subtable :is(th, td):nth-child(11) { width: 92px; }  /* 总盈亏 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(12) { width: 58px; }   /* 盈亏% */
-.holdings-group .holdings-subtable :is(th, td):nth-child(13) { width: 160px; }  /* 操作 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(13) { width: 120px; }  /* 近20日 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(14) { width: 160px; }  /* 操作 */
 
 /* 文字按钮（最轻量） */
 .btn-text {
