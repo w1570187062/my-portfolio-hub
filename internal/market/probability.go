@@ -320,12 +320,16 @@ func evalKDJ(ind *IndicatorsResult) (Signal, float64) {
 	} else {
 		score -= 0.4
 	}
+	// 高位超买惩罚：K 进入超买区(>80)直接扣分，避免"高位金叉"被误判为买入信号
+	if k > 80 {
+		score -= 0.3
+	}
 	if jval < 0 {
 		score += 0.4
 	} else if jval > 100 {
-		score -= 0.5
+		score -= 0.6
 	} else if jval > 80 {
-		score -= 0.2
+		score -= 0.4
 	} else if jval < 20 {
 		score += 0.2
 	}
@@ -335,6 +339,9 @@ func evalKDJ(ind *IndicatorsResult) (Signal, float64) {
 	case jval > 100:
 		dir = "bearish"
 		reason = fmt.Sprintf("KDJ高位钝化(J=%.1f)，超买回撤风险高", jval)
+	case k > 80:
+		dir = "bearish"
+		reason = fmt.Sprintf("KDJ高位(K=%.1f)，超买回撤风险高", k)
 	case k > d && jval < 20:
 		dir = "bullish"
 		reason = "KDJ低位金叉，反弹信号"
