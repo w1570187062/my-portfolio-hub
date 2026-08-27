@@ -1455,6 +1455,38 @@ func holdingPnlHistory(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
 		return
 	}
+	// 历史盈亏重算基准：未清仓用当前份额/成本；已清仓或份额/成本已清零的老数据，
+	// 优先用清仓前快照，快照缺失时从 position_tx 回退推算（兼容本次升级前已清仓的老数据）。
+	qty := h.Quantity
+	cost := h.CostPrice
+	if h.Closed || (h.Quantity <= 0 && h.CostPrice <= 0) {
+		if h.LastQuantity > 0 {
+			qty = h.LastQuantity
+		}
+		if h.LastCostPrice > 0 {
+			cost = h.LastCostPrice
+		}
+		if qty <= 0 || cost <= 0 {
+			if txs, e := db.ListPositionTx(h.ID); e == nil {
+				var sellQty, sellFee, realizedSum, lastPrice float64
+				for _, t := range txs {
+					if t.TxType == "SELL" {
+						sellQty += t.Quantity
+						sellFee += t.Fee
+						realizedSum += t.RealizedPnl
+						lastPrice = t.Price
+					}
+				}
+				if qty <= 0 && sellQty > 0 {
+					qty = sellQty
+				}
+				if cost <= 0 && sellQty > 0 && lastPrice > 0 {
+					// realized = (price - cost)*qty - fee  =>  cost = price - (realized+fee)/qty
+					cost = lastPrice - (realizedSum+sellFee)/sellQty
+				}
+			}
+		}
+	}
 	series, err := db.GetPriceSeries(h.Symbol, h.UserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1476,17 +1508,17 @@ func holdingPnlHistory(c *gin.Context) {
 	}
 	var rows []Row
 	for i, p := range series {
-		mv := p.Close * h.Quantity * fx
-		totalPnl := (p.Close - h.CostPrice) * h.Quantity * fx
+		mv := p.Close * qty * fx
+		totalPnl := (p.Close - cost) * qty * fx
 		var totalPct, dayPnl, dayPct float64
-		if h.CostPrice > 0 {
-			totalPct = totalPnl / (h.CostPrice * h.Quantity * fx) * 100
+		if cost > 0 {
+			totalPct = totalPnl / (cost * qty * fx) * 100
 		}
 		if i > 0 {
 			prev := series[i-1].Close
-			dayPnl = (p.Close - prev) * h.Quantity * fx
+			dayPnl = (p.Close - prev) * qty * fx
 			if prev > 0 {
-				dayPct = dayPnl / (prev * h.Quantity * fx) * 100
+				dayPct = dayPnl / (prev * qty * fx) * 100
 			}
 		}
 		rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})

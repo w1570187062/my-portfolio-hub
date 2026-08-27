@@ -90,6 +90,17 @@ func Init(path string) error {
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='source_id'`).Scan(&scid); e == nil && scid == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN source_id INTEGER NOT NULL DEFAULT 0`)
 	}
+	// 兼容旧库：新增 closed / last_quantity / last_cost_price（清仓后保留快照，供历史盈亏重算）
+	var clc, lqc, lcc int
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='closed'`).Scan(&clc); e == nil && clc == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN closed INTEGER NOT NULL DEFAULT 0`)
+	}
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='last_quantity'`).Scan(&lqc); e == nil && lqc == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN last_quantity REAL NOT NULL DEFAULT 0`)
+	}
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='last_cost_price'`).Scan(&lcc); e == nil && lcc == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN last_cost_price REAL NOT NULL DEFAULT 0`)
+	}
 	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 		date    TEXT NOT NULL,
 		symbol  TEXT NOT NULL,
@@ -371,6 +382,10 @@ func AdjustHolding(id int64, txType string, quantity, price, fee float64, note s
 		realized = (price - cur.CostPrice) * quantity - fee
 		newQty = cur.Quantity - quantity
 		if newQty <= 0 {
+			// 清仓：保留清仓前的份额与成本快照，供历史盈亏重算；持仓行标记 closed 且份额归零（列表显示为空仓）
+			cur.LastQuantity = cur.Quantity
+			cur.LastCostPrice = cur.CostPrice
+			cur.Closed = true
 			newQty = 0
 			newCost = 0
 		}
@@ -544,8 +559,8 @@ func List(userID int64) ([]Holding, error) {
 
 func Get(id int64) (*Holding, error) {
 	var h Holding
-	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at FROM holdings WHERE id=?", id).
-		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt)
+	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price FROM holdings WHERE id=?", id).
+		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice)
 	if err != nil {
 		return nil, err
 	}
@@ -564,8 +579,8 @@ func Create(h *Holding) (int64, error) {
 
 func Update(h *Holding) error {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=? WHERE id=?",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.ID)
+	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=? WHERE id=?",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.ID)
 	return err
 }
 
