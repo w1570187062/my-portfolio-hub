@@ -493,7 +493,7 @@ function renderHoldingsBySource(hs) {
     maxName = Math.max(maxName, measureNameWidth(h.name || ''));
     if (supportsAnalysis(h)) hasAna = true;
   }
-  const ARROW = 16, GAP = 6, CELLPAD = 7, BUF = 8;
+  const ARROW = 16, GAP = 4, CELLPAD = 4, BUF = 6;
   const wAdd = measureBtnWidth('修改');
   const wAna = hasAna ? measureBtnWidth('分析') : 0;
   let colW = maxName + ARROW + GAP * 2 + wAdd + (hasAna ? GAP + wAna : 0) + 18 + CELLPAD + BUF;
