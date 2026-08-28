@@ -4281,8 +4281,8 @@ function klRenderWindow() {
   // 窗口日期区间（MM-DD~MM-DD），箭头翻页时随之更新
   const range = data[0].Date.slice(5).replace(/-/g, '/') + '~' + data[data.length - 1].Date.slice(5).replace(/-/g, '/');
   const arrows = pages > 1
-    ? '<button class="kl-arrow kl-prev" type="button" data-dir="-1" aria-label="更早一段">‹</button>'
-    + '<button class="kl-arrow kl-next" type="button" data-dir="1" aria-label="更近一段">›</button>'
+    ? '<button class="kl-arrow kl-prev" type="button" data-dir="1" aria-label="更早一段">‹</button>'
+    + '<button class="kl-arrow kl-next" type="button" data-dir="-1" aria-label="更近一段">›</button>'
     : '';
   return '<div class="kline-mini"><div class="klwrap">'
     + '<div class="kl-label"><span class="kl-title">日K线</span><span style="color:#f97316">MA5</span><span style="color:#22c55e">MA10</span><span style="color:#eab308">MA20</span><span class="kl-range">' + range + '</span></div>'
