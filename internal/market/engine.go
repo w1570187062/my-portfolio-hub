@@ -142,16 +142,34 @@ func runScriptEngine(prog *goja.Program, ind *IndicatorsResult, timeout time.Dur
 		return vm.ToValue(math.Max(lo, math.Min(hi, v)))
 	})
 
-	// ind 经 JSON 序列化注入，字段名与文档契约（json 标签）完全一致
+	// ind 注入：JSON 反序列化为 map 后手动展平嵌套字段，
+	// 使 ind.dif / ind.k / ind.bu 等扁平别名与文档契约一致（嵌套原始结构同样保留）。
 	raw, err := json.Marshal(ind)
 	if err != nil {
 		return 0, fmt.Errorf("指标序列化失败: %w", err)
 	}
-	indVal, err := goja.JSONParse(vm, string(raw))
-	if err != nil {
-		return 0, fmt.Errorf("指标注入失败: %w", err)
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return 0, fmt.Errorf("指标反序列化失败: %w", err)
 	}
-	_ = vm.Set("ind", indVal)
+	if macd, ok := m["macd"].(map[string]interface{}); ok {
+		m["dif"] = macd["dif"]
+		m["dea"] = macd["dea"]
+		m["hist"] = macd["hist"]
+		m["hist_prev"] = macd["hist_prev"]
+	}
+	if kdj, ok := m["kdj"].(map[string]interface{}); ok {
+		m["k"] = kdj["k"]
+		m["d"] = kdj["d"]
+		m["j"] = kdj["j"]
+	}
+	if boll, ok := m["boll"].(map[string]interface{}); ok {
+		m["bu"] = boll["upper"]
+		m["bm"] = boll["mid"]
+		m["bl"] = boll["lower"]
+		m["bw"] = boll["width"]
+	}
+	_ = vm.Set("ind", m)
 
 	start := time.Now()
 	timer := time.AfterFunc(timeout, func() { vm.Interrupt(fmt.Errorf("脚本执行超时(%v)", timeout)) })
@@ -160,7 +178,7 @@ func runScriptEngine(prog *goja.Program, ind *IndicatorsResult, timeout time.Dur
 	val, err := vm.RunProgram(prog)
 	if err == nil {
 		if fn, ok := goja.AssertFunction(val); ok {
-			val, err = fn(goja.Undefined(), indVal)
+			val, err = fn(goja.Undefined(), vm.ToValue(m))
 		} else {
 			// 脚本未定义 evaluate 时，顶层返回值视为结果（更宽松的容错）
 			err = nil
