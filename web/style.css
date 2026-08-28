@@ -3095,7 +3095,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
 
 /* 二级页统一页头：标题 + 操作区（无返回箭头） */
-.page-head { display: flex; align-items: center; gap: 10px; padding: 8px 28px 4px; }
+.page-head { display: flex; align-items: center; gap: 10px; padding: 8px 20px 4px; }
 .page-head__title { font-size: 18px; font-weight: 700; margin: 0; }
 .page-head__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
