@@ -3907,6 +3907,16 @@ function evaluate(ind) {
 }`;
 const SCR_SIG_TXT = { buy: '买入', sell: '卖出', hold: '观望' };
 
+// 压缩脚本为单行后保存：去块注释/行注释 → 折叠全部空白为单空格。
+// 行注释仅在前置字符为空白或行首时剥离，避免误伤字符串中的 '://' 等。
+function minifyScript(code) {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|\s)\/\/[^\n]*/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 let scrLoaded = false;
 async function loadScriptTool() {
   if (scrLoaded) return;
@@ -3931,7 +3941,7 @@ async function loadScriptTool() {
 }
 $('#scrTemplate').onclick = () => { $('#scrCode').value = SCR_TEMPLATE; toast('已填入示例模板', 'info'); };
 $('#scrSave').onclick = async () => {
-  const code = $('#scrCode').value;
+  const code = minifyScript($('#scrCode').value);
   const enabled = $('#scrEnabled').checked;
   const btn = $('#scrSave');
   btn.disabled = true;
@@ -4169,12 +4179,18 @@ function klineMiniHTML(bars, patMap, dailySignals) {
     }
     const sigAttr = sigMap[b.Date] ? ' data-sig="' + sigMap[b.Date] + '"' : '';
     body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-pc="' + (i > 0 ? data[i - 1].Close.toFixed(2) : '') + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + patAttr + sigAttr + '>';
-    body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
+    body += '<line class="kl-wick" x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
     body += '<rect class="kl-body" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
     body += '<rect class="kl-hit" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '" fill="rgba(0,0,0,0)"/>';
     body += mark;
     body += '</g>';
   });
+  // 收盘价折线（折线图模式显示，蜡烛图模式隐藏）：与蜡烛共享同一坐标缩放
+  let linePts = '';
+  data.forEach((b, i) => {
+    linePts += (i ? ' ' : '') + (i * step + step / 2).toFixed(2) + ',' + y(b.Close).toFixed(2);
+  });
+  body += '<polyline class="kl-close-line" points="' + linePts + '" fill="none" stroke="#3b82f6" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>';
   // 计算 MA 线：MA5 / MA10 / MA20（SMA，不足周期时从首个有值位置开始）
   const mas = [
     { period: 5, color: '#f97316', label: 'MA5' },
@@ -4217,6 +4233,7 @@ function klineMiniHTML(bars, patMap, dailySignals) {
   body += '<line x1="0" y1="' + yLast.toFixed(2) + '" x2="' + W + '" y2="' + yLast.toFixed(2) + '" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>';
   return '<div class="kline-mini"><div class="klwrap">'
     + '<div class="kl-label"><span class="kl-title">日K线</span><span style="color:#f97316">MA5</span><span style="color:#22c55e">MA10</span><span style="color:#eab308">MA20</span></div>'
+    + '<button class="kl-toggle" type="button" data-mode="candle" aria-label="切换折线图">折线</button>'
     + '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
     + '<div class="kline-mini-tip" hidden></div></div>'
     + '<div class="kl-macd"><span class="kl-macd-label">MACD(12,26,9)</span><svg viewBox="0 0 ' + W + ' ' + Hm + '" preserveAspectRatio="none">' + mBody + '</svg></div>'
@@ -4228,6 +4245,19 @@ function bindKlineMini(root) {
   const wrap = root.querySelector('.klwrap');
   if (!wrap) return;
   const tip = wrap.querySelector('.kline-mini-tip');
+  // 蜡烛图 / 折线图切换：按钮显示「要切换到」的模式名
+  const tg = wrap.querySelector('.kl-toggle');
+  if (tg) tg.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const mini = wrap.closest('.kline-mini');
+    if (!mini) return;
+    const line = mini.classList.toggle('mode-line');
+    tg.dataset.mode = line ? 'line' : 'candle';
+    tg.textContent = line ? '蜡烛' : '折线';
+    const title = wrap.querySelector('.kl-title');
+    if (title) title.textContent = line ? '收盘折线' : '日K线';
+    pinned = null; clearSel(); hideTip(); hover = null;
+  });
   let pinned = null, hover = null, tipTimer = null;
   function showTip(g, stay) {
     const c = Number(g.dataset.c);

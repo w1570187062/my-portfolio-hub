@@ -2458,7 +2458,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .tool-actions { display: flex; gap: 10px; }
 
 /* ===== 评级逻辑 tab（自定义脚本编辑/测试）===== */
-.scr-code { width: 100%; box-sizing: border-box; font-family: Consolas, 'Courier New', monospace; font-size: 12.5px; line-height: 1.55; padding: 10px 12px; border: var(--card-border); border-radius: 8px; background: var(--bg-card); color: var(--text); resize: vertical; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 2; }
+.scr-code { width: 100%; box-sizing: border-box; font-family: Consolas, 'Courier New', monospace; font-size: 12.5px; line-height: 1.55; padding: 10px 12px; border: var(--card-border); border-radius: 8px; background: var(--bg-card); color: var(--text); resize: vertical; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; tab-size: 2; }
 .scr-code:focus { outline: none; border-color: var(--btn-primary); }
 .scr-actions { flex-wrap: wrap; align-items: center; margin-top: 10px; }
 .scr-enabled { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text); cursor: pointer; user-select: none; }
@@ -2533,6 +2533,12 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 /* K线左上角描述 + MA图例 */
 .kl-label { position: absolute; left: 4px; top: 3px; display: flex; align-items: center; gap: 8px; font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; pointer-events: none; opacity: .85; z-index: 2; }
 .kl-label .kl-title { color: var(--text-muted); }
+/* 蜡烛图/折线图切换按钮（右上角）+ 两种模式显隐 */
+.kl-toggle { position: absolute; right: 6px; top: 3px; z-index: 3; pointer-events: auto; font-size: 10px; line-height: 1; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); cursor: pointer; opacity: .95; transition: var(--btn-transition, all .15s ease); }
+.kl-toggle:hover { color: var(--btn-primary); border-color: var(--btn-primary); }
+.kl-close-line { display: none; }
+.kline-mini.mode-line .kl-wick, .kline-mini.mode-line .kl-body { display: none; }
+.kline-mini.mode-line .kl-close-line { display: block; }
 
 /* 迷你K线交互 */
 .klwrap { position: relative; }
