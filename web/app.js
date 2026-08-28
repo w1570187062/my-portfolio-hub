@@ -4454,7 +4454,7 @@ function anaBadgesHTML(ind, prob) {
   const macd = ind.macd || {};
   if (macd.hist != null) items.push({ label: 'MACD ' + (macd.hist > 0 ? '金叉' : '死叉'), tone: macd.hist > 0 ? 'up' : 'down' });
   const rsi = ind.rsi || 50;
-  items.push({ label: 'RSI ' + rsi.toFixed(0), tone: rsi > 70 ? 'down' : rsi > 50 ? 'up' : rsi > 30 ? 'down' : 'up' });
+  items.push({ label: 'RSI ' + rsi.toFixed(0), tone: rsi > 70 ? 'down' : rsi > 55 ? 'up' : rsi >= 45 ? 'neu' : rsi > 30 ? 'down' : 'up' });
   const kdj = ind.kdj || {};
   if (kdj.k != null && kdj.d != null) items.push({ label: 'KDJ ' + (kdj.k > kdj.d ? '金叉' : '死叉'), tone: kdj.k > kdj.d ? 'up' : 'down' });
   const boll = ind.boll || {};

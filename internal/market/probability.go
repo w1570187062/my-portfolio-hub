@@ -10,7 +10,7 @@ import (
 type ProbabilityResult struct {
 	UpPct      float64  `json:"up_pct"`
 	DownPct    float64  `json:"down_pct"`
-	Confidence int      `json:"confidence"` // 1-5, higher = more confident
+	Confidence int      `json:"confidence"` // 0-5，与总分同向的信号数，越高越可信
 	Signals    []Signal `json:"signals"`
 	Summary    string   `json:"summary"`
 }
@@ -83,7 +83,7 @@ func CalculateProbability(ind *IndicatorsResult) *ProbabilityResult {
 			agree++
 		}
 	}
-	result.Confidence = agree // 1-5
+	result.Confidence = agree // 0-5
 
 	// Generate summary
 	var dir string
@@ -149,11 +149,16 @@ func evalMA(ind *IndicatorsResult) (Signal, float64) {
 	} else {
 		score -= 0.2
 	}
+	// 均线排列对称赋分：空头排列同样扣分，修正原先"多头最多+1.0、空头最多-0.8"的偏多倾斜
 	if ma5above10 {
 		score += 0.1
+	} else {
+		score -= 0.1
 	}
 	if ma10above20 {
 		score += 0.1
+	} else {
+		score -= 0.1
 	}
 
 	var dir, reason string
@@ -221,10 +226,12 @@ func evalMACD(ind *IndicatorsResult) (Signal, float64) {
 	} else {
 		score -= 0.3 * math.Min(1, rel(dif)/sig)
 	}
+	// 交叉项距离衰减：DIF 与 DEA 的间距按股价比例衡量，未达 sig 的微型交叉只给比例分，
+	// 避免"刚过线万分之一"与"明确分开"拿同样的满分。
 	if dif > dea {
-		score += 0.3
+		score += 0.3 * math.Min(1, rel(dif-dea)/sig)
 	} else {
-		score -= 0.3
+		score -= 0.3 * math.Min(1, rel(dif-dea)/sig)
 	}
 	if hist > 0 {
 		score += 0.4 * math.Min(1, rel(hist)/sig)
@@ -249,6 +256,12 @@ func evalMACD(ind *IndicatorsResult) (Signal, float64) {
 		score *= 0.6
 	}
 
+	// 绿柱收窄约束（与红柱收窄对称）：绿柱仍在但较上一交易日收窄，空头动能衰竭，
+	// 不应给满空头分——否则下跌末端的底部反转信号会被持续压制。
+	if hist < 0 && ind.MACD.HistPrev < 0 && hist > ind.MACD.HistPrev {
+		score *= 0.6
+	}
+
 	var dir, reason string
 	switch {
 	case dif > 0 && dif > dea && hist > 0:
@@ -267,7 +280,11 @@ func evalMACD(ind *IndicatorsResult) (Signal, float64) {
 		reason = "MACD多头但动能减弱"
 	case dif < 0 && dif < dea && hist < 0:
 		dir = "bearish"
-		reason = "MACD死叉状态，绿柱增长"
+		if ind.MACD.HistPrev < 0 && hist > ind.MACD.HistPrev {
+			reason = "MACD死叉，绿柱收窄动能衰竭"
+		} else {
+			reason = "MACD死叉状态，绿柱增长"
+		}
 	case dif < 0 && dif < dea && hist > 0:
 		dir = "bearish"
 		reason = "MACD空头但动能减弱"
@@ -309,10 +326,14 @@ func evalRSI(ind *IndicatorsResult) (Signal, float64) {
 		dir = "neutral"
 		score = 0
 		reason = fmt.Sprintf("RSI=%.1f，接近超买，谨慎", rsi)
-	case rsi > 50:
+	case rsi > 55:
 		dir = "bullish"
 		score = 0.3
 		reason = fmt.Sprintf("RSI=%.1f，偏强区域", rsi)
+	case rsi >= 45:
+		dir = "neutral"
+		score = 0
+		reason = fmt.Sprintf("RSI=%.1f，中性区域，方向不明", rsi)
 	case rsi > 30:
 		dir = "bearish"
 		score = -0.3
@@ -347,10 +368,12 @@ func evalKDJ(ind *IndicatorsResult) (Signal, float64) {
 	score := 0.0
 	// 高位超买区判定：K 进入超买区(>75)或 J 超买(>80)即视为高位，此时"金叉"是风险信号而非买入信号
 	overbought := k > 75 || jval > 80
+	// 交叉项距离衰减：K 与 D 间距不足 3 点时按比例计分，避免贴合状态下的微型交叉拿满分
+	kdSep := math.Abs(k - d)
 	if k > d && !overbought {
-		score += 0.4
+		score += 0.4 * math.Min(1, kdSep/3)
 	} else if k < d {
-		score -= 0.4
+		score -= 0.4 * math.Min(1, kdSep/3)
 	}
 	// 高位超买惩罚：K 进入超买区(>80)直接扣分，避免"高位金叉"被误判为买入信号
 	if k > 80 {
@@ -412,14 +435,25 @@ func evalBOLL(ind *IndicatorsResult) (Signal, float64) {
 		pos = (p - lower) / bandRange
 	}
 
+	// 中期趋势门控（MA20 vs MA60）：贴轨的含义取决于趋势方向——
+	// 下跌趋势中贴下轨是弱势跟随（band-walk），不是"超卖支撑"，不应加分；
+	// 上升趋势中贴上轨是强势钝化，超买惩罚应减轻。MA60 缺失时退回原逻辑。
+	uptrend := ind.MA20 > 0 && ind.MA60 > 0 && ind.MA20 > ind.MA60
+	downtrend := ind.MA20 > 0 && ind.MA60 > 0 && ind.MA20 < ind.MA60
+
 	var dir, reason string
 	var score float64
 
 	switch {
 	case pos > 0.9:
 		dir = "bearish"
-		score = -0.5
-		reason = "价格接近布林上轨，超买压力"
+		if uptrend {
+			score = -0.2
+			reason = "上升趋势贴上轨（强势钝化），回调风险有限"
+		} else {
+			score = -0.5
+			reason = "价格接近布林上轨，超买压力"
+		}
 	case pos > 0.7:
 		dir = "bullish"
 		score = 0.3
@@ -433,16 +467,25 @@ func evalBOLL(ind *IndicatorsResult) (Signal, float64) {
 		score = -0.3
 		reason = "价格在布林中下轨，偏弱"
 	default:
-		dir = "bullish"
-		score = 0.5
-		reason = "价格接近布林下轨，超卖支撑"
+		if downtrend {
+			dir = "neutral"
+			score = 0
+			reason = "下跌趋势中触及下轨，弱势跟随不抄底"
+		} else {
+			dir = "bullish"
+			score = 0.5
+			reason = "价格接近布林下轨，超卖支撑"
+		}
 	}
 
 	// Adjust for bandwidth
 	width := ind.BOLL.Width
 	if width > 20 {
-		// Wide band: breakout potential - amplify
-		score *= 1.3
+		// Wide band: breakout potential - 仅放大多头分。
+		// 暴跌中宽带贴下轨若再放大空头分，会与上方"下轨弱势跟随"的门控自相矛盾。
+		if score > 0 {
+			score *= 1.3
+		}
 	} else if width < 5 {
 		// Narrow band: squeeze, about to breakout
 		reason += "，带宽收窄，即将变盘"
