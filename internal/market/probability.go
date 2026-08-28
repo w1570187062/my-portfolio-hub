@@ -517,12 +517,19 @@ func ComputeDailySignals(bars []KlineBar) []DailySignal {
 		}
 		out = append(out, DailySignal{
 			Date:      bars[i].Date,
-			Close:     bars[i].Close,
+			Close:     bars[i].
+Close,
 			Signal:    sig,
 			UpPct:     prob.UpPct,
 			NextClose: nextClose,
 			Win:       win,
 		})
+	}
+	// 仅保留最近约两年（504 个交易日）的逐日信号：足够复盘，又避免巨量历史
+	// 稀释胜率、拖慢接口的重复计算与 2MB+ 的 JSON 传输。
+	const maxDays = 504
+	if len(out) > maxDays {
+		out = out[len(out)-maxDays:]
 	}
 	return out
 }
