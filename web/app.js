@@ -4084,12 +4084,30 @@ function klineMiniHTML(bars, patMap) {
     if (pts) body += '<polyline points="' + pts + '" fill="none" stroke="' + ma.color + '" stroke-width="1.2" stroke-linejoin="round" opacity="0.75"/>';
   });
 
+  // MACD(12,26,9)：DIF=EMA12-EMA26，DEA=EMA9(DIF)，柱=2*(DIF-DEA)；独立小SVG共享同x轴，红涨绿跌
+  const Hm = 44, zeroY = Hm / 2;
+  const closes = data.map((b) => b.Close);
+  const emaGen = (period) => { const k = 2 / (period + 1); let prev = closes[0]; return closes.map((c) => (prev = c * k + prev * (1 - k))); };
+  const e12 = emaGen(12), e26 = emaGen(26);
+  const dif = closes.map((_, i) => e12[i] - e26[i]);
+  let dprev = dif[0];
+  const dea = dif.map((v) => (dprev = v * (2 / 10) + dprev * (8 / 10)));
+  const hist = dif.map((v, i) => (v - dea[i]) * 2);
+  let mAbs = 0; hist.forEach((v) => { const a = Math.abs(v); if (a > mAbs) mAbs = a; });
+  let mBody = '<line x1="0" y1="' + zeroY + '" x2="' + W + '" y2="' + zeroY + '" stroke="#64748b" stroke-width="0.8" opacity="0.5"/>';
+  hist.forEach((v, i) => {
+    const h = Math.max(0.8, Math.abs(v) / mAbs * (Hm / 2 - 2));
+    const x = i * step + step / 2;
+    mBody += '<rect x="' + (x - cw / 2).toFixed(2) + '" y="' + (zeroY - h).toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + h.toFixed(2) + '" fill="' + (v >= 0 ? up : down) + '" opacity="0.85"/>';
+  });
+
   const last = data[data.length - 1].Close;
   const yLast = y(last);
   body += '<line x1="0" y1="' + yLast.toFixed(2) + '" x2="' + W + '" y2="' + yLast.toFixed(2) + '" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>';
   return '<div class="kline-mini"><div class="klwrap"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
     + '<div class="kline-mini-tip" hidden></div></div>'
-    + '<div class="kline-mini-meta"><span style="color:#f59e0b">压力 ' + res.toFixed(2) + '</span><span style="color:#38bdf8">支撑 ' + sup.toFixed(2) + '</span><span class="' + (last >= data[0].Open ? 'up' : 'down') + '">最新 ' + last.toFixed(2) + '</span></div></div>';
+    + '<div class="kl-macd"><span class="kl-macd-label">MACD(12,26,9)</span><svg viewBox="0 0 ' + W + ' ' + Hm + '" preserveAspectRatio="none">' + mBody + '</svg></div>'
+    + '<div class="kline-mini-meta"><span style="color:#f59e0b">压力 ' + res.toFixed(2) + '</span><span style="color:#38bdf8">支撑 ' + sup.toFixed(2) + '</span><span class="' + (hist[hist.length - 1] >= 0 ? 'up' : 'down') + '">MACD ' + hist[hist.length - 1].toFixed(2) + '</span><span class="' + (last >= data[0].Open ? 'up' : 'down') + '">最新 ' + last.toFixed(2) + '</span></div></div>';
 }
 
 // 迷你K线交互：悬停预览 / 点击固定显示 日期+收盘价；再次点击或点空白取消
