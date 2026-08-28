@@ -168,7 +168,74 @@ func Init(path string) error {
 	if err := initBuyPlanExecuted(); err != nil {
 		return fmt.Errorf("init buy_plan_executed: %w", err)
 	}
+	if err := initAnalysisCache(); err != nil {
+		return fmt.Errorf("init analysis_cache: %w", err)
+	}
 	return nil
+}
+
+// ---- 技术分析结果缓存（analysis_cache）----
+// 按 (symbol, date) 主键缓存当日 K线+指标+概率 JSON。
+// 同一交易日内多次打开分析弹框直接命中缓存，避免重复抓取 K线（新浪/腾讯接口较慢）。
+// 跨日自然失效：新一天产生新行，旧行可保留作历史快照（定期清理可选）。
+
+func initAnalysisCache() error {
+	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS analysis_cache (
+		symbol            TEXT NOT NULL,
+		date              TEXT NOT NULL,
+		bars_json         TEXT NOT NULL DEFAULT '[]',
+		indicators_json   TEXT NOT NULL DEFAULT '{}',
+		probability_json  TEXT NOT NULL DEFAULT '{}',
+		daily_signals_json TEXT NOT NULL DEFAULT '[]',
+		generated_at      TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (symbol, date)
+	)`)
+	if err != nil {
+		return err
+	}
+	// 索引：按 symbol 查最新缓存行
+	_, err = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_analysis_cache_symbol ON analysis_cache(symbol)`)
+	return err
+}
+
+// AnalysisCacheRow is one cached analysis result for a symbol on a date.
+type AnalysisCacheRow struct {
+	Symbol             string
+	Date               string
+	BarsJSON           string
+	IndicatorsJSON     string
+	ProbabilityJSON   string
+	DailySignalsJSON   string
+	GeneratedAt        string
+}
+
+// GetAnalysisCache returns the cached row for a symbol on a date, if any.
+func GetAnalysisCache(symbol, date string) (*AnalysisCacheRow, error) {
+	var r AnalysisCacheRow
+	err := DB.QueryRow(`SELECT symbol,date,bars_json,indicators_json,probability_json,daily_signals_json,generated_at
+		FROM analysis_cache WHERE symbol=? AND date=?`, symbol, date).
+		Scan(&r.Symbol, &r.Date, &r.BarsJSON, &r.IndicatorsJSON, &r.ProbabilityJSON, &r.DailySignalsJSON, &r.GeneratedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// SaveAnalysisCache upserts a cache row. JSON strings are stored as-is.
+func SaveAnalysisCache(symbol, date, barsJSON, indicatorsJSON, probabilityJSON, dailySignalsJSON, generatedAt string) error {
+	_, err := DB.Exec(`INSERT INTO analysis_cache(symbol,date,bars_json,indicators_json,probability_json,daily_signals_json,generated_at)
+		VALUES(?,?,?,?,?,?,?)
+		ON CONFLICT(symbol,date) DO UPDATE SET
+			bars_json=excluded.bars_json,
+			indicators_json=excluded.indicators_json,
+			probability_json=excluded.probability_json,
+			daily_signals_json=excluded.daily_signals_json,
+			generated_at=excluded.generated_at`,
+		symbol, date, barsJSON, indicatorsJSON, probabilityJSON, dailySignalsJSON, generatedAt)
+	return err
 }
 
 // ---- 补仓计划「已执行」标记（buy_plan_executed）----
