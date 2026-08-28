@@ -2539,6 +2539,12 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .kl-close-line { display: none; }
 .kline-mini.mode-line .kl-wick, .kline-mini.mode-line .kl-body { display: none; }
 .kline-mini.mode-line .kl-close-line { display: block; }
+/* 左右翻页箭头（按日期区间循环切换60根窗口）+ 窗口日期范围 */
+.kl-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; pointer-events: auto; width: 22px; height: 22px; padding: 0; line-height: 20px; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: 13px; cursor: pointer; opacity: .85; transition: var(--btn-transition, all .15s ease); }
+.kl-arrow:hover { opacity: 1; color: var(--btn-primary); border-color: var(--btn-primary); }
+.kl-arrow.kl-prev { left: 5px; }
+.kl-arrow.kl-next { right: 5px; }
+.kl-range { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* 迷你K线交互 */
 .klwrap { position: relative; }

@@ -4168,13 +4168,24 @@ async function openAnalysis(id) {
 
 // 迷你K线（纯SVG蜡烛图，使用分析接口返回的已有日K线数据组装）
 // patMap: { [date]: [{name, dir}] } —— 命中形态的日期→形态列表，用于悬停提示（不在蜡烛上加外边框）
+// 分页：每页 60 根，左右箭头按日期区间循环翻页（page 0 = 最近 60 根）。
+let klState = null; // { bars, patMap, sigMap, win, pages, page }
 function klineMiniHTML(bars, patMap, dailySignals) {
-  const n = Math.min(bars.length, 60);
-  const data = bars.slice(bars.length - n);
-  if (!data.length) return '';
-  // 逐日信号映射：date -> signal，用于悬停显示当日评级
+  const win = Math.min(bars.length, 60);
+  const pages = Math.max(1, Math.floor((bars.length - win) / win) + 1);
   const sigMap = {};
   (dailySignals || []).forEach((d) => { if (d && d.date) sigMap[d.date] = d.signal; });
+  klState = { bars, patMap, sigMap, win, pages, page: 0 };
+  return klRenderWindow();
+}
+
+// 渲染当前 klState.page 对应的 60 根窗口（箭头翻页时整块替换重绑）
+function klRenderWindow() {
+  const { bars, patMap, sigMap, win, page, pages } = klState;
+  const end = bars.length - page * win;
+  const data = bars.slice(Math.max(0, end - win), end);
+  if (!data.length) return '';
+  const n = data.length;
   let hi = -Infinity, lo = Infinity;
   data.forEach((b) => { if (b.High > hi) hi = b.High; if (b.Low < lo) lo = b.Low; });
   if (!(hi > lo)) { hi = lo + 1; }
@@ -4267,13 +4278,34 @@ function klineMiniHTML(bars, patMap, dailySignals) {
   const last = data[data.length - 1].Close;
   const yLast = y(last);
   body += '<line x1="0" y1="' + yLast.toFixed(2) + '" x2="' + W + '" y2="' + yLast.toFixed(2) + '" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>';
+  // 窗口日期区间（MM-DD~MM-DD），箭头翻页时随之更新
+  const range = data[0].Date.slice(5).replace(/-/g, '/') + '~' + data[data.length - 1].Date.slice(5).replace(/-/g, '/');
+  const arrows = pages > 1
+    ? '<button class="kl-arrow kl-prev" type="button" data-dir="-1" aria-label="更早一段">‹</button>'
+    + '<button class="kl-arrow kl-next" type="button" data-dir="1" aria-label="更近一段">›</button>'
+    : '';
   return '<div class="kline-mini"><div class="klwrap">'
-    + '<div class="kl-label"><span class="kl-title">日K线</span><span style="color:#f97316">MA5</span><span style="color:#22c55e">MA10</span><span style="color:#eab308">MA20</span></div>'
+    + '<div class="kl-label"><span class="kl-title">日K线</span><span style="color:#f97316">MA5</span><span style="color:#22c55e">MA10</span><span style="color:#eab308">MA20</span><span class="kl-range">' + range + '</span></div>'
     + '<button class="kl-toggle" type="button" data-mode="candle" aria-label="切换折线图">折线</button>'
+    + arrows
     + '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
     + '<div class="kline-mini-tip" hidden></div></div>'
     + '<div class="kl-macd"><span class="kl-macd-label">MACD(12,26,9)</span><svg viewBox="0 0 ' + W + ' ' + Hm + '" preserveAspectRatio="none">' + mBody + '</svg></div>'
     + '<div class="kline-mini-meta"><span style="color:#f59e0b">压力 ' + res.toFixed(2) + '</span><span style="color:#38bdf8">支撑 ' + sup.toFixed(2) + '</span><span class="' + (hist[hist.length - 1] >= 0 ? 'up' : 'down') + '">MACD ' + hist[hist.length - 1].toFixed(2) + '</span><span class="' + (last >= data[0].Open ? 'up' : 'down') + '">最新 ' + last.toFixed(2) + '</span></div></div>';
+}
+
+// 箭头翻页：按窗口长度循环切换显示的K线日期区间（‹更早 / ›更近），整块替换重渲染并重绑交互
+function klGo(dir) {
+  if (!klState || klState.pages <= 1) return;
+  klState.page = (klState.page + dir + klState.pages) % klState.pages;
+  const cur = document.querySelector('#analysisBody .kline-mini');
+  if (!cur) return;
+  const holder = document.createElement('div');
+  holder.innerHTML = klRenderWindow();
+  const fresh = holder.firstElementChild;
+  if (!fresh) return;
+  cur.replaceWith(fresh);
+  bindKlineMini(fresh);
 }
 
 // 迷你K线交互：悬停预览 / 点击固定显示 日期+收盘价；再次点击或点空白取消
@@ -4294,6 +4326,11 @@ function bindKlineMini(root) {
     if (title) title.textContent = line ? '收盘折线' : '日K线';
     pinned = null; clearSel(); hideTip(); hover = null;
   });
+  // 左右箭头：按日期区间循环翻页（整块重渲染后由 klGo 内部重绑）
+  wrap.querySelectorAll('.kl-arrow').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    klGo(Number(b.dataset.dir) || 0);
+  }));
   let pinned = null, hover = null, tipTimer = null;
   function showTip(g, stay) {
     const c = Number(g.dataset.c);
