@@ -4294,10 +4294,13 @@ function klRenderWindow() {
     + '<div class="kline-mini-meta"><span style="color:#f59e0b">压力 ' + res.toFixed(2) + '</span><span style="color:#38bdf8">支撑 ' + sup.toFixed(2) + '</span><span class="' + (hist[hist.length - 1] >= 0 ? 'up' : 'down') + '">MACD ' + hist[hist.length - 1].toFixed(2) + '</span><span class="' + (last >= data[0].Open ? 'up' : 'down') + '">最新 ' + last.toFixed(2) + '</span></div></div>';
 }
 
-// 箭头翻页：按窗口长度循环切换显示的K线日期区间（‹更早 / ›更近），整块替换重渲染并重绑交互
+// 箭头翻页：按窗口长度切换显示的K线日期区间（‹更早 / ›更近），到边界时提示、不循环
 function klGo(dir) {
   if (!klState || klState.pages <= 1) return;
-  klState.page = (klState.page + dir + klState.pages) % klState.pages;
+  const target = klState.page + dir;
+  if (target < 0) { toast('已经是最近的数据了', 'info'); return; }
+  if (target >= klState.pages) { toast('没有更早的数据了', 'info'); return; }
+  klState.page = target;
   const cur = document.querySelector('#analysisBody .kline-mini');
   if (!cur) return;
   const holder = document.createElement('div');
