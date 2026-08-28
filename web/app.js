@@ -687,9 +687,6 @@ function renderSummary(hs) {
   const el = document.getElementById('acSummaryData');
   if (!el) return;
   if (card) card.hidden = false;
-  const unSrc = document.getElementById('userNameText');
-  const mbName = document.getElementById('mbUserName');
-  if (mbName) mbName.textContent = unSrc ? (unSrc.textContent || '默认') : '默认';
   // 独立卡片：标签在上、大号数值在下；涨跌数用 ▲/▼ 着色；总盈亏/当日/本月带涨跌色。
   el.innerHTML = `
     <div class="sum-card"><span class="sum-lbl">总市值</span><b class="sum-val">¥${fmt(totalCNY)}</b></div>
@@ -754,7 +751,7 @@ function rebuildMarketChips() {
   avail.forEach((m) => {
     const label = document.createElement('label');
     label.className = 'chip';
-    label.innerHTML = `<input type="checkbox" value="${m}" ${mktFilter.has(m) ? 'checked' : ''}> ${m}`;
+    label.innerHTML = `<input type="checkbox" name="mkt-filter" value="${m}" ${mktFilter.has(m) ? 'checked' : ''}> ${m}`;
     label.querySelector('input').onchange = onMktChange;
     mktRow.appendChild(label);
   });
@@ -1297,7 +1294,7 @@ function renderSourceFilterList() {
   srcs.forEach((s) => {
     const lbl = document.createElement('label');
     lbl.className = 'src-item';
-    lbl.innerHTML = `<input type="checkbox" value="${s.id}" ${sourceFilter.has(String(s.id)) ? 'checked' : ''}> <span>${esc(s.name)}</span>`;
+    lbl.innerHTML = `<input type="checkbox" name="src-filter" value="${s.id}" ${sourceFilter.has(String(s.id)) ? 'checked' : ''}> <span>${esc(s.name)}</span>`;
     lbl.querySelector('input').addEventListener('change', applySourceFilter);
     box.appendChild(lbl);
   });
@@ -2676,8 +2673,8 @@ async function showToolsView() {
     showHoldingsView();
   }
   $('#toolsModal').hidden = false;
-  // 默认切到汇率面板
-  switchToolsTab('fx');
+  // 默认切到权益盈亏面板（汇率计算已移至最后一个 tab）
+  switchToolsTab('eq');
   await loadToolsFx();
   const eqOk = await loadEqRows();
   if (!eqOk) addEqRow();
@@ -2716,18 +2713,18 @@ function addEqRow(init) {
   const row = document.createElement('div');
   row.className = 'trow';
   row.innerHTML = `
-    <select class="eq-kind">
+    <select class="eq-kind" name="eq-kind">
       <option value="stock">股票</option>
       <option value="fund">基金</option>
       <option value="wealth">理财</option>
     </select>
-    <input class="eq-amt" type="number" step="any" placeholder="盈亏金额（正盈利/负亏损）">
-    <select class="eq-cur">
+    <input class="eq-amt" name="eq-amt" type="number" step="any" placeholder="盈亏金额（正盈利/负亏损）">
+    <select class="eq-cur" name="eq-cur">
       <option value="USD">USD 美元</option>
       <option value="HKD">HKD 港币</option>
       <option value="RMB" selected>RMB 人民币</option>
     </select>
-    <input class="eq-note" type="text" placeholder="备注（可选）">
+    <input class="eq-note" name="eq-note" type="text" placeholder="备注（可选）">
     <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
   if (init) {
     if (init.kind) row.querySelector('.eq-kind').value = init.kind;
@@ -2743,8 +2740,8 @@ function addUsdBuy(init) {
   const row = document.createElement('div');
   row.className = 'trow';
   row.innerHTML = `
-    <input class="usd-buy" type="number" step="any" placeholder="买入 USD 金额">
-    <input class="usd-brate" type="number" step="any" placeholder="买入汇率 RMB/USD">
+    <input class="usd-buy" name="usd-buy" type="number" step="any" placeholder="买入 USD 金额">
+    <input class="usd-brate" name="usd-brate" type="number" step="any" placeholder="买入汇率 RMB/USD">
     <span class="usd-cost" title="买入花费（RMB）">—</span>
     <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
   const buyEl = row.querySelector('.usd-buy');
@@ -2770,13 +2767,13 @@ function addUsdPnl(init) {
   const row = document.createElement('div');
   row.className = 'trow';
   row.innerHTML = `
-    <select class="usd-kind">
+    <select class="usd-kind" name="usd-kind">
       <option value="stock">股票</option>
       <option value="fund">基金</option>
       <option value="wealth">理财</option>
       <option value="cash">现金</option>
     </select>
-    <input class="usd-pnl" type="number" step="any" placeholder="盈亏 USD 金额（正盈利/负亏损）">
+    <input class="usd-pnl" name="usd-pnl" type="number" step="any" placeholder="盈亏 USD 金额（正盈利/负亏损）">
     <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
   if (init) {
     if (init.kind) row.querySelector('.usd-kind').value = init.kind;

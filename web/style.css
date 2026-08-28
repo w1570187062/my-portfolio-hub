@@ -1012,7 +1012,8 @@ header h1 {
   filter: drop-shadow(0 2px 8px rgba(45, 212, 167, .3));
 }
 /* 标题栏为 sticky，下方主视图内容需留出与标题栏的间距 */
-#holdingsView, #assetView { padding-top: 14px; }
+#holdingsView { padding-top: 8px; }
+#assetView { padding-top: 14px; }
 .actions {
   display: flex;
   align-items: center;
@@ -1682,9 +1683,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .mb-time.stale { color: var(--text-faint, #6b7280); opacity: .8; }
 .mb-fx { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .mb-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.mb-account { display: inline-flex; align-items: baseline; gap: 5px; font-size: 13px; color: var(--text); }
-.mb-acc-lbl { font-size: 12px; color: var(--text-muted); }
-.mb-account b { font-size: 14px; font-weight: 700; color: var(--primary); }
 .mb-sep { color: var(--text-muted); }
 .fx-cell {
   display: inline-flex;
@@ -2418,6 +2416,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .tool-table .trow .eq-note { flex: 1.6; }
 .tool-table .trow .eq-amt { flex: 2.4; }
 .tool-table .trow .eq-kind { flex: 0 0 78px; }
+.tool-table .trow .eq-cur { flex: 0 0 132px; }
 .tool-table .trow .usd-kind { flex: 0 0 78px; }
 .tool-table .trow .usd-cost {
   flex: 0 0 auto;
