@@ -4474,7 +4474,9 @@ function buyRating(upPct) {
 }
 
 // 概览标签：技术评分（形态净评分）+ 买入评级（+ 回测胜率）
-function overviewScoreRatingHTML(prob, patScore, patCount, dailySignals) {
+// 买入评级与首页右上角角标共用同一口径（a.signal = SignalFromUpPct），
+// 避免出现「弹框显示中性、角标仍显示买」的脱节。buyRating 仅作内部参考，不再用于此框。
+function overviewScoreRatingHTML(prob, patScore, patCount, dailySignals, signal) {
   const dir = patScore > 0.3 ? 'up' : patScore < -0.3 ? 'down' : 'neu';
   const arrow = patScore > 0.3 ? '▲' : patScore < -0.3 ? '▼' : '◆';
   const tone = patScore > 0.3 ? '偏多' : patScore < -0.3 ? '偏空' : '均衡';
@@ -4492,9 +4494,16 @@ function overviewScoreRatingHTML(prob, patScore, patCount, dailySignals) {
     winRateHTML = '<div class="sig-winrate">回测胜率 <b class="' + (rate >= 50 ? 'up' : 'down') + '">' + rate.toFixed(1) + '%</b>'
       + '<span class="wr-detail">（' + total + ' 个信号：买 ' + buy + ' 胜 ' + buyWin + '，卖 ' + sell + ' 胜 ' + sellWin + '）</span></div>';
   }
+  // 买入评级：直接用后端归一化信号 a.signal（与角标完全一致的口径）
+  const sigMap = {
+    buy:  { label: '买入', cls: 'up' },
+    sell: { label: '卖出', cls: 'down' },
+    hold: { label: '中性', cls: 'neu' },
+    '':   { label: '—', cls: 'neu' },
+  };
+  const r = sigMap[signal] || sigMap[''];
   let rating;
   if (prob && prob.up_pct != null) {
-    const r = buyRating(prob.up_pct);
     rating = '<div class="ana-score-val ' + r.cls + '">' + r.label + '</div><div class="ana-score-sub">技术面看涨 ' + prob.up_pct.toFixed(0) + '</div>';
   } else {
     rating = '<div class="ana-score-val neu">—</div><div class="ana-score-sub">数据不足</div>';
@@ -4635,7 +4644,7 @@ function renderAnalysis(a) {
     html += klineMiniHTML(a.series, pmap, a.daily_signals);
   }
   if (ind && prob) html += anaBadgesHTML(ind, prob);
-  html += overviewScoreRatingHTML(prob, patScore, patVisible.length, a.daily_signals);
+  html += overviewScoreRatingHTML(prob, patScore, patVisible.length, a.daily_signals, a.signal);
   if (!ind || !prob) html += '<div class="analysis-err">数据不足，部分评分/评级暂不可用</div>';
   html += '</div>';
 
