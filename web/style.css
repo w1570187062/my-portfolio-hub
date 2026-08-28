@@ -1669,7 +1669,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin: 12px 20px 0;
+  margin: 8px 20px;
+  padding: 0;
 }
 .mb-time {
   font-size: 12px;
