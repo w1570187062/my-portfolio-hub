@@ -1572,8 +1572,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .list-bar .filters { padding: 0; margin: 0; flex: 1 1 auto; min-width: 0; }
 .list-actions { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
 .action-btns { display: flex; align-items: center; gap: 12px; }
-/* 首页操作按钮（AI/添加/计划/刷新）统一等宽，内容居中 */
-.action-btns > .btn { flex: 0 0 96px; justify-content: center; white-space: nowrap; }
 .action-tools { display: flex; align-items: center; gap: 12px; }
 .filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .filters .filters-label { font-size: 13px; color: var(--text-muted); margin-right: 4px; }
