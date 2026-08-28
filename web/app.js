@@ -4057,7 +4057,7 @@ function klineMiniHTML(bars, patMap) {
         + x.toFixed(2) + ',' + apexY.toFixed(2)
         + '" fill="' + mc + '"/>';
     }
-    body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + patAttr + '>';
+    body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-pc="' + (i > 0 ? data[i - 1].Close.toFixed(2) : '') + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + patAttr + '>';
     body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
     body += '<rect class="kl-body" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
     body += '<rect class="kl-hit" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '" fill="rgba(0,0,0,0)"/>';
@@ -4104,7 +4104,9 @@ function klineMiniHTML(bars, patMap) {
   const last = data[data.length - 1].Close;
   const yLast = y(last);
   body += '<line x1="0" y1="' + yLast.toFixed(2) + '" x2="' + W + '" y2="' + yLast.toFixed(2) + '" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>';
-  return '<div class="kline-mini"><div class="klwrap"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
+  return '<div class="kline-mini"><div class="klwrap">'
+    + '<div class="kl-label"><span class="kl-title">日K线</span><span style="color:#f97316">MA5</span><span style="color:#22c55e">MA10</span><span style="color:#eab308">MA20</span></div>'
+    + '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
     + '<div class="kline-mini-tip" hidden></div></div>'
     + '<div class="kl-macd"><span class="kl-macd-label">MACD(12,26,9)</span><svg viewBox="0 0 ' + W + ' ' + Hm + '" preserveAspectRatio="none">' + mBody + '</svg></div>'
     + '<div class="kline-mini-meta"><span style="color:#f59e0b">压力 ' + res.toFixed(2) + '</span><span style="color:#38bdf8">支撑 ' + sup.toFixed(2) + '</span><span class="' + (hist[hist.length - 1] >= 0 ? 'up' : 'down') + '">MACD ' + hist[hist.length - 1].toFixed(2) + '</span><span class="' + (last >= data[0].Open ? 'up' : 'down') + '">最新 ' + last.toFixed(2) + '</span></div></div>';
@@ -4118,7 +4120,13 @@ function bindKlineMini(root) {
   let pinned = null, hover = null, tipTimer = null;
   function showTip(g, stay) {
     const c = Number(g.dataset.c);
-    let html = '<div class="kl-tip-d">' + esc(g.dataset.d) + '</div><div class="kl-tip-c ' + g.dataset.dir + '">收盘 ' + c.toFixed(2) + '</div>';
+    let html = '<div class="kl-tip-d">' + esc(g.dataset.d) + '</div>';
+    const pc = g.dataset.pc ? Number(g.dataset.pc) : 0;
+    if (pc > 0) {
+      const pct = (c - pc) / pc * 100;
+      html += '<div class="kl-tip-c ' + (pct >= 0 ? 'up' : 'down') + '">涨跌幅 ' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</div>';
+    }
+    html += '<div class="kl-tip-c ' + g.dataset.dir + '">收盘 ' + c.toFixed(2) + '</div>';
     const pat = g.dataset.pat;
     if (pat) {
       pat.split('|').forEach((seg) => {
