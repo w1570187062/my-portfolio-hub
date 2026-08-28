@@ -23,9 +23,20 @@ type AnalysisResponse struct {
 	Price       float64                   `json:"price"`
 	Indicators  *market.IndicatorsResult  `json:"indicators,omitempty"`
 	Probability *market.ProbabilityResult `json:"probability,omitempty"`
+	Signal      string                    `json:"signal,omitempty"`                       // 归一化信号：buy/sell/hold（与角标一致，回写 holdings.  analysis_signal）
+	UpPct       float64                   `json:"up_pct,omitempty"`                      // 看涨概率（与概览买入评级一致）
+	DailySignals []market.DailySignal     `json:"daily_signals,omitempty"`              // 逐日历史信号 + 次日收盘，用于悬停评级与回测胜率
 	Error       string                    `json:"error,omitempty"`
 	GeneratedAt string                    `json:"generated_at"` // 分析生成时间（本地时区）
 	Series      []market.KlineBar         `json:"series,omitempty"` // 已拉取的日K线(OHLC)，用于前端迷你K线展示
+}
+
+// signalFromUpPct maps the bullish probability to a normalized signal used by
+// both the auto-analysis (角标) and the on-demand analysis endpoint, so the
+// badge always agrees with the modal's verdict. Delegates to market.SignalFromUpPct,
+// the single source of truth also used by the daily backtest.
+func signalFromUpPct(upPct float64) string {
+	return market.SignalFromUpPct(upPct)
 }
 
 // getAnalysis returns technical analysis for a holding.
@@ -84,6 +95,15 @@ func getAnalysis(c *gin.Context) {
 	resp.Symbol = h.LinkedSymbol
 	prob := market.CalculateProbability(ind)
 	resp.Probability = prob
+	resp.DailySignals = market.ComputeDailySignals(bars)
+	if prob != nil {
+		// 回写最新信号到持仓，使首页角标与弹框结论保持一致（中性→hold，不展示角标）
+		resp.Signal = signalFromUpPct(prob.UpPct)
+		resp.UpPct = prob.UpPct
+		if err := db.UpdateAnalysis(h.ID, resp.Signal, prob.UpPct, time.Now().Format("2006-01-02 15:04:05")); err != nil {
+			log.Printf("[analysis] 回写信号失败 id=%d: %v", h.ID, err)
+		}
+	}
 	resp.GeneratedAt = time.Now().Format("2006-01-02 15:04:05")
 	c.JSON(http.StatusOK, gin.H{"analysis": resp})
 	return
@@ -118,6 +138,15 @@ func getAnalysis(c *gin.Context) {
 	// Calculate probability
 	prob := market.CalculateProbability(ind)
 	resp.Probability = prob
+	resp.DailySignals = market.ComputeDailySignals(bars)
+	if prob != nil {
+		// 回写最新信号到持仓，使首页角标与弹框结论保持一致（中性→hold，不展示角标）
+		resp.Signal = signalFromUpPct(prob.UpPct)
+		resp.UpPct = prob.UpPct
+		if err := db.UpdateAnalysis(h.ID, resp.Signal, prob.UpPct, time.Now().Format("2006-01-02 15:04:05")); err != nil {
+			log.Printf("[analysis] 回写信号失败 id=%d: %v", h.ID, err)
+		}
+	}
 
 	resp.GeneratedAt = time.Now().Format("2006-01-02 15:04:05")
 	c.JSON(http.StatusOK, gin.H{"analysis": resp})

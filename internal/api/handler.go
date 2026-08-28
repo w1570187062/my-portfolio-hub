@@ -929,15 +929,7 @@ func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
 		return "", 0
 	}
 	upPct = prob.UpPct
-	switch {
-	case upPct >= 60:
-		signal = "buy"
-	case upPct < 40:
-		signal = "sell"
-	default:
-		signal = "hold"
-	}
-	return signal, upPct
+	return signalFromUpPct(upPct), upPct
 }
 
 // autoAnalyzeAndStore 对一只持仓跑自动技术分析并落库（best-effort：网络失败/数据不足仅记日志，不阻断刷新）。

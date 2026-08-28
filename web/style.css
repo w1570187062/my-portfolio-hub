@@ -2612,6 +2612,32 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .ana-score-val.neu { color: var(--text); }
 .ana-score-sub { font-size: 11px; color: var(--text-faint); margin-top: 5px; }
 
+/* 买入评级框内：回测胜率 */
+.sig-winrate { margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--border); font-size: 13px; color: var(--text); display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.sig-winrate > b { font-size: 20px; font-family: var(--font-mono); margin-right: 2px; }
+.sig-winrate > b.up { color: #ff4757; }
+.sig-winrate > b.down { color: #2ed573; }
+.sig-winrate .wr-detail { font-size: 12px; color: var(--text-muted); }
+
+/* 逐日信号回测明细表 */
+.daily-sig-wrap { margin-top: 14px; }
+.daily-sig-summary { font-size: 13px; color: var(--text); margin-bottom: 8px; }
+.daily-sig-summary > b { font-family: var(--font-mono); }
+.daily-sig-summary > b.up { color: #ff4757; }
+.daily-sig-summary > b.down { color: #2ed573; }
+.daily-sig-scroll { max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+.daily-sig-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.daily-sig-table thead th { position: sticky; top: 0; background: var(--bg-card); color: var(--text-muted); font-weight: 600; text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); z-index: 1; }
+.daily-sig-table thead th:first-child, .daily-sig-table tbody td:first-child { text-align: left; }
+.daily-sig-table tbody td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border); font-family: var(--font-mono); white-space: nowrap; }
+.daily-sig-table tbody tr:hover { background: var(--bg-hover); }
+.daily-sig-table .ds-sig { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-family: var(--font-sans); font-weight: 600; }
+.daily-sig-table .ds-sig.up { color: #ff4757; background: rgba(255,71,87,0.12); }
+.daily-sig-table .ds-sig.down { color: #2ed573; background: rgba(46,213,115,0.12); }
+.daily-sig-table .ds-result { font-family: var(--font-sans); font-weight: 600; }
+.daily-sig-table .ds-result.up { color: #ff4757; }
+.daily-sig-table .ds-result.down { color: #2ed573; }
+
 /* 操作指南 · 动态补仓计划（净值刷新时计算，存 holdings.buy_plan，不写 note） */
 .guide-plan {
   background: var(--bg-card);

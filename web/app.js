@@ -412,6 +412,26 @@ function anaBadge(sig) {
   return '';
 }
 
+// 用最新分析结论刷新某持仓行右上角的买卖角标，使角标与弹框结论保持一致。
+// 例：弹框显示“中性”时，角标应清空（hold 不展示），而不是停留在旧的“买”。
+function syncAnalysisBadge(id, sig) {
+  const btn = document.querySelector('.act-analysis[data-ana="' + id + '"]');
+  if (!btn) return;
+  const wrap = btn.closest('.ana-wrap');
+  if (!wrap) return;
+  const old = wrap.querySelector('.ana-badge');
+  const neu = anaBadge(sig);
+  if (old) {
+    if (neu) old.outerHTML = neu;
+    else old.remove();
+  } else if (neu) {
+    wrap.insertAdjacentHTML('afterbegin', neu);
+  }
+  // 同步全局持仓数据，避免后续整表重渲染把角标回退为旧值
+  const h = allHoldings.find((x) => String(x.id) === String(id));
+  if (h) h.analysis_signal = sig;
+}
+
 // 打开补仓成本计算器弹框，并带入选中持仓的成本价/现价/数量。
 function openCalcCost(id) {
   const h = HOLDINGS_BY_ID[id];
@@ -4004,6 +4024,8 @@ async function openAnalysis(id) {
     }
     $('#analysisTitle').textContent = '📊 ' + a.name + (a.category === 'fund' ? ' (关联 ' + a.symbol + ')' : ' (' + a.symbol + ')') + ' 技术分析';
     renderAnalysis(a);
+    // 用本次分析结论刷新该行买卖角标，避免弹框显示“中性”而角标仍显示“买”
+    syncAnalysisBadge(id, a.signal || '');
     const tsEl = document.getElementById('analysisTime');
     if (tsEl) tsEl.textContent = (a.market ? a.market + ' · ' : '') + '周期 1d · 数据截至 ' + (a.generated_at || '—');
   } catch (e) {
@@ -4015,10 +4037,13 @@ async function openAnalysis(id) {
 
 // 迷你K线（纯SVG蜡烛图，使用分析接口返回的已有日K线数据组装）
 // patMap: { [date]: [{name, dir}] } —— 命中形态的日期→形态列表，用于悬停提示（不在蜡烛上加外边框）
-function klineMiniHTML(bars, patMap) {
+function klineMiniHTML(bars, patMap, dailySignals) {
   const n = Math.min(bars.length, 60);
   const data = bars.slice(bars.length - n);
   if (!data.length) return '';
+  // 逐日信号映射：date -> signal，用于悬停显示当日评级
+  const sigMap = {};
+  (dailySignals || []).forEach((d) => { if (d && d.date) sigMap[d.date] = d.signal; });
   let hi = -Infinity, lo = Infinity;
   data.forEach((b) => { if (b.High > hi) hi = b.High; if (b.Low < lo) lo = b.Low; });
   if (!(hi > lo)) { hi = lo + 1; }
@@ -4043,7 +4068,7 @@ function klineMiniHTML(bars, patMap) {
     const px = (x / W * 100).toFixed(2);
     const py = (yC / H * 100).toFixed(2);
     const ps = (patMap && patMap[b.Date]) || [];
-    const patAttr = ps.length ? ' data-pat="' + ps.map((p) => p.dir + '~' + p.name).join('|') + '"' : '';
+    const patAttr = ps.length ? ' data-pat="' + ps.map((p) => p.dir + '~' + p.name).  join('|') + '"' : '';
     let mark = '';
     if (ps.length) {
       const mc = ps[0].dir === 'bullish' ? '#ff4757' : ps[0].dir === 'bearish' ? '#2ed573' : '#f59e0b';
@@ -4057,7 +4082,8 @@ function klineMiniHTML(bars, patMap) {
         + x.toFixed(2) + ',' + apexY.toFixed(2)
         + '" fill="' + mc + '"/>';
     }
-    body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-pc="' + (i > 0 ? data[i - 1].Close.toFixed(2) : '') + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + patAttr + '>';
+    const sigAttr = sigMap[b.Date] ? ' data-sig="' + sigMap[b.Date] + '"' : '';
+    body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-pc="' + (i > 0 ? data[i - 1].Close.toFixed(2) : '') + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + patAttr + sigAttr + '>';
     body += '<line x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
     body += '<rect class="kl-body" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
     body += '<rect class="kl-hit" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '" fill="rgba(0,0,0,0)"/>';
@@ -4127,6 +4153,11 @@ function bindKlineMini(root) {
       html += '<div class="kl-tip-c ' + (pct >= 0 ? 'up' : 'down') + '">涨跌幅 ' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</div>';
     }
     html += '<div class="kl-tip-c ' + g.dataset.dir + '">收盘 ' + c.toFixed(2) + '</div>';
+    const sig = g.dataset.sig;
+    if (sig) {
+      const m = ({ buy: { t: '买入', c: 'up', a: '▲' }, sell: { t: '卖出', c: 'down', a: '▼' }, hold: { t: '中性', c: 'neu', a: '◆' } })[sig] || { t: '—', c: 'neu', a: '◆' };
+      html += '<div class="kl-tip-pat ' + m.c + '">' + m.a + ' 评级 ' + m.t + '</div>';
+    }
     const pat = g.dataset.pat;
     if (pat) {
       pat.split('|').forEach((seg) => {
@@ -4442,11 +4473,25 @@ function buyRating(upPct) {
   return { label: '卖出', cls: 'down' };
 }
 
-// 概览标签：技术评分（形态净评分）+ 买入评级
-function overviewScoreRatingHTML(prob, patScore, patCount) {
+// 概览标签：技术评分（形态净评分）+ 买入评级（+ 回测胜率）
+function overviewScoreRatingHTML(prob, patScore, patCount, dailySignals) {
   const dir = patScore > 0.3 ? 'up' : patScore < -0.3 ? 'down' : 'neu';
   const arrow = patScore > 0.3 ? '▲' : patScore < -0.3 ? '▼' : '◆';
   const tone = patScore > 0.3 ? '偏多' : patScore < -0.3 ? '偏空' : '均衡';
+  // 回测胜率：仅统计 buy/sell 信号（hold 不参与），win 字段已是「信号方向是否成立」的判定结果
+  let winRateHTML = '';
+  if (dailySignals && dailySignals.length) {
+    let buy = 0, buyWin = 0, sell = 0, sellWin = 0;
+    dailySignals.forEach((d) => {
+      if (d.signal === 'buy') { buy++; if (d.win) buyWin++; }
+      else if (d.signal === 'sell') { sell++; if (d.win) sellWin++; }
+    });
+    const total = buy + sell;
+    const totalWin = buyWin + sellWin;
+    const rate = total ? (totalWin / total * 100) : 0;
+    winRateHTML = '<div class="sig-winrate">回测胜率 <b class="' + (rate >= 50 ? 'up' : 'down') + '">' + rate.toFixed(1) + '%</b>'
+      + '<span class="wr-detail">（' + total + ' 个信号：买 ' + buy + ' 胜 ' + buyWin + '，卖 ' + sell + ' 胜 ' + sellWin + '）</span></div>';
+  }
   let rating;
   if (prob && prob.up_pct != null) {
     const r = buyRating(prob.up_pct);
@@ -4457,8 +4502,44 @@ function overviewScoreRatingHTML(prob, patScore, patCount) {
   const score = '<div class="ana-score-val ' + dir + '">' + arrow + ' ' + (patScore > 0 ? '+' : '') + patScore.toFixed(2) + '</div><div class="ana-score-sub">' + tone + ' · 近60根命中 ' + patCount + ' 处</div>';
   return '<div class="ana-score-grid">'
     + '<div class="ana-score-box"><div class="ana-score-label">形态净评分</div>' + score + '</div>'
-    + '<div class="ana-score-box"><div class="ana-score-label">买入评级</div>' + rating + '</div>'
+    + '<div class="ana-score-box"><div class="ana-score-label">买入评级</div>' + rating + winRateHTML + '</div>'
     + '</div>';
+}
+
+// 逐日信号回测明细表（仅展示 buy/sell 信号，按日期倒序，最新在前；可滚动）
+function dailySignalsHTML(ds) {
+  if (!ds || !ds.length) return '<div class="analysis-err">暂无可回测的逐日信号</div>';
+  let buy = 0, buyWin = 0, sell = 0, sellWin = 0;
+  ds.forEach((d) => {
+    if (d.signal === 'buy') { buy++; if (d.win) buyWin++; }
+    else if (d.signal === 'sell') { sell++; if (d.win) sellWin++; }
+  });
+  const total = buy + sell, totalWin = buyWin + sellWin;
+  const rate = total ? (totalWin / total * 100) : 0;
+  const rows = ds.filter((d) => d.signal === 'buy' || d.signal === 'sell').slice(-40).reverse();
+  let body = '';
+  rows.forEach((d) => {
+    const isBuy = d.signal === 'buy';
+    const chg = d.next_close - d.close;
+    const chgPct = d.close ? (chg / d.close * 100) : 0;
+    const ok = !!d.win;
+    const resultCls = ok ? 'up' : 'down';
+    const resultTxt = ok ? '✔ 命中' : '✘ 失效';
+    body += '<tr>'
+      + '<td class="ds-date">' + esc(d.date) + '</td>'
+      + '<td><span class="ds-sig ' + (isBuy ? 'up' : 'down') + '">' + (isBuy ? '买入' : '卖出') + '</span></td>'
+      + '<td class="ds-num">' + d.close.toFixed(2) + '</td>'
+      + '<td class="ds-num">' + (d.next_close ? d.next_close.toFixed(2) : '—') + '</td>'
+      + '<td class="ds-num ' + (chg >= 0 ? 'up' : 'down') + '">' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + ' (' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%)</td>'
+      + '<td class="ds-result ' + resultCls + '">' + resultTxt + '</td>'
+      + '</tr>';
+  });
+  return '<div class="daily-sig-wrap">'
+    + '<div class="daily-sig-summary">逐日信号回测：共 <b>' + total + '</b> 个买卖信号，胜率 <b class="' + (rate >= 50 ? 'up' : 'down') + '">' + rate.toFixed(1) + '%</b>'
+    + '（买 ' + buy + ' 胜 ' + buyWin + '，卖 ' + sell + ' 胜 ' + sellWin + '，最近 ' + rows.length + ' 条如下）</div>'
+    + '<div class="daily-sig-scroll"><table class="daily-sig-table">'
+    + '<thead><tr><th>日期</th><th>信号</th><th>当日收盘</th><th>次日收盘</th><th>次日涨跌</th><th>结果</th></tr></thead>'
+    + '<tbody>' + body + '</tbody></table></div></div>';
 }
 
 // 涨跌概率卡片
@@ -4551,10 +4632,10 @@ function renderAnalysis(a) {
   if (a.series && a.series.length) {
     const pmap = {};
     patVisible.forEach((p) => { (pmap[p.date] = pmap[p.date] || []).push(p); });
-    html += klineMiniHTML(a.series, pmap);
+    html += klineMiniHTML(a.series, pmap, a.daily_signals);
   }
   if (ind && prob) html += anaBadgesHTML(ind, prob);
-  html += overviewScoreRatingHTML(prob, patScore, patVisible.length);
+  html += overviewScoreRatingHTML(prob, patScore, patVisible.length, a.daily_signals);
   if (!ind || !prob) html += '<div class="analysis-err">数据不足，部分评分/评级暂不可用</div>';
   html += '</div>';
 
@@ -4563,11 +4644,12 @@ function renderAnalysis(a) {
     html += '<div class="ana-panel" data-tab="patterns" hidden>' + patHTML + '</div>';
   }
 
-  // ── 信号：信号分解 + 涨跌概率 ──
+  // ── 信号：信号分解 + 涨跌概率 + 逐日信号回测 ──
   if (prob) {
     html += '<div class="ana-panel" data-tab="signals" hidden>';
     html += sigListHTML(buildMergedSignals(prob, patScore, patVisible.length));
     html += probCardHTML(prob);
+    html += dailySignalsHTML(a.daily_signals);
     html += '</div>';
   }
 

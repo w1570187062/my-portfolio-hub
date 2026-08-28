@@ -455,3 +455,74 @@ func evalBOLL(ind *IndicatorsResult) (Signal, float64) {
 		Reason:    reason,
 	}, score
 }
+
+// SignalFromUpPct maps the bullish probability to a normalized signal. This is
+// the single source of truth for buy/sell/hold, shared by the live analysis
+// (角标) and the daily backtest, so they never drift apart.
+//
+//	up_pct >= 60 → buy, < 40 → sell, otherwise hold (hold 不展示角标)
+func SignalFromUpPct(upPct float64) string {
+	switch {
+	case upPct >= 60:
+		return "buy"
+	case upPct < 40:
+		return "sell"
+	default:
+		return "hold"
+	}
+}
+
+// DailySignal records the model's signal on a given trading day together with
+// the next-day close, so the caller can measure how often the signal was right.
+type DailySignal struct {
+	Date      string  `json:"date"`
+	Close     float64 `json:"close"`      // 当日收盘价
+	Signal    string  `json:"signal"`     // buy / sell / hold
+	UpPct     float64 `json:"up_pct"`     // 当日看涨概率
+	NextClose float64 `json:"next_close"` // 次日收盘价（最后一根无次日，记 0）
+	Win       *bool   `json:"win"`        // 信号是否成立：buy→次日>当日、sell→次日<当日；hold 为 nil
+}
+
+// ComputeDailySignals walks through history and, for every trading day once the
+// indicator window is stable, computes the signal exactly as the live analysis
+// does on that day (rolling indicators over bars[0..i]). The next-day close is
+// recorded so the front-end can show the daily signal and the overall win rate.
+//
+// The last bar is skipped (no next-day close). Bars with <60 history are skipped
+// so MACD/KDJ/BOLL are meaningful. Returns nil if there is not enough data.
+func ComputeDailySignals(bars []KlineBar) []DailySignal {
+	if len(bars) < 60 {
+		return nil
+	}
+	const start = 60
+	out := make([]DailySignal, 0, len(bars)-start)
+	for i := start; i < len(bars)-1; i++ {
+		ind := CalculateIndicators(bars[:i+1])
+		if ind == nil {
+			continue
+		}
+		prob := CalculateProbability(ind)
+		if prob == nil {
+			continue
+		}
+		sig := SignalFromUpPct(prob.UpPct)
+		nextClose := bars[i+1].Close
+		var win *bool
+		if sig == "buy" {
+			b := nextClose > bars[i].Close
+			win = &b
+		} else if sig == "sell" {
+			b := nextClose < bars[i].Close
+			win = &b
+		}
+		out = append(out, DailySignal{
+			Date:      bars[i].Date,
+			Close:     bars[i].Close,
+			Signal:    sig,
+			UpPct:     prob.UpPct,
+			NextClose: nextClose,
+			Win:       win,
+		})
+	}
+	return out
+}
