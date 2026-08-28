@@ -1830,7 +1830,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 @media (max-width: 640px), (orientation: landscape) and (max-height: 640px) {
   .cal-wrap { width: 96vw; }
   .cal-cell { padding: 3px 3px; }
-  .cal-val { font-size: 9px; }
+  /* .cal-cell .cal-val 提高优先级：基础 .cal-val 规则在媒体查询之后定义（16.5px），同级会被覆盖 */
+  .cal-cell .cal-val { font-size: 9px; }
   .cal-day { font-size: 13px; }
   .cal-emoji { font-size: 18px; }
   .cal-head h2 { font-size: 15px; }
