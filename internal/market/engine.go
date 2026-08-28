@@ -171,18 +171,23 @@ func runScriptEngine(prog *goja.Program, ind *IndicatorsResult, timeout time.Dur
 	}
 	_ = vm.Set("ind", m)
 
+	// 运行脚本：优先调用全局 evaluate(ind)；顶层若直接是函数（如 script 全体
+	// 就是一个函数表达式）则直接调用；否则把顶层返回值当作结果（宽松容错）。
 	start := time.Now()
 	timer := time.AfterFunc(timeout, func() { vm.Interrupt(fmt.Errorf("脚本执行超时(%v)", timeout)) })
 	defer timer.Stop()
 
-	val, err := vm.RunProgram(prog)
+	var val goja.Value
+	val, err = vm.RunProgram(prog)
 	if err == nil {
-		if fn, ok := goja.AssertFunction(val); ok {
-			val, err = fn(goja.Undefined(), vm.ToValue(m))
-		} else {
-			// 脚本未定义 evaluate 时，顶层返回值视为结果（更宽松的容错）
-			err = nil
+		fn, ok := goja.AssertFunction(val)
+		if !ok {
+			fn, ok = goja.AssertFunction(vm.Get("evaluate"))
 		}
+		if ok {
+			val, err = fn(goja.Undefined(), vm.ToValue(m))
+		}
+		// val 非函数时保持顶层返回值，交由下方合法性校验处理
 	}
 	elapsed := time.Since(start)
 	if budget != nil {
