@@ -4433,10 +4433,10 @@ function anaBadgesHTML(ind, prob) {
   return '<div class="ana-badges">' + items.map((it) => '<span class="ana-badge ' + it.tone + '">' + esc(it.label) + '</span>').join('') + '</div>';
 }
 
-// 由技术面看涨指数推导买入评级
+// 由技术面看涨指数推导买入评级（买入阈值65：弱偏多不给买入，PEP案例65.8%虚高已由后端约束压至58以下）
 function buyRating(upPct) {
   if (upPct >= 80) return { label: '强烈买入', cls: 'up' };
-  if (upPct >= 60) return { label: '买入', cls: 'up' };
+  if (upPct >= 65) return { label: '买入', cls: 'up' };
   if (upPct >= 45) return { label: '中性', cls: 'neu' };
   if (upPct >= 30) return { label: '减仓', cls: 'down' };
   return { label: '卖出', cls: 'down' };

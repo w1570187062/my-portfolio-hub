@@ -9,9 +9,10 @@ type IndicatorsResult struct {
 	MA20 float64 `json:"ma20"`
 	MA60 float64 `json:"ma60"`
 	MACD struct {
-		DIF   float64 `json:"dif"`
-		DEA   float64 `json:"dea"`
-		HIST  float64 `json:"hist"`
+		DIF      float64 `json:"dif"`
+		DEA      float64 `json:"dea"`
+		HIST     float64 `json:"hist"`
+		HistPrev float64 `json:"hist_prev"` // 上一交易日柱体值（用于判断红/绿柱增减趋势）
 	} `json:"macd"`
 	RSI float64 `json:"rsi"`
 	KDJ struct {
@@ -60,6 +61,9 @@ func CalculateIndicators(bars []KlineBar) *IndicatorsResult {
 	}
 	if len(hist) > 0 {
 		result.MACD.HIST = hist[len(hist)-1]
+		if len(hist) > 1 {
+			result.MACD.HistPrev = hist[len(hist)-2]
+		}
 	}
 
 	// RSI (14)

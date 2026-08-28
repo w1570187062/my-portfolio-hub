@@ -178,6 +178,15 @@ func evalMA(ind *IndicatorsResult) (Signal, float64) {
 		reason = "均线交织，趋势不明朗"
 	}
 
+	// 方向与分值一致性约束：方向判为空但分值为正（如价格跌破MA5但仍站在MA10/20上方，
+	// 加分项占优）会自相矛盾——标签看空却贡献正分。PEP 案例：MA标签bearish却+0.40，
+	// 助推误判"买入"次日下跌。将分值符号与方向对齐：方向空则分值≤0，方向多则分值≥0。
+	if dir == "bearish" && score > 0 {
+		score = 0
+	} else if dir == "bullish" && score < 0 {
+		score = 0
+	}
+
 	return Signal{
 		Indicator: "MA",
 		Direction: dir,
@@ -234,11 +243,22 @@ func evalMACD(ind *IndicatorsResult) (Signal, float64) {
 		score = justRedCap
 	}
 
+	// 红柱收窄约束：hist>0 但较上一交易日收窄，说明多头动能在衰减，不应给满分。
+	// PEP 案例：金叉未死、红柱连收3日（1.327→1.087→0.863）仍拿满分1.0助推"买入"，次日即跌1.7%。
+	if hist > 0 && ind.MACD.HistPrev > 0 && hist < ind.MACD.HistPrev {
+		score *= 0.6
+	}
+
 	var dir, reason string
 	switch {
 	case dif > 0 && dif > dea && hist > 0:
 		if rel(hist) >= sig && rel(dif) >= sig {
-			dir, reason = "bullish", "MACD金叉，红柱明显放大"
+			dir = "bullish"
+			if ind.MACD.HistPrev > 0 && hist < ind.MACD.HistPrev {
+				reason = "MACD金叉，红柱收窄动能减弱"
+			} else {
+				reason = "MACD金叉，红柱明显放大"
+			}
 		} else {
 			dir, reason = "bullish", "MACD刚翻红，动能尚弱"
 		}
