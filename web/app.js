@@ -34,29 +34,31 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// ---- 视图路由（hash）：刷新保持当前视图，浏览器后退/前进可用 ----
-const VIEWS = ['holdings', 'asset', 'tools', 'calendar', 'notify'];
+// ---- 视图路由（hash）：仅资产全景占用 #/asset，其余视图均为无 hash 的默认首页 ----
+// 刷新保持：资产全景页刷新仍在 #/asset；首页无路由占位（默认视图）。
 function viewFromHash() {
-  const h = location.hash || '';
-  if (h.indexOf('#/') === 0) {
-    const v = h.slice(2);
-    if (VIEWS.indexOf(v) >= 0) return v;
-  }
-  return 'holdings';
+  return location.hash === '#/asset' ? 'asset' : 'holdings';
 }
 function applyRoute() {
-  switch (viewFromHash()) {
-    case 'asset': showAssetView(); break;
+  if (viewFromHash() === 'asset') showAssetView();
+  else showHoldingsView();
+}
+function navigate(view) {
+  if (view === 'asset') {
+    if (location.hash !== '#/asset') location.hash = '/asset'; // 触发 hashchange → applyRoute
+    else applyRoute(); // hash 已一致：幂等应用（重复点击同一导航）
+    return;
+  }
+  // 非 asset 视图：清除 URL hash（pushState 保留后退到 #/asset 的能力）并直接应用目标视图
+  if (location.hash && location.hash !== '#') {
+    history.pushState(null, '', location.pathname + location.search);
+  }
+  switch (view) {
     case 'tools': showToolsView(); break;
     case 'calendar': openCalendarView(); break;
     case 'notify': showNotifyView(); break;
     default: showHoldingsView();
   }
-}
-function navigate(view) {
-  const target = VIEWS.indexOf(view) >= 0 ? view : 'holdings';
-  if (location.hash !== '#/' + target) location.hash = '/' + target; // 触发 hashchange → applyRoute
-  else applyRoute(); // hash 已一致：幂等应用（重复点击同一导航）
 }
 window.addEventListener('hashchange', applyRoute);
 
@@ -3917,6 +3919,40 @@ function minifyScript(code) {
     .trim();
 }
 
+// 把压缩成单行的脚本还原为可读的 pretty 格式（编辑器展示用，不改变语义）：
+// 按 {} 换行缩进、顶层 ; 换行；字符串与括号内的 ; 不拆行（for(...) 保持完整）。
+function prettyScript(code) {
+  if (!code) return code;
+  if (code.indexOf('\n') >= 0) return code; // 已是多行：视为未压缩，原样展示
+  let out = '', ind = 0, paren = 0, str = null;
+  const pad = (n) => '  '.repeat(Math.max(0, n));
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i];
+    if (str) {
+      out += ch;
+      if (ch === str && code[i - 1] !== '\\') str = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { str = ch; out += ch; continue; }
+    if (ch === '(') { paren++; out += ch; continue; }
+    if (ch === ')') { paren = Math.max(0, paren - 1); out += ch; continue; }
+    if (ch === '{') { ind++; out += '{\n' + pad(ind); continue; }
+    if (ch === '}') {
+      ind = Math.max(0, ind - 1);
+      out = out.replace(/[ \t]+$/, ''); // 去掉缩进尾巴
+      out += '\n' + pad(ind) + '}\n' + pad(ind);
+      continue;
+    }
+    if (ch === ';') {
+      out += ';';
+      if (paren === 0) out += '\n' + pad(ind);
+      continue;
+    }
+    out += ch;
+  }
+  return out.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
 let scrLoaded = false;
 async function loadScriptTool() {
   if (scrLoaded) return;
@@ -3930,7 +3966,7 @@ async function loadScriptTool() {
     const r = await api('/api/analysis-script');
     if (r.ok) {
       const s = await r.json();
-      $('#scrCode').value = s.code || SCR_TEMPLATE;
+      $('#scrCode').value = s.code ? prettyScript(s.code) : SCR_TEMPLATE;
       $('#scrEnabled').checked = !!s.enabled;
       $('#scrMeta').textContent = s.updated_at ? `（上次保存：${s.updated_at}）` : '';
       return;
