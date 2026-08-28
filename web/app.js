@@ -3995,7 +3995,7 @@ async function openAnalysis(id) {
   $('#analysisTitle').textContent = '📊 技术分析（加载中…）';
   const tsPre = document.getElementById('analysisTime');
   if (tsPre) tsPre.textContent = '';
-  body.innerHTML = '<div class="analysis-loading">⏳ 正在获取技术分析数据…</div>';
+  body.innerHTML = '<div class="analysis-loading"><span class="ana-funnel">⏳</span> 正在获取技术分析数据…</div>';
   modal.hidden = false;
   try {
     const r = await api('/api/holdings/' + id + '/analysis');
