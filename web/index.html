@@ -214,6 +214,7 @@
         <button id="tlTabEq" class="btn tab active" type="button">权益盈亏</button>
         <button id="tlTabUsd" class="btn tab" type="button">美元盈亏</button>
         <button id="tlTabFx" class="btn tab" type="button">汇率计算</button>
+        <button id="tlTabScr" class="btn tab" type="button">评级逻辑</button>
       </div>
 
       <!-- 汇率计算 -->
@@ -276,6 +277,20 @@
           <button id="usdSave" class="btn" type="button">💾 保存</button>
           <button id="usdClear" class="btn danger" type="button">🗑️ 清空</button>
         </div>
+      </div>
+
+      <!-- 自定义评级脚本 -->
+      <div id="tlPanelScr" hidden>
+        <p class="tool-hint">自定义买卖评级：实现 <b>evaluate(ind)</b> 返回 0~100 看涨概率，保存启用后由后端执行，作用于分析弹框、买卖角标与逐日回测。评级文案（买入/卖出…）仍按概率统一映射。脚本异常或超时自动降级内置逻辑。<span id="scrMeta" class="tool-fx"></span></p>
+        <textarea id="scrCode" class="scr-code" name="analysis_script_code" spellcheck="false" rows="16" placeholder="// 在此编写脚本…"></textarea>
+        <div class="tool-actions scr-actions">
+          <label class="scr-enabled"><input id="scrEnabled" type="checkbox" name="analysis_script_enabled"> 启用自定义脚本</label>
+          <button id="scrSave" class="btn" type="button">💾 保存</button>
+          <select id="scrTestHolding" class="scr-select" name="analysis_script_test_holding"></select>
+          <button id="scrTest" class="btn" type="button">🧪 测试运行</button>
+          <button id="scrTemplate" class="btn btn-sm" type="button">还原示例模板</button>
+        </div>
+        <div class="tool-result scr-test-result" id="scrTestResult" hidden></div>
       </div>
 
       <div class="modal-actions">

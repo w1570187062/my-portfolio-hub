@@ -171,6 +171,9 @@ func Init(path string) error {
 	if err := initAnalysisCache(); err != nil {
 		return fmt.Errorf("init analysis_cache: %w", err)
 	}
+	if err := initAnalysisScript(); err != nil {
+		return fmt.Errorf("init analysis_script: %w", err)
+	}
 	return nil
 }
 
@@ -235,6 +238,65 @@ func SaveAnalysisCache(symbol, date, barsJSON, indicatorsJSON, probabilityJSON, 
 			daily_signals_json=excluded.daily_signals_json,
 			generated_at=excluded.generated_at`,
 		symbol, date, barsJSON, indicatorsJSON, probabilityJSON, dailySignalsJSON, generatedAt)
+	return err
+}
+
+// ---- 自定义评级脚本（analysis_script）----
+// 全局单行表（id=1 恒定）：保存用户在「资产工具 → 评级逻辑」编写的 JS 脚本。
+// enabled=0 时走内置默认评分；enabled=1 时后端用 goja 执行 evaluate(ind)。
+// 脚本异常/超时时自动降级默认逻辑，不影响分析可用性。
+
+func initAnalysisScript() error {
+	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS analysis_script (
+		id         INTEGER PRIMARY KEY CHECK (id=1),
+		code       TEXT    NOT NULL DEFAULT '',
+		enabled    INTEGER NOT NULL DEFAULT 0,
+		updated_at TEXT    NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		return err
+	}
+	// 确保单行存在（空脚本+未启用）
+	_, err = DB.Exec(`INSERT OR IGNORE INTO analysis_script(id, code, enabled, updated_at) VALUES(1, '', 0, '')`)
+	return err
+}
+
+// AnalysisScript is the single global custom rating script row.
+type AnalysisScript struct {
+	Code      string `json:"code"`
+	Enabled   bool   `json:"enabled"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// GetAnalysisScript returns the global script row (always exists).
+func GetAnalysisScript() (*AnalysisScript, error) {
+	var s AnalysisScript
+	var en int
+	err := DB.QueryRow(`SELECT code, enabled, updated_at FROM analysis_script WHERE id=1`).
+		Scan(&s.Code, &en, &s.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	s.Enabled = en != 0
+	return &s, nil
+}
+
+// SaveAnalysisScript upserts the global script (id=1).
+func SaveAnalysisScript(code string, enabled bool, updatedAt string) error {
+	en := 0
+	if enabled {
+		en = 1
+	}
+	_, err := DB.Exec(`INSERT INTO analysis_script(id, code, enabled, updated_at) VALUES(1, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET code=excluded.code, enabled=excluded.enabled, updated_at=excluded.updated_at`,
+		code, en, updatedAt)
+	return err
+}
+
+// ClearAnalysisCacheByDate drops all cached analysis rows for a date. Called
+// when the custom script changes so stale engine results are not served.
+func ClearAnalysisCacheByDate(date string) error {
+	_, err := DB.Exec(`DELETE FROM analysis_cache WHERE date=?`, date)
 	return err
 }
 

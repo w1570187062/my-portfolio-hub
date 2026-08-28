@@ -199,6 +199,11 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/calc/inputs", calcInputsGet)
 		g.PUT("/calc/inputs", calcInputsPut)
 		g.DELETE("/calc/inputs", calcInputsDelete)
+
+		// 自定义评级脚本（资产工具 → 评级逻辑）
+		g.GET("/analysis-script", analysisScriptGet)
+		g.PUT("/analysis-script", analysisScriptPut)
+		g.POST("/analysis-script/test", analysisScriptTest)
 	}
 }
 
@@ -924,7 +929,7 @@ func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
 		return "", 0
 	}
 	ind := market.CalculateIndicators(bars)
-	prob := market.CalculateProbability(ind)
+	prob := market.EvaluateProbability(ind)
 	if prob == nil {
 		return "", 0
 	}

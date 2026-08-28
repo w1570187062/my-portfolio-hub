@@ -2456,6 +2456,23 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .tool-result .tool-empty { color: var(--text-muted); font-size: 13px; }
 .tool-result b { color: var(--text); }
 .tool-actions { display: flex; gap: 10px; }
+
+/* ===== 评级逻辑 tab（自定义脚本编辑/测试）===== */
+.scr-code { width: 100%; box-sizing: border-box; font-family: Consolas, 'Courier New', monospace; font-size: 12.5px; line-height: 1.55; padding: 10px 12px; border: var(--card-border); border-radius: 8px; background: var(--bg-card); color: var(--text); resize: vertical; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 2; }
+.scr-code:focus { outline: none; border-color: var(--btn-primary); }
+.scr-actions { flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.scr-enabled { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text); cursor: pointer; user-select: none; }
+.scr-enabled input { cursor: pointer; }
+.scr-select { padding: 4px 8px; border: var(--card-border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: 13px; max-width: 160px; }
+.scr-test-result { margin-top: 10px; }
+.scr-test-head { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.scr-test-row { display: flex; gap: 14px; align-items: center; padding: 6px 10px; border-radius: 8px; font-size: 13px; margin-bottom: 4px; background: var(--bg-soft, rgba(110,156,122,.06)); }
+.scr-test-row b { min-width: 72px; }
+.scr-test-row.scr-def span:first-of-type { color: var(--text-muted); }
+.scr-test-row.scr-cus { background: rgba(111,158,94,.12); }
+.scr-err { color: #e5484d; font-size: 13px; }
+.prob-engine { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: rgba(111,158,94,.16); color: var(--primary, #6f9e5e); vertical-align: 1px; }
+.prob-engine.fallback { background: rgba(229,72,77,.14); color: #e5484d; }
 /* 首页「计算」补仓弹框：操作按钮左右居中，并与下方留间距（通用 .tool-actions 默认左对齐且无下边距） */
 #calcCostModal .tool-actions { justify-content: center; padding-top: 6px; padding-bottom: 22px; }
 

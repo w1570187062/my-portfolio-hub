@@ -13,6 +13,7 @@ type ProbabilityResult struct {
 	Confidence int      `json:"confidence"` // 0-5，与总分同向的信号数，越高越可信
 	Signals    []Signal `json:"signals"`
 	Summary    string   `json:"summary"`
+	Engine     string   `json:"engine,omitempty"` // custom=自定义脚本 / default=内置 / default(fallback)=脚本失败降级
 }
 
 // Signal is an individual indicator signal.
@@ -539,12 +540,14 @@ func ComputeDailySignals(bars []KlineBar) []DailySignal {
 	}
 	const start = 60
 	out := make([]DailySignal, 0, len(bars)-start)
+	// 自定义脚本总预算：逐日最多执行约500次脚本，用共享预算防止病态脚本拖垮接口
+	budget := scriptDailyBudget
 	for i := start; i < len(bars)-1; i++ {
 		ind := CalculateIndicators(bars[:i+1])
 		if ind == nil {
 			continue
 		}
-		prob := CalculateProbability(ind)
+		prob := EvaluateProbabilityBounded(ind, &budget)
 		if prob == nil {
 			continue
 		}

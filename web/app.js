@@ -2700,6 +2700,8 @@ async function showToolsView() {
   if (!eqOk) addEqRow();
   const usdOk = await loadUsdRows();
   if (!usdOk) { addUsdBuy(); addUsdPnl(); }
+  // 评级逻辑 tab：加载已存脚本 + 填充测试下拉
+  loadScriptTool();
   // 汇率计算工具：显示当前汇率并刷新结果
   const fh = $('#fxRateHint');
   if (fh) fh.textContent = `当前：1 USD ≈ ${(usdRate || 1).toFixed(4)} CNY，1 HKD ≈ ${(hkdRate || 1).toFixed(4)} CNY`;
@@ -2709,9 +2711,11 @@ function switchToolsTab(tab) {
   $('#tlTabFx').classList.toggle('active', tab === 'fx');
   $('#tlTabEq').classList.toggle('active', tab === 'eq');
   $('#tlTabUsd').classList.toggle('active', tab === 'usd');
+  $('#tlTabScr').classList.toggle('active', tab === 'scr');
   $('#tlPanelFx').hidden = tab !== 'fx';
   $('#tlPanelEq').hidden = tab !== 'eq';
   $('#tlPanelUsd').hidden = tab !== 'usd';
+  $('#tlPanelScr').hidden = tab !== 'scr';
 }
 
 async function loadToolsFx() {
@@ -3877,8 +3881,89 @@ $('#notifyModal').addEventListener('click', (e) => { if (e.target === $('#notify
 $('#tlTabFx').onclick = () => switchToolsTab('fx');
 $('#tlTabEq').onclick = () => switchToolsTab('eq');
 $('#tlTabUsd').onclick = () => switchToolsTab('usd');
+$('#tlTabScr').onclick = () => switchToolsTab('scr');
 $('#toolsClose').onclick = () => { $('#toolsModal').hidden = true; };
 $('#toolsModal').addEventListener('click', (e) => { if (e.target === $('#toolsModal')) $('#toolsModal').hidden = true; });
+
+// ===== 评级逻辑 tab：自定义脚本编辑 / 保存 / 测试 =====
+// 契约：实现 evaluate(ind) 返回 0~100 看涨概率。ind 字段见后端 IndicatorsResult json 标签。
+const SCR_TEMPLATE = `// 自定义评级脚本示例（简化版均线+MACD+RSI 打分）
+// 必须实现 evaluate(ind)，返回 0~100 的看涨概率
+// 可用字段：ind.price / ind.ma5 / ind.ma10 / ind.ma20 / ind.ma60
+//           ind.dif / ind.dea / ind.hist / ind.hist_prev   (MACD)
+//           ind.rsi / ind.k / ind.d / ind.j                (RSI / KDJ)
+//           ind.bu / ind.bm / ind.bl / ind.bw              (布林上/中/下轨/带宽)
+// 内置助手：clamp(v, min, max)
+function evaluate(ind) {
+  var s = 0;
+  s += ind.price > ind.ma5 ? 0.3 : -0.3;
+  s += ind.price > ind.ma10 ? 0.3 : -0.3;
+  s += ind.price > ind.ma20 ? 0.2 : -0.2;
+  s += ind.dif > ind.dea ? 0.2 : -0.2;
+  s += ind.hist > 0 ? 0.2 : -0.2;
+  if (ind.rsi > 70) s -= 0.3;        // 超买减分
+  else if (ind.rsi < 30) s += 0.3;   // 超卖加分
+  return clamp(50 + s * 40, 10, 90);
+}`;
+const SCR_SIG_TXT = { buy: '买入', sell: '卖出', hold: '观望' };
+
+let scrLoaded = false;
+async function loadScriptTool() {
+  if (scrLoaded) return;
+  scrLoaded = true;
+  // 填充测试下拉：可分析的持仓（股票 或 已关联代码的基金）
+  const sel = $('#scrTestHolding');
+  sel.innerHTML = allHoldings
+    .filter((h) => h.category === 'stock' || (h.linked_symbol || h.category !== 'fund'))
+    .map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('') || '<option value="">（暂无可分析持仓）</option>';
+  try {
+    const r = await api('/api/analysis-script');
+    if (r.ok) {
+      const s = await r.json();
+      $('#scrCode').value = s.code || SCR_TEMPLATE;
+      $('#scrEnabled').checked = !!s.enabled;
+      $('#scrMeta').textContent = s.updated_at ? `（上次保存：${s.updated_at}）` : '';
+      return;
+    }
+  } catch (_) {}
+  $('#scrCode').value = SCR_TEMPLATE;
+  $('#scrEnabled').checked = false;
+}
+$('#scrTemplate').onclick = () => { $('#scrCode').value = SCR_TEMPLATE; toast('已填入示例模板', 'info'); };
+$('#scrSave').onclick = async () => {
+  const code = $('#scrCode').value;
+  const enabled = $('#scrEnabled').checked;
+  const btn = $('#scrSave');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/analysis-script', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, enabled }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(d.error || '保存失败', 'err'); return; }
+    $('#scrMeta').textContent = d.updated_at ? `（上次保存：${d.updated_at}）` : '';
+    toast(enabled ? '已保存并启用自定义脚本' : '已保存（使用内置逻辑）', 'ok');
+  } catch (e) { toast('保存异常：' + e.message, 'err'); }
+  finally { btn.disabled = false; }
+};
+$('#scrTest').onclick = async () => {
+  const sel = $('#scrTestHolding');
+  const id = sel.value;
+  if (!id) { toast('请先选择一个测试持仓', 'err'); return; }
+  const out = $('#scrTestResult');
+  out.hidden = false;
+  out.innerHTML = '<span style="color:var(--text-muted)">⏳ 正在测试…</span>';
+  try {
+    const r = await api('/api/analysis-script/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: $('#scrCode').value, holding_id: Number(id) }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { out.innerHTML = `<span class="scr-err">${esc(d.error || '测试失败')}</span>`; return; }
+    if (d.error) { out.innerHTML = `<span class="scr-err">${esc(d.error)}</span>`; return; }
+    const row = (label, up, sig, cls) => `<div class="scr-test-row ${cls}"><b>${label}</b><span>看涨 ${fmt(up)}%</span><span>评级：${SCR_SIG_TXT[sig] || sig || '—'}</span></div>`;
+    let html = `<div class="scr-test-head">${esc(d.name)}（${esc(d.symbol)}）现价 ${fmt(d.price)}</div>`;
+    html += row('内置默认', d.default_up_pct, d.default_signal, 'scr-def');
+    if (d.custom_error) html += `<div class="scr-test-row scr-err"><b>自定义脚本</b><span>${esc(d.custom_error)}</span></div>`;
+    else html += row('自定义脚本', d.custom_up_pct, d.custom_signal, 'scr-cus');
+    out.innerHTML = html;
+  } catch (e) { out.innerHTML = `<span class="scr-err">测试异常：${esc(e.message)}</span>`; }
+};
 
 // 盈亏日历弹框：关闭
 $('#calClose').onclick = () => { $('#calendarModal').hidden = true; };
@@ -4554,9 +4639,11 @@ function dailySignalsHTML(ds) {
 // 涨跌概率卡片
 function probCardHTML(prob) {
   const upPct = prob.up_pct || 50;
+  const engineTag = prob.engine === 'custom' ? ' <span class="prob-engine">自定义脚本</span>'
+    : prob.engine === 'default(fallback)' ? ' <span class="prob-engine fallback">脚本降级·内置逻辑</span>' : '';
   let h = '<div class="prob-card">';
   h += '<div class="prob-bar-wrap"><div class="prob-bar"><div class="prob-up" style="width:' + upPct + '%">▲ ' + upPct.toFixed(1) + '%</div><div class="prob-down" style="width:' + (100 - upPct) + '%">▼ ' + (100 - upPct).toFixed(1) + '%</div></div></div>';
-  h += '<div class="prob-summary">' + esc(prob.summary) + '</div>';
+  h += '<div class="prob-summary">' + esc(prob.summary) + engineTag + '</div>';
   h += '<div class="prob-conf">置信度：' + '★'.repeat(prob.confidence || 0) + '☆'.repeat(5 - (prob.confidence || 0)) + '</div>';
   h += '</div>';
   return h;
