@@ -1613,8 +1613,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   scroll-snap-align: start;
   border: 1px solid var(--border);
   background: var(--bg-card);
-  border-radius: 999px;
-  padding: 4px 10px;
+  border-radius: 20px;
+  padding: 8px 16px;
   font-size: 14px;
   color: var(--text-muted);
   cursor: pointer;
@@ -2096,7 +2096,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   white-space: nowrap;
   user-select: none;
 }
-.asset-tabs-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 20px 12px; border-bottom: 1px solid var(--border); }
+.asset-tabs-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 20px 12px; border-bottom: 1px solid var(--border); }
 .asset-tabs { display: flex; gap: 8px; }
 .asset-local-toolbar { padding: 0; margin-left: auto; }
 /* 资产总览：去掉 collapsible 卡片底色/边框（背景色取消），标题常驻不再折叠 */
