@@ -11,10 +11,9 @@ services:
       - ADMIN_USER=admin
       - ADMIN_PASS=asd2335979545
       - TZ=Asia/Shanghai
-      # 容器出网必须走 passwall2 显式代理，否则直连会被路由器透明拦截成空 200
-      - HTTP_PROXY=http://192.168.31.254:1082
-      - HTTPS_PROXY=http://192.168.31.254:1082
-      - NO_PROXY=localhost,127.0.0.1
+      # 注意：不要在此注入 HTTP(S)_PROXY。容器直连经 iStoreOS 路由器透明代理即可正常出网
+      # （2026-09-02 复盘：注入显式 HTTPS_PROXY 指向 passwall2:1082 后，真实长文生成请求会
+      #  在代理处挂起 ~3 分钟返回空响应 → /api/asset/summary 报 502；去掉后恢复直连，与 13:46 成功请求一致）。
     volumes:
       - /mnt/nvme0n1-4/portfolio/data:/data
     restart: unless-stopped

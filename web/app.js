@@ -2151,6 +2151,7 @@ async function loadAISettings() {
   $('#aiAutoDaily').checked = !!aiCfg.auto_daily;
   $('#aiAutoSend').checked = !!aiCfg.auto_send;
   renderModelSelect();
+  renderPickModelSelect();
 }
 
 // 多模型配置：渲染下拉、切换选中项、同步输入框
@@ -2216,6 +2217,32 @@ function renderPickTplSelect() {
   if (!aiCfg.templates.length) aiCfg.templates = defaultAITemplates();
   sel.innerHTML = aiCfg.templates.map((t, i) => `<option value="${i}">${t.name}</option>`).join('');
   sel.value = String(aiSelIdx);
+}
+
+// 总结面板里的模型下拉：列出「AI 设置」中保存的多模型配置，供一键总结时直接选模型
+function renderPickModelSelect() {
+  const sel = $('#aiPickModel');
+  if (!sel) return;
+  if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) {
+    aiCfg.models = [{ name: '默认', model: 'deepseek-v4-pro', api_key: '', base_url: 'https://api.deepseek.com' }];
+  }
+  sel.innerHTML = '';
+  aiCfg.models.forEach((m, i) => {
+    const o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = (m.name || ('模型' + (i + 1))) + (m.model ? '（' + m.model + '）' : '');
+    sel.appendChild(o);
+  });
+  sel.value = String(aiModelIdx < aiCfg.models.length ? aiModelIdx : 0);
+}
+
+// 取总结面板当前选中的模型配置（无选择或非法的回退 null，沿用设置面板的值）
+function getPickModelConfig() {
+  const pm = $('#aiPickModel');
+  if (!pm) return null;
+  const i = parseInt(pm.value, 10);
+  if (isNaN(i) || !Array.isArray(aiCfg.models) || !aiCfg.models[i]) return null;
+  return aiCfg.models[i];
 }
 
 function openAIResultModal(text, loading) {
@@ -2297,9 +2324,10 @@ async function aiSummarize(tplIdx) {
   // otherwise a stale/invalid saved key makes every summary 401.
   const boxKey = ($('#ai_apikey') ? $('#ai_apikey').value : '').trim();
   const lsKey = (localStorage.getItem('pf_ai_key') || '').trim();
-  const api_key = boxKey || lsKey || (aiCfg.api_key || '').trim();
-  const model = ($('#ai_model').value || '').trim() || 'deepseek-v4-pro';
-  const base_url = ($('#ai_baseurl').value || '').trim() || 'https://api.deepseek.com';
+  const pick = getPickModelConfig();
+  const model = (pick && pick.model && pick.model.trim()) ? pick.model.trim() : (($('#ai_model').value || '').trim() || 'deepseek-v4-pro');
+  const base_url = (pick && pick.base_url && pick.base_url.trim()) ? pick.base_url.trim() : (($('#ai_baseurl').value || '').trim() || 'https://api.deepseek.com');
+  const api_key = boxKey || lsKey || (pick && pick.api_key ? pick.api_key.trim() : '') || (aiCfg.api_key || '').trim();
   const edited = $('#ai_tpl_content').value;
   let content;
   if (typeof tplIdx === 'number' && aiCfg.templates[tplIdx]) content = aiCfg.templates[tplIdx].content;
@@ -2392,7 +2420,7 @@ function switchHubTab(tab) {
   $('#hubSettingsPanel').hidden = tab !== 'settings';
   $('#hubHistoryPanel').hidden = tab !== 'history';
   $('#aiHubModal').hidden = false;
-  if (tab === 'summary') renderPickTplSelect();
+  if (tab === 'summary') { renderPickTplSelect(); renderPickModelSelect(); }
   if (tab === 'settings') { renderTplSelect(); renderModelSelect(); }
   if (tab === 'history') loadAIHistory();
 }
@@ -4153,9 +4181,10 @@ $('#snapConfirmCancel').onclick = () => { pendingSnapSave = null; $('#snapConfir
 async function assetAiSummarize(tplIdx) {
   const boxKey = ($('#ai_apikey') ? $('#ai_apikey').value : '').trim();
   const lsKey = (localStorage.getItem('pf_ai_key') || '').trim();
-  const api_key = boxKey || lsKey || (aiCfg.api_key || '').trim();
-  const model = ($('#ai_model').value || '').trim() || 'deepseek-v4-pro';
-  const base_url = ($('#ai_baseurl').value || '').trim() || 'https://api.deepseek.com';
+  const pick = getPickModelConfig();
+  const model = (pick && pick.model && pick.model.trim()) ? pick.model.trim() : (($('#ai_model').value || '').trim() || 'deepseek-v4-pro');
+  const base_url = (pick && pick.base_url && pick.base_url.trim()) ? pick.base_url.trim() : (($('#ai_baseurl').value || '').trim() || 'https://api.deepseek.com');
+  const api_key = boxKey || lsKey || (pick && pick.api_key ? pick.api_key.trim() : '') || (aiCfg.api_key || '').trim();
   // 与权益类一致：优先使用 AI 设置弹框中当前编辑/选中的模板，避免静默回退到第一条或默认模板
   const edited = ($('#ai_tpl_content') ? $('#ai_tpl_content').value : '');
   let content;
