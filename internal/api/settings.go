@@ -230,6 +230,7 @@ func assetRebalance(c *gin.Context) {
 	for _, k := range order {
 		curVal := curMap[k]
 		var curPct, tgtPct, tgtVal, dev, devPct, adj float64
+		hasTgt := false
 		if total > 0 {
 			curPct = curVal / total * 100
 		}
@@ -237,6 +238,7 @@ func assetRebalance(c *gin.Context) {
 			for _, a := range sel.Allocations {
 				if a.Key == k {
 					tgtPct = a.Pct
+					hasTgt = true
 					break
 				}
 			}
@@ -254,6 +256,7 @@ func assetRebalance(c *gin.Context) {
 			"deviation":     round2(dev),
 			"deviation_pct": round2(devPct),
 			"adjust":        round2(adj),
+			"has_target":    hasTgt, // 该类别是否在所选风险偏好中配置了目标占比（未配置则前端显示「未配置」而非超配/低配）
 		})
 	}
 

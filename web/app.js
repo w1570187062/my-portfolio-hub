@@ -1770,20 +1770,24 @@ async function renderRebalance(profileId) {
   const donut = donutSVG(segs, { size: 170, center: '¥' + fmtShort(total), sub: (rows.length) + ' 类资产' });
   const bars = rows.map((r, i) => {
     const cp = r.current_pct || 0, tp = r.target_pct || 0, dp = r.deviation_pct || 0;
-    const driftCls = Math.abs(dp) <= 5 ? 'flat' : (dp > 0 ? 'up' : 'down');
-    const driftTxt = Math.abs(dp) <= 5 ? '达标' : (dp > 0 ? '超配' : '低配');
+    // 未在该风险偏好中配置目标占比的类别（如未分类）：显示「未配置」，不参与达标/偏离判定
+    const noTgt = !r.has_target;
+    const driftCls = noTgt ? 'flat' : (Math.abs(dp) <= 5 ? 'flat' : (dp > 0 ? 'up' : 'down'));
+    const driftTxt = noTgt ? '未配置' : (Math.abs(dp) <= 5 ? '达标' : (dp > 0 ? '超配' : '低配'));
     const c = palette[i % palette.length];
     return `<div class="bar-block">
       <div class="bar-head"><span class="bl-name">${esc(r.label)}</span><span class="drift ${driftCls}">${driftTxt}</span></div>
       <div class="track">
-        <div class="fill-target" style="left:${tp.toFixed(2)}%"></div>
+        ${noTgt ? '' : `<div class="fill-target" style="left:${tp.toFixed(2)}%"></div>`}
         <div class="fill-cur" style="width:${Math.min(cp, 100).toFixed(2)}%;background:${c}"></div>
       </div>
-      <div class="bar-foot"><span>当前 ${cp.toFixed(1)}% · ¥${fmt(r.current_value || 0)}</span><span>目标 ${tp.toFixed(1)}%</span><span class="${driftCls}">偏离 ${dp > 0 ? '+' : ''}${dp.toFixed(1)}%</span></div>
+      <div class="bar-foot"><span>当前 ${cp.toFixed(1)}% · ¥${fmt(r.current_value || 0)}</span><span>${noTgt ? '目标 未配置' : '目标 ' + tp.toFixed(1) + '%'}</span><span class="${driftCls}">${noTgt ? '偏离 —' : '偏离 ' + (dp > 0 ? '+' : '') + dp.toFixed(1) + '%'}</span></div>
     </div>`;
   }).join('');
   const tblRows = rows.map((r) => {
     const dp = r.deviation_pct || 0, adj = r.adjust || 0;
+    const noTgt = !r.has_target;
+    if (noTgt) return `<tr><td>${esc(r.label)}</td><td>${r.current_pct.toFixed(1)}%</td><td style="color:var(--text-muted)">—</td><td style="color:var(--text-muted)">—</td><td style="color:var(--text-muted)">—</td></tr>`;
     const adjCls = Math.abs(adj) < 0.5 ? 'flat' : (adj > 0 ? 'up' : 'down');
     const adjTxt = Math.abs(adj) < 0.5 ? '—' : (adj > 0 ? '增持 ¥' + fmt(adj) : '减持 ¥' + fmt(-adj));
     return `<tr><td>${esc(r.label)}</td><td>${r.current_pct.toFixed(1)}%</td><td>${r.target_pct.toFixed(1)}%</td><td class="${dp > 0 ? 'up' : 'down'}">${dp > 0 ? '+' : ''}${dp.toFixed(1)}%</td><td class="${adjCls}">${adjTxt}</td></tr>`;
@@ -3550,15 +3554,20 @@ function renderAssetSummary() {
       `<div class="cl"><span class="dot" style="background:${s.c}"></span>${esc(s.name)}<b>${money(s.v)}</b><span class="cpct">${pct(s.v).toFixed(1)}%</span></div>`).join('');
     return `<div class="comp-bar">${bar}</div><div class="comp-legend">${leg}</div>`;
   };
-  // 卡片一：净资产（净资产+负债=总资产，负债以红色段体现杠杆）
+  // 卡片一：净资产（净资产+负债=总资产，负债以红色段体现杠杆；圆环布局与首页总市值卡一致，
+  // 金额置于圆环中心，图例保留金额/占比）
+  const netSegs = [
+    { name: '净资产', v: Math.max(net, 0), c: '#6f9e5e' },
+    { name: '负债', v: lTotal, c: '#f87171' },
+  ];
+  const netTop = netSegs.slice().sort((a, b) => b.v - a.v)[0];
+  const netLeg = netSegs.map((s) =>
+    `<div class="cl"><span class="dot" style="background:${s.c}"></span>${esc(s.name)}<b>${money(s.v)}</b><span class="cpct">${pct(s.v).toFixed(1)}%</span></div>`).join('');
   const cardNet =
     `<div class="pano-sum">` +
       `<div class="ps-head">净资产</div>` +
-      `<div class="ps-big">${money(net)}</div>` +
-      stack([
-        { name: '净资产', v: Math.max(net, 0), c: '#6f9e5e' },
-        { name: '负债', v: lTotal, c: '#f87171' },
-      ]) +
+      `<div class="donut-wrap">${donutSVG(netSegs, { size: 150, center: '¥' + fmtShort(net), sub: netTop.name + ' ' + (netTop.v / base * 100).toFixed(0) + '%' })}</div>` +
+      `<div class="comp-legend">${netLeg}</div>` +
     `</div>`;
   // 卡片二：境内/境外资产（境内+境外=总资产）
   const cardRegion =
