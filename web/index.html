@@ -8,11 +8,20 @@
 <link rel="stylesheet" href="/style.css">
 <style>
   /* 加减仓弹窗 */
-  .seg { display:flex; gap:8px; margin-bottom:10px; }
-  .seg-btn { flex:1; padding:8px 0; border:1px solid var(--border, #d0d5dd); background:var(--bg-soft,#f4f5f7); border-radius:8px; cursor:pointer; font-size:14px; color:var(--text-muted,#6b7280); transition:var(--btn-transition, all .15s ease); }
-  .seg-btn:not(.active):hover { border-color:var(--btn-primary-hover); color:var(--btn-primary-hover); }
-  .seg-btn.active { background:var(--btn-primary); color:#fff; border-color:var(--btn-primary); font-weight:600; }
-  .adj-preview { margin:6px 0 10px; padding:10px 12px; background:var(--bg-soft,#f4f5f7); border-radius:8px; font-size:13px; line-height:1.6; color:var(--text,#1f2329); }
+  /* 加仓=红(涨) / 减仓=绿(跌)：圆形切换按钮，与上方绿色 tab 形成颜色区分 */
+  .adj-toprow { display:flex; align-items:flex-end; gap:10px; margin-bottom:10px; }
+  #adjustModal .adj-toprow .adj-inline { margin-bottom:0; }
+  .seg-circ { display:flex; align-items:center; gap:6px; flex:none; }
+  .circ-sep { color:var(--text-muted,#9aa0a6); font-size:15px; line-height:1; user-select:none; }
+  .circ-btn { width:34px; height:34px; border-radius:50%; padding:0; line-height:1; display:flex; align-items:center; justify-content:center; border:1px solid var(--border,#d0d5dd); background:var(--bg-soft,#f4f5f7); color:var(--text-muted,#6b7280); font-size:14px; cursor:pointer; transition:var(--btn-transition, all .15s ease); }
+  .circ-btn:not(.active):hover { border-color:#9aa0a6; color:#4b5563; }
+  .circ-btn.active[data-type="BUY"] { background:#e5484d; border-color:#e5484d; color:#fff; font-weight:600; }
+  .circ-btn.active[data-type="SELL"] { background:#16a34a; border-color:#16a34a; color:#fff; font-weight:600; }
+  .adj-inline { flex:1; display:flex; flex-direction:column; gap:4px; margin:0; font-size:12px; color:var(--text-muted,#6b7280); }
+  .adj-inline input,
+  .adj-inline select { width:100%; margin-top:4px; }
+  .adj-row { display:flex; gap:10px; margin-bottom:10px; align-items:flex-start; }
+  .adj-preview { display:none; margin:6px 0 10px; padding:10px 12px; border-radius:8px; font-size:13px; line-height:1.6; color:var(--text,#1f2329); }
   .adj-preview .warn { color:#e5484d; }
   .adj-preview b { color:var(--primary,#6f9e5e); }
   .adj-history { margin-top:14px; border-top:1px solid var(--border,#e5e7eb); padding-top:10px; }
@@ -30,6 +39,32 @@
   .adj-rl.up { color:#e5484d; }
   .adj-rl.down { color:#16a34a; }
   .adj-detail { margin-top:4px; color:var(--text-muted,#6b7280); word-break:break-all; }
+  .adj-calc { padding-top:4px; }
+  /* 弹框内密度收紧：空错误不占空间、标签间距减小、确认按钮上下更紧凑 */
+  #adjErr:empty { display:none; }
+  #adjustModal label { margin-bottom:10px; }
+  #adjustModal .modal-actions { margin-top:4px; padding-top:8px; padding-bottom:12px; }
+  /* 加减仓弹框 tab 切换：连体胶囊（有边框、圆角、两段连在一起） */
+  .adj-tabs { display:flex; border:1px solid var(--border,#e5e7eb); border-radius:10px; overflow:hidden; margin:2px 28px 12px; padding:0; }
+  .adj-tab { flex:1; padding:7px 0; border:none; background:transparent; cursor:pointer; font-size:12px; text-align:center; color:var(--text-muted,#6b7280); transition:var(--btn-transition, all .15s ease); }
+  .adj-tab + .adj-tab { border-left:1px solid var(--border,#e5e7eb); }
+  .adj-tab:not(.active):hover { background:var(--bg-soft,#f4f5f7); color:var(--text,#1f2329); }
+  .adj-tab.active { background:var(--btn-primary); color:#fff; font-weight:600; }
+  /* 调整弹框底部「确定」按钮上下间距收紧 */
+  #adjustModal .modal-actions { margin-top:4px; padding-top:8px; padding-bottom:12px; }
+  /* 面板：自身滚动；内部 form 不另起滚动，避免双重内边距 */
+  .modal-card .adj-panel form { flex:none; min-height:0; overflow:visible; padding:0; }
+  /* 计算器：描述与输入框左边缘对齐，输入框占满宽度 */
+  .adj-calc .tool-rate { padding:0; }
+  .adj-calc .tool-rate input,
+  .adj-calc .tool-rate select { width:100%; }
+  /* 编辑持仓弹框：三列网格，标签在上、控件在下，跨列对齐 */
+  #modal .f-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:10px; }
+  #modal .f-row.f-row2 { grid-template-columns:1fr 1fr; }
+  #modal .f-row > label { display:flex; flex-direction:column; gap:4px; margin-bottom:0; font-size:12px; color:var(--text-muted,#6b7280); }
+  #modal .f-row > label input,
+  #modal .f-row > label select { width:100%; margin-top:4px; }
+  @media (max-width:520px) { #modal .f-row { grid-template-columns:repeat(2,1fr); } #modal .f-row2 { grid-template-columns:1fr; } }
 
   /* 导航区 */
   .brand-nav { position:relative; display:flex; align-items:center; gap:10px; }
@@ -54,12 +89,6 @@
   <header>
     <div class="brand-nav">
       <h1 id="brandTitle" title="点击回到主页" style="cursor:pointer"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>观澜</h1>
-    </div>
-    <!-- 原 nav 按钮（隐藏，保留供 JS 绑定兼容） -->
-    <div id="legacyNav" hidden>
-      <button id="calendarBtn" class="btn">📅 盈亏日历</button>
-      <button id="assetBtn" class="btn">🗂️ 资产全景</button>
-      <button id="toolsBtn" class="btn">🛠️ 资产工具</button>
     </div>
     <div class="act-group">
       <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式">🌙</button>
@@ -89,7 +118,6 @@
         <button id="aiHomeBtn" class="btn" type="button">🤖 AI</button>
         <button id="addBtn" class="btn">➕ 添加</button>
         <button id="guideBtn" class="btn">📋 计划</button>
-        <button id="refreshBtn" class="btn">🔄 刷新</button>
       </div>
       <div class="action-tools">
         <input type="search" id="filterInput" name="q" class="filter-search" placeholder="搜索名称 / 代码" aria-label="筛选持仓" autocomplete="off" spellcheck="false" enterkeyhint="search" hidden data-1p-ignore data-lpignore="true" data-form-type="other" data-dashlane-ignored="true">
@@ -208,7 +236,7 @@
 
   <div id="toolsModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
-      <h2>🛠️ 资产工具</h2>
+      <h2>资产工具</h2>
       <button class="card-close" type="button" id="toolsClose" title="关闭" aria-label="关闭">✕</button>
       <div class="hist-tabs">
         <button id="tlTabEq" class="btn tab active" type="button">权益盈亏</button>
@@ -224,7 +252,7 @@
           <div class="fx-row">
             <div class="fx-side">
               <label>金额</label>
-              <input id="fxAmount" type="number" step="any" placeholder="0.00">
+              <input id="fxAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="0.00">
             </div>
             <div class="fx-side">
               <label>从</label>
@@ -255,16 +283,16 @@
         <button id="eqAddRow" class="btn btn-sm" type="button">＋ 添加一笔</button>
         <div class="tool-result" id="eqResult"></div>
         <div class="tool-actions">
-          <button id="eqCalc" class="btn" type="button">🧮 计算</button>
-          <button id="eqSave" class="btn" type="button">💾 保存</button>
-          <button id="eqClear" class="btn danger" type="button">🗑️ 清空</button>
+          <button id="eqCalc" class="btn" type="button">计算</button>
+          <button id="eqSave" class="btn" type="button">保存</button>
+          <button id="eqClear" class="btn danger" type="button">清空</button>
         </div>
       </div>
 
       <!-- 美元资产盈亏计算器 -->
       <div id="tlPanelUsd" hidden>
         <p class="tool-hint">买入与盈亏是两件独立的事：① 逐笔录入「美元买入」（金额 + 买入汇率），按金额加权得平均买入汇率；② 逐笔录入「盈亏」（USD 盈亏额）。两者与当前汇率对比，判断美元资产是否跑赢汇率贬值。</p>
-        <label class="tool-rate">当前汇率（RMB / 1 USD）<input id="usdRate" type="number" step="any" placeholder="自动填充实时汇率"></label>
+        <label class="tool-rate">当前汇率（RMB / 1 USD）<input id="usdRate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="自动填充实时汇率"></label>
         <div class="tool-sub">① 买入美元记录</div>
         <div class="tool-table" id="usdBuyRows"></div>
         <button id="usdAddBuy" class="btn btn-sm" type="button">＋ 添加一笔买入</button>
@@ -273,9 +301,9 @@
         <button id="usdAddPnl" class="btn btn-sm" type="button">＋ 添加一笔盈亏</button>
         <div class="tool-result" id="usdResult"></div>
         <div class="tool-actions">
-          <button id="usdCalc" class="btn" type="button">🧮 计算</button>
-          <button id="usdSave" class="btn" type="button">💾 保存</button>
-          <button id="usdClear" class="btn danger" type="button">🗑️ 清空</button>
+          <button id="usdCalc" class="btn" type="button">计算</button>
+          <button id="usdSave" class="btn" type="button">保存</button>
+          <button id="usdClear" class="btn danger" type="button">清空</button>
         </div>
       </div>
 
@@ -285,16 +313,16 @@
         <textarea id="scrCode" class="scr-code" name="analysis_script_code" spellcheck="false" rows="16" placeholder="// 在此编写脚本…"></textarea>
         <div class="tool-actions scr-actions">
           <label class="scr-enabled"><input id="scrEnabled" type="checkbox" name="analysis_script_enabled"> 启用自定义脚本</label>
-          <button id="scrSave" class="btn" type="button">💾 保存</button>
+          <button id="scrSave" class="btn" type="button">保存</button>
           <select id="scrTestHolding" class="scr-select" name="analysis_script_test_holding"></select>
-          <button id="scrTest" class="btn" type="button">🧪 测试运行</button>
+          <button id="scrTest" class="btn" type="button">测试运行</button>
           <button id="scrTemplate" class="btn btn-sm" type="button">还原示例模板</button>
         </div>
         <div class="tool-result scr-test-result" id="scrTestResult" hidden></div>
       </div>
 
       <div class="modal-actions">
-        <button id="mergeBtn" class="btn" type="button">🔗 合并汇总（权益 + 美元）</button>
+        <button id="mergeBtn" class="btn" type="button">合并汇总（权益 + 美元）</button>
       </div>
     </div>
   </div>
@@ -329,77 +357,133 @@
   <div id="modal" class="modal" hidden>
     <div class="modal-card">
       <h2 id="modalTitle">添加持仓</h2>
-      <form id="form">
-        <input type="hidden" id="f_id">
-        <label>名称 <input id="f_name" required></label>
-        <label>代码 <input id="f_symbol" placeholder="600519 / 110011 / AAPL" required></label>
-        <label>类别
-          <select id="f_category"><option value="stock">股票</option><option value="fund">基金</option></select>
-        </label>
-        <label>市场
-          <select id="f_market"></select>
-        </label>
-        <label>来源
-          <select id="f_source"></select>
-        </label>
-        <label>币种
-          <select id="f_currency"><option value="CNY">RMB</option><option value="HKD">HKD</option><option value="USD">USD</option></select>
-        </label>
-        <label>份额 <input id="f_quantity" type="number" step="any" required></label>
-        <label>成本价 <input id="f_cost_price" type="number" step="any" required></label>
-        <label>现价 <input id="f_current_price" type="number" step="any" placeholder="美股手动填；沪深/港股/基金留空刷新时自动更新"></label>
-        <label>昨收(可选) <input id="f_prev_close" type="number" step="any" placeholder="美股手动填昨收以算当日盈亏；其余留空自动取行情"></label>
-        <label>备注 <input id="f_note" placeholder="可选，备忘用途"></label>
-        <label>买入日期 <input id="f_buy_date" type="date"></label>
-        <label id="linked_symbol_row" style="display:none">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL"></label>
-        <div id="formErr" class="err"></div>
-        <div class="modal-actions">
-          <button class="btn" type="submit">保存</button>
-        </div>
-      </form>
+        <form id="form">
+          <input type="hidden" id="f_id">
+          <label>名称 <input id="f_name" required></label>
+          <div class="f-row">
+            <label>代码 <input id="f_symbol" placeholder="600519 / 110011 / AAPL" required></label>
+            <label>类别
+              <select id="f_category"><option value="stock">股票</option><option value="fund">基金</option></select>
+            </label>
+            <label>市场
+              <select id="f_market"></select>
+            </label>
+          </div>
+          <div class="f-row">
+            <label>份额 <input id="f_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
+            <label>成本价 <input id="f_cost_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
+            <label>现价 <input id="f_current_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="美股手动填；其余留空刷新自动更新"></label>
+          </div>
+          <div class="f-row">
+            <label>来源
+              <select id="f_source"></select>
+            </label>
+            <label>币种
+              <select id="f_currency"><option value="CNY">RMB</option><option value="HKD">HKD</option><option value="USD">USD</option></select>
+            </label>
+            <label>交易成本 <input id="f_cost" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="买入/卖出手续费等（可选）"></label>
+          </div>
+          <div class="f-row f-row2">
+            <label>描述 <input id="f_note" placeholder="可选，备忘用途"></label>
+            <label>交易日期 <input id="f_buy_date" type="date"></label>
+          </div>
+          <label id="linked_symbol_row" style="display:none">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL"></label>
+          <div id="formErr" class="err"></div>
+          <div class="modal-actions">
+            <button class="btn" type="submit">保存</button>
+          </div>
+        </form>
     </div>
   </div>
 
   <div id="adjustModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
       <h2 id="adjustTitle">加减仓</h2>
-      <form id="adjustForm">
-        <input type="hidden" id="adj_id">
-        <div class="seg" id="adjTypeSeg">
-          <button type="button" class="seg-btn active" data-type="BUY">加仓</button>
-          <button type="button" class="seg-btn" data-type="SELL">减仓</button>
+      <div class="adj-tabs">
+        <button type="button" class="adj-tab active" data-tab="adjust">加减仓</button>
+        <button type="button" class="adj-tab" data-tab="calc">调仓计算器</button>
+      </div>
+      <div class="adj-panel" data-panel="adjust">
+        <form id="adjustForm">
+          <input type="hidden" id="adj_id">
+          <div class="adj-toprow">
+            <label class="adj-inline" style="flex:none">操作
+              <div class="seg-circ" id="adjTypeSeg">
+                <button type="button" class="circ-btn active" data-type="BUY">加</button>
+                <span class="circ-sep">/</span>
+                <button type="button" class="circ-btn" data-type="SELL">减</button>
+              </div>
+            </label>
+            <label class="adj-inline">数量<input id="adj_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="份额" required></label>
+            <label class="adj-inline">价格<input id="adj_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="留空用现价"></label>
+            <label class="adj-inline">成本<input id="adj_fee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" value="0"></label>
+          </div>
+          <label>金额（自动计算）<input id="adj_amount" type="number" step="any" readonly></label>
+          <div id="adjPreview" class="adj-preview"></div>
+          <label>备注<input id="adj_note" placeholder="可选，如 补仓/止盈"></label>
+          <div id="adjErr" class="err"></div>
+          <div class="modal-actions">
+            <button class="btn" type="submit">确认</button>
+          </div>
+        </form>
+        <div class="adj-history">
+          <h3>交易记录</h3>
+          <div id="adjHistoryList" class="adj-history-list"><div class="adj-empty">暂无记录</div></div>
         </div>
-        <label>数量（份额）<input id="adj_quantity" type="number" step="any" min="0" placeholder="本次买卖的份额" required></label>
-        <label>价格（成交价）<input id="adj_price" type="number" step="any" min="0" placeholder="留空默认用现价"></label>
-        <label>金额（自动计算）<input id="adj_amount" type="number" step="any" readonly></label>
-        <label>买入/卖出成本（手续费）<input id="adj_fee" type="number" step="any" min="0" value="0"></label>
-        <div id="adjPreview" class="adj-preview"></div>
-        <label>备注<input id="adj_note" placeholder="可选，如 补仓/止盈"></label>
-        <div id="adjErr" class="err"></div>
-        <div class="modal-actions">
-          <button class="btn" type="submit">确认</button>
+      </div>
+      <div class="adj-panel" data-panel="calc" hidden>
+        <div class="adj-calc">
+          <p class="tool-hint">• 填原有持仓 + 一笔调仓，自动算合并后的成本、数量与净盈亏<br>
+• 调仓方式：按数量 / 按金额（金额含买入费，从金额中扣除）<br>
+• 调仓现价同时作成交价与盈亏参考价，数量支持非整数（如基金份数）<br>
+• 手续费买卖各一笔：买入费进成本，卖出费从盈亏扣除</p>
+          <div class="adj-row">
+            <label class="adj-inline">调仓方式
+              <select id="addMode">
+                <option value="qty">按数量</option>
+                <option value="amount">按金额</option>
+              </select>
+            </label>
+            <label class="adj-inline">买卖方向
+              <select id="addSide">
+                <option value="buy">买入</option>
+                <option value="sell">卖出</option>
+              </select>
+            </label>
+          </div>
+          <div class="adj-row">
+            <label class="adj-inline">原成交价（元/份）<input id="addOldPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 10.50"></label>
+            <label class="adj-inline">原持仓数量（股/份）<input id="addOldQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 1000"></label>
+          </div>
+          <div class="adj-row">
+            <label class="adj-inline" id="addQtyWrap">补仓数量（股/份）<input id="addNewQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 500"></label>
+            <label class="adj-inline" id="addAmtWrap" style="display:none">补仓金额（元，含买入费）<input id="addAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 5000"></label>
+            <label class="adj-inline">补仓现价（元/份）<input id="addNewPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 9.80"></label>
+            <label class="adj-inline">手续费（单次）<input id="addFee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 0 或 5"></label>
+          </div>
+          <div class="tool-result" id="addResult"></div>
+          <div class="tool-actions">
+            <button id="addCalc" class="btn" type="button">计算</button>
+            <button id="addClear" class="btn danger" type="button">清空</button>
+            <button id="addApply" class="btn primary" type="button" disabled>计入持仓</button>
+          </div>
         </div>
-      </form>
-      <div class="adj-history">
-        <h3>交易记录</h3>
-        <div id="adjHistoryList" class="adj-history-list"><div class="adj-empty">暂无记录</div></div>
       </div>
     </div>
   </div>
 
   <div id="guideModal" class="modal" hidden>
     <div class="modal-card" style="width:560px; max-width:94vw;">
-      <h2>补仓计划</h2>
+      <h2>调仓计划</h2>
       <div class="guide-plan">
         <div class="guide-plan-head">
-          <span class="guide-plan-title">📊 动态补仓计划</span>
-          <span class="guide-plan-sub">基金 / 亏损股票在净值刷新后自动计算</span>
+          <span class="guide-plan-title">📊 动态调仓计划</span>
         </div>
         <div id="guidePlanBody" class="guide-plan-body"></div>
       </div>
       <div class="guide-manual">
         <div class="guide-plan-head">
-          <span class="guide-plan-title">📝 手动添加补仓计划</span>
+          <span class="guide-plan-title">📝 手动添加调仓计划</span>
         </div>
         <div id="guideList" class="guide-list"><div class="guide-empty">暂无操作记录</div></div>
       <form id="guideForm" hidden>
@@ -407,6 +491,12 @@
         <label>标题 *<input id="guide_title" placeholder="如：买入 PEP 100股 @150" required></label>
         <label>关联持仓
           <select id="guide_holding"><option value="0">不关联</option></select>
+        </label>
+        <label>买卖方向
+          <select id="guide_side">
+            <option value="buy">买入</option>
+            <option value="sell">卖出</option>
+          </select>
         </label>
         <label>标签（逗号分隔）<input id="guide_tags" placeholder="如：买入,美股,加仓"></label>
         <label>内容<textarea id="guide_content" rows="4" placeholder="记录买卖理由、价格、数量、复盘等..."></textarea></label>
@@ -417,7 +507,7 @@
         </div>
       </form>
       <div class="modal-actions" id="guideActions">
-        <button class="btn" type="button" id="guideNew">➕ 新增记录</button>
+        <button class="btn" type="button" id="guideNew">新增记录</button>
       </div>
       </div><!-- /guide-manual -->
     </div>
@@ -557,30 +647,7 @@
     </div>
   </div>
 
-  <div id="calcCostModal" class="modal" hidden>
-    <div class="modal-card" style="width:520px; max-width:94vw;">
-      <button class="card-close" type="button" title="关闭">✕</button>
-      <h2>补仓成本计算器</h2>
-      <p class="tool-hint">填入原有持仓与一笔补仓，自动算出合并后的持仓成本、数量与净盈亏。补仓可<b>按数量</b>或<b>按金额</b>：选「按金额」时填投入总金额（买入费从金额中扣除）；选「按数量」时填买入份数。<b>补仓现价</b>同时作为买入价与盈亏参考价。数量支持非整数（如基金份数）。手续费「买卖各一笔」：买入费进成本，卖出费从盈亏扣除。</p>
-      <label class="tool-rate">原成交价（元/份）<input id="addOldPrice" type="number" step="any" placeholder="如 10.50"></label>
-      <label class="tool-rate">原持仓数量（股/份）<input id="addOldQty" type="number" step="any" placeholder="如 1000"></label>
-      <label class="tool-rate">补仓方式
-        <select id="addMode">
-          <option value="qty">按数量补仓</option>
-          <option value="amount">按金额补仓</option>
-        </select>
-      </label>
-      <label class="tool-rate" id="addQtyWrap">补仓数量（股/份）<input id="addNewQty" type="number" step="any" placeholder="如 500"></label>
-      <label class="tool-rate" id="addAmtWrap" style="display:none">补仓金额（元，含买入费）<input id="addAmount" type="number" step="any" placeholder="如 5000"></label>
-      <label class="tool-rate">交易手续费（买卖每笔，元）<input id="addFee" type="number" step="any" placeholder="如 0 或 5"></label>
-      <label class="tool-rate">补仓现价（元/份）<input id="addNewPrice" type="number" step="any" placeholder="如 9.80"></label>
-      <div class="tool-result" id="addResult"></div>
-      <div class="tool-actions">
-        <button id="addCalc" class="btn" type="button">🧮 计算</button>
-        <button id="addClear" class="btn danger" type="button">🗑️ 清空</button>
-      </div>
-    </div>
-  </div>
+  <!-- 补仓成本计算器已并入「加减仓」弹框（#adjustModal 内 .adj-calc） -->
 </div>
   <!-- ===== 资产全景弹框 ===== -->
   <div id="assetSourceModal" class="modal" hidden>
@@ -613,7 +680,7 @@
         <label>货币类型
           <select id="w_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
         </label>
-        <label>累计收益 <input id="w_cum" type="number" step="any" placeholder="留空则按每日盈亏自动累计"></label>
+        <label>累计收益 <input id="w_cum" type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" placeholder="留空则按每日盈亏自动累计"></label>
         <label>备注 <input id="w_note"></label>
         <div id="wealthErr" class="err"></div>
         <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
@@ -629,9 +696,9 @@
         <label>名称 <input id="lb_name" placeholder="如 房贷 / 招行信用卡" required></label>
         <label>类型 <input id="lb_type" placeholder="房贷/信用卡/消费贷/其他"></label>
         <label>所属来源 <select id="lb_source"></select></label>
-        <label>当前欠款余额 <input id="lb_amount" type="number" step="any" required></label>
-        <label>年利率(%) <input id="lb_rate" type="number" step="any"></label>
-        <label>月供 <input id="lb_monthly" type="number" step="any"></label>
+        <label>当前欠款余额 <input id="lb_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
+        <label>年利率(%) <input id="lb_rate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
+        <label>月供 <input id="lb_monthly" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
         <label>备注 <input id="lb_note"></label>
         <div id="liabilityErr" class="err"></div>
         <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
@@ -646,7 +713,7 @@
         <input type="hidden" id="cs_id">
         <label>日期 <input id="cs_date" type="date"></label>
         <label>类别 <input id="cs_category" placeholder="餐饮/交通/购物..." required></label>
-        <label>金额 <input id="cs_amount" type="number" step="any" required></label>
+        <label>金额 <input id="cs_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
         <label>支付来源 <select id="cs_source"></select></label>
         <label>备注 <input id="cs_note"></label>
         <div id="consumeErr" class="err"></div>
@@ -664,7 +731,7 @@
         <label>货币类型
           <select id="c_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
         </label>
-        <label>当前余额 <input id="c_amount" type="number" step="any" required></label>
+        <label>当前余额 <input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
         <label>所属来源 <select id="c_source"></select></label>
         <label>备注 <input id="c_note"></label>
         <div id="cashErr" class="err"></div>

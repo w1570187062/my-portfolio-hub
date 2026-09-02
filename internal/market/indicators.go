@@ -26,7 +26,8 @@ type IndicatorsResult struct {
 		Lower float64 `json:"lower"`
 		Width float64 `json:"width"` // (upper-lower)/mid * 100
 	} `json:"boll"`
-	Price float64 `json:"price"` // latest close price
+	Price          float64 `json:"price"`           // latest close price
+	DailyChangePct float64 `json:"daily_change_pct"` // 当日涨跌幅%，用于单日急涨惩罚
 }
 
 // CalculateIndicators computes all indicators from K-line bars.
@@ -45,6 +46,11 @@ func CalculateIndicators(bars []KlineBar) *IndicatorsResult {
 	}
 
 	result := &IndicatorsResult{Price: closes[len(closes)-1]}
+
+	// 当日涨跌幅（用于单日急涨惩罚）：(今收-昨收)/昨收*100
+	if len(closes) >= 2 && closes[len(closes)-2] != 0 {
+		result.DailyChangePct = (closes[len(closes)-1] - closes[len(closes)-2]) / closes[len(closes)-2] * 100
+	}
 
 	result.MA5 = smaLast(closes, 5)
 	result.MA10 = smaLast(closes, 10)

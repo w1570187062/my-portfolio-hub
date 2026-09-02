@@ -63,12 +63,13 @@ func main() {
 	noCache := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			if data, err := fs.ReadFile(webFS, "web/index.html"); err == nil {
+				// 用含时间戳的完整 VERSION 作为缓存戳：每次部署（时间戳变化）都会
+				// 让浏览器重新拉取 app.js / style.css，彻底规避“改了前端却不生效”。
 				v := api.BuildInfo
-				if i := strings.IndexByte(v, '|'); i >= 0 {
-					v = v[:i]
-				}
-				if v == "" {
+				if v == "" || v == "dev" {
 					v = "dev"
+				} else {
+					v = strings.NewReplacer("|", "-", ":", "-", "+", "-").Replace(v)
 				}
 				html := string(data)
 				html = strings.Replace(html, `src="/app.js"`, `src="/app.js?v=`+v+`"`, 1)

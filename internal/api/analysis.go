@@ -41,7 +41,7 @@ func signalFromUpPct(upPct float64) string {
 }
 
 // getAnalysis returns technical analysis for a holding.
-// GET /api/analysis/:id
+// GET /holdings/:id/analysis
 //
 // 缓存策略：按 (规范化 symbol, 当日 YYYY-MM-DD) 缓存 K线+指标+概率+逐日信号 JSON。
 // 同一交易日内多次打开分析弹框直接命中缓存，毫秒级返回；跨日自然失效。

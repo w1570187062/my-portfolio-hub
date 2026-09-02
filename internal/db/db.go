@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,8 @@ type Holding struct {
 	PrevClose    float64 `json:"prev_close"`
 	Note         string  `json:"note"`
 	LinkedSymbol string  `json:"linked_symbol"` // 基金关��的股票代码，非空时点击基金可做技术分析
-	BuyDate      string  `json:"buy_date"`       // 买入日期，YYYY-MM-DD，为空则不计持有天数
+	BuyDate      string  `json:"buy_date"`       // 买入日期（交易日期），YYYY-MM-DD，为空则不计持有天数
+	TransactionCost float64 `json:"transaction_cost"` // 交易成本/手续费，按持仓币种计，可选
 	BuyPlan       string  `json:"buy_plan"`       // 基金补仓计划 JSON（净值刷新时计算，不写 note 列）
 	Closed        bool    `json:"closed"`          // 是否已清仓（份额已归零）
 	LastQuantity  float64 `json:"last_quantity"`   // 清仓前最后份额（供历史盈亏重算基准）
@@ -118,6 +120,11 @@ func Init(path string) error {
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='analysis_at'`).Scan(&anat); e == nil && anat == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN analysis_at TEXT NOT NULL DEFAULT ''`)
 	}
+	// 兼容旧库：新增 transaction_cost 列（交易成本/手续费，按持仓币种计，可选）
+	var tcc int
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='transaction_cost'`).Scan(&tcc); e == nil && tcc == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN transaction_cost REAL NOT NULL DEFAULT 0`)
+	}
 	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 		date    TEXT NOT NULL,
 		symbol  TEXT NOT NULL,
@@ -137,6 +144,9 @@ func Init(path string) error {
 	)`)
 	if err != nil {
 		return fmt.Errorf("create pnl_daily: %w", err)
+	}
+	if err := initRealizedPnl(); err != nil {
+		return fmt.Errorf("init realized_pnl_daily: %w", err)
 	}
 	if err := initAISettings(); err != nil {
 		return fmt.Errorf("init ai_settings: %w", err)
@@ -309,6 +319,7 @@ type BuyPlanExec struct {
 	HoldingID  int64   `json:"holding_id"`
 	TierIndex  int     `json:"tier_index"` // 补仓计划 Tiers 数组下标（档位稳定按序）
 	TierLabel  string  `json:"tier_label"`
+	Action     string  `json:"action"` // buy=标记已补, sell=标记已减
 	Price      float64 `json:"price"`
 	Amount     float64 `json:"amount"`
 	Note       string  `json:"note"`
@@ -321,25 +332,32 @@ func initBuyPlanExecuted() error {
 		holding_id INTEGER NOT NULL,
 		tier_index INTEGER NOT NULL DEFAULT 0,
 		tier_label TEXT NOT NULL DEFAULT '',
+		action TEXT NOT NULL DEFAULT 'buy',
 		price REAL NOT NULL DEFAULT 0,
 		amount REAL NOT NULL DEFAULT 0,
 		note TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL
 	)`)
+	if err == nil {
+		addColumnIfMissing("buy_plan_executed", "action", "TEXT NOT NULL DEFAULT 'buy'")
+	}
 	return err
 }
 
 // SaveExecutedBuyPlan records that a buy-plan tier was executed ("标记已补").
 func SaveExecutedBuyPlan(tx *BuyPlanExec) error {
 	tx.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec(`INSERT INTO buy_plan_executed(holding_id,tier_index,tier_label,price,amount,note,created_at) VALUES(?,?,?,?,?,?,?)`,
-		tx.HoldingID, tx.TierIndex, tx.TierLabel, tx.Price, tx.Amount, tx.Note, tx.CreatedAt)
+	if tx.Action == "" {
+		tx.Action = "buy"
+	}
+	_, err := DB.Exec(`INSERT INTO buy_plan_executed(holding_id,tier_index,tier_label,action,price,amount,note,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		tx.HoldingID, tx.TierIndex, tx.TierLabel, tx.Action, tx.Price, tx.Amount, tx.Note, tx.CreatedAt)
 	return err
 }
 
 // ListExecutedBuyPlans returns executed tiers for a holding, newest first.
 func ListExecutedBuyPlans(holdingID int64) ([]BuyPlanExec, error) {
-	rows, err := DB.Query(`SELECT id,holding_id,tier_index,tier_label,price,amount,note,created_at FROM buy_plan_executed WHERE holding_id=? ORDER BY id DESC`, holdingID)
+	rows, err := DB.Query(`SELECT id,holding_id,tier_index,tier_label,action,price,amount,note,created_at FROM buy_plan_executed WHERE holding_id=? ORDER BY id DESC`, holdingID)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +365,7 @@ func ListExecutedBuyPlans(holdingID int64) ([]BuyPlanExec, error) {
 	var out []BuyPlanExec
 	for rows.Next() {
 		var t BuyPlanExec
-		if err := rows.Scan(&t.ID, &t.HoldingID, &t.TierIndex, &t.TierLabel, &t.Price, &t.Amount, &t.Note, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.HoldingID, &t.TierIndex, &t.TierLabel, &t.Action, &t.Price, &t.Amount, &t.Note, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -452,6 +470,25 @@ func initPositionTx() error {
 	return err
 }
 
+// initRealizedPnl creates the daily realized-P&L ledger (减仓落库).
+func initRealizedPnl() error {
+	if _, err := DB.Exec(`CREATE TABLE IF NOT EXISTS realized_pnl_daily (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL,
+		date TEXT NOT NULL,
+		holding_id INTEGER NOT NULL,
+		symbol TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL DEFAULT '',
+		currency TEXT NOT NULL DEFAULT '',
+		amount REAL NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT ''
+	)`); err != nil {
+		return err
+	}
+	_, _ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_realized_pnl_user_date ON realized_pnl_daily(user_id, date)`)
+	return nil
+}
+
 // InsertPositionTx records one 加仓/减仓 transaction.
 func InsertPositionTx(tx *PositionTx) error {
 	_, err := DB.Exec(`INSERT INTO position_tx(holding_id,tx_type,quantity,price,amount,fee,realized_pnl,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
@@ -483,6 +520,46 @@ func SumRealizedPnl(holdingID int64) (float64, error) {
 	var s float64
 	err := DB.QueryRow(`SELECT COALESCE(SUM(realized_pnl),0) FROM position_tx WHERE holding_id=?`, holdingID).Scan(&s)
 	return s, err
+}
+
+// RealizedPnl is one recorded realized gain/loss from a 减仓 (SELL) on a given day.
+// It is stored separately from pnl_daily so the daily snapshot (which recomputes
+// price-based P&L) can merge it idempotently without being overwritten.
+type RealizedPnl struct {
+	ID        int64   `json:"id"`
+	UserID    int64   `json:"user_id"`
+	Date      string  `json:"date"`
+	HoldingID int64   `json:"holding_id"`
+	Symbol    string  `json:"symbol"`
+	Name      string  `json:"name"`
+	Currency  string  `json:"currency"`
+	Amount    float64 `json:"amount"`
+	CreatedAt string  `json:"created_at"`
+}
+
+// RecordRealizedPnl persists one 减仓's realized P&L into the daily ledger.
+func RecordRealizedPnl(uid int64, date string, holdingID int64, symbol, name, currency string, amount float64) error {
+	_, err := DB.Exec(`INSERT INTO realized_pnl_daily(user_id,date,holding_id,symbol,name,currency,amount,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		uid, date, holdingID, symbol, name, currency, amount, time.Now().Format("2006-01-02 15:04:05"))
+	return err
+}
+
+// ListRealizedPnl returns all realized-P&L entries for a user on a given date.
+func ListRealizedPnl(uid int64, date string) ([]RealizedPnl, error) {
+	rows, err := DB.Query(`SELECT id,user_id,date,holding_id,symbol,name,currency,amount,created_at FROM realized_pnl_daily WHERE user_id=? AND date=? ORDER BY id`, uid, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RealizedPnl
+	for rows.Next() {
+		var r RealizedPnl
+		if err := rows.Scan(&r.ID, &r.UserID, &r.Date, &r.HoldingID, &r.Symbol, &r.Name, &r.Currency, &r.Amount, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // AdjustHolding applies a 加仓/减仓 transaction to a holding: it updates the
@@ -519,8 +596,8 @@ func AdjustHolding(id int64, txType string, quantity, price, fee float64, note s
 		if newQty <= 0 {
 			return nil, 0, fmt.Errorf("加仓后份额必须大于 0")
 		}
-		// 成交金额(含手续费)并入成本，得到摊薄后的平均成本
-		newCost = (cur.Quantity*cur.CostPrice + quantity*price + fee) / newQty
+		// 成交金额(含手续费)并入成本，得到摊薄后的平均成本；按类别规整小数位（根因：早期未截断导致如 138.45769393791218 的超长尾数）
+		newCost = roundByCategory(cur.Category, (cur.Quantity*cur.CostPrice+quantity*price+fee)/newQty)
 	case "SELL":
 		if quantity > cur.Quantity {
 			return nil, 0, fmt.Errorf("减仓数量不能超过当前份额")
@@ -530,7 +607,7 @@ func AdjustHolding(id int64, txType string, quantity, price, fee float64, note s
 		if newQty <= 0 {
 			// 清仓：保留清仓前的份额与成本快照，供历史盈亏重算；持仓行标记 closed 且份额归零（列表显示为空仓）
 			cur.LastQuantity = cur.Quantity
-			cur.LastCostPrice = cur.CostPrice
+			cur.LastCostPrice = roundByCategory(cur.Category, cur.CostPrice)
 			cur.Closed = true
 			newQty = 0
 			newCost = 0
@@ -569,10 +646,9 @@ func initFXCache() error {
 	if err != nil {
 		return err
 	}
-	// Add yesterday columns for DBs created before this migration (idempotent).
-	for _, col := range []string{"yesterday_cny REAL NOT NULL DEFAULT 0", "yesterday_hkd REAL NOT NULL DEFAULT 0"} {
-		DB.Exec("ALTER TABLE fx_cache ADD COLUMN " + col)
-	}
+	// 兼容旧库：补充昨日汇率列（幂等）
+	addColumnIfMissing("fx_cache", "yesterday_cny", "REAL NOT NULL DEFAULT 0")
+	addColumnIfMissing("fx_cache", "yesterday_hkd", "REAL NOT NULL DEFAULT 0")
 	return nil
 }
 
@@ -626,11 +702,7 @@ func LoadFXRate() (cny, hkd, yesterdayCny, yesterdayHkd float64, updated string,
 // ---- Market value migration (one-time, idempotent) ----
 //
 // Legacy market codes (A_SH/A_SZ/FUND_ETF/FUND_OPEN/US/OTHER) are remapped to the
-// two-level scheme: fund -> {QDII, 债券, 股票}; stock -> {A股, 美股, 港股}.
-
-var oldMarketValues = map[string]bool{
-	"A_SH": true, "A_SZ": true, "FUND_ETF": true, "FUND_OPEN": true, "US": true, "OTHER": true,
-}
+// two-level scheme: fund -> {QDII, 债券, 股票}; stock -> {沪深, 美股, 港股}.
 
 func classifyFundMarket(name string) string {
 	if strings.Contains(name, "债") {
@@ -659,11 +731,11 @@ func migrateMarkets() error {
 		case h.Market == "US":
 			nm = "美股"
 		case h.Market == "A_SH", h.Market == "A_SZ", h.Market == "FUND_ETF":
-			nm = "A股"
+			nm = "沪深"
 		case h.Market == "FUND_OPEN":
 			nm = classifyFundMarket(h.Name)
 		case h.Market == "OTHER":
-			nm = "A股"
+			nm = "沪深"
 		case h.Market == "A股":
 			nm = "沪深"
 		default:
@@ -678,9 +750,30 @@ func migrateMarkets() error {
 	return nil
 }
 
+// migrateRoundHoldingPrices 一次性把存量持仓的价格字段按类别规整到标准小数位
+// （股票 2 位、基金 4 位），清理早期浮点运算产生的超长尾数（如 PEP 成本价 138.45769393791218）。
+func migrateRoundHoldingPrices() error {
+	hs, err := List(0)
+	if err != nil {
+		return err
+	}
+	for _, h := range hs {
+		nc := roundByCategory(h.Category, h.CostPrice)
+		np := roundByCategory(h.Category, h.CurrentPrice)
+		npc := roundByCategory(h.Category, h.PrevClose)
+		if nc == h.CostPrice && np == h.CurrentPrice && npc == h.PrevClose {
+			continue
+		}
+		if _, e := DB.Exec("UPDATE holdings SET cost_price=?,current_price=?,prev_close=? WHERE id=?", nc, np, npc, h.ID); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
 // List returns holdings for a user (userID). Pass 0 to get all (used by scheduled jobs).
 func List(userID int64) ([]Holding, error) {
-	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,analysis_signal,analysis_up_pct,analysis_at FROM holdings"
+	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,analysis_signal,analysis_up_pct,analysis_at,transaction_cost FROM holdings"
 	var args []interface{}
 	if userID > 0 {
 		q += " WHERE user_id=?"
@@ -695,7 +788,7 @@ func List(userID int64) ([]Holding, error) {
 	var out []Holding
 	for rows.Next() {
 		var h Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt, &h.TransactionCost); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -705,8 +798,8 @@ func List(userID int64) ([]Holding, error) {
 
 func Get(id int64) (*Holding, error) {
 	var h Holding
-	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,analysis_signal,analysis_up_pct,analysis_at FROM holdings WHERE id=?", id).
-		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt)
+	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,analysis_signal,analysis_up_pct,analysis_at,transaction_cost FROM holdings WHERE id=?", id).
+		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt, &h.TransactionCost)
 	if err != nil {
 		return nil, err
 	}
@@ -715,18 +808,33 @@ func Get(id int64) (*Holding, error) {
 
 func Create(h *Holding) (int64, error) {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt)
+	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost)
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
+// roundByCategory 按类别约束价格小数位：基金保留 4 位，其余（股票等）保留 2 位。
+// 采用四舍五入（与前端口径一致），清理浮点运算产生的超长尾数，避免摊薄成本 / 计算器展示爆位数。
+func roundByCategory(cat string, v float64) float64 {
+	prec := 4
+	if cat != "fund" {
+		prec = 2
+	}
+	scale := math.Pow(10, float64(prec))
+	return math.Round(v*scale) / scale
+}
+
 func Update(h *Holding) error {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=? WHERE id=?",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.ID)
+	h.CostPrice = roundByCategory(h.Category, h.CostPrice)
+	h.CurrentPrice = roundByCategory(h.Category, h.CurrentPrice)
+	h.PrevClose = roundByCategory(h.Category, h.PrevClose)
+	h.TransactionCost = roundByCategory(h.Category, h.TransactionCost)
+	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=?,transaction_cost=? WHERE id=?",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.TransactionCost, h.ID)
 	return err
 }
 
@@ -739,6 +847,9 @@ func SaveBuyPlan(id int64, plan string) error {
 }
 
 func UpdatePrice(id int64, price, prevClose float64) error {
+	// 行情刷新写入的价格按 4 位小数规整（股票/基金行情本身不超过 4 位，此处仅作防御性截断）。
+	price = math.Round(price*1e4) / 1e4
+	prevClose = math.Round(prevClose*1e4) / 1e4
 	_, err := DB.Exec("UPDATE holdings SET current_price=?, prev_close=?, updated_at=? WHERE id=?",
 		price, prevClose, time.Now().Format("2006-01-02 15:04:05"), id)
 	return err
@@ -1663,6 +1774,7 @@ type OperationGuide struct {
 	Title     string `json:"title"`
 	Content   string `json:"content"`
 	Tags      string `json:"tags"`
+	Side      string `json:"side"` // buy / sell
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -1675,9 +1787,13 @@ func initOperationGuides() error {
 		title TEXT NOT NULL DEFAULT '',
 		content TEXT NOT NULL DEFAULT '',
 		tags TEXT NOT NULL DEFAULT '',
+		side TEXT NOT NULL DEFAULT 'buy',
 		created_at TEXT NOT NULL DEFAULT '',
 		updated_at TEXT NOT NULL DEFAULT ''
 	)`)
+	if err == nil {
+		addColumnIfMissing("operation_guides", "side", "TEXT NOT NULL DEFAULT 'buy'")
+	}
 	return err
 }
 
@@ -1685,8 +1801,11 @@ func InsertOperationGuide(g *OperationGuide) (int64, error) {
 	now := time.Now().Format("2006-01-02 15:04:05")
 	g.CreatedAt = now
 	g.UpdatedAt = now
-	res, err := DB.Exec(`INSERT INTO operation_guides(user_id,holding_id,title,content,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`,
-		g.UserID, g.HoldingID, g.Title, g.Content, g.Tags, g.CreatedAt, g.UpdatedAt)
+	if g.Side == "" {
+		g.Side = "buy"
+	}
+	res, err := DB.Exec(`INSERT INTO operation_guides(user_id,holding_id,title,content,tags,side,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`,
+		g.UserID, g.HoldingID, g.Title, g.Content, g.Tags, g.Side, g.CreatedAt, g.UpdatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -1695,8 +1814,11 @@ func InsertOperationGuide(g *OperationGuide) (int64, error) {
 
 func UpdateOperationGuide(g *OperationGuide) error {
 	now := time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec(`UPDATE operation_guides SET holding_id=?,title=?,content=?,tags=?,updated_at=? WHERE id=?`,
-		g.HoldingID, g.Title, g.Content, g.Tags, now, g.ID)
+	if g.Side == "" {
+		g.Side = "buy"
+	}
+	_, err := DB.Exec(`UPDATE operation_guides SET holding_id=?,title=?,content=?,tags=?,side=?,updated_at=? WHERE id=?`,
+		g.HoldingID, g.Title, g.Content, g.Tags, g.Side, now, g.ID)
 	return err
 }
 
@@ -1706,7 +1828,7 @@ func DeleteOperationGuide(id int64) error {
 }
 
 func ListOperationGuides(userID int64) ([]OperationGuide, error) {
-	rows, err := DB.Query(`SELECT id,user_id,holding_id,title,content,tags,created_at,updated_at FROM operation_guides WHERE user_id=? ORDER BY id DESC`, userID)
+	rows, err := DB.Query(`SELECT id,user_id,holding_id,title,content,tags,side,created_at,updated_at FROM operation_guides WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1714,7 +1836,7 @@ func ListOperationGuides(userID int64) ([]OperationGuide, error) {
 	var out []OperationGuide
 	for rows.Next() {
 		var r OperationGuide
-		if err := rows.Scan(&r.ID, &r.UserID, &r.HoldingID, &r.Title, &r.Content, &r.Tags, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.UserID, &r.HoldingID, &r.Title, &r.Content, &r.Tags, &r.Side, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1726,9 +1848,9 @@ func ListOperationGuides(userID int64) ([]OperationGuide, error) {
 }
 
 func GetOperationGuide(id int64) (*OperationGuide, error) {
-	row := DB.QueryRow(`SELECT id,holding_id,title,content,tags,created_at,updated_at FROM operation_guides WHERE id=?`, id)
+	row := DB.QueryRow(`SELECT id,holding_id,title,content,tags,side,created_at,updated_at FROM operation_guides WHERE id=?`, id)
 	var r OperationGuide
-	if err := row.Scan(&r.ID, &r.HoldingID, &r.Title, &r.Content, &r.Tags, &r.CreatedAt, &r.UpdatedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.HoldingID, &r.Title, &r.Content, &r.Tags, &r.Side, &r.CreatedAt, &r.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &r, nil

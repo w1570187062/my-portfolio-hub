@@ -1,7 +1,6 @@
 package db
 
 import (
-	"database/sql"
 	"fmt"
 	"time"
 )
@@ -71,6 +70,10 @@ func EnsureUsers() error {
 	}
 	// 市场代码迁移需在 user_id 列就绪后执行（List 会读取 user_id）。
 	if err := migrateMarkets(); err != nil {
+		return err
+	}
+	// 存量价格字段按类别规整小数位，清理浮点超长尾数。
+	if err := migrateRoundHoldingPrices(); err != nil {
 		return err
 	}
 	return nil
@@ -248,18 +251,6 @@ func ListUsers() ([]User, error) {
 		out = append(out, u)
 	}
 	return out, rows.Err()
-}
-
-func GetUser(id int64) (User, bool, error) {
-	var u User
-	err := DB.QueryRow(`SELECT id,name,created_at FROM users WHERE id=?`, id).Scan(&u.ID, &u.Name, &u.CreatedAt)
-	if err == sql.ErrNoRows {
-		return u, false, nil
-	}
-	if err != nil {
-		return u, false, err
-	}
-	return u, true, nil
 }
 
 // CountUserData 统计某用户名下各维度的数据条数，用于设置面板展示。

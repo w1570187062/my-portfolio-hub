@@ -29,11 +29,6 @@ type HoldingView struct {
 	SourceName   string  `json:"source_name"`  // 所属平台/来源名称（来自 asset_sources）
 }
 
-// usMarketClosedCST reports whether the most recent US trading session (US Eastern)
-// has already closed in Beijing time. US stocks close at 16:00 ET, which is 04:00
-// (EDT, summer) or 05:00 (EST, winter) Beijing time of the next day. Until that
-// close, a US holding's daily P&L is not settled, so callers should treat it as 0
-// and only show the settled daily P&L after the session closes (T+1 in Beijing).
 // usMarketInSession reports whether the US regular trading session (09:30–16:00 ET,
 // Mon–Fri) is currently in progress. It drives US-stock daily P&L T+1: while a session
 // is live the price is intraday and not final, so we hold the daily P&L at 0. Once the
@@ -135,7 +130,6 @@ func RegisterRoutes(r *gin.Engine) {
 		g.DELETE("/holdings/:id", deleteHolding)
 		g.GET("/holdings/:id/analysis", getAnalysis)
 		g.POST("/refresh", refresh)
-		g.POST("/holdings/:id/refresh", refreshOne)
 		g.POST("/holdings/:id/adjust", adjustHolding)
 		g.GET("/holdings/:id/transactions", listTransactions)
 		g.POST("/holdings/:id/buy-plan/execute", executeBuyPlanTier)
@@ -466,6 +460,30 @@ func adjustHolding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// 减仓（SELL）：将实现盈亏落库到当日盈亏，并把卖出回款计入现金表。
+	if req.Type == "SELL" {
+		uid := currentUserID(c)
+		today := time.Now().Format("2006-01-02")
+		if realized < -1e-9 || realized > 1e-9 {
+			if e := db.RecordRealizedPnl(uid, today, id, h.Symbol, h.Name, h.Currency, realized); e != nil {
+				log.Printf("[adjust] 记录已实现盈亏失败(uid=%d hid=%d): %v", uid, id, e)
+			}
+		}
+		proceeds := req.Quantity*req.Price - req.Fee
+		if proceeds > 0 {
+		if _, e := db.CreateCash(&db.Cash{
+			UserID: uid, SourceID: h.SourceID, Name: h.Name + " 减仓回款",
+			Currency: mapCashCurrency(h.Currency), Amount: round2(proceeds),
+			Note: "减仓回款 " + h.Symbol + " " + today,
+		}); e != nil {
+				log.Printf("[adjust] 入账现金失败(uid=%d hid=%d): %v", uid, id, e)
+			}
+		}
+		// 立即将已实现盈亏并入当日盈亏（非交易日 doSnapshot 会提前返回，已实现盈亏仍保留在 ledger，下一交易日合并）
+		if e := doSnapshot(uid); e != nil {
+			log.Printf("[adjust] 重算当日盈亏失败(uid=%d): %v", uid, e)
+		}
+	}
 	realizedTotal, _ := db.SumRealizedPnl(id)
 	c.JSON(http.StatusOK, gin.H{
 		"holding":        enrich(*h, currentUserID(c)),
@@ -490,6 +508,19 @@ func listTransactions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"transactions": txs, "realized_total": total})
 }
 
+// mapCashCurrency maps a holding's currency (CNY/USD/HKD) to the cash_accounts
+// currency code (rmb/usd/hkd) used by the cash ledger.
+func mapCashCurrency(cur string) string {
+	switch strings.ToUpper(strings.TrimSpace(cur)) {
+	case "USD":
+		return "usd"
+	case "HKD":
+		return "hkd"
+	default:
+		return "rmb"
+	}
+}
+
 func normalize(h *db.Holding) {
 	h.Name = strings.TrimSpace(h.Name)
 	h.Symbol = strings.ToUpper(strings.TrimSpace(h.Symbol))
@@ -508,9 +539,9 @@ func normalize(h *db.Holding) {
 		}
 	} else {
 		switch h.Market {
-		case "A股", "美股", "港股":
+		case "沪深", "美股", "港股":
 		default:
-			h.Market = "A股"
+			h.Market = "沪深"
 		}
 	}
 }
@@ -544,77 +575,8 @@ func refresh(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"holdings": out, "rate": rate, "rate_degraded": degraded, "rate_error": rateErr, "failed": failed, "updated_at_max": maxUpdatedAt(hs)})
 }
 
-// refreshOne refreshes the latest quote for a single holding, persists it, and
-// re-snapshots the daily P&L so trend/calendar stay consistent.
-func refreshOne(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-	h, err := db.Get(id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-	var qErr error
-	var q *market.Quote
-	switch h.Category {
-	case "fund":
-		var e error
-		if h.Market == "港股" {
-			q, e = market.GetStockQuote(h.Symbol)
-			if e == nil {
-				h.CurrentPrice = q.CurrentPrice
-				h.PrevClose = q.PrevClose
-				_ = db.UpdatePrice(h.ID, q.CurrentPrice, q.PrevClose)
-				log.Printf("[refreshOne] %s(%s) 类型=港股基金 现价=%.4f 昨收=%.4f 已落库", h.Name, h.Symbol, q.CurrentPrice, q.PrevClose)
-				recomputeBuyPlan(h)
-			}
-		} else {
-			q, e = market.GetFundQuote(h.Symbol)
-			if e == nil {
-				h.CurrentPrice = q.CurrentPrice
-				h.PrevClose = q.PrevClose
-				_ = db.UpdatePrice(h.ID, q.CurrentPrice, q.PrevClose)
-				log.Printf("[refreshOne] %s(%s) 类型=fund 现价=%.4f 昨收=%.4f 已落库", h.Name, h.Symbol, q.CurrentPrice, q.PrevClose)
-				recomputeBuyPlan(h)
-			}
-		}
-		if e != nil {
-			qErr = e
-			log.Printf("[refreshOne] %s(%s) fund 失败: %s", h.Name, h.Symbol, e.Error())
-		}
-	default: // stock (A股 / 港股 / 美股 all via Tencent qt.gtimg.cn)
-		q2, e := market.GetStockQuote(h.Symbol)
-		if e == nil {
-			q = q2
-			h.CurrentPrice = q.CurrentPrice
-			h.PrevClose = q.PrevClose
-			_ = db.UpdatePrice(h.ID, q.CurrentPrice, q.PrevClose)
-			log.Printf("[refreshOne] %s(%s) 类型=stock 现价=%.4f 昨收=%.4f 已落库", h.Name, h.Symbol, q.CurrentPrice, q.PrevClose)
-		} else {
-			qErr = e
-			log.Printf("[refreshOne] %s(%s) stock 失败: %s", h.Name, h.Symbol, e.Error())
-		}
-	}
-	// 自动技术分析（best-effort）：刷新行情后对该持仓跑一次，结果写入 analysis_signal 供前端角标读取
-	autoAnalyzeAndStore(*h)
-	if qErr != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": qErr.Error()})
-		return
-	}
-	// Sync the holding name from the upstream API (fixes garbled / outdated names).
-	if q != nil && q.Name != "" && q.Name != h.Name {
-		if err := db.UpdateName(h.ID, q.Name); err == nil {
-			h.Name = q.Name
-			log.Printf("[refreshOne] %s(%s) 名称已同步为 %s", h.Symbol, h.Symbol, q.Name)
-		}
-	}
-	_ = doSnapshot(h.UserID)
-	NotifySingleHoldingUpdated(h.UserID, "手动刷新单只持仓", h.ID)
-	c.JSON(http.StatusOK, gin.H{"holding": enrich(*h, h.UserID)})
-}
+// refreshOne 已移除：单只持仓手动刷新逻辑取消，行情改由定时快照（refreshAllQuotes）自动更新。
+// 批量刷新 /api/refresh 与定时快照仍复用 refreshAllQuotes。
 
 // executeBuyPlanTier records that a specific buy-plan tier was executed
 // ("标记已补"): the tier is persisted as executed so the UI can grey it out (✓)
@@ -629,6 +591,7 @@ func executeBuyPlanTier(c *gin.Context) {
 	var req struct {
 		TierIndex int     `json:"tier_index"`
 		TierLabel  string  `json:"tier_label"`
+		Action     string  `json:"action"`
 		Price      float64 `json:"price"`
 		Amount     float64 `json:"amount"`
 		Note       string  `json:"note"`
@@ -645,6 +608,7 @@ func executeBuyPlanTier(c *gin.Context) {
 		HoldingID: id,
 		TierIndex: req.TierIndex,
 		TierLabel: strings.TrimSpace(req.TierLabel),
+		Action:    strings.TrimSpace(req.Action),
 		Price:     req.Price,
 		Amount:    req.Amount,
 		Note:      strings.TrimSpace(req.Note),
@@ -675,7 +639,7 @@ func listExecutedBuyPlan(c *gin.Context) {
 }
 // linked_symbol set, and persists it into holdings.buy_plan. It is triggered by
 // both the manual net-value refresh and the scheduled 21:00 snapshot (via
-// refreshAllQuotes / refreshOne). Results are NOT written into the note column;
+// refreshAllQuotes). Results are NOT written into the note column;
 // the 操作指南弹框 reads holdings.buy_plan to display them.
 // recomputeBuyPlan 在净值刷新（手动/定时）时为持仓计算并持久化动态补仓计划：
 //   - 基金：需设置关联联接ETF代码，基于ETF日K线计算（原逻辑）；
@@ -810,7 +774,37 @@ func summary(c *gin.Context) {
 			}
 		}
 	}
+	// 今日已实现盈亏（减仓落库）：从 realized_pnl_daily 取当日记录，折算 CNY 后返回，
+	// 供前端「当日盈亏」卡片并入清仓/减仓收益。持仓已清仓时其 day_pnl 为 0，
+	// 若不加这一项，当日清仓的已实现盈亏会漏算在首页「当日盈亏」之外。
+	var todayRealizedCNY float64
+	type realizedItem struct {
+		Symbol   string  `json:"symbol"`
+		Name     string  `json:"name"`
+		Currency string  `json:"currency"`
+		Amount   float64 `json:"amount"`
+		Date     string  `json:"date"`
+	}
+	var realizedToday []realizedItem
+	todayStr := time.Now().Format("2006-01-02")
+	if rrows, e := db.ListRealizedPnl(uid, todayStr); e == nil {
+		for _, rp := range rrows {
+			switch strings.ToUpper(rp.Currency) {
+			case "USD":
+				todayRealizedCNY += rp.Amount * cnyRate
+			case "HKD":
+				todayRealizedCNY += rp.Amount * hkdToCny
+			default:
+				todayRealizedCNY += rp.Amount
+			}
+			realizedToday = append(realizedToday, realizedItem{
+				Symbol: rp.Symbol, Name: rp.Name, Currency: rp.Currency, Amount: rp.Amount, Date: rp.Date,
+			})
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
+		"today_realized_cny":  round2(todayRealizedCNY),
+		"realized_today":      realizedToday,
 		"rate":                cnyRate,
 		"rate_degraded":       degraded,
 		"unsupported_currencies": unsupported,
@@ -837,13 +831,6 @@ func summary(c *gin.Context) {
 		"total_pnl":           round2(totalPnl),
 		"total_pnl_pct":       round2(totalPct),
 	})
-}
-
-func errMsg(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 // ---- Daily P&L snapshot ----
@@ -1105,7 +1092,33 @@ func doSnapshot(uid int64) error {
 		if prevClose > 0 {
 			chgPct = (h.CurrentPrice - prevClose) / prevClose * 100
 		}
+		// 已清仓（份额为 0）的持仓不再计入 by_symbol 明细：其浮动盈亏恒为 0，
+		// 且落袋盈亏已由下方「·已实现」条目表达，避免推送/日历出现「现价有值、当日¥0.00」的重复冗余行。
+		if h.Quantity <= 0 {
+			continue
+		}
 		bySym = append(bySym, symPnl{Symbol: h.Symbol, Name: h.Name, Pnl: round2(dp), PnlCNY: round2(dpCNY), Currency: h.Currency, CurrentPrice: round4(h.CurrentPrice), ChangePct: round2(chgPct)})
+	}
+	// 合并当日已实现盈亏（减仓落库）：从 realized_pnl_daily 取当日记录，叠加到总盈亏与明细。
+	// 由于 doSnapshot 每次整体重算价格盈亏并重新取该表，这里天然幂等、不会被覆盖。
+	if rrows, e := db.ListRealizedPnl(uid, today); e == nil {
+		for _, rp := range rrows {
+			var dpCNY float64
+			switch strings.ToUpper(rp.Currency) {
+			case "USD":
+				totalUSD += rp.Amount
+				dpCNY = rp.Amount * cnyRate
+				totalCNY += dpCNY
+			case "HKD":
+				dpCNY = rp.Amount * hkdToCny
+				totalCNY += dpCNY
+			default:
+				dpCNY = rp.Amount
+				totalCNY += dpCNY
+			}
+			byCur[rp.Currency] += rp.Amount
+			bySym = append(bySym, symPnl{Symbol: rp.Symbol, Name: rp.Name + "·已实现", Pnl: round2(rp.Amount), PnlCNY: round2(dpCNY), Currency: rp.Currency, ChangePct: 0})
+		}
 	}
 	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
@@ -1325,6 +1338,27 @@ func finalizePnlFromPrices(date string, uid int64) error {
 			totalCNY += dp
 		}
 		bySym = append(bySym, symPnl{Symbol: sym, Name: name, Pnl: dp, PnlCNY: dpCNY, Currency: cur})
+	}
+	// 合并当日已实现盈亏（减仓落库）：与 doSnapshot 保持一致。否则白天快照漏跑时，
+	// 午夜回填只会按价格重算、把已实现盈亏（如清仓落袋）丢掉。
+	if rrows, e := db.ListRealizedPnl(uid, date); e == nil {
+		for _, rp := range rrows {
+			var rCNY float64
+			switch strings.ToUpper(rp.Currency) {
+			case "USD":
+				totalUSD += rp.Amount
+				rCNY = rp.Amount * cnyRate
+				totalCNY += rCNY
+			case "HKD":
+				rCNY = rp.Amount * hkdToCny
+				totalCNY += rCNY
+			default:
+				rCNY = rp.Amount
+				totalCNY += rCNY
+			}
+			byCur[rp.Currency] += rp.Amount
+			bySym = append(bySym, symPnl{Symbol: rp.Symbol, Name: rp.Name + "·已实现", Pnl: round2(rp.Amount), PnlCNY: round2(rCNY), Currency: rp.Currency, ChangePct: 0})
+		}
 	}
 	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))

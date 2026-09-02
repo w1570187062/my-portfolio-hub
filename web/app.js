@@ -63,15 +63,22 @@ function navigate(view) {
 window.addEventListener('hashchange', applyRoute);
 
 const api = (path, opts = {}) => {
-  const token = localStorage.getItem('pf_token');
   const uid = localStorage.getItem('pf_user');
   const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
   if (uid) headers['X-User-Id'] = uid;
   return fetch(path, { ...opts, headers });
 };
 
 const fmt = (n) => (n == null ? '' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }));
+// 价格类字段统一截断到 4 位小数，避免 float64 全精度（如 12.34738291）污染输入框与落库。
+const round4 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return Math.round(v * 1e4) / 1e4; };
+const round2 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return Math.round(v * 1e2) / 1e2; };
+// 按类别保留小数：基金 4 位、股票 2 位（成本价/昨收/成交价口径）
+const roundByCat = (v, cat) => (cat === 'fund' ? round4(v) : round2(v));
+function fmtCat(n, cat) { return Number(n).toLocaleString('zh-CN', { maximumFractionDigits: cat === 'fund' ? 4 : 2 }); }
+// 调仓计算器上下文类别（决定价格输入框保留几位小数），由 prefillAdjCalc 写入
+let calcCat = 'stock';
+function clampCalc(el) { clampDecimals(el, calcCat === 'fund' ? 4 : 2); }
 const pct = (n) => (n > 0 ? '+' : '') + (n == null ? '' : n.toFixed(2)) + '%';
 const cls = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat');
 const cat = (c) => (c === 'fund' ? '基金' : '股票');
@@ -81,6 +88,16 @@ const fmtNav = (n, category) => {
   if (category === 'fund') return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
   return fmt(n);
 };
+// 输入框小数位限制：键入时直接截断到 max 位（不四舍五入），避免超长小数点。供 index.html 内联 oninput 调用。
+function clampDecimals(el, max) {
+  max = max || 4;
+  const v = el.value;
+  if (v.indexOf('.') < 0) return;
+  const parts = v.split('.');
+  if (parts[1] && parts[1].length > max) {
+    el.value = parts[0] + '.' + parts[1].slice(0, max);
+  }
+}
 
 let allHoldings = [];
 let sparkCache = {}; // symbol -> 近20个交易日收盘价序列（时间正序），供表格迷你走势线使用
@@ -97,6 +114,7 @@ let snapshotDate = '';   // 最近 pnl_daily 快照日期（YYYY-MM-DD）
 let updatedAtMax = '';   // 行情更新时间最大值（YYYY-MM-DD HH:MM:SS）
 let monthPnlCNY = 0;     // 本月累计盈亏（CNY 折算）
 let monthPnlCny = 0;     // 本月累计盈亏（RMB 原始货币）
+let todayRealizedCny = 0; // 今日已实现盈亏（减仓落库，CNY 折算），并入首页「当日盈亏」
 let monthPnlUsd = 0;     // 本月累计盈亏（USD 原始货币）
 let failedSymbols = {};  // symbol -> 失败原因（刷新失败持久标记）
 // table | card；移动端（窄屏）默认卡片视图（表格横向溢出体验差），但不强制——允许用户手动切回表格（可横向滚动）
@@ -110,28 +128,6 @@ const CAT_MARKETS = {
   fund: ['QDII', '债券', '股票', '商品'],
 };
 const ALL_MARKETS = [...CAT_MARKETS.stock, ...CAT_MARKETS.fund];
-
-// 静默自动登录：用默认凭据向后端换取 token，全程不展示登录界面
-async function silentLogin() {
-  try {
-    const r = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: 'admin', pass: 'asd2335979545' }),
-    });
-    if (r.ok) { const d = await r.json(); localStorage.setItem('pf_token', d.token); }
-  } catch (_) {}
-}
-
-// 用本地 token 试探一次，有效则无需重新登录
-async function tokenValid() {
-  const t = localStorage.getItem('pf_token');
-  if (!t) return false;
-  try {
-    const r = await fetch('/api/summary', { headers: { Authorization: 'Bearer ' + t } });
-    return r.ok;
-  } catch (_) { return false; }
-}
 
 async function boot() {
   // 解析当前用户（多用户：前端用 localStorage 记录选中的用户，请求头携带 X-User-Id）。
@@ -177,6 +173,7 @@ async function load() {
     monthPnlCNY = sd.month_pnl_cny || 0;
     monthPnlCny = sd.month_pnl_cny_ccy || 0;
     monthPnlUsd = sd.month_pnl_usd || 0;
+    todayRealizedCny = sd.today_realized_cny || 0;
     const ddl = document.getElementById('dayDateLbl');
     if (ddl) ddl.textContent = dayDate;
     renderFreshness();
@@ -284,6 +281,9 @@ function renderFx(d) {
 function filteredHoldings() {
   const kw = textFilter;
   return allHoldings.filter((h) => {
+    // 已清仓（份额为 0）的持仓从活跃列表隐藏：数据仍保留在库，日后重新买入会自动恢复；
+    // 其落袋盈亏已并入首页「当日盈亏」数值，首页不再单独展示「含已实现」标注，无需在列表里再占一行。
+    if ((h.quantity || 0) <= 0) return false;
     if (catFilter.size && !catFilter.has(h.category)) return false;
     // 市场筛选仅在选定了具体类别（市场行可见）时生效：全不勾选 → 空集 → 无数据；全勾选 → 全部。
     if (catFilter.size && !mktFilter.has(h.market)) return false;
@@ -391,7 +391,13 @@ function renderFiltered() {
       if (emptyAddBtn) emptyAddBtn.hidden = false;
       empty.hidden = false;
     } else if (hs.length === 0) {
-      if (emptyMsg) emptyMsg.textContent = '无数据：当前筛选条件下没有匹配的持仓，请调整筛选。';
+      // 区分「全部已清仓」与「筛选无匹配」：前者是正常状态（列表仅隐藏 0 份额持仓）
+      const allClosed = allHoldings.length > 0 && allHoldings.every((h) => (h.quantity || 0) <= 0);
+      if (allClosed) {
+        if (emptyMsg) emptyMsg.textContent = '全部持仓已清仓，列表暂无可持仓标的；重新买入后会自动恢复显示，已落袋盈亏已计入首页「当日盈亏」。';
+      } else {
+        if (emptyMsg) emptyMsg.textContent = '无数据：当前筛选条件下没有匹配的持仓，请调整筛选。';
+      }
       if (emptyAddBtn) emptyAddBtn.hidden = true;
       empty.hidden = false;
     } else {
@@ -434,24 +440,26 @@ function syncAnalysisBadge(id, sig) {
   if (h) h.analysis_signal = sig;
 }
 
-// 打开补仓成本计算器弹框，并带入选中持仓的成本价/现价/数量。
-function openCalcCost(id) {
-  const h = HOLDINGS_BY_ID[id];
-  const modal = document.getElementById('calcCostModal');
-  if (!modal) return;
-  modal.hidden = false;
+// 预填「修改/加减仓」弹框内的补仓成本计算器（合并自首页操作列的「计算」按钮）。
+// 计算器表单字段直接内嵌于 #adjustModal，故此处只做表单赋值，不单独开弹框。
+function prefillAdjCalc(h) {
   const set = (iid, v) => { const el = document.getElementById(iid); if (el) el.value = (v == null || v === '' ? '' : v); };
-  if (h) {
-    set('addOldPrice', h.cost_price);
-    set('addOldQty', h.quantity);
-    set('addNewPrice', h.current_price);
-  }
+  calcCat = h.category || 'stock';
+  set('addOldPrice', roundByCat(h.cost_price, calcCat));
+  set('addOldQty', h.quantity);
+  set('addNewPrice', roundByCat(h.current_price, calcCat));
   set('addNewQty', '');
   set('addAmount', '');
   const feeEl = document.getElementById('addFee');
   set('addFee', feeEl && feeEl.value ? feeEl.value : 0);
+  set('addMode', 'qty');
+  const qw = document.getElementById('addQtyWrap'); if (qw) qw.style.display = '';
+  const aw = document.getElementById('addAmtWrap'); if (aw) aw.style.display = 'none';
   const res = document.getElementById('addResult');
   if (res) res.innerHTML = '<span class="tool-empty">已带入该持仓的成本价 / 现价 / 数量，请填写补仓信息后点击「计算」</span>';
+  lastAdd = null;
+  const ab = document.getElementById('addApply');
+  if (ab) ab.disabled = true;
 }
 // 临时在页面实际字体下测量元素渲染宽度（用于按最长名称计算名称列固定间距）
 function _measureWidth(makeEl) {
@@ -547,7 +555,7 @@ function renderHoldingsBySource(hs) {
       + `<thead><tr><th>名称</th><th>代码</th><th class="hide-col">市场</th><th class="hide-col">币种</th>`
       + `<th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th>`
       + `<th class="num">市值</th><th class="num">当日</th><th class="num">当日%</th>`
-      + `<th class="num">总盈亏</th><th class="num">盈亏%</th>`
+      + `<th class="num">总盈亏</th><th class="num">盈亏%</th><th class="num">持仓天数</th><th>备注</th>`
       + `<th class="num" title="近20个交易日收盘价走势">近20日</th><th>操作</th>`
       + `</tr></thead><tbody>${g.items.map((h, i) => renderGroupRow(h, i)).join('')}</tbody>`
       + `</table></div></div></div>`;
@@ -555,14 +563,12 @@ function renderHoldingsBySource(hs) {
   box.innerHTML = html;
   // 绑定每组内行事件
   box.querySelectorAll('.holdings-group').forEach((gEl) => {
-    gEl.querySelectorAll('[data-refresh]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 刷新持仓', b.dataset.refresh); refreshHolding(b.dataset.refresh, b); });
     gEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 编辑持仓', b.dataset.edit); editHolding(b.dataset.edit); });
     gEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 删除持仓', b.dataset.del); delHolding(b.dataset.del); });
     gEl.querySelectorAll('[data-adjust]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 加减仓', b.dataset.adjust); openAdjust(b.dataset.adjust); });
     gEl.querySelectorAll('[data-hist]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 历史持仓', b.dataset.hist); openHoldingHistory(b.dataset.hist); });
     gEl.querySelectorAll('[data-fail]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); });
     gEl.querySelectorAll('[data-ana]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 技术分析', b.dataset.ana); openAnalysis(b.dataset.ana); });
-    gEl.querySelectorAll('[data-calc]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 补仓成本计算', b.dataset.calc); openCalcCost(b.dataset.calc); });
     gEl.querySelectorAll('[data-copy]').forEach((el) => el.onclick = (e) => {
       e.stopPropagation();
       const txt = el.dataset.copy;
@@ -604,11 +610,11 @@ function renderGroupRow(h, i) {
     <td class="num ${cls(h.day_pnl_pct)}">${pct(h.day_pnl_pct)}</td>
     <td class="num ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
     <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
+    <td class="num" style="font-size:12px;color:var(--text-muted)">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
+    <td style="font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
     <td class="num spark-td">${sparkCell(h.symbol)}</td>
     <td class="row-act-cell">
-      <button class="row-act" data-refresh="${h.id}" title="刷新行情">刷新</button>
       <button class="row-act" data-edit="${h.id}" title="编辑持仓">编辑</button>
-      <button class="row-act" data-calc="${h.id}" title="补仓成本计算">计算</button>
       <button class="row-act" data-hist="${h.id}" title="历史走势">历史</button>
       <button class="row-act danger" data-del="${h.id}" title="删除持仓">删除</button>
     </td>
@@ -675,6 +681,7 @@ function renderSummary(hs) {
     else flatCount++;
     dayPnlCNY += toRmb(h, h.day_pnl || 0);
   });
+  dayPnlCNY += todayRealizedCny; // 并入今日已实现（清仓/减仓）盈亏，避免已清仓标的漏算
   const dpCls = cls(dayPnlCNY);
   const mpCls = cls(monthPnlCNY);
   const ICON = {
@@ -712,9 +719,9 @@ function renderSummary(hs) {
   // 独立卡片：标签在上、大号数值在下；涨跌数用 ▲/▼ 着色；总盈亏/当日/本月带涨跌色。
   el.innerHTML = `
     <div class="sum-card"><span class="sum-lbl">总市值</span><b class="sum-val">¥${fmt(totalCNY)}</b></div>
-    <div class="sum-card"><span class="sum-lbl">总盈亏</span><b class="sum-val ${pCls}">${fmt(totalPnl)} <small>(${pct(totalPct)})</small></b></div>
-    <div class="sum-card"><span class="sum-lbl">当日盈亏</span><b class="sum-val ${dpCls}">${fmt(dayPnlCNY)}</b></div>
-    <div class="sum-card"><span class="sum-lbl">本月盈亏</span><b class="sum-val ${mpCls}">${fmt(monthPnlCNY)}</b></div>
+    <div class="sum-card"><span class="sum-lbl">总盈亏</span><b class="sum-val ${pCls}">¥${fmt(totalPnl)} <small>(${pct(totalPct)})</small></b></div>
+    <div class="sum-card"><span class="sum-lbl">当日盈亏</span><b class="sum-val ${dpCls}">¥${fmt(dayPnlCNY)}</b></div>
+    <div class="sum-card"><span class="sum-lbl">本月盈亏</span><b class="sum-val ${mpCls}">¥${fmt(monthPnlCNY)}</b></div>
     <div class="sum-card"><span class="sum-lbl">涨跌</span><b class="sum-val"><span class="up">▲${upCount}</span> <span class="down">▼${downCount}</span></b></div>`;
 }
 
@@ -857,10 +864,9 @@ function renderRows(hs) {
      <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
      <td class="num" style="font-size:12px;color:var(--text-muted)">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
      <td style="font-size:12px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
-     <td class="row-actions"><button class="btn act-refresh" data-refresh="${h.id}" title="刷新">🔄</button><button class="btn act-adjust" data-adjust="${h.id}" title="加减仓">📊</button><button class="btn act-edit" data-edit="${h.id}" title="编辑">✏️</button><button class="btn act-hist" data-hist="${h.id}" title="历史">📈</button><button class="btn act-del danger" data-del="${h.id}" title="删除">🗑️</button></td>`;
+     <td class="row-actions"><button class="btn act-adjust" data-adjust="${h.id}" title="加减仓">📊</button><button class="btn act-edit" data-edit="${h.id}" title="编辑">✏️</button><button class="btn act-hist" data-hist="${h.id}" title="历史">📈</button><button class="btn act-del danger" data-del="${h.id}" title="删除">🗑️</button></td>`;
     tb.appendChild(tr);
   });
-  tb.querySelectorAll('[data-refresh]').forEach((b) => (b.onclick = () => { console.log('[click] 刷新持仓', b.dataset.refresh); refreshHolding(b.dataset.refresh, b); }));
   tb.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { console.log('[click] 编辑持仓', b.dataset.edit); editHolding(b.dataset.edit); }));
   tb.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => { console.log('[click] 删除持仓', b.dataset.del); delHolding(b.dataset.del); }));
   tb.querySelectorAll('[data-adjust]').forEach((b) => (b.onclick = () => { console.log('[click] 加减仓', b.dataset.adjust); openAdjust(b.dataset.adjust); }));
@@ -906,33 +912,7 @@ function renderPager(total, totalPages) {
   if (sz) sz.onchange = () => { pageSize = parseInt(sz.value, 10) || 10; curPage = 1; renderFiltered(); };
 }
 
-// refreshHolding refreshes the latest quote for a single holding, persists it,
-// and reloads the table. Shows a toast with the new market value.
-async function refreshHolding(id, btn) {
-  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
-  const url = '/api/holdings/' + id + '/refresh';
-  console.log('[refresh] 请求 POST', url);
-  try {
-    const r = await api(url, { method: 'POST' });
-    if (r.ok) {
-      const d = await r.json();
-      const h = d.holding;
-      const mv = fmt(toRmb(h, h.market_value));
-      const dp = fmt(toRmb(h, h.day_pnl));
-      console.log('[refresh] 结果', { name: h.name, symbol: h.symbol, current_price: h.current_price, prev_close: h.prev_close, market_value: h.market_value, day_pnl: h.day_pnl, day_pnl_pct: h.day_pnl_pct, pnl: h.pnl });
-      toast(`${h.name} 已刷新：现价 ${fmtNav(h.current_price, h.category)}｜市值 ¥${mv}｜当日盈亏 ${dp}`, 'ok');
-      await load();
-    } else {
-      let msg = '刷新失败 (HTTP ' + r.status + ')';
-      try { const e = await r.json(); if (e.error) msg += '：' + e.error; } catch (_) {}
-      toast(msg, 'err');
-      if (btn) { btn.disabled = false; btn.textContent = '🔄'; }
-    }
-  } catch (e) {
-    toast('刷新异常：' + e.message, 'err');
-    if (btn) { btn.disabled = false; btn.textContent = '🔄 刷新'; }
-  }
-}
+// 单只持仓手动刷新逻辑已移除：行情改由定时快照（refreshAllQuotes）自动更新。
 
 // Populate the market <select> with options valid for the chosen category.
 function fillMarketOptions(catVal) {
@@ -953,11 +933,12 @@ function openModal(h) {
   fsrc.innerHTML = (assetSources || []).map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加来源）</option>';
   fsrc.value = h && h.source_id ? String(h.source_id) : (assetSources && assetSources[0] ? String(assetSources[0].id) : '');
   $('#f_currency').value = h ? h.currency : 'CNY';
-  $('#f_quantity').value = h ? h.quantity : '';
-  $('#f_cost_price').value = h ? h.cost_price : '';
-  $('#f_current_price').value = h ? h.current_price : '';
-  $('#f_prev_close').value = h ? h.prev_close : '';
+  $('#f_quantity').value = h ? round4(h.quantity) : '';
+  const eCat = h ? h.category : 'stock';
+  $('#f_cost_price').value = h ? roundByCat(h.cost_price, eCat) : '';
+  $('#f_current_price').value = h ? roundByCat(h.current_price, eCat) : '';
   $('#f_note').value = h ? (h.note || '') : '';
+  $('#f_cost').value = h ? roundByCat(h.transaction_cost, eCat) : '';
   $('#f_buy_date').value = h ? (h.buy_date || '') : '';
   $('#f_linked_symbol').value = h ? (h.linked_symbol || '') : '';
   toggleLinkedSymbol($('#f_category').value);
@@ -985,6 +966,8 @@ async function editHolding(id) {
 
 // ---------------- 加减仓 ----------------
 let adjType = 'BUY';
+let lastAdd = null;        // 调仓计算器最近一次有效方案 { q1, p1, fee, mode, side }
+let pendingApplyAdd = false; // 确认弹框：计入持仓 pending 标记
 function openAdjust(id) {
   const h = allHoldings.find((x) => String(x.id) === String(id));
   if (!h) { toast('未找到该持仓', 'err'); return; }
@@ -993,17 +976,20 @@ function openAdjust(id) {
   syncAdjSeg();
   $('#adjustTitle').textContent = '加减仓 · ' + (h.name || h.symbol);
   $('#adj_quantity').value = '';
-  $('#adj_price').value = h.current_price ? h.current_price : '';
+  $('#adj_price').value = h.current_price ? round4(h.current_price) : '';
   $('#adj_fee').value = 0;
   $('#adj_note').value = '';
   $('#adjErr').textContent = '';
   computeAdjPreview();
   renderAdjHistory(h.id);
+  prefillAdjCalc(h);
+  document.querySelectorAll('#adjustModal .adj-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'adjust'));
+  document.querySelectorAll('#adjustModal .adj-panel').forEach((p) => { p.hidden = p.dataset.panel !== 'adjust'; });
   $('#adjustModal').hidden = false;
   $('#adj_quantity').focus();
 }
 function syncAdjSeg() {
-  document.querySelectorAll('#adjTypeSeg .seg-btn').forEach((b) => {
+  document.querySelectorAll('#adjTypeSeg .circ-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.type === adjType);
   });
 }
@@ -1016,19 +1002,22 @@ function computeAdjPreview() {
   const amount = qty * priceVal;
   $('#adj_amount').value = amount ? amount.toFixed(4) : '';
   const box = $('#adjPreview');
+  box.style.display = 'none';
   if (!h) { box.innerHTML = ''; return; }
   if (adjType === 'BUY') {
     const newQty = h.quantity + qty;
     if (qty <= 0) { box.innerHTML = ''; return; }
-    if (newQty <= 0) { box.innerHTML = '<span class="warn">加仓后份额需大于 0</span>'; return; }
+    if (newQty <= 0) { box.style.display = 'block'; box.innerHTML = '<span class="warn">加仓后份额需大于 0</span>'; return; }
     const newCost = (h.quantity * h.cost_price + qty * priceVal + fee) / newQty;
+    box.style.display = 'block';
     box.innerHTML = `加仓后：份额 <b>${fmt(newQty)}</b>｜摊薄成本价 <b>${fmtNav(newCost, h.category)}</b>` +
       (h.cost_price > 0 ? `（原 ${fmtNav(h.cost_price, h.category)}）` : '');
   } else {
     if (qty <= 0) { box.innerHTML = ''; return; }
-    if (qty > h.quantity) { box.innerHTML = '<span class="warn">减仓数量不能超过当前份额 ' + fmt(h.quantity) + '</span>'; return; }
+    if (qty > h.quantity) { box.style.display = 'block'; box.innerHTML = '<span class="warn">减仓数量不能超过当前份额 ' + fmt(h.quantity) + '</span>'; return; }
     const realized = (priceVal - h.cost_price) * qty - fee;
     const remainQty = h.quantity - qty;
+    box.style.display = 'block';
     box.innerHTML = `减仓后：剩余份额 <b>${fmt(remainQty)}</b>｜本次实现盈亏 <b class="${cls(realized)}">${fmt(realized)}</b>` +
       (realized < 0 ? '（亏本）' : (realized > 0 ? '（盈利）' : ''));
   }
@@ -1058,11 +1047,24 @@ async function renderAdjHistory(id) {
   }
 }
 $('#adjTypeSeg').addEventListener('click', (e) => {
-  const b = e.target.closest('.seg-btn');
+  const b = e.target.closest('.circ-btn');
   if (!b) return;
   adjType = b.dataset.type;
   syncAdjSeg();
+  // 减仓：预填当前持仓全部数量，便于一键清仓（可手动改小做部分减仓）
+  if (adjType === 'SELL') {
+    const hh = allHoldings.find((x) => String(x.id) === String($('#adj_id').value));
+    if (hh) $('#adj_quantity').value = hh.quantity;
+  }
   computeAdjPreview();
+});
+// 加减仓弹框 tab 切换（加减仓 / 调仓计算器）
+document.querySelectorAll('#adjustModal .adj-tab').forEach((b) => {
+  b.addEventListener('click', () => {
+    const tab = b.dataset.tab;
+    document.querySelectorAll('#adjustModal .adj-tab').forEach((x) => x.classList.toggle('active', x === b));
+    document.querySelectorAll('#adjustModal .adj-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
+  });
 });
 ['adj_quantity', 'adj_price', 'adj_fee'].forEach((fid) => {
   const el = document.getElementById(fid);
@@ -1072,12 +1074,12 @@ $('#adjustForm').onsubmit = async (e) => {
   e.preventDefault();
   const id = $('#adj_id').value;
   const h = allHoldings.find((x) => String(x.id) === String(id));
-  const qty = parseFloat($('#adj_quantity').value);
+  const qty = round4(parseFloat($('#adj_quantity').value));
   if (!qty || qty <= 0) { $('#adjErr').textContent = '请输入大于 0 的数量'; return; }
-  let price = parseFloat($('#adj_price').value);
+  let price = round4(parseFloat($('#adj_price').value));
   if (isNaN(price) && h) price = h.current_price;
   if (isNaN(price) || price < 0) { $('#adjErr').textContent = '价格无效'; return; }
-  const fee = parseFloat($('#adj_fee').value) || 0;
+  const fee = round4(parseFloat($('#adj_fee').value) || 0);
   const note = $('#adj_note').value.trim();
   $('#adjErr').textContent = '';
   try {
@@ -1126,13 +1128,30 @@ function resetConfirm() {
   pendingAssetDel = null;
   pendingExport = false;
   pendingImport = null;
+  pendingApplyAdd = false;
   const btn = $('#confirmOk');
   btn.textContent = '删除';
+  btn.classList.remove('primary');
   btn.classList.add('danger');
   $('#confirmTitle').textContent = '确认删除';
 }
 $('#confirmCancel').onclick = () => { resetConfirm(); };
 $('#confirmOk').onclick = async () => {
+  if (pendingApplyAdd) {
+    pendingApplyAdd = false;
+    $('#confirmModal').hidden = true;
+    const a = lastAdd;
+    const id = $('#adj_id').value;
+    try {
+      const r = await api('/api/holdings/' + id + '/adjust', { method: 'POST', body: JSON.stringify({ type: a.side || 'buy', quantity: a.q1, price: a.p1, fee: a.fee, note: '调仓计算器计入' }) });
+      if (!r.ok) { let m = '计入失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m + ' (HTTP ' + r.status + ')', 'err'); return; }
+      toast('已计入持仓（作为一笔' + (a.side === 'sell' ? '卖出' : '买入') + '交易）', 'ok');
+      $('#adjustModal').hidden = true;
+      await load();
+    } catch (e) { toast('计入异常：' + e.message, 'err'); }
+    resetConfirm();
+    return;
+  }
   if (pendingImport) {
     const data = pendingImport;
     pendingImport = null;
@@ -1226,33 +1245,8 @@ $('#f_category').onchange = () => {
   $('#f_market').value = opts[0] || '';
   toggleLinkedSymbol($('#f_category').value);
 };
-$('#refreshBtn').onclick = async () => {
-  $('#refreshBtn').textContent = '⏳ 刷新中…';
-  try {
-    const r = await api('/api/refresh', { method: 'POST' });
-    $('#refreshBtn').textContent = '🔄 刷新';
-    if (r.ok) {
-      const d = await r.json();
-      // 刷新失败标的持久标记：重置为本次失败集合（成功者下次刷新自动清除）
-      failedSymbols = {};
-      if (d.failed && d.failed.length) {
-        d.failed.forEach((f) => {
-          const sym = f.indexOf(': ') >= 0 ? f.slice(0, f.indexOf(': ')) : f;
-          failedSymbols[sym] = f;
-        });
-        toast('以下持仓未刷新成功：\n' + d.failed.join('\n'), 'err');
-      } else {
-        toast('行情已刷新', 'ok');
-      }
-    } else {
-      toast('刷新请求失败 (HTTP ' + r.status + ')', 'err');
-    }
-  } catch (e) {
-    $('#refreshBtn').textContent = '🔄 刷新';
-    toast('刷新异常：' + e.message, 'err');
-  }
-  load();
-};
+// 首页「刷新」按钮已移除：手动整体刷新入口取消，行情改由定时快照自动更新。
+// （批量 /api/refresh 接口仍保留供定时任务复用。）
 
 // 视图切换（表格 / 卡片）：localStorage 记忆，桌面端默认表格
 function syncViewToggle() {
@@ -1373,6 +1367,8 @@ $('#form').onsubmit = async (e) => {
   e.preventDefault();
   $('#formErr').textContent = '';
   const id = $('#f_id').value;
+  const eid = parseInt(id, 10);
+  const orig = allHoldings.find((x) => x.id === eid);
   const payload = {
     name: $('#f_name').value,
     symbol: $('#f_symbol').value,
@@ -1380,10 +1376,11 @@ $('#form').onsubmit = async (e) => {
     market: $('#f_market').value,
     currency: $('#f_currency').value,
     source_id: parseInt($('#f_source').value || '0', 10) || 0,
-    quantity: parseFloat($('#f_quantity').value),
-    cost_price: parseFloat($('#f_cost_price').value),
-    current_price: parseFloat($('#f_current_price').value || '0'),
-    prev_close: parseFloat($('#f_prev_close').value || '0') || 0,
+    quantity: round4(parseFloat($('#f_quantity').value)),
+    cost_price: roundByCat(parseFloat($('#f_cost_price').value), $('#f_category').value),
+    transaction_cost: roundByCat(parseFloat($('#f_cost').value || '0'), $('#f_category').value),
+    current_price: roundByCat(parseFloat($('#f_current_price').value || '0'), $('#f_category').value),
+    prev_close: roundByCat((orig ? orig.prev_close : 0), $('#f_category').value),
     note: $('#f_note').value || '',
     buy_date: $('#f_buy_date').value || '',
     linked_symbol: $('#f_linked_symbol').value || '',
@@ -1775,9 +1772,7 @@ const saturdayOf = (d) => addDays(new Date(d), 6 - d.getDay());
 
 let calData = {};
 
-$('#calendarBtn').onclick = () => navigate('calendar');
-
-// 打开盈亏日历视图（资产全景工具栏「📅 盈亏日历」与 legacyNav 复用）
+// 打开盈亏日历视图（资产全景工具栏「📅 盈亏日历」）
 // 路由模式下只负责「进入」：已显示则保持（返回用浏览器后退/主页）
 async function openCalendarView() {
   // 无可见视图时，先落回首页作弹框背景
@@ -1792,7 +1787,6 @@ async function openCalendarView() {
 function showHoldingsView() {
   $('#assetView').hidden = true;
   $('#holdingsView').hidden = false;
-  $('#calendarBtn').classList.remove('active');
   syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
   // 首页：显示更新时间+汇率行（资产工具按钮常驻 header，不在此隐藏）
   const mb = document.getElementById('marketBar'); if (mb) mb.hidden = false;
@@ -2415,12 +2409,6 @@ $('#importFile').onchange = async (e) => {
 $('#histTabTable').onclick = () => switchHistTab('table');
 $('#histTabChart').onclick = () => switchHistTab('chart');
 
-// ===== 调试：统一按钮点击日志（addEventListener 追加，不干扰原有 onclick） =====
-['addBtn','guideBtn','refreshBtn','aiPickBtn','moreBtn','aiPickGo','aiHubXClose','hubTabSummary','hubTabTools','hubTabSettings','hubTabHistory','calendarBtn','confirmOk','assetPieBtn','assetTrendBtn','calModalPrev','calModalNext','calPrev','calNext','themeToggleBtn','ai_save','ai_tpl_new','ai_tpl_del','ai_toggleKey','ai_copy','histTabTable','histTabChart'].forEach((id) => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('click', () => console.log('[click]', id));
-});
-
 let histData = null; // 当前持仓历史原始返回
 
 async function openHoldingHistory(id) {
@@ -2587,8 +2575,6 @@ function curSymbolJS(cur) {
 }
 const moneyCur = (n, cur) => curSymbolJS(cur) + fmt(n == null ? 0 : n);
 
-$('#assetBtn').onclick = () => navigate('asset');
-
 // 二级页统一页头（设计系统：标题 + 操作区；不显示返回箭头）
 function injectPageHead(viewId, title) {
   const v = document.getElementById(viewId);
@@ -2611,8 +2597,6 @@ async function showAssetView() {
   if (at) at.hidden = false;
   const mb = document.getElementById('marketBar');
   if (mb) mb.hidden = true;
-  $('#calendarBtn').classList.remove('active');
-  $('#assetBtn').scrollIntoView({ inline: 'center', block: 'nearest' });
   // 注入面包屑导航（首页 / 资产全景）
   const v = document.getElementById('assetView');
   let ph = v.querySelector(':scope > .page-head');
@@ -2653,8 +2637,6 @@ let fxUsdCny = 1, fxHkdCny = 1;
 let lastEqRmb = null, lastEqBreakdown = [];
 let lastUsdRmb = null, lastUsdDetail = null;
 let lastUsdKindAggRmb = { stock: 0, fund: 0, wealth: 0, cash: 0 };
-
-$('#toolsBtn').onclick = () => navigate('tools');
 
 // ---- 汇率计算工具（CNY / HKD / USD 互换算，汇率取页面实时 usdRate/hkdRate）----
 function convertMoney(amt, from, to) {
@@ -2744,7 +2726,7 @@ function addEqRow(init) {
       <option value="fund">基金</option>
       <option value="wealth">理财</option>
     </select>
-    <input class="eq-amt" name="eq-amt" type="number" step="any" placeholder="盈亏金额（正盈利/负亏损）">
+    <input class="eq-amt" name="eq-amt" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="盈亏金额（正盈利/负亏损）">
     <select class="eq-cur" name="eq-cur">
       <option value="USD">USD 美元</option>
       <option value="HKD">HKD 港币</option>
@@ -2766,8 +2748,8 @@ function addUsdBuy(init) {
   const row = document.createElement('div');
   row.className = 'trow';
   row.innerHTML = `
-    <input class="usd-buy" name="usd-buy" type="number" step="any" placeholder="买入 USD 金额">
-    <input class="usd-brate" name="usd-brate" type="number" step="any" placeholder="买入汇率 RMB/USD">
+    <input class="usd-buy" name="usd-buy" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="买入 USD 金额">
+    <input class="usd-brate" name="usd-brate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="买入汇率 RMB/USD">
     <span class="usd-cost" title="买入花费（RMB）">—</span>
     <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
   const buyEl = row.querySelector('.usd-buy');
@@ -2799,7 +2781,7 @@ function addUsdPnl(init) {
       <option value="wealth">理财</option>
       <option value="cash">现金</option>
     </select>
-    <input class="usd-pnl" name="usd-pnl" type="number" step="any" placeholder="盈亏 USD 金额（正盈利/负亏损）">
+    <input class="usd-pnl" name="usd-pnl" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="盈亏 USD 金额（正盈利/负亏损）">
     <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
   if (init) {
     if (init.kind) row.querySelector('.usd-kind').value = init.kind;
@@ -2985,6 +2967,22 @@ $('#addClear').onclick = () => {
   $('#addQtyWrap').style.display = '';
   $('#addAmtWrap').style.display = 'none';
   $('#addResult').innerHTML = '';
+  lastAdd = null;
+  const ab = $('#addApply'); if (ab) ab.disabled = true;
+};
+$('#addApply').onclick = () => {
+  if (!lastAdd) { toast('请先点击「计算」生成补仓方案', 'err'); return; }
+  const name = ($('#adjustTitle').textContent || '').replace('加减仓 · ', '');
+  const sideLabel = lastAdd.side === 'sell' ? '卖出' : '买入';
+  pendingApplyAdd = true;
+  const btn = $('#confirmOk');
+  btn.textContent = '确认计入';
+  btn.classList.remove('danger');
+  btn.classList.add('primary');
+  $('#confirmTitle').textContent = '计入持仓';
+  $('#confirmMsg').textContent = '将把这笔操作作为一笔「' + sideLabel + '」交易计入「' + name + '」：' + sideLabel + ' ' + fmt(lastAdd.q1) + ' 份 × ¥' + fmt(lastAdd.p1)
+    + '，手续费 ¥' + fmt(lastAdd.fee) + '。计入后该持仓的数量与成本/盈亏将按交易流水重新核算。';
+  $('#confirmModal').hidden = false;
 };
 
 // 统一关闭：.card-close 同时服务弹窗（关闭模态）与工具卡（收起计算器）。
@@ -3070,6 +3068,11 @@ function calcAdd() {
   const P1 = parseFloat($('#addNewPrice').value);
   const el = $('#addResult');
   const mode = $('#addMode').value;
+  const side = $('#addSide').value || 'buy';
+  // 重置「计入持仓」按钮状态，待计算成功后再启用
+  lastAdd = null;
+  const applyBtn = $('#addApply');
+  if (applyBtn) applyBtn.disabled = true;
   const fee = Number.isFinite(f) ? f : 0;
   if (![P0, Q0, P1].every(Number.isFinite)) {
     el.innerHTML = '<span class="tool-empty">请填写：原成交价、原持仓数量、补仓现价（手续费可填 0）</span>';
@@ -3110,11 +3113,14 @@ function calcAdd() {
   const pctVal = costBasis > 0 ? pnl / costBasis * 100 : 0;
   const sign = pnl >= 0 ? 'up' : 'down';
   let html = '';
-  html += `<div class="res-row">合并持仓数量：<b>${fmt(Q)}</b>　｜　合并持仓成本：<b>${fmt(avgCost)}</b> / 份</div>`;
+  html += `<div class="res-row">合并持仓数量：<b>${fmt(Q)}</b>　｜　合并持仓成本：<b>${fmtCat(avgCost, calcCat)}</b> / 份</div>`;
   html += `<div class="res-row">补仓明细：${addDesc}</div>`;
   html += `<div class="res-main ${sign}">补仓后盈亏（净，已扣双费）：¥ ${fmt(Math.abs(pnl))} ${pnl >= 0 ? '盈利' : '亏损'}（${pct(pctVal)}）</div>`;
   html += `<div class="res-detail">口径拆解：原仓 (现价−原价)×原数量 = ¥${fmt(Q0 * (P1 - P0))}；买卖双费 = ¥${fmt(2 * fee)}；补仓份数按现价计为平。盈亏比例以合并成本 ¥${fmt(costBasis)} 为分母。</div>`;
   el.innerHTML = html;
+  // 记录本次有效补仓方案，供「计入持仓」使用
+  lastAdd = { q1: Q1, p1: P1, fee: fee, mode: mode, side: side };
+  if (applyBtn) applyBtn.disabled = false;
 }
 
 function mergeSummary() {
@@ -3180,20 +3186,39 @@ function renderAssetSummary() {
   const d = assetData; if (!d) return;
   const eq = d.equity || {}, w = d.wealth || {}, l = d.liability || {}, cash = d.cash || {};
   const eqMV = eq.market_value || 0, wTotal = w.total || 0, cTotal = cash.total || 0, lTotal = l.total || 0;
-  // 净资产 = 总资产(权益+理财+现金) − 负债（满足"上方总资产减掉负债"）
+  // 净资产 = 总资产(权益+理财+现金) − 负债；总资产 = 权益+理财+现金
   const net = eqMV + wTotal + cTotal - lTotal;
+  const total = eqMV + wTotal + cTotal;
   // 境内/境外资产：后端已按来源 region 归集（domestic_assets / overseas_assets，CNY）
   const dom = d.domestic_assets || 0, ovs = d.overseas_assets || 0;
-  // 资产全览拆成独立小卡片（与首页一致：无边框、标签在上数值在下）；净资产/境内/境外/权益/理财/现金/负债
-  const cards =
-    `<div class="sum-card"><span class="sum-lbl">净资产</span><b class="sum-val">${money(net)}</b></div>` +
-    `<div class="sum-card"><span class="sum-lbl">境内资产</span><b class="sum-val ov-dom">${money(dom)}</b></div>` +
-    `<div class="sum-card"><span class="sum-lbl">境外资产</span><b class="sum-val ov-ovs">${money(ovs)}</b></div>` +
-    `<div class="sum-card"><span class="sum-lbl">权益</span><b class="sum-val">${money(eqMV)}</b></div>` +
-    `<div class="sum-card"><span class="sum-lbl">理财</span><b class="sum-val">${money(wTotal)}</b></div>` +
-    `<div class="sum-card"><span class="sum-lbl">现金</span><b class="sum-val">${money(cTotal)}</b></div>` +
-    `<div class="sum-card"><span class="sum-lbl">负债</span><b class="sum-val ov-liab">${money(lTotal)}</b></div>`;
-  $('#assetSummaryBody').innerHTML = `<div class="ac-summary-cards asset-cards">${cards}</div>`;
+  // 合并为 3 张卡片：净资产(含总资产/负债行) / 境内外 / 资产分布(权益·理财·现金)
+  const cardNet =
+    `<div class="sum-card sum-merged">` +
+      `<span class="sum-head">净资产</span>` +
+      `<b class="sum-big">${money(net)}</b>` +
+      `<div class="sum-rows">` +
+        `<div class="sum-row"><span class="sr-lbl">总资产</span><span class="sr-val">${money(total)}</span></div>` +
+        `<div class="sum-row"><span class="sr-lbl">负债</span><span class="sr-val ov-liab">${money(lTotal)}</span></div>` +
+      `</div>` +
+    `</div>`;
+  const cardRegion =
+    `<div class="sum-card sum-merged">` +
+      `<span class="sum-head">境内 / 境外资产</span>` +
+      `<div class="sum-rows sum-rows-plain">` +
+        `<div class="sum-row"><span class="sr-lbl">境内资产</span><span class="sr-val ov-dom">${money(dom)}</span></div>` +
+        `<div class="sum-row"><span class="sr-lbl">境外资产</span><span class="sr-val ov-ovs">${money(ovs)}</span></div>` +
+      `</div>` +
+    `</div>`;
+  const cardDist =
+    `<div class="sum-card sum-merged">` +
+      `<span class="sum-head">资产分布</span>` +
+      `<div class="sum-rows sum-rows-plain">` +
+        `<div class="sum-row"><span class="sr-lbl">权益</span><span class="sr-val">${money(eqMV)}</span></div>` +
+        `<div class="sum-row"><span class="sr-lbl">理财</span><span class="sr-val">${money(wTotal)}</span></div>` +
+        `<div class="sum-row"><span class="sr-lbl">现金</span><span class="sr-val">${money(cTotal)}</span></div>` +
+      `</div>` +
+    `</div>`;
+  $('#assetSummaryBody').innerHTML = `<div class="ac-summary-cards asset-cards">${cardNet}${cardRegion}${cardDist}</div>`;
 }
 
 function renderAssetTab() {
@@ -4029,12 +4054,12 @@ async function openSnapModal() {
       <div class="sr-fields">
         <div class="sr-field">
           <label class="sr-label" for="amt-${p.id}">① 今日持仓金额 ${curSymbolJS(p.currency)}</label>
-          <input type="number" step="any" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" value="${p.amount || 0}" placeholder="如 105000（今天收盘后的总市值）">
+          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" value="${round2(p.amount || 0)}" placeholder="如 105000（今天收盘后的总市值）">
           <div class="sr-hint">该理财今天的总持仓金额（本金+收益）。默认带出上次录入值，留空则不更新此项。</div>
         </div>
         <div class="sr-field">
           <label class="sr-label" for="cf-${p.id}">② 当日净存入 ${curSymbolJS(p.currency)}</label>
-          <input type="number" step="any" class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0" placeholder="转入为正，转出为负，无变动填 0">
+          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0" placeholder="转入为正，转出为负，无变动填 0">
           <div class="sr-hint">今天新存入(+)或取出(−)的本金。用于剔除本金变动：当日盈亏 = 今日金额 − 昨日金额 − 当日净存入。</div>
         </div>
       </div>
@@ -4168,20 +4193,21 @@ async function openAnalysis(id) {
 
 // 迷你K线（纯SVG蜡烛图，使用分析接口返回的已有日K线数据组装）
 // patMap: { [date]: [{name, dir}] } —— 命中形态的日期→形态列表，用于悬停提示（不在蜡烛上加外边框）
-// 分页：每页 60 根，左右箭头按日期区间循环翻页（page 0 = 最近 60 根）。
-let klState = null; // { bars, patMap, sigMap, win, pages, page }
+// 分页：每页 base*zoom 根（1×=60），左右箭头按日期区间循环翻页（page 0 = 最近一段）。
+let klState = null; // { bars, patMap, sigMap, base, zoom, win, pages, page }
 function klineMiniHTML(bars, patMap, dailySignals) {
-  const win = Math.min(bars.length, 60);
-  const pages = Math.max(1, Math.floor((bars.length - win) / win) + 1);
   const sigMap = {};
   (dailySignals || []).forEach((d) => { if (d && d.date) sigMap[d.date] = d.signal; });
-  klState = { bars, patMap, sigMap, win, pages, page: 0 };
+  klState = { bars, patMap, sigMap, base: 60, zoom: 1, page: 0, win: Math.min(bars.length, 60), pages: 1 };
   return klRenderWindow();
 }
 
-// 渲染当前 klState.page 对应的 60 根窗口（箭头翻页时整块替换重绑）
+// 渲染当前 klState.page 对应的窗口（窗口大小 = base*zoom，箭头/缩放翻页时整块替换重绑）
 function klRenderWindow() {
-  const { bars, patMap, sigMap, win, page, pages } = klState;
+  const { bars, patMap, sigMap, base, zoom, page } = klState;
+  const win = Math.min(bars.length, base * zoom);
+  const pages = Math.max(1, Math.floor((bars.length - win) / win) + 1);
+  klState.win = win; klState.pages = pages;
   const end = bars.length - page * win;
   const data = bars.slice(Math.max(0, end - win), end);
   if (!data.length) return '';
@@ -4284,9 +4310,17 @@ function klRenderWindow() {
     ? '<button class="kl-arrow kl-prev" type="button" data-dir="1" aria-label="更早一段">‹</button>'
     + '<button class="kl-arrow kl-next" type="button" data-dir="-1" aria-label="更近一段">›</button>'
     : '';
+  const zIn = zoom >= 3 ? ' disabled' : '';
+  const zOut = zoom <= 1 ? ' disabled' : '';
+  const zoombar = '<div class="kl-zoombar">'
+    + '<button class="kl-zoom kl-zoom-out" type="button" data-zoom="-1" aria-label="缩小"' + zOut + '>−</button>'
+    + '<span class="kl-zoom-lv">×' + zoom + '</span>'
+    + '<button class="kl-zoom kl-zoom-in" type="button" data-zoom="1" aria-label="放大"' + zIn + '>+</button>'
+    + '<button class="kl-toggle" type="button" data-mode="candle" aria-label="切换折线图">折线</button>'
+    + '</div>';
   return '<div class="kline-mini"><div class="klwrap">'
     + '<div class="kl-label"><span class="kl-title">日K线</span><span style="color:#f97316">MA5</span><span style="color:#22c55e">MA10</span><span style="color:#eab308">MA20</span><span class="kl-range">' + range + '</span></div>'
-    + '<button class="kl-toggle" type="button" data-mode="candle" aria-label="切换折线图">折线</button>'
+    + zoombar
     + arrows
     + '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + body + '</svg>'
     + '<div class="kline-mini-tip" hidden></div></div>'
@@ -4301,6 +4335,23 @@ function klGo(dir) {
   if (target < 0) { toast('已经是最近的数据了', 'info'); return; }
   if (target >= klState.pages) { toast('没有更早的数据了', 'info'); return; }
   klState.page = target;
+  const cur = document.querySelector('#analysisBody .kline-mini');
+  if (!cur) return;
+  const holder = document.createElement('div');
+  holder.innerHTML = klRenderWindow();
+  const fresh = holder.firstElementChild;
+  if (!fresh) return;
+  cur.replaceWith(fresh);
+  bindKlineMini(fresh);
+}
+
+// 缩放：调整每页K线数据量（1×=60根，+/− 在 1×~3× 间切换），回到最近一段窗口并重渲染
+function klZoom(delta) {
+  if (!klState) return;
+  const nz = Math.min(3, Math.max(1, klState.zoom + delta));
+  if (nz === klState.zoom) { toast(nz >= 3 ? '已放大到最大 3×' : '已是最小 1×', 'info'); return; }
+  klState.zoom = nz;
+  klState.page = 0;
   const cur = document.querySelector('#analysisBody .kline-mini');
   if (!cur) return;
   const holder = document.createElement('div');
@@ -4333,6 +4384,12 @@ function bindKlineMini(root) {
   wrap.querySelectorAll('.kl-arrow').forEach((b) => b.addEventListener('click', (e) => {
     e.stopPropagation();
     klGo(Number(b.dataset.dir) || 0);
+  }));
+  // 缩放：调整每页K线数据量（1×~3×）
+  wrap.querySelectorAll('.kl-zoom').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (b.disabled) return;
+    klZoom(Number(b.dataset.zoom) || 0);
   }));
   let pinned = null, hover = null, tipTimer = null;
   function showTip(g, stay) {
@@ -4671,19 +4728,19 @@ function overviewScoreRatingHTML(prob, patScore, patCount, dailySignals, signal)
   const dir = patScore > 0.3 ? 'up' : patScore < -0.3 ? 'down' : 'neu';
   const arrow = patScore > 0.3 ? '▲' : patScore < -0.3 ? '▼' : '◆';
   const tone = patScore > 0.3 ? '偏多' : patScore < -0.3 ? '偏空' : '均衡';
-  // 回测胜率：仅统计 buy/sell 信号（hold 不参与），win 字段已是「信号方向是否成立」的判定结果
-  let winRateHTML = '';
+  // 回测胜率 + 期望收益：仅统计 buy/sell 信号（hold 不参与）
+  let rate = 0, exp = null, sigCount = 0;
   if (dailySignals && dailySignals.length) {
-    let buy = 0, buyWin = 0, sell = 0, sellWin = 0;
+    let buy = 0, buyWin = 0, sell = 0, sellWin = 0, er = 0, ern = 0;
     dailySignals.forEach((d) => {
       if (d.signal === 'buy') { buy++; if (d.win) buyWin++; }
       else if (d.signal === 'sell') { sell++; if (d.win) sellWin++; }
+      if (d.next_ret != null) { er += d.next_ret; ern++; }
     });
     const total = buy + sell;
-    const totalWin = buyWin + sellWin;
-    const rate = total ? (totalWin / total * 100) : 0;
-    winRateHTML = '<div class="sig-winrate">回测胜率 <b class="' + (rate >= 50 ? 'up' : 'down') + '">' + rate.toFixed(1) + '%</b>'
-      + '<span class="wr-detail">（' + total + ' 个信号：买 ' + buy + ' 胜 ' + buyWin + '，卖 ' + sell + ' 胜 ' + sellWin + '）</span></div>';
+    sigCount = total;
+    rate = total ? ((buyWin + sellWin) / total * 100) : 0;
+    exp = ern ? er / ern : null;
   }
   // 买入评级：直接用后端归一化信号 a.signal（与角标完全一致的口径）
   const sigMap = {
@@ -4693,53 +4750,220 @@ function overviewScoreRatingHTML(prob, patScore, patCount, dailySignals, signal)
     '':   { label: '—', cls: 'neu' },
   };
   const r = sigMap[signal] || sigMap[''];
-  let rating;
+  let ratingVal, ratingSub, ratingCls = r.cls;
   if (prob && prob.up_pct != null) {
-    rating = '<div class="ana-score-val ' + r.cls + '">' + r.label + '</div><div class="ana-score-sub">技术面看涨 ' + prob.up_pct.toFixed(0) + '</div>';
+    ratingVal = r.label;
+    ratingSub = '技术面看涨 ' + prob.up_pct.toFixed(0);
   } else {
-    rating = '<div class="ana-score-val neu">—</div><div class="ana-score-sub">数据不足</div>';
+    ratingVal = '—';
+    ratingSub = '数据不足';
+    ratingCls = 'neu';
   }
-  const score = '<div class="ana-score-val ' + dir + '">' + arrow + ' ' + (patScore > 0 ? '+' : '') + patScore.toFixed(2) + '</div><div class="ana-score-sub">' + tone + ' · 近60根命中 ' + patCount + ' 处</div>';
-  return '<div class="ana-score-grid">'
-    + '<div class="ana-score-box"><div class="ana-score-label">形态净评分</div>' + score + '</div>'
-    + '<div class="ana-score-box"><div class="ana-score-label">买入评级</div>' + rating + winRateHTML + '</div>'
-    + '</div>';
+  const scoreVal = (patScore > 0 ? '+' : '') + patScore.toFixed(2);
+  const scoreSub = tone + ' · 近60根命中 ' + patCount + ' 处';
+  const expVal = exp != null ? (exp >= 0 ? '+' : '') + exp.toFixed(2) + '%' : '—';
+  const expCls = exp != null ? (exp >= 0 ? 'up' : 'down') : 'neu';
+  // 统一框：按决策逻辑排序 评级→形态→胜率→期望收益
+  const cells = [
+    { label: '买入评级', val: ratingVal, cls: ratingCls, sub: ratingSub, big: true },
+    { label: '形态净评分', val: arrow + ' ' + scoreVal, cls: dir, sub: scoreSub },
+    { label: '回测胜率', val: rate.toFixed(1) + '%', cls: rate >= 50 ? 'up' : 'down', sub: sigCount + ' 个信号' },
+    { label: '期望收益', val: expVal, cls: expCls, sub: '信号方向·等权' },
+  ];
+  let html = '<div class="ana-score-card"><div class="ana-score-grid2">';
+  cells.forEach((c) => {
+    html += '<div class="ana-score-cell' + (c.big ? ' is-big' : '') + '">'
+      + '<div class="ana-score-label">' + c.label + '</div>'
+      + '<div class="ana-score-val ' + c.cls + '">' + c.val + '</div>'
+      + '<div class="ana-score-sub">' + c.sub + '</div>'
+      + '</div>';
+  });
+  html += '</div></div>';
+  return html;
 }
 
 // 逐日信号回测明细表（仅展示 buy/sell 信号，按日期倒序，最新在前；可滚动）
-function dailySignalsHTML(ds) {
-  if (!ds || !ds.length) return '<div class="analysis-err">暂无可回测的逐日信号</div>';
-  let buy = 0, buyWin = 0, sell = 0, sellWin = 0;
-  ds.forEach((d) => {
-    if (d.signal === 'buy') { buy++; if (d.win) buyWin++; }
-    else if (d.signal === 'sell') { sell++; if (d.win) sellWin++; }
+function __sigHover(e, el) {
+  try {
+    const svg = el.ownerSVGElement;
+    const box = svg.parentElement;
+    const cR = box.getBoundingClientRect();
+    const pts = JSON.parse(el.getAttribute('data-pts'));
+    const n = parseInt(el.getAttribute('data-n'), 10);
+    const SW = 640, SH = 150, mlFrac = 46 / SW, mrFrac = 10 / SW;
+    const xr = (e.clientX - cR.left) / cR.width;
+    let idx = Math.round((xr - mlFrac) / (1 - mlFrac - mrFrac) * (n - 1));
+    idx = Math.max(0, Math.min(n - 1, idx));
+    const p = pts[idx];
+    const tip = box.querySelector('.curve-tip');
+    const fmt = (v) => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+    const cls = (v) => v == null ? '' : (v >= 0 ? 'up' : 'down');
+    tip.innerHTML = '<div class="ct-date">' + esc(p.date) + '</div>'
+      + '<div class="ct-row">本周期策略收益 <b class="' + cls(p.r) + '">' + fmt(p.r) + '</b></div>'
+      + '<div class="ct-row">累计 <b class="' + cls(p.cum) + '">' + fmt(p.cum) + '</b></div>';
+    tip.hidden = false;
+    const leftPx = p.sx / SW * cR.width;
+    const topPx = p.sy / SH * cR.height;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let L = leftPx - tw / 2;
+    L = Math.max(2, Math.min(cR.width - tw - 2, L));
+    let T = topPx - th - 10;
+    if (T < 0) T = topPx + 10;
+    tip.style.left = L + 'px';
+    tip.style.top = T + 'px';
+  } catch (err) {}
+}
+function __sigLeave(el) {
+  const box = el.ownerSVGElement.parentElement;
+  const tip = box.querySelector('.curve-tip');
+  if (tip) tip.hidden = true;
+}
+
+let lastDailySignals = null;
+
+// 取某一持有周期 T(1/3/5) 的【信号方向收益%】：后端 sigRet 已对卖出取反，
+// 故 buy=涨为正、sell=跌为正，直接作为"策略实际收益率"。
+function dsPeriodRet(d, T) {
+  if (T === 3) return d.ret_3;
+  if (T === 5) return d.ret_5;
+  return d.next_ret;
+}
+
+// 盈亏分级：按策略实际收益率相对止盈/止损阈值细分为四档
+function dsTierInfo(r, tp, sl) {
+  if (r == null) return { emoji: '·', label: '—', cls: 'na' };
+  if (r > tp) return { emoji: '🔴', label: '大赚', cls: 'tier-bigwin' };
+  if (r > 0) return { emoji: '🟡', label: '小赚', cls: 'tier-smallwin' };
+  if (r >= sl) return { emoji: '🟠', label: '小亏', cls: 'tier-smallloss' };
+  return { emoji: '🟢', label: '大亏', cls: 'tier-bigloss' };
+}
+
+// 核心指标：只使用 [T日收益] 列（周期对齐），方向已由数据保证
+function dsMetrics(ds, T, tp, sl) {
+  const rows = ds.filter((d) => d.signal === 'buy' || d.signal === 'sell');
+  let N = 0, hits = 0, g = 0, gn = 0, l = 0, ln = 0;
+  const tiers = { bigWin: [], smallWin: [], smallLoss: [], bigLoss: [] };
+  rows.forEach((d) => {
+    const r = dsPeriodRet(d, T);
+    if (r == null) return;
+    N++;
+    if (r > 0) { hits++; g += r; gn++; tiers[r > tp ? 'bigWin' : 'smallWin'].push(r); }
+    else { l += -r; ln++; tiers[r >= sl ? 'smallLoss' : 'bigLoss'].push(r); }
   });
-  const total = buy + sell, totalWin = buyWin + sellWin;
-  const rate = total ? (totalWin / total * 100) : 0;
-  const rows = ds.filter((d) => d.signal === 'buy' || d.signal === 'sell').slice(-40).reverse();
+  const rate = N ? hits / N * 100 : 0;
+  const avgWin = gn ? g / gn : null;   // 平均盈利率(%)
+  const avgLoss = ln ? l / ln : null;  // 平均亏损率(%)，以正值表示幅度
+  const pl = (g > 0 && l > 0) ? (g / l) : null; // 实际盈亏比 = 总盈利/总亏损
+  return { N, hits, rate, avgWin, avgLoss, pl, tiers };
+}
+
+// 累计策略收益曲线（按选定周期 T 累加）
+function dsCurve(ds, T) {
+  let cum = 0; const curve = []; const meta = [];
+  ds.filter((d) => d.signal === 'buy' || d.signal === 'sell').forEach((d) => {
+    const r = dsPeriodRet(d, T);
+    if (r == null) return;
+    cum += r; curve.push(cum); meta.push({ date: d.date, r: r, cum: cum });
+  });
+  if (curve.length < 1) return '';
+  const SW = 640, SH = 150, ml = 46, mr = 10, mt = 12, mb = 24;
+  const px0 = ml, px1 = SW - mr, py0 = mt, py1 = SH - mb;
+  const max = Math.max.apply(null, curve.concat(0)), min = Math.min.apply(null, curve.concat(0));
+  const range = (max - min) || 1;
+  const X = (i) => px0 + (curve.length === 1 ? 0 : (i / (curve.length - 1)) * (px1 - px0));
+  const Y = (v) => py1 - ((v - min) / range) * (py1 - py0);
+  const pts = curve.map((v, i) => X(i).toFixed(1) + ',' + Y(v).toFixed(1)).join(' ');
+  let yGrid = '', yLabels = '';
+  [{ v: max, y: Y(max) }, ...(min < 0 && max > 0 ? [{ v: 0, y: Y(0) }] : []), { v: min, y: Y(min) }].forEach((t) => {
+    yGrid += '<line x1="' + px0 + '" y1="' + t.y.toFixed(1) + '" x2="' + px1 + '" y2="' + t.y.toFixed(1) + '" stroke="rgba(255,255,255,.10)" stroke-width="1" vector-effect="non-scaling-stroke"/>';
+    yLabels += '<span class="ax-y" style="top:' + (t.y / SH * 100).toFixed(2) + '%">' + t.v.toFixed(1) + '%</span>';
+  });
+  const xi = [0, Math.floor((meta.length - 1) / 2), meta.length - 1].filter((v, i, a) => a.indexOf(v) === i);
+  let xGrid = '', xLabels = '';
+  xi.forEach((i) => { const cx = X(i); xGrid += '<line x1="' + cx.toFixed(1) + '" y1="' + py0 + '" x2="' + cx.toFixed(1) + '" y2="' + py1 + '" stroke="rgba(255,255,255,.07)" stroke-width="1" vector-effect="non-scaling-stroke"/>'; xLabels += '<span class="ax-x" style="left:' + (cx / SW * 100).toFixed(2) + '%">' + esc(meta[i].date) + '</span>'; });
+  const zy = Y(0).toFixed(1);
+  const hoverPts = meta.map((m, i) => ({ date: m.date, r: m.r, cum: m.cum, sx: X(i), sy: Y(m.cum) }));
+  const ptsJSON = JSON.stringify(hoverPts).replace(/"/g, '&quot;');
+  const svg = '<svg viewBox="0 0 ' + SW + ' ' + SH + '" class="ret-curve" preserveAspectRatio="none">'
+    + yGrid + xGrid
+    + '<line x1="' + px0 + '" y1="' + zy + '" x2="' + px1 + '" y2="' + zy + '" stroke="rgba(255,255,255,.28)" stroke-width="1" vector-effect="non-scaling-stroke"/>'
+    + '<polyline points="' + pts + '" fill="none" stroke="#6f9e5e" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>'
+    + '<rect class="curve-hit" x="' + px0 + '" y="' + py0 + '" width="' + (px1 - px0) + '" height="' + (py1 - py0) + '" fill="transparent" data-pts="' + ptsJSON + '" data-n="' + meta.length + '" onmousemove="__sigHover(event,this)" onmouseleave="__sigLeave(this)"/></svg>';
+  const axis = '<div class="curve-axis">' + yLabels + xLabels + '</div>';
+  return '<div class="daily-sig-curve"><div class="curve-box">' + svg + axis + '<div class="curve-tip" hidden></div></div><div class="curve-cap">累计策略收益曲线（持有 ' + T + ' 日·按信号方向等权累加·悬停查看每日明细）</div></div>';
+}
+
+// 构建回测面板主体（控制条之外的部分），供首次渲染与切换周期/阈值时复用
+function buildDailySigInner(ds, T, tp, sl) {
+  const fmtPct = (v) => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  const clsPct = (v) => v == null ? '' : (v >= 0 ? 'up' : 'down');
+  const m = dsMetrics(ds, T, tp, sl);
+  const allRows = ds.filter((d) => d.signal === 'buy' || d.signal === 'sell');
+  const sum = (a) => a.length ? (a.reduce((x, y) => x + y, 0) / a.length) : null;
+  const tierCell = (arr, label, emoji, cls) => {
+    const n = arr.length;
+    const avg = arr.length ? (arr[0] >= 0 ? '+' : '') + sum(arr).toFixed(2) + '%' : '—';
+    return '<span class="ds-tier ' + cls + '">' + emoji + label + ' ' + n + ' ' + avg + '</span>';
+  };
+  const t = m.tiers;
+  let html = '';
+  html += '<div class="daily-sig-summary">回测（持有 ' + T + '日）：有效信号 <b>' + m.N + '</b> 个 · 胜率 <b class="' + (m.rate >= 50 ? 'up' : 'down') + '">' + m.rate.toFixed(1) + '%</b> · 最近 ' + Math.min(40, allRows.length) + ' 条</div>';
+  html += '<div class="ds-metrics">'
+    + '<div class="ds-metric"><span>胜率</span><b class="' + (m.rate >= 50 ? 'up' : 'down') + '">' + m.rate.toFixed(1) + '%</b></div>'
+    + '<div class="ds-metric"><span>平均盈利率</span><b class="up">' + (m.avgWin != null ? '+' + m.avgWin.toFixed(2) + '%' : '—') + '</b></div>'
+    + '<div class="ds-metric"><span>平均亏损率</span><b class="down">' + (m.avgLoss != null ? '-' + m.avgLoss.toFixed(2) + '%' : '—') + '</b></div>'
+    + '<div class="ds-metric"><span>实际盈亏比</span><b>' + (m.pl != null ? m.pl.toFixed(2) + ':1' : '—') + '</b></div>'
+    + '<div class="ds-tiers">' + tierCell(t.bigWin, '大赚', '🔴', 'tier-bigwin') + tierCell(t.smallWin, '小赚', '🟡', 'tier-smallwin') + tierCell(t.smallLoss, '小亏', '🟠', 'tier-smallloss') + tierCell(t.bigLoss, '大亏', '🟢', 'tier-bigloss') + '</div>'
+    + '</div>';
+  const curve = dsCurve(ds, T);
+  if (curve) html += curve;
+  const rows = allRows.slice(-40).reverse();
   let body = '';
   rows.forEach((d) => {
     const isBuy = d.signal === 'buy';
-    const chg = d.next_close - d.close;
-    const chgPct = d.close ? (chg / d.close * 100) : 0;
-    const ok = !!d.win;
-    const resultCls = ok ? 'up' : 'down';
-    const resultTxt = ok ? '✔ 命中' : '✘ 失效';
+    const r = dsPeriodRet(d, T);
+    const r5 = dsPeriodRet(d, T); // 策略收益：与"结果/分级/曲线"同周期，后端 sigRet 已对卖出取反（跌为正）
+    const tier = dsTierInfo(r, tp, sl);
+    const ok = r != null && r > 0;
     body += '<tr>'
       + '<td class="ds-date">' + esc(d.date) + '</td>'
       + '<td><span class="ds-sig ' + (isBuy ? 'up' : 'down') + '">' + (isBuy ? '买入' : '卖出') + '</span></td>'
-      + '<td class="ds-num">' + d.close.toFixed(2) + '</td>'
-      + '<td class="ds-num">' + (d.next_close ? d.next_close.toFixed(2) : '—') + '</td>'
-      + '<td class="ds-num ' + (chg >= 0 ? 'up' : 'down') + '">' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + ' (' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%)</td>'
-      + '<td class="ds-result ' + resultCls + '">' + resultTxt + '</td>'
+      + '<td class="ds-num ' + clsPct(r5) + '">' + (r5 == null ? '—' : fmtPct(r5)) + '</td>'
+      + '<td class="ds-result ' + (r == null ? '' : (ok ? 'hit' : 'miss')) + '">' + (r == null ? '—' : (ok ? '✔ 命中' : '✘ 失效')) + '</td>'
+      + '<td>' + (r == null ? '<span class="ds-tier na">· —</span>' : '<span class="ds-tier ' + tier.cls + '">' + tier.emoji + ' ' + tier.label + '</span>') + '</td>'
       + '</tr>';
   });
-  return '<div class="daily-sig-wrap">'
-    + '<div class="daily-sig-summary">逐日信号回测：共 <b>' + total + '</b> 个买卖信号，胜率 <b class="' + (rate >= 50 ? 'up' : 'down') + '">' + rate.toFixed(1) + '%</b>'
-    + '（买 ' + buy + ' 胜 ' + buyWin + '，卖 ' + sell + ' 胜 ' + sellWin + '，最近 ' + rows.length + ' 条如下）</div>'
-    + '<div class="daily-sig-scroll"><table class="daily-sig-table">'
-    + '<thead><tr><th>日期</th><th>信号</th><th>当日收盘</th><th>次日收盘</th><th>次日涨跌</th><th>结果</th></tr></thead>'
-    + '<tbody>' + body + '</tbody></table></div></div>';
+  html += '<div class="daily-sig-scroll"><table class="daily-sig-table">'
+    + '<thead><tr><th>日期</th><th>信号</th><th>策略收益(' + T + '日)</th><th>结果</th><th>盈亏分级</th></tr></thead>'
+    + '<tbody>' + body + '</tbody></table></div>';
+  return html;
+}
+
+function dailySignalsHTML(ds) {
+  if (!ds || !ds.length) return '<div class="analysis-err">暂无可回测的逐日信号</div>';
+  lastDailySignals = ds;
+  const ctrl = '<div class="ds-controls">持有周期：'
+    + '<span class="ds-t-seg"><button type="button" data-t="1" class="active">1日</button><button type="button" data-t="3">3日</button><button type="button" data-t="5">5日</button></span>'
+    + '　止盈 ≥ <input id="dsTp" type="number" step="0.5" value="2.0">%　止损 ≤ <input id="dsSl" type="number" step="0.5" value="-1.5">%</div>';
+  return '<div class="daily-sig-wrap" id="dsWrap">' + ctrl + '<div id="dsInner">' + buildDailySigInner(ds, 1, 2.0, -1.5) + '</div></div>';
+}
+
+// 周期/阈值切换后局部重渲染（数据已在前端，无需回服务端）
+function bindDailySignals() {
+  const wrap = document.getElementById('dsWrap');
+  if (!wrap || !lastDailySignals) return;
+  const inner = wrap.querySelector('#dsInner');
+  const tpEl = wrap.querySelector('#dsTp');
+  const slEl = wrap.querySelector('#dsSl');
+  const segBtns = wrap.querySelectorAll('.ds-t-seg button');
+  const render = () => {
+    const active = wrap.querySelector('.ds-t-seg button.active');
+    const T = parseInt(active ? active.dataset.t : '1', 10) || 1;
+    const tp = parseFloat(tpEl.value); const sl = parseFloat(slEl.value);
+    inner.innerHTML = buildDailySigInner(lastDailySignals, T, isNaN(tp) ? 2 : tp, isNaN(sl) ? -1.5 : sl);
+  };
+  segBtns.forEach((b) => { b.onclick = () => { segBtns.forEach((x) => x.classList.toggle('active', x === b)); render(); }; });
+  tpEl.oninput = render; slEl.oninput = render;
 }
 
 // 涨跌概率卡片
@@ -4771,7 +4995,7 @@ function indicatorsTableHTML(ind) {
   h += '<tr><td>MACD HIST</td><td>' + (macd.hist ? macd.hist.toFixed(4) : '—') + '</td></tr>';
   const rsi = ind.rsi || 50;
   const rsiState = rsi > 70 ? '超买↓' : rsi >= 65 ? '接近超买' : rsi > 50 ? '偏强↑' : rsi > 30 ? '偏弱↓' : '超卖↑';
-  const rsiCls = rsi > 70 ? 'down' : rsi >= 65 ? 'neu' : rsi > 50 ? 'up' : 'down';
+  const rsiCls = rsi > 70 ? 'down' : rsi >= 65 ? 'neu' : rsi > 50 ? 'up' : rsi > 30 ? 'down' : 'up';
   const rsiTip = rsi > 70 ? '超买区域，回调风险高' : rsi >= 65 ? '接近超买，谨慎追高' : rsi > 50 ? '偏强区域，趋势向好' : rsi > 30 ? '偏弱区域，趋势偏空' : '超卖区域，反弹概率高';
   h += '<tr><td>RSI(14)</td><td>' + rsi.toFixed(1) + '</td><td class="' + rsiCls + '">' + rsiState + '</td><td style="font-size:12px">' + rsiTip + '</td></tr>';
   const kdj = ind.kdj || {};
@@ -4784,7 +5008,8 @@ function indicatorsTableHTML(ind) {
   h += '<tr><td>KDJ J</td><td>' + (kdj.j ? kdj.j.toFixed(2) : '—') + '</td></tr>';
   const boll = ind.boll || {};
   const bollPos = boll.mid > 0 ? ((ind.price - boll.lower) / (boll.upper - boll.lower) * 100) : 50;
-  h += '<tr><td>BOLL 上轨</td><td>' + (boll.upper ? boll.upper.toFixed(2) : '—') + '</td><td rowspan="3" class="' + (bollPos > 50 ? 'up' : 'down') + '">' + (bollPos > 80 ? '上轨压力↓' : bollPos > 50 ? '中上轨↑' : bollPos > 20 ? '中下轨↓' : '下轨支撑↑') + '</td><td rowspan="3" style="font-size:12px">带宽：' + (boll.width ? boll.width.toFixed(1) + '%' : '—') + ' ' + (boll.width > 20 ? '宽幅震荡' : boll.width < 5 ? '即将变盘' : '') + '</td></tr>';
+  const bollSig = bollPos > 80 ? { t: '上轨压力↓', c: 'down' } : bollPos > 50 ? { t: '中上轨↑', c: 'up' } : bollPos > 20 ? { t: '中下轨↓', c: 'down' } : { t: '下轨支撑↑', c: 'up' };
+  h += '<tr><td>BOLL 上轨</td><td>' + (boll.upper ? boll.upper.toFixed(2) : '—') + '</td><td rowspan="3" class="' + bollSig.c + '">' + bollSig.t + '</td><td rowspan="3" style="font-size:12px">带宽：' + (boll.width ? boll.width.toFixed(1) + '%' : '—') + ' ' + (boll.width > 20 ? '宽幅震荡' : boll.width < 5 ? '即将变盘' : '') + '</td></tr>';
   h += '<tr><td>BOLL 中轨</td><td>' + (boll.mid ? boll.mid.toFixed(2) : '—') + '</td></tr>';
   h += '<tr><td>BOLL 下轨</td><td>' + (boll.lower ? boll.lower.toFixed(2) : '—') + '</td></tr>';
   h += '</tbody></table></div>';
@@ -4825,6 +5050,7 @@ function renderAnalysis(a) {
   if (a.series && a.series.length >= 2) tabs.push({ id: 'patterns', label: 'K线形态' });
   if (prob) tabs.push({ id: 'signals', label: '信号' });
   if (ind) tabs.push({ id: 'indicators', label: '指标' });
+  if (a.daily_signals) tabs.push({ id: 'backtest', label: '回测' });
   const active = tabs[0].id;
 
   let html = analysisTabBarHTML(tabs, active);
@@ -4846,12 +5072,11 @@ function renderAnalysis(a) {
     html += '<div class="ana-panel" data-tab="patterns" hidden>' + patHTML + '</div>';
   }
 
-  // ── 信号：信号分解 + 涨跌概率 + 逐日信号回测 ──
+  // ── 信号：信号分解 + 涨跌概率 ──
   if (prob) {
     html += '<div class="ana-panel" data-tab="signals" hidden>';
     html += sigListHTML(buildMergedSignals(prob, patScore, patVisible.length));
     html += probCardHTML(prob);
-    html += dailySignalsHTML(a.daily_signals);
     html += '</div>';
   }
 
@@ -4860,9 +5085,15 @@ function renderAnalysis(a) {
     html += '<div class="ana-panel" data-tab="indicators" hidden>' + indicatorsTableHTML(ind) + '</div>';
   }
 
+  // ── 回测：逐日信号明细（独立标签页，避免在信号面板底部过长不便浏览） ──
+  if (a.daily_signals) {
+    html += '<div class="ana-panel" data-tab="backtest" hidden>' + dailySignalsHTML(a.daily_signals) + '</div>';
+  }
+
   $('#analysisBody').innerHTML = html;
   bindKlineMini($('#analysisBody'));
   bindAnalysisTabs();
+  bindDailySignals();
 }
 
 // ── 弹框关闭 ──────────────────────────────────────────
@@ -4901,10 +5132,14 @@ async function loadGuideHoldings() {
   } catch (_) {}
 }
 
-// 补仓档位是否已到点位：联接ETF最新价 ≤ 该档触发价（与推送通知的判定一致）。
+// 档位是否已到点位：
+//  - 买入档位：联接ETF最新价 ≤ 触发价（与推送通知的买入判定一致）
+//  - 卖出档位：联接ETF最新价 ≥ 触发价（涨到止盈/减仓目标）
 // 注意 BuyPlanTier.Signal 只是档位说明文字（恒非空），不是触发标记。
 function isTierTriggered(plan, t) {
-  return !!(t && plan && plan.ETFLatest != null && plan.ETFLatest > 0 && plan.ETFLatest <= t.Price);
+  if (!t || !plan || plan.ETFLatest == null || plan.ETFLatest <= 0) return false;
+  if (t.Action === 'sell') return plan.ETFLatest >= t.Price;
+  return plan.ETFLatest <= t.Price;
 }
 
 // 直接渲染所有带补仓计划的基金（数据来自 holdings.buy_plan，由净值刷新时计算）
@@ -4913,7 +5148,7 @@ async function renderBuyPlans() {
   const body = $('#guidePlanBody');
   const planned = guideHoldings.filter((h) => h.buy_plan && (h.linked_symbol || h.category === 'stock'));
   if (!planned.length) {
-    body.innerHTML = '<div class="guide-empty">暂无补仓计划：持仓基金 / 亏损股票会在净值刷新（定时 21:00 / 手动刷新）后自动计算</div>';
+    body.innerHTML = '<div class="guide-empty">暂无调仓计划：持仓基金 / 亏损股票会在净值刷新（定时 21:00 / 手动刷新）后自动计算</div>';
     return;
   }
   let html = '';
@@ -4940,23 +5175,25 @@ async function renderBuyPlans() {
         ${summary}
       </div>
       <div class="bp-body">
-        <div class="bp-badge">🤖 自动补仓计划</div>`;
+        <div class="bp-badge">🤖 自动调仓计划</div>`;
     if (plan.Note) html += `<div class="plan-note">${esc(plan.Note)}</div>`;
     if (tiers.length) {
       html += '<div class="plan-tiers">';
       tiers.forEach((t, idx) => {
         const exec = execSet[idx];
+        const isSell = t.Action === 'sell';
         const sig = isTierTriggered(plan, t);
+        const execDone = isSell ? '已减' : '已补';
         const action = exec
-          ? `<div class="tier-executed">✓ 已执行${exec.note ? ' · ' + esc(exec.note) : ''}</div>`
-          : `<button class="btn btn-sm tier-exec-btn" data-exec-h="${h.id}" data-exec-idx="${idx}" data-exec-label="${esc(t.Label)}" data-exec-price="${t.Price}" data-exec-amount="${t.Amount}">标记已补</button>`;
-        html += `<div class="plan-tier${sig ? ' has-signal' : ''}${exec ? ' is-executed' : ''}">
-          <div class="plan-tier-label">${esc(t.Label)}${sig ? '<span class="tier-flag">触发</span>' : ''}</div>
+          ? `<div class="tier-executed">✓ 已${execDone}${exec.note ? ' · ' + esc(exec.note) : ''}</div>`
+          : `<button class="btn btn-sm tier-exec-btn" data-exec-h="${h.id}" data-exec-idx="${idx}" data-exec-label="${esc(t.Label)}" data-exec-price="${t.Price}" data-exec-amount="${t.Amount}" data-exec-action="${isSell ? 'sell' : 'buy'}">${isSell ? '标记已减' : '标记已补'}</button>`;
+        html += `<div class="plan-tier${sig ? ' has-signal' : ''}${exec ? ' is-executed' : ''}${isSell ? ' sell' : ''}">
+          <div class="plan-tier-label">${esc(t.Label)}${isSell ? '<span class="tier-tag sell">减仓</span>' : ''}${sig ? '<span class="tier-flag">触发</span>' : ''}</div>
           <div class="plan-tier-grid">
             <span>触发价</span><b>${fmt(t.Price)}</b>
-            <span>回撤</span><b>${t.Drawdown != null ? t.Drawdown.toFixed(1) : '—'}%</b>
-            <span>建议投入</span><b>¥${fmt(t.Amount)}</b>
-            <span>可补份额</span><b>${fmt(t.Shares)}</b>
+            <span>${isSell ? '上行空间' : '回撤'}</span><b>${t.Drawdown != null ? t.Drawdown.toFixed(1) : '—'}%</b>
+            <span>${isSell ? '建议卖出' : '建议投入'}</span><b>¥${fmt(t.Amount)}</b>
+            <span>${isSell ? '估算份额' : '可补份额'}</span><b>${isSell ? '—' : fmt(t.Shares)}</b>
           </div>
           ${t.Signal ? `<div class="plan-tier-signal">${esc(t.Signal)}</div>` : ''}
           <div class="tier-action">${action}</div>
@@ -4965,7 +5202,7 @@ async function renderBuyPlans() {
       html += '</div>';
       html += `<div class="plan-foot">弹药上限 ≈ ¥${fmt(plan.AmmoCap)}　｜　已持有市值 ¥${fmt(plan.HeldValue)}　｜　浮动亏损 ¥${fmt(plan.LossAmt)}</div>`;
       if (plan.ETFLatest) {
-        html += `<div class="plan-meta">${h.category === 'stock' ? '标的' : '联接ETF'} 最新 ${fmt(plan.ETFLatest)}　｜　BOLL 中轨 ${fmt(plan.BOLLMid)} / 下轨 ${fmt(plan.BOLLLower)}　｜　近60日 ${fmt(plan.SwingBottom)}~${fmt(plan.SwingTop)}（自高点回撤 ${plan.BottomPct != null ? plan.BottomPct.toFixed(1) : '—'}%）</div>`;
+        html += `<div class="plan-meta">${h.category === 'stock' ? '标的' : '联接ETF'} 最新 ${fmt(plan.ETFLatest)}　｜　BOLL 中轨 ${fmt(plan.BOLLMid)} / 下轨 ${fmt(plan.BOLLLower)}${plan.BOLLUpper ? ' / 上轨 ' + fmt(plan.BOLLUpper) : ''}　｜　近60日 ${fmt(plan.SwingBottom)}~${fmt(plan.SwingTop)}（自高点回撤 ${plan.BottomPct != null ? plan.BottomPct.toFixed(1) : '—'}%）</div>`;
       }
     } else {
       html += '<div class="guide-empty">暂无可用的标的K线，补仓位未更新</div>';
@@ -4986,22 +5223,24 @@ async function renderBuyPlans() {
   });
 }
 
-// 标记某补仓档位为"已执行"（仅记录，不改动持仓数量/成本）
+// 标记某档位为"已执行"（仅记录，不改动持仓数量/成本）；买入档位=已补，卖出档位=已减
 async function executeBuyPlan(btn) {
   const hid = btn.dataset.execH;
   const idx = parseInt(btn.dataset.execIdx, 10);
   const label = btn.dataset.execLabel;
   const price = parseFloat(btn.dataset.execPrice) || 0;
   const amount = parseFloat(btn.dataset.execAmount) || 0;
-  if (!confirm(`确认将「${label}」标记为已补？\n（仅记录执行，不会自动加减仓）`)) return;
+  const action = btn.dataset.execAction || 'buy';
+  const verbDone = action === 'sell' ? '已减' : '已补';
+  if (!confirm(`确认将「${label}」标记为${verbDone}？\n（仅记录执行，不会自动加减仓）`)) return;
   btn.disabled = true;
   try {
     const r = await api('/api/holdings/' + hid + '/buy-plan/execute', {
       method: 'POST',
-      body: JSON.stringify({ tier_index: idx, tier_label: label, price, amount, note: '' }),
+      body: JSON.stringify({ tier_index: idx, tier_label: label, action, price, amount, note: '' }),
     });
     if (!r.ok) { let m = '标记失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m, 'err'); btn.disabled = false; return; }
-    toast('已标记为已补', 'ok');
+    toast('已标记为' + verbDone, 'ok');
     await renderBuyPlans();
   } catch (e) { toast('标记异常：' + e.message, 'err'); btn.disabled = false; }
 }
@@ -5016,10 +5255,12 @@ function renderGuideList() {
   allGuides.forEach((g) => {
     const tagsHtml = g.tags ? g.tags.split(',').filter(Boolean).map((t) => `<span class="guide-tag">${esc(t.trim())}</span>`).join('') : '';
     const holdingName = g.holding_id ? `关联: #${g.holding_id}` : '';
+    const sideBadge = g.side === 'sell' ? '<span class="guide-side sell">卖出</span>'
+      : (g.side === 'buy' ? '<span class="guide-side buy">买入</span>' : '');
     const contentHtml = g.content ? `<div class="guide-item-content">${esc(g.content)}</div>` : '';
     h += `<div class="guide-item">
       <div class="guide-item-body">
-        <div class="guide-item-title">${esc(g.title)}</div>
+        <div class="guide-item-title">${esc(g.title)} ${sideBadge}</div>
         ${tagsHtml ? `<div class="guide-item-tags">${tagsHtml}</div>` : ''}
         ${contentHtml}
         <div class="guide-item-info">
@@ -5064,6 +5305,7 @@ async function openGuideForm(guide) {
     $('#guide_content').value = guide.content || '';
     $('#guide_tags').value = guide.tags || '';
     $('#guide_holding').value = guide.holding_id || 0;
+    $('#guide_side').value = guide.side || 'buy';
   } else {
     $('#guide_id').value = '';
     $('#guide_title').value = '';
@@ -5108,6 +5350,7 @@ $('#guideForm').onsubmit = async (e) => {
     title: $('#guide_title').value.trim(),
     content: $('#guide_content').value.trim(),
     tags: $('#guide_tags').value.trim(),
+    side: $('#guide_side').value || 'buy',
   };
   if (!payload.title) { $('#guideErr').textContent = '标题不能为空'; return; }
   try {

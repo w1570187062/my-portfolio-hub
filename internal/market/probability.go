@@ -66,10 +66,22 @@ func CalculateProbability(ind *IndicatorsResult) *ProbabilityResult {
 	bollSignal, bollScore := evalBOLL(ind)
 	signals = append(signals, bollSignal)
 
+	// 单日急涨惩罚：当日涨幅过大（>4%）时动量指标滞后、回踩概率上升，
+	// 额外扣分对冲"趋势指标全多"的虚高。仅在触发时追加一条独立信号。
+	rushPenalty := 0.0
+	if ind.DailyChangePct > 4 {
+		rushPenalty = math.Min(0.4, (ind.DailyChangePct-4)*0.1)
+		signals = append(signals, Signal{
+			Indicator: "单日急涨",
+			Direction: "bearish",
+			Score:     -rushPenalty,
+			Reason:    fmt.Sprintf("当日涨幅 %.1f%%，急涨后回踩风险上升", ind.DailyChangePct),
+		})
+	}
 	result.Signals = signals
 
 	// Weighted total score: -1 to 1
-	totalScore := maScore*weightMA + macdScore*weightMACD + rsiScore*weightRSI + kdjScore*weightKDJ + bollScore*weightBOLL
+	totalScore := maScore*weightMA + macdScore*weightMACD + rsiScore*weightRSI + kdjScore*weightKDJ + bollScore*weightBOLL - rushPenalty
 
 	// Convert to probability: score 0 -> 50%, score 1 -> 90%, score -1 -> 10%
 	upPct := 50 + totalScore*40
@@ -193,6 +205,17 @@ func evalMA(ind *IndicatorsResult) (Signal, float64) {
 		score = 0
 	}
 
+	// 乖离衰减：价格相对 MA20 过度正偏离（急涨后远离均线）时，MA 多头满分不再可信——
+	// 均线只反映位置，不区分"温和多头"与"急涨后的回摆风险"，需对满分打折。
+	if ind.MA20 > 0 {
+		dev := (p - ind.MA20) / ind.MA20
+		if dev > 0.05 {
+			// 偏离 5%~15% 区间，score 线性折算到 50%，体现回摆风险
+			k := math.Min(1, (dev-0.05)/0.10)
+			score *= 1 - 0.5*k
+		}
+	}
+
 	return Signal{
 		Indicator: "MA",
 		Direction: dir,
@@ -245,8 +268,11 @@ func evalMACD(ind *IndicatorsResult) (Signal, float64) {
 	// 不应给高分——这类状态极易回踩，历史上（如邮储）曾因此拿 0.74 高分却次日下跌。
 	// 注意：不要求 DIF>0。零轴下方金叉（DIF<0 但 DIF>DEA、hist>0）同样是"刚翻红"且往往更弱，
 	// 同样该被压制；显著翻红（强度>=sig）才保留原分。
-	justTurnedRed := dif > dea && hist > 0 && rel(hist) < sig && rel(dif) < sig
-	const justRedCap = 0.55
+	// "动能尚弱"任一相对强度不足（hist 或 dif）即视为刚翻红、动能不足，
+	// 与下方文字判定（rel(hist)>=sig && rel(dif)>=sig 才显著翻红）保持一致，
+	// 不再因 dif 偏强而漏压（原 bug：用 && 导致文字"尚弱"却给高分）。
+	justTurnedRed := dif > dea && hist > 0 && (rel(hist) < sig || rel(dif) < sig)
+	const justRedCap = 0.45
 	if justTurnedRed && score > justRedCap {
 		score = justRedCap
 	}
@@ -319,13 +345,17 @@ func evalRSI(ind *IndicatorsResult) (Signal, float64) {
 		dir = "bearish"
 		score = -0.8
 		reason = fmt.Sprintf("RSI=%.1f，严重超买，回调风险高", rsi)
-	case rsi >= 70:
+	case rsi >= 72:
+		dir = "bearish"
+		score = -0.6
+		reason = fmt.Sprintf("RSI=%.1f，超买区域", rsi)
+	case rsi >= 68:
 		dir = "bearish"
 		score = -0.4
-		reason = fmt.Sprintf("RSI=%.1f，超买区域", rsi)
+		reason = fmt.Sprintf("RSI=%.1f，超买，回调风险上升", rsi)
 	case rsi >= 65:
-		dir = "neutral"
-		score = 0
+		dir = "bearish"
+		score = -0.2
 		reason = fmt.Sprintf("RSI=%.1f，接近超买，谨慎", rsi)
 	case rsi > 55:
 		dir = "bullish"
@@ -525,6 +555,9 @@ type DailySignal struct {
 	UpPct     float64 `json:"up_pct"`     // 当日看涨概率
 	NextClose float64 `json:"next_close"` // 次日收盘价（最后一根无次日，记 0）
 	Win       *bool   `json:"win"`        // 信号是否成立：buy→次日>当日、sell→次日<当日；hold 为 nil
+	NextRet   *float64 `json:"next_ret"`   // 次日信号方向收益(%)：buy=涨、sell=跌为正
+	Ret3      *float64 `json:"ret_3"`      // 持有3日信号方向收益(%)
+	Ret5      *float64 `json:"ret_5"`      // 持有5日信号方向收益(%)
 }
 
 // ComputeDailySignals walks through history and, for every trading day once the
@@ -542,7 +575,17 @@ func ComputeDailySignals(bars []KlineBar) []DailySignal {
 	out := make([]DailySignal, 0, len(bars)-start)
 	// 自定义脚本总预算：逐日最多执行约500次脚本，用共享预算防止病态脚本拖垮接口
 	budget := scriptDailyBudget
-	for i := start; i < len(bars)-1; i++ {
+	sigRet := func(close0, futureClose float64, isBuy bool) *float64 {
+		if close0 <= 0 {
+			return nil
+		}
+		r := (futureClose - close0) / close0 * 100
+		if !isBuy {
+			r = -r
+		}
+		return &r
+	}
+	for i := start; i+5 < len(bars); i++ {
 		ind := CalculateIndicators(bars[:i+1])
 		if ind == nil {
 			continue
@@ -561,6 +604,15 @@ func ComputeDailySignals(bars []KlineBar) []DailySignal {
 			b := nextClose < bars[i].Close
 			win = &b
 		}
+				isBuy := sig == "buy"
+		nextRet := sigRet(bars[i].Close, bars[i+1].Close, isBuy)
+		var ret3, ret5 *float64
+		if i+3 < len(bars) {
+			ret3 = sigRet(bars[i].Close, bars[i+3].Close, isBuy)
+		}
+		if i+5 < len(bars) {
+			ret5 = sigRet(bars[i].Close, bars[i+5].Close, isBuy)
+		}
 		out = append(out, DailySignal{
 			Date:      bars[i].Date,
 			Close:     bars[i].
@@ -569,6 +621,9 @@ Close,
 			UpPct:     prob.UpPct,
 			NextClose: nextClose,
 			Win:       win,
+			NextRet:   nextRet,
+			Ret3:      ret3,
+			Ret5:      ret5,
 		})
 	}
 	// 仅保留最近约两年（504 个交易日）的逐日信号：足够复盘，又避免巨量历史

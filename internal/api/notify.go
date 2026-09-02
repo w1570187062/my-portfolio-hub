@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -262,9 +263,7 @@ func inScope(h db.Holding, scope string) bool {
 	case "us":
 		return h.Market == "美股"
 	case "cn":
-		// 注意：A股持仓的 market 存的是「沪深」，须一并匹配，否则 15:15 A股快照
-		// 会把 A股持仓过滤成空，推送变成「A股 本次无持仓盈亏变动」的空通知。
-		return h.Market == "A股" || h.Market == "沪深"
+		return h.Market == "沪深"
 	case "fund":
 		return h.Category == "fund"
 	default:
@@ -323,18 +322,23 @@ func collectBuySignals(uid int64, scope string) []buySignal {
 		var plan struct {
 			HasData   bool `json:"HasData"`
 			ETFLatest float64 `json:"ETFLatest"`
-			Tiers     []struct {
-				Label    string  `json:"Label"`
-				Price    float64 `json:"Price"`
-				Drawdown float64 `json:"Drawdown"`
-				Amount   float64 `json:"Amount"`
-				Signal   string  `json:"Signal"`
-			} `json:"Tiers"`
+		Tiers     []struct {
+			Action   string  `json:"Action"`
+			Label    string  `json:"Label"`
+			Price    float64 `json:"Price"`
+			Drawdown float64 `json:"Drawdown"`
+			Amount   float64 `json:"Amount"`
+			Signal   string  `json:"Signal"`
+		} `json:"Tiers"`
 		}
 		if json.Unmarshal([]byte(h.BuyPlan), &plan) != nil || !plan.HasData {
 			continue
 		}
 		for idx, t := range plan.Tiers {
+			// 卖出（减仓）档位不计入买入待触发信号
+			if t.Action == "sell" {
+				continue
+			}
 			// 已"标记已补"的档位不再计入待触发信号
 			if execKeys[fmt.Sprintf("%d:%d", h.ID, idx)] {
 				continue
@@ -360,10 +364,11 @@ func collectBuySignals(uid int64, scope string) []buySignal {
 
 // buildNetValueNotifyText 构造通知正文：触发来源 + 更新范围 + 补仓信号 + 日期 + 当日盈亏概览。
 // scope 限定只列出该范围内（美股/A股/基金）的持仓盈亏与补仓信号；"" / "all" 为全量（手动刷新）。
-func buildNetValueNotifyText(uid int64, triggeredBy, scope string) string {
+func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool) {
 	date := time.Now().Format("2006-01-02")
 	label := scopeLabelCN(scope)
 	var sb strings.Builder
+	hasData := false // 是否有真实持仓行或补仓信号；无任何有效数据时不发送
 	sb.WriteString("## 持仓净值已更新\n\n")
 	sb.WriteString(fmt.Sprintf("- **触发**：%s\n", triggeredBy))
 	sb.WriteString(fmt.Sprintf("- **更新范围**：%s\n", label))
@@ -378,6 +383,7 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) string {
 				s.TierLabel, s.TierPrice, math.Abs(s.Drawdown), s.Amount))
 			sb.WriteString("  > 信号：" + s.Signal + "\n")
 		}
+		hasData = true
 	}
 
 	// 持仓范围映射，用于按 scope 过滤明细中的按标的盈亏
@@ -412,44 +418,47 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) string {
 					CurrentPrice float64 `json:"current_price"`
 					ChangePct    float64 `json:"change_pct"`
 				}, 0, len(d.BySymbol))
-				var sCNY, sUSD float64
+				var sCNY float64
 				for _, s := range d.BySymbol {
 					if h, ok := hmap[s.Symbol]; ok && !inScope(h, scope) {
 						continue
 					}
 					scoped = append(scoped, s)
-				if strings.EqualFold(s.Currency, "USD") || strings.EqualFold(s.Currency, "HKD") {
-					sUSD += s.Pnl
-					sCNY += s.PnlCNY // 美元/HKD 盈亏折合人民币，一并计入「当日总盈亏」展示
-				} else {
 					sCNY += s.PnlCNY
 				}
-				}
 				sb.WriteString(fmt.Sprintf("- **当日总盈亏（%s）**：¥%s\n", label, moneyFmt(sCNY)))
-				if sUSD != 0 {
-					sb.WriteString(fmt.Sprintf("- **美元盈亏（%s）**：$%s\n", label, moneyFmt(sUSD)))
-				}
 				if len(scoped) > 0 {
 					sb.WriteString(fmt.Sprintf("\n**%s 当日盈亏（按原币种）**：\n", label))
 					n := 0
-					for _, s := range scoped {
-						if n >= 15 {
-							sb.WriteString(fmt.Sprintf("- （其余 %d 只未列出）\n", len(scoped)-15))
-							break
-						}
-						amt := s.PnlCNY
-						if strings.EqualFold(s.Currency, "USD") || strings.EqualFold(s.Currency, "HKD") {
-							amt = s.Pnl
-						}
-						priceStr := fmt.Sprintf("%s%.2f", curSymbol(s.Currency), s.CurrentPrice)
-						chgStr := "—"
-						if s.ChangePct >= 0.005 || s.ChangePct <= -0.005 {
-							chgStr = moneyFmt(s.ChangePct) + "%"
-						}
-						sb.WriteString(fmt.Sprintf("- %s %s：现价%s 涨跌%s 当日%s%s\n",
-							s.Symbol, s.Name, priceStr, chgStr, curSymbol(s.Currency), moneyFmt(amt)))
-						n++
-					}
+			for _, s := range scoped {
+				// 减仓/清仓落袋的「XX·已实现」条目不是真实持仓，没有实时行情（现价/涨跌无意义），
+				// 其金额已计入上方「当日总盈亏」，逐行持仓列表里跳过，避免出现「现价¥0.00 涨跌—」的诡异行。
+				if strings.HasSuffix(s.Name, "·已实现") {
+					continue
+				}
+				if n >= 15 {
+					sb.WriteString(fmt.Sprintf("- （其余 %d 只未列出）\n", len(scoped)-15))
+					break
+				}
+				// 基金净值单价小、波动以基点计，保留 4 位小数；股票/其他保留 2 位
+				dec := 2
+				if h, ok := hmap[s.Symbol]; ok && h.Category == "fund" {
+					dec = 4
+				}
+				amt := s.PnlCNY
+				if strings.EqualFold(s.Currency, "USD") || strings.EqualFold(s.Currency, "HKD") {
+					amt = s.Pnl
+				}
+				priceStr := fmt.Sprintf("%s%."+strconv.Itoa(dec)+"f", curSymbol(s.Currency), s.CurrentPrice)
+				chgStr := "—"
+				if s.ChangePct >= 0.005 || s.ChangePct <= -0.005 {
+					chgStr = moneyFmtPrec(s.ChangePct, 2) + "%"
+				}
+				sb.WriteString(fmt.Sprintf("- %s %s：现价%s 涨跌%s 当日%s%s\n",
+					s.Symbol, s.Name, priceStr, chgStr, curSymbol(s.Currency), moneyFmtPrec(amt, dec)))
+				hasData = true
+				n++
+			}
 				} else {
 					sb.WriteString(fmt.Sprintf("\n> %s 本次无持仓盈亏变动\n", label))
 				}
@@ -457,15 +466,19 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) string {
 		}
 	}
 	sb.WriteString("\n> 由「观澜」自动推送")
-	return sb.String()
+	return sb.String(), hasData
 }
 
 func moneyFmt(v float64) string {
+	return moneyFmtPrec(v, 2)
+}
+
+func moneyFmtPrec(v float64, dec int) string {
 	sign := ""
 	if v > 0 {
 		sign = "+"
 	}
-	return sign + fmt.Sprintf("%.2f", v)
+	return sign + fmt.Sprintf("%."+strconv.Itoa(dec)+"f", v)
 }
 
 // NotifyNetValueUpdated 在净值更新（手动或自动）完成后异步推送通知。
@@ -490,7 +503,11 @@ func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 			log.Printf("[notify] 按推送策略(%s)跳过本次推送（触发：%s）", policyName(cfg.Policy), triggeredBy)
 			return
 		}
-	text := buildNetValueNotifyText(uid, triggeredBy, scope)
+	text, hasData := buildNetValueNotifyText(uid, triggeredBy, scope)
+	if !hasData {
+		log.Printf("[notify] 本次推送无有效持仓/信号数据，取消发送（触发：%s）", triggeredBy)
+		return
+	}
 	sendToChannels(cfg, "持仓净值更新", text)
 	}()
 }

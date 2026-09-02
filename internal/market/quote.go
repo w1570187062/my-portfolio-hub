@@ -514,15 +514,6 @@ func fxResolve() (cny, hkd float64, ok bool) {
 	return fxFallbackCNY, fxFallbackHKD, false
 }
 
-// FetchUSDRate returns the cached USD->CNY rate, never blocking on the upstream.
-func FetchUSDRate() (float64, error) {
-	c, _, ok := fxResolve()
-	if !ok {
-		log.Printf("[fx] no USD rate available, using built-in fallback (CNY≈%.4f)", fxFallbackCNY)
-	}
-	return c, nil
-}
-
 // lastGoodCny/lastGoodHkd cache the most recent successfully resolved rates so
 // that a transient upstream failure degrades gracefully to the last known-good
 // value instead of a hardcoded constant (or, worse, a zero that zeroes out USD

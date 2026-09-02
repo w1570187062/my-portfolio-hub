@@ -183,7 +183,7 @@
    - `.empty--filtered`（筛选无结果）：文案「没有符合筛选条件的持仓」+「清除筛选」按钮，无添加按钮。
    - 失败态 `.error-inline`：文案 + 「重试」按钮就地重发请求，不跳页。
 
-**涉及文件**：`style.css`（`.tbl*/.skeleton/.refresh-bar/.empty--*/.error-inline`）、`app.js`（`renderRows` 骨架分支、`refreshBtn` 进度条、`renderFiltered` 空态分支）。
+**涉及文件**：`style.css`（`.tbl*/.skeleton/.refresh-bar/.empty--*/.error-inline`）、`app.js`（`renderRows` 骨架分支、`renderFiltered` 空态分支）。
 **验收**：数字列右对齐且表头同列同对齐；行高 42px；刷新时旧数据不丢且见进度条；空态能区分初始/筛选两种；失败态有就地重试。
 
 ---
@@ -286,5 +286,5 @@
 
 ## 附：改动文件与部署清单
 - **改动文件**：`web/style.css`（Token + 全部组件类）、`web/index.html`（页头模板、按钮/卡片/弹窗结构、表单 id）、`web/app.js`（快捷键、状态持久化、加载/禁用态、骨架/进度条、卡片切换、确认函数、icon-btn 同步）。
-- **部署**：改完前端 → `git commit` → `./update-version.sh` → `scp` 到 `/mnt/nvme0n1-4/portfolio`（排除 `.git`/`data`）→ `docker compose build --no-cache && docker compose up -d --force-recreate` → 核验 `/api/version` 与页面 DOM。
+- **部署**：改完前端 → `./update-version.sh` 写版本号 → `docker compose build --no-cache && docker compose up -d --force-recreate`（或本机 `go build && ./portfolio`）→ 核验 `/api/version` 与页面 DOM。
 - **灰度建议**：按第 8 节四步顺序分 4 个 commit 提交，每步独立可回滚；先在非交易时段部署，浏览器实测卡片切换 / 补仓标记 / 日历跳转 / 工具栏引导 / 空状态后再全量。

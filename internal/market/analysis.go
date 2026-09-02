@@ -9,9 +9,10 @@ import (
 
 // BuyPlanTier is one 补仓档位.
 type BuyPlanTier struct {
+	Action   string  `json:"Action"`   // buy=补仓/加仓, sell=止盈/减仓
 	Label    string  `json:"Label"`    // 档位名，如 第一档(首选)
-	Price    float64 `json:"Price"`    // 触发补仓价（联接ETF价格，前复权）
-	Drawdown float64 `json:"Drawdown"` // 相对反弹顶的回撤百分比
+	Price    float64 `json:"Price"`    // 触发价（联接ETF价格，前复权）
+	Drawdown float64 `json:"Drawdown"` // 买入:相对反弹顶回撤%; 卖出:相对当前涨幅%
 	Amount   float64 `json:"Amount"`   // 建议每档投入金额（动态计算，元）
 	Shares   float64 `json:"Shares"`   // 近似可补份额（金额 / 基金净值）
 	Signal   string  `json:"Signal"`   // 触发信号说明
@@ -24,6 +25,7 @@ type BuyPlan struct {
 	FundPrice    float64       `json:"FundPrice"`     // 基金当前净值
 	ETFLatest    float64       `json:"ETFLatest"`     // 联接ETF最新价
 	BOLLMid      float64       `json:"BOLLMid"`       // BOLL中轨
+	BOLLUpper    float64       `json:"BOLLUpper"`     // BOLL上轨
 	BOLLLower    float64       `json:"BOLLLower"`     // BOLL下轨
 	SwingTop     float64       `json:"SwingTop"`      // 近60日反弹高点
 	SwingBottom  float64       `json:"SwingBottom"`   // 近60日阶段底
@@ -76,6 +78,7 @@ func ComputeLinkedETFBuyPlan(linkedSymbol, fundSymbol, market string, cost, pric
 	latest := bars[len(bars)-1].Close
 	plan.ETFLatest = latest
 	plan.BOLLMid = ind.BOLL.Mid
+	plan.BOLLUpper = ind.BOLL.Upper
 	plan.BOLLLower = ind.BOLL.Lower
 
 	// 近60日 反弹顶 / 阶段底
@@ -146,6 +149,39 @@ func ComputeLinkedETFBuyPlan(linkedSymbol, fundSymbol, market string, cost, pric
 	plan.AmmoCap = budget
 	plan.LossAmt = loss
 	plan.HeldValue = heldValue
+
+	// ── 卖出档位（止盈/减仓）：价格从当前向上恢复时依次触发 ──
+	// 回到BOLL中轨 → 触BOLL上轨 → 近60日反弹高点（越接近高位减得越多）
+	sellPrices := []float64{ind.BOLL.Mid, ind.BOLL.Upper, hi}
+	sellLabels := []string{"第一档(回本减仓)", "第二档(分批止盈)", "第三档(高位清仓)"}
+	sellSignals := []string{
+		"回到BOLL中轨附近，亏损已大幅收窄，可减仓降风险",
+		"触及BOLL上轨，分批止盈锁定利润",
+		"接近近60日反弹高点，清仓或大幅减仓",
+	}
+	sellWeights := []float64{0.25, 0.35, 0.40}
+	for i := 0; i < 3; i++ {
+		p := sellPrices[i]
+		amt := heldValue * sellWeights[i]
+		shares := 0.0
+		if price > 0 {
+			shares = amt / price
+		}
+		gain := 0.0
+		if latest > 0 {
+			gain = (p - latest) / latest * 100
+		}
+		plan.Tiers = append(plan.Tiers, BuyPlanTier{
+			Action:   "sell",
+			Label:    sellLabels[i],
+			Price:    p,
+			Drawdown: gain,
+			Amount:   amt,
+			Shares:   shares,
+			Signal:   sellSignals[i],
+		})
+	}
+
 	if loss <= 0 {
 		plan.Note = "当前基金未亏损，已按市值基准给出参考档位；真跌出浮亏时补仓位会自动放大。"
 	} else {
@@ -181,10 +217,3 @@ func pct(price, top float64) float64 {
 	}
 	return (price - top) / top * 100
 }
-
-func trimPct(v float64) string {
-	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.1f", v), "0"), ".")
-}
-
-// round is a small helper kept local to avoid importing math in callers.
-func round(v float64) float64 { return math.Round(v*1000) / 1000 }
