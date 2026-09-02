@@ -2199,8 +2199,11 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   margin-bottom: 10px;
 }
 .source-group .collapse-hat { padding: 10px 14px; }
-.source-group .collapse-body { padding: 4px 12px 10px; }
+/* 分组子表与卡片左右对齐（去掉左右留白），并去除与卡片边框重叠的首尾行分隔线 */
+.source-group .collapse-body { padding: 0; }
 .source-group .collapse-body .asset-table { margin-bottom: 0; }
+.holdings-group .holdings-subtable tbody tr:first-child td { border-top: none; }
+.holdings-group .holdings-subtable tbody tr:last-child td { border-bottom: none; }
 /* 组头右侧：累计资金 + 折叠箭头 */
 .source-group .hat-total { font-size: 12px; font-weight: 600; color: var(--text-muted); }
 /* 资产全景「来源」分组卡片：头部套用首页账户卡片效果（账户名左 + 横排统计右），默认折叠 */

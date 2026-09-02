@@ -2209,9 +2209,40 @@ function openAIModal() {
   switchHubTab('settings');
 }
 
-function openAIResultModal(text) {
-  $('#aiResultBody').textContent = text;
+// 总结面板里的提示词模板下拉（与设置面板独立，便于一键总结时直接选模板）
+function renderPickTplSelect() {
+  const sel = $('#aiPickTpl');
+  if (!sel) return;
+  if (!aiCfg.templates.length) aiCfg.templates = defaultAITemplates();
+  sel.innerHTML = aiCfg.templates.map((t, i) => `<option value="${i}">${t.name}</option>`).join('');
+  sel.value = String(aiSelIdx);
+}
+
+function openAIResultModal(text, loading) {
+  const body = $('#aiResultBody');
+  if (loading) {
+    body.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;align-items:center;gap:10px;color:var(--text-muted)';
+    const sp = document.createElement('span');
+    sp.className = 'ana-funnel';
+    sp.style.fontSize = '22px';
+    sp.textContent = '⏳';
+    const tx = document.createElement('span');
+    tx.textContent = text;
+    wrap.appendChild(sp);
+    wrap.appendChild(tx);
+    body.appendChild(wrap);
+  } else {
+    body.textContent = text;
+  }
   $('#aiResultModal').hidden = false;
+}
+
+// 把模型返回的 content 安全地写入结果弹框；空/纯空白时显式占位，避免“看似没反显”
+function setAIResult(text) {
+  const t = (text != null) ? String(text) : '';
+  $('#aiResultBody').textContent = t.trim() ? t : '（模型返回为空）';
 }
 
 async function aiSaveSettings() {
@@ -2259,7 +2290,7 @@ async function aiSaveSettings() {
   }
 }
 
-async function aiSummarize() {
+async function aiSummarize(tplIdx) {
   // Prefer the key currently typed in the box; fall back to the locally saved key
   // (localStorage) and then the config key. The frontend now sends the key so a
   // freshly entered/updated key takes effect immediately without a separate save —
@@ -2270,7 +2301,9 @@ async function aiSummarize() {
   const model = ($('#ai_model').value || '').trim() || 'deepseek-v4-pro';
   const base_url = ($('#ai_baseurl').value || '').trim() || 'https://api.deepseek.com';
   const edited = $('#ai_tpl_content').value;
-  const content = (edited && edited.trim()) ? edited : (aiCfg.templates[aiSelIdx] ? aiCfg.templates[aiSelIdx].content : '');
+  let content;
+  if (typeof tplIdx === 'number' && aiCfg.templates[tplIdx]) content = aiCfg.templates[tplIdx].content;
+  else content = (edited && edited.trim()) ? edited : (aiCfg.templates[aiSelIdx] ? aiCfg.templates[aiSelIdx].content : '');
   if (!api_key) { toast('请先在「AI 设置」填写 API Key', 'err'); openAIModal(); return; }
   if (api_key) localStorage.setItem('pf_ai_key', api_key);
   if (!content) { toast('提示词模板为空', 'err'); return; }
@@ -2359,6 +2392,7 @@ function switchHubTab(tab) {
   $('#hubSettingsPanel').hidden = tab !== 'settings';
   $('#hubHistoryPanel').hidden = tab !== 'history';
   $('#aiHubModal').hidden = false;
+  if (tab === 'summary') renderPickTplSelect();
   if (tab === 'settings') { renderTplSelect(); renderModelSelect(); }
   if (tab === 'history') loadAIHistory();
 }
@@ -2374,9 +2408,10 @@ $('#hubTabHistory').onclick = () => switchHubTab('history');
 $('#aiHubXClose').onclick = () => { $('#aiHubModal').hidden = true; };
 $('#aiPickGo').onclick = () => {
   const type = $('#aiPickType').value;
+  const tplIdx = parseInt($('#aiPickTpl').value, 10);
   $('#aiHubModal').hidden = true;
-  if (type === 'all') assetAiSummarize();
-  else aiSummarize();
+  if (type === 'all') assetAiSummarize(tplIdx);
+  else aiSummarize(tplIdx);
 };
 // ai_export_json 已迁至用户抽屉（见 wireUserUI 中绑定）
 
@@ -4115,7 +4150,7 @@ $('#snapConfirmOk').onclick = async () => {
 $('#snapConfirmCancel').onclick = () => { pendingSnapSave = null; $('#snapConfirmModal').hidden = true; };
 
 // ---- 一键 AI 总结（汇总全部资产） ----
-async function assetAiSummarize() {
+async function assetAiSummarize(tplIdx) {
   const boxKey = ($('#ai_apikey') ? $('#ai_apikey').value : '').trim();
   const lsKey = (localStorage.getItem('pf_ai_key') || '').trim();
   const api_key = boxKey || lsKey || (aiCfg.api_key || '').trim();
@@ -4123,17 +4158,19 @@ async function assetAiSummarize() {
   const base_url = ($('#ai_baseurl').value || '').trim() || 'https://api.deepseek.com';
   // 与权益类一致：优先使用 AI 设置弹框中当前编辑/选中的模板，避免静默回退到第一条或默认模板
   const edited = ($('#ai_tpl_content') ? $('#ai_tpl_content').value : '');
-  const content = (edited && edited.trim()) ? edited : (aiCfg.templates[aiSelIdx] ? aiCfg.templates[aiSelIdx].content : '');
+  let content;
+  if (typeof tplIdx === 'number' && aiCfg.templates[tplIdx]) content = aiCfg.templates[tplIdx].content;
+  else content = (edited && edited.trim()) ? edited : (aiCfg.templates[aiSelIdx] ? aiCfg.templates[aiSelIdx].content : '');
   if (!api_key) { toast('请先在「AI 设置」填写 API Key', 'err'); openAIModal(); return; }
   if (!content) { toast('提示词模板为空，请先在「AI 设置」选择或填写模板', 'err'); openAIModal(); return; }
   if (api_key) localStorage.setItem('pf_ai_key', api_key);
-  openAIResultModal('生成中…（正在汇总全部资产并调用模型，请稍候）');
+  openAIResultModal('生成中…（正在汇总全部资产并调用模型，请稍候）', true);
   $('#aiPickGo').disabled = true;
   try {
     const r = await api('/api/asset/summary', { method: 'POST', body: JSON.stringify({ model, base_url, api_key, template: content }) });
     if (!r.ok) { let m = '生成失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#aiResultBody').textContent = m; return; }
     const d = await r.json();
-    $('#aiResultBody').textContent = d.content || '（空）';
+    setAIResult(d.content);
   } catch (err) {
     $('#aiResultBody').textContent = '异常：' + err.message;
   } finally {
