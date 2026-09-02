@@ -140,6 +140,14 @@
 
 :root[data-theme="light"] .asset-table .up { color: #dc2626; }
 :root[data-theme="light"] .asset-table .down { color: #16a34a; }
+/* 亮色模式：表头淡灰底 + 深字，提升与数据行的对比度（暗色模式保持原样不动） */
+:root[data-theme="light"] .asset-table thead th,
+:root[data-theme="light"] .asset-table th,
+:root[data-theme="light"] .holdings-group .holdings-subtable th {
+  background: #eef1f5;
+  color: #4a515c;
+  border-bottom: 1px solid #dde1e7;
+}
 :root[data-theme="light"] .asset-summary .card.up .c-value { color: #dc2626; }
 :root[data-theme="light"] .asset-summary .card.down .c-value { color: #16a34a; }
 :root[data-theme="light"] .tool-result .res-group-head.up { color: #dc2626; }
