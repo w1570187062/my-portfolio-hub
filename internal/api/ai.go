@@ -8,6 +8,8 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -278,6 +280,11 @@ func callChatCompletions(baseURL, apiKey, model, prompt string) (string, error) 
 	if err := json.Unmarshal(rb, &out); err != nil {
 		// 记录原始响应体，便于定位（截断到 800 字节）
 		log.Printf("[ai] 解析模型响应失败 model=%s base=%s ct=%q: %s", model, base, ct, truncate(raw, 800))
+		// 兜底：容忍尾随杂质/轻微畸形，尝试直接从原始响应提取 content
+		if c, ok := extractContentFallback(raw); ok && strings.TrimSpace(c) != "" {
+			log.Printf("[ai] 通过兜底正则提取到 content (len=%d)", len(c))
+			return strings.TrimSpace(c), nil
+		}
 		return "", fmt.Errorf("解析响应失败: %s", truncate(raw, 400))
 	}
 	if len(out.Choices) == 0 {
@@ -295,6 +302,24 @@ func callChatCompletions(baseURL, apiKey, model, prompt string) (string, error) 
 		}
 	}
 	return content, nil
+}
+
+// contentRe 用于解析失败时的兜底：从原始响应中提取 message.content。
+// 同时兼容 "content" 与 "message.content"（不匹配 reasoning_content）。
+var contentRe = regexp.MustCompile(`"(?:message\.)?content"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+
+// extractContentFallback 在 JSON 严格解析失败时使用，容忍尾随杂质/轻微畸形。
+func extractContentFallback(raw string) (string, bool) {
+	m := contentRe.FindStringSubmatch(raw)
+	if m == nil {
+		return "", false
+	}
+	// 还原转义（\", \\, \n 等）
+	s, err := strconv.Unquote(`"` + m[1] + `"`)
+	if err != nil {
+		return m[1], true
+	}
+	return s, true
 }
 
 // parseSSEContent 从 SSE 流（data: 行）中拼接 content / reasoning_content。
