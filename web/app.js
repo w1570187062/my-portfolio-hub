@@ -1498,9 +1498,9 @@ function drawPie(segs, total, title, opts) {
   }
   const legend = segs.map((s) => {
     const p = (s.value / total * 100).toFixed(1);
-    return `<div data-label="${esc(s.label)}" style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:14px${opts.onSeg ? ';cursor:pointer' : ''}">
+    return `<div data-label="${esc(s.label)}" style="display:flex;align-items:center;gap:8px;font-size:14px${opts.onSeg ? ';cursor:pointer' : ''}">
       <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${s.color}"></span>
-      <span>${esc(s.label)}</span><span style="margin-left:auto;font-weight:600">¥${fmt(s.value)} (${p}%)</span></div>`;
+      <span>${esc(s.label)}</span><span style="font-weight:600">¥${fmt(s.value)} (${p}%)</span></div>`;
   }).join('');
   const back = opts.onBack
     ? `<div class="pie-back" data-back="1">← 返回总览</div>`
@@ -1508,7 +1508,7 @@ function drawPie(segs, total, title, opts) {
   const hint = opts.onSeg ? `<div class="pie-hint">${opts.hint || '点击区块可查看二级细分'}</div>` : '';
   $('#chartBody').innerHTML = `${back}${hint}<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center">
     <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center"><svg width="220" height="220" viewBox="0 0 220 220">${paths}</svg></div>
-    <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center;min-width:200px">${legend}</div></div>`;
+    <div style="display:grid;grid-template-columns:repeat(2,max-content);gap:10px 24px">${legend}</div></div>`;
   if (opts.onSeg) {
     $('#chartBody').querySelectorAll('[data-label]').forEach((el) => (el.onclick = () => opts.onSeg(el.dataset.label)));
   }
