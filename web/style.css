@@ -529,6 +529,9 @@
 /* === 资产全景顶部汇总卡片：参考「再平衡仪表盘」KPI 风格重构（大圆角+浅边+柔阴影+右上柔光）=== */
 .pano-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; width: 100%; }
 @media (max-width: 880px){ .pano-summary { grid-template-columns: 1fr; } }
+/* 首页：仅需 2 张卡片（总市值 / 盈亏涨跌），两列网格 */
+.pano-home { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; width: 100%; margin-bottom: 4px; }
+@media (max-width: 880px){ .pano-home { grid-template-columns: 1fr; } }
 .pano-sum {
   position: relative; overflow: hidden;
   border: 1px solid var(--border);
@@ -536,14 +539,12 @@
   padding: 18px 18px 16px;
   background: linear-gradient(160deg, var(--bg-card), var(--bg-input));
   box-shadow: 0 6px 24px rgba(27, 40, 72, .08);
+  transition: transform .18s ease, box-shadow .18s ease;
 }
 :root[data-theme="dark"] .pano-sum { box-shadow: 0 8px 28px rgba(0, 0, 0, .38); }
-.pano-sum::after {
-  content: ""; position: absolute; right: -28px; top: -28px; width: 104px; height: 104px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(111, 158, 94, .14), transparent 70%);
-  pointer-events: none; z-index: 0;
-}
-.pano-sum > * { position: relative; z-index: 1; }
+/* 取消右上角光晕，改为悬停放大（轻微抬起+缩放）效果 */
+.pano-sum:hover { transform: translateY(-4px) scale(1.012); box-shadow: 0 12px 30px rgba(27, 40, 72, .16); }
+:root[data-theme="dark"] .pano-sum:hover { box-shadow: 0 14px 36px rgba(0, 0, 0, .5); }
 .pano-sum .ps-head { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .pano-sum .ps-big { font-size: 26px; font-weight: 800; color: var(--text); margin-top: 8px; letter-spacing: .3px; font-variant-numeric: tabular-nums; }
 .pano-sum .ps-rows { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }

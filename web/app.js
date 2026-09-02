@@ -684,6 +684,14 @@ function renderSummary(hs) {
   dayPnlCNY += todayRealizedCny; // 并入今日已实现（清仓/减仓）盈亏，避免已清仓标的漏算
   const dpCls = cls(dayPnlCNY);
   const mpCls = cls(monthPnlCNY);
+  // 总市值分类（股票/基金/其他，RMB 折算）用于首页彩色堆叠进度条
+  let stockMV = 0, fundMV = 0, otherMV = 0;
+  hs.forEach((h) => {
+    const mv = toRmb(h, h.market_value || 0);
+    if (h.category === 'fund') fundMV += mv;
+    else if (h.category === 'stock') stockMV += mv;
+    else otherMV += mv;
+  });
   const ICON = {
     total: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1"/><path d="M3 8v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2z"/><circle cx="16.5" cy="13" r="1.2"/></svg>',
     up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>',
@@ -711,18 +719,42 @@ function renderSummary(hs) {
   const mpCnyCls = cls(monthPnlCny), mpUsdCls = cls(monthPnlUsd);
   const mpRows = `<div class="c-pnl-row"><span class="c-pnl-label">RMB</span><span class="c-pnl-val ${mpCnyCls}">¥${fmt(monthPnlCny)}</span></div>` +
                  `<div class="c-pnl-row"><span class="c-pnl-label">USD</span><span class="c-pnl-val ${mpUsdCls}">$${fmt(monthPnlUsd)}</span></div>`;
-  // 首页总览：账户父卡片内，把总资产/总盈亏/当日盈亏/本月盈亏/涨跌数拆成多个独立卡片（参考 PanWatch 持仓页）。总资产→总市值。
+  // 首页总览：账户父卡片内，仅 2 张卡片（总市值 / 盈亏涨跌），沿用资产全景的 .pano-sum 风格。
   const card = document.getElementById('accountCard');
   const el = document.getElementById('acSummaryData');
   if (!el) return;
   if (card) card.hidden = false;
-  // 独立卡片：标签在上、大号数值在下；涨跌数用 ▲/▼ 着色；总盈亏/当日/本月带涨跌色。
-  el.innerHTML = `
-    <div class="sum-card"><span class="sum-lbl">总市值</span><b class="sum-val">¥${fmt(totalCNY)}</b></div>
-    <div class="sum-card"><span class="sum-lbl">总盈亏</span><b class="sum-val ${pCls}">¥${fmt(totalPnl)} <small>(${pct(totalPct)})</small></b></div>
-    <div class="sum-card"><span class="sum-lbl">当日盈亏</span><b class="sum-val ${dpCls}">¥${fmt(dayPnlCNY)}</b></div>
-    <div class="sum-card"><span class="sum-lbl">本月盈亏</span><b class="sum-val ${mpCls}">¥${fmt(monthPnlCNY)}</b></div>
-    <div class="sum-card"><span class="sum-lbl">涨跌</span><b class="sum-val"><span class="up">▲${upCount}</span> <span class="down">▼${downCount}</span></b></div>`;
+  // 总市值分类堆叠条（股票/基金/其他，以总市值 totalCNY 为分母折算宽度）
+  const baseMV = Math.max(totalCNY, 1);
+  const pctMV = (v) => (v / baseMV * 100);
+  const mvSegs = [
+    { name: '股票', v: stockMV, c: '#5b8cff' },
+    { name: '基金', v: fundMV, c: '#6f9e5e' },
+  ];
+  if (otherMV > 0) mvSegs.push({ name: '其他', v: otherMV, c: '#94a3b8' });
+  const mvBar = mvSegs.map((s) => `<span class="seg" style="width:${pctMV(s.v).toFixed(2)}%;background:${s.c}" title="${esc(s.name)} ${money(s.v)}"></span>`).join('');
+  const mvLeg = mvSegs.map((s) => `<div class="cl"><span class="dot" style="background:${s.c}"></span>${esc(s.name)}<b>${money(s.v)}</b><span class="cpct">${pctMV(s.v).toFixed(1)}%</span></div>`).join('');
+  // 卡片一：总市值（含股票/基金分类彩色堆叠进度条）
+  const cardMV =
+    `<div class="pano-sum">` +
+      `<div class="ps-head">总市值</div>` +
+      `<div class="ps-big">¥${fmt(totalCNY)}</div>` +
+      `<div class="comp-bar">${mvBar}</div>` +
+      `<div class="comp-legend">${mvLeg}</div>` +
+    `</div>`;
+  // 卡片二：盈亏 + 涨跌 合并（总盈亏带箭头色 / 当日 / 本月 / 涨跌家数）
+  const cardPnl =
+    `<div class="pano-sum">` +
+      `<div class="ps-head">盈亏 / 涨跌</div>` +
+      `<div class="ps-big ${pCls}">¥${fmt(totalPnl)} <small>(${pct(totalPct)})</small></div>` +
+      `<div class="ps-rows">` +
+        `<div class="ps-row"><span class="pr-lbl">当日盈亏</span><span class="pr-val ${dpCls}">¥${fmt(dayPnlCNY)}</span></div>` +
+        `<div class="ps-row"><span class="pr-lbl">本月盈亏</span><span class="pr-val ${mpCls}">¥${fmt(monthPnlCNY)}</span></div>` +
+        `<div class="ps-row"><span class="pr-lbl">涨跌家数</span><span class="pr-val"><span class="up">▲ ${upCount}</span> <span class="down">▼ ${downCount}</span></span></div>` +
+      `</div>` +
+    `</div>`;
+  el.className = 'pano-home';
+  el.innerHTML = cardMV + cardPnl;
 }
 
 // Build the two-level filter UI: a category slider (left-right swipeable, single
@@ -3271,10 +3303,6 @@ function renderAssetSummary() {
     `<div class="pano-sum">` +
       `<div class="ps-head">净资产</div>` +
       `<div class="ps-big">${money(net)}</div>` +
-      `<div class="ps-rows">` +
-        `<div class="ps-row"><span class="pr-lbl">总资产</span><span class="pr-val">${money(total)}</span></div>` +
-        `<div class="ps-row"><span class="pr-lbl">负债</span><span class="pr-val" style="color:var(--danger)">${money(lTotal)}</span></div>` +
-      `</div>` +
       stack([
         { name: '净资产', v: Math.max(net, 0), c: '#6f9e5e' },
         { name: '负债', v: lTotal, c: '#f87171' },
@@ -3288,10 +3316,6 @@ function renderAssetSummary() {
         { name: '境内资产', v: dom, c: '#6f9e5e' },
         { name: '境外资产', v: ovs, c: '#38bdf8' },
       ]) +
-      `<div class="ps-rows">` +
-        `<div class="ps-row"><span class="pr-lbl">境内资产</span><span class="pr-val" style="color:var(--primary)">${money(dom)}</span></div>` +
-        `<div class="ps-row"><span class="pr-lbl">境外资产</span><span class="pr-val" style="color:#38bdf8">${money(ovs)}</span></div>` +
-      `</div>` +
     `</div>`;
   // 卡片三：资产分布（权益+理财+现金=总资产）
   const cardDist =
@@ -3302,11 +3326,6 @@ function renderAssetSummary() {
         { name: '理财', v: wTotal, c: '#6f9e5e' },
         { name: '现金', v: cTotal, c: '#94a3b8' },
       ]) +
-      `<div class="ps-rows">` +
-        `<div class="ps-row"><span class="pr-lbl">权益</span><span class="pr-val">${money(eqMV)}</span></div>` +
-        `<div class="ps-row"><span class="pr-lbl">理财</span><span class="pr-val">${money(wTotal)}</span></div>` +
-        `<div class="ps-row"><span class="pr-lbl">现金</span><span class="pr-val">${money(cTotal)}</span></div>` +
-      `</div>` +
     `</div>`;
   $('#assetSummaryBody').innerHTML = `<div class="pano-summary">${cardNet}${cardRegion}${cardDist}</div>`;
 }
