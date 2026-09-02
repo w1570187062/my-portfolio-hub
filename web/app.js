@@ -2274,7 +2274,7 @@ async function aiSummarize() {
   if (!api_key) { toast('请先在「AI 设置」填写 API Key', 'err'); openAIModal(); return; }
   if (api_key) localStorage.setItem('pf_ai_key', api_key);
   if (!content) { toast('提示词模板为空', 'err'); return; }
-  openAIResultModal('生成中…（模型思考中，请稍候，最长约 3 分钟）');
+  openAIResultModal('生成中…（模型思考中，请稍候，最长约 3 分钟）', true);
   $('#aiPickGo').disabled = true;
   try {
     const r = await api('/api/ai/summary', { method: 'POST', body: JSON.stringify({ api_key, model, base_url, template: content }) });

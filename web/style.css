@@ -1188,7 +1188,7 @@ table {
   border: var(--card-border);
   overflow: hidden;
 }
-.table-wrap { width: 100%; overflow-x: auto; padding: 0 28px 8px; }
+.table-wrap { width: 100%; overflow-x: auto; padding: 0 0 8px; }
 th, td {
   padding: 8px 16px;
   height: var(--row-h);
@@ -2218,6 +2218,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 .empty-tip { color: var(--text-muted); font-size: 13px; padding: 20px 4px; text-align: center; }
 .asset-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+/* 首页持仓/资产全景表格：去掉表格圆角，避免表头背景被裁出圆角显得不协调 */
+#tbl, .asset-table { border-radius: 0; }
 /* 表头与数据对齐一致（左对齐；.num 列右对齐），避免上下错位 */
 .asset-table th { font-size: 13px; text-align: left; }
 .asset-table th, .asset-table td {
