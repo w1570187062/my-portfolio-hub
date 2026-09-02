@@ -7,20 +7,21 @@
   --bg-card: rgba(20, 26, 36, .82);
   --bg-card-solid: #141a24;
   --bg-glass: rgba(20, 26, 36, .6);
-  --bg-hover: rgba(110, 156, 122, .08);
+  --bg-hover: rgba(var(--tint), .08);
   --bg-input: rgba(255, 255, 255, .05);
-  --border: rgba(110, 156, 122, .15);
-  --border-strong: rgba(110, 156, 122, .35);
+  --border: rgba(var(--tint), .15);
+  --border-strong: rgba(var(--tint), .35);
   --text: #e2e8f0;
   --text-muted: #94a3b8;
   --text-faint: #64748b;
 
-  /* 主色调：豆沙护眼绿 */
-  --primary: #6f9e5e;
-  --primary-hover: #84b373;
-  --primary-active: #5a854c;
-  --primary-soft: rgba(111, 158, 94, .14);
-  --primary-glow: rgba(111, 158, 94, .26);
+  /* 主色调：土豪金（后期可调 —— 改 --tint/--primary 即可全局生效，或用 [data-accent] 预设） */
+  --tint: 217, 165, 43;
+  --primary: #d9a52b;
+  --primary-hover: #e8b73f;
+  --primary-active: #bd8a12;
+  --primary-soft: rgba(var(--tint), .14);
+  --primary-glow: rgba(var(--tint), .26);
 
   /* 功能色 */
   --danger: #f87171;
@@ -89,11 +90,13 @@
   --text-muted: #5a6068;
   --text-faint: #8a8f99;
 
-  --primary: #5c8a4c;
-  --primary-hover: #6f9e5e;
-  --primary-active: #4a753c;
-  --primary-soft: rgba(92, 138, 76, .10);
-  --primary-glow: rgba(92, 138, 76, .18);
+  /* 日间模式主色压暗一档，保证浅底对比度（土豪金深色版） */
+  --tint: 166, 124, 10;
+  --primary: #a67c0a;
+  --primary-hover: #b8860b;
+  --primary-active: #8f6b08;
+  --primary-soft: rgba(var(--tint), .10);
+  --primary-glow: rgba(var(--tint), .18);
 
   --danger: #e54545;
   --danger-hover: #d43a3a;
@@ -113,7 +116,26 @@
   --card-shadow: 0 2px 12px rgba(15, 23, 42, .08), inset 0 1px 0 rgba(255, 255, 255, .5);
   --card-shadow-hover: 0 8px 24px rgba(15, 23, 42, .12), 0 0 24px var(--primary-glow);
 }
-/* 日间模式：通用/导航按钮改白底描边 + 悬停绿填充（暗色下绿底白字保留） */
+
+/* ===== 主题色预设（后期可调）=====
+   用法：<html data-accent="gold|green|blue|purple|rose">，默认 gold（土豪金，见 :root 默认值）。
+   新增一种主题色：只需追加一对规则（暗色 + 日间），给出 --tint(RGB 三元组) 与
+   --primary / --primary-hover / --primary-active 四个变量，其余派生色（边框、hover 背景、
+   soft/glow、图标 currentColor）自动跟随。切换入口见「用户面板 → 主题色」。 */
+:root:not([data-theme="light"])[data-accent="green"]  { --tint: 111, 158, 94;  --primary: #6f9e5e; --primary-hover: #84b373; --primary-active: #5a854c; }
+:root:not([data-theme="light"])[data-accent="blue"]   { --tint: 51, 112, 255;  --primary: #3370ff; --primary-hover: #5b8bff; --primary-active: #2a5ad6; }
+:root:not([data-theme="light"])[data-accent="purple"] { --tint: 124, 58, 237;  --primary: #7c3aed; --primary-hover: #9b6bf2; --primary-active: #6a2fd0; }
+:root:not([data-theme="light"])[data-accent="rose"]   { --tint: 219, 90, 110;  --primary: #db5a6e; --primary-hover: #e87a8b; --primary-active: #c2465a; }
+
+:root[data-theme="light"][data-accent="green"]  { --tint: 92, 138, 76;   --primary: #5c8a4c; --primary-hover: #6f9e5e; --primary-active: #4a753c; }
+:root[data-theme="light"][data-accent="blue"]   { --tint: 26, 86, 219;   --primary: #1a56db; --primary-hover: #1e63f5; --primary-active: #1648b8; }
+:root[data-theme="light"][data-accent="purple"] { --tint: 109, 40, 217;  --primary: #6d28d9; --primary-hover: #7c3aed; --primary-active: #5b21b6; }
+:root[data-theme="light"][data-accent="rose"]   { --tint: 190, 18, 60;   --primary: #be123c; --primary-hover: #d51a47; --primary-active: #9f0f2e; }
+
+/* 金色高光（金元宝等插画元素的亮部/暗部）：跟随主题的两级派生色 */
+:root { --accent-hi: #f2d27a; --accent-lo: var(--primary); }
+
+/* 日间模式：通用/导航按钮改白底描边 + 悬停主色填充（暗色下主色底白字保留） */
 /* 日间模式：弱化背景网格纹理 */
 :root[data-theme="light"] body::before {
   background:
@@ -397,12 +419,12 @@
   border: 1px solid #6f9e5e;
 }
 .name-cell .act-modify:hover {
-  background: rgba(111, 158, 94, .16);
+  background: rgba(var(--tint), .16);
   color: #8bb678;
   border-color: #8bb678;
 }
 .name-cell .act-modify:active {
-  background: rgba(111, 158, 94, .28);
+  background: rgba(var(--tint), .28);
   color: #a9c79c;
 }
 
@@ -745,6 +767,32 @@
   font-size: 18px;
   border-radius: 50%;
 }
+
+/* 纯色图标按钮（主题切换 / header 图标组 / 用户切换）：
+   去掉 .btn 的描边与 ghost 底色，只留主色线稿 —— 暗色模式下 --border 半透明会显成黑框。
+   图标 SVG 一律 stroke/fill="currentColor"，颜色随 --primary（主题色）全局联动。 */
+.theme-toggle,
+.icon-btn,
+.act-user {
+  border-color: transparent;
+  background: transparent;
+  color: var(--primary);
+}
+.theme-toggle:hover,
+.icon-btn:hover,
+.act-user:hover {
+  border-color: transparent;
+  background: rgba(var(--tint), .14);
+  color: var(--primary-hover);
+}
+.theme-toggle:active,
+.icon-btn:active,
+.act-user:active {
+  border-color: transparent;
+  color: var(--primary-active);
+}
+/* 标题内的图标（非 .btn，无主色继承）显式取主题色 */
+h2 > svg, .sheet-title > svg, .page-head__title > svg { color: var(--primary); }
 
 /* 资产全景工具条移入 header 暗黑按钮右侧：与主题按钮同组、背景保持一致 */
 .asset-toolbar.header-toolbar {
@@ -3391,7 +3439,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
   width: 44px;
   height: 4px;
   border-radius: 999px;
-  background: var(--border-strong, rgba(110, 156, 122, .35));
+  background: var(--border-strong, rgba(var(--tint), .35));
   margin: 4px auto 10px;
 }
 .sheet-head {
@@ -3460,6 +3508,25 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .user-empty { text-align: center; color: var(--text-muted); padding: 18px 0; font-size: 13px; }
 
 .user-add { display: flex; gap: 8px; margin-bottom: 8px; }
+
+/* 主题色选择（后期可调）：色板色值是各预设的主色，选中态用外描边标记 */
+.user-accent { margin-bottom: 10px; }
+.ua-label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.ua-hint { color: var(--text-faint); margin-left: 4px; font-size: 11px; }
+.accent-swatches { display: flex; gap: 10px; }
+.accent-swatch {
+  width: 26px; height: 26px; padding: 0; cursor: pointer;
+  border-radius: 50%; border: 2px solid transparent;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.accent-swatch:hover { transform: scale(1.12); }
+.accent-swatch[data-accent="gold"]   { background: #d9a52b; }
+.accent-swatch[data-accent="green"]  { background: #6f9e5e; }
+.accent-swatch[data-accent="blue"]   { background: #3370ff; }
+.accent-swatch[data-accent="purple"] { background: #7c3aed; }
+.accent-swatch[data-accent="rose"]   { background: #db5a6e; }
+.accent-swatch.active { box-shadow: 0 0 0 2px var(--bg-card-solid), 0 0 0 4px currentColor; }
 .user-add input {
   flex: 1;
   padding: 10px 12px;

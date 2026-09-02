@@ -2,12 +2,26 @@ const $ = (s) => document.querySelector(s);
 
 // ===== 主题切换（日间/夜间） =====
 // 默认夜间模式；读取 localStorage 持久化偏好。
+const ICO_SUN = '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto"><circle cx="12" cy="12" r="4.4" fill="none" stroke="currentColor" stroke-width="1.9"/><g stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 2.4 V4.6"/><path d="M12 19.4 V21.6"/><path d="M2.4 12 H4.6"/><path d="M19.4 12 H21.6"/><path d="M5.2 5.2 L6.8 6.8"/><path d="M17.2 17.2 L18.8 18.8"/><path d="M5.2 18.8 L6.8 17.2"/><path d="M17.2 6.8 L18.8 5.2"/></g></svg>';
+const ICO_MOON = '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto"><path d="M21 12.79 A9 9 0 1 1 11.21 3 A7 7 0 0 0 21 12.79 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>';
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   const btn = document.getElementById('themeToggleBtn');
-  if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+  if (btn) btn.innerHTML = theme === 'light' ? ICO_SUN : ICO_MOON;
 }
 applyTheme(localStorage.getItem('pf_theme') || 'dark');
+
+// ===== 主题色（后期可调）：给 <html> 挂 data-accent，具体色值见 style.css 的预设块 =====
+// 新增一种主题色：在 style.css 追加一对 :root[data-accent="x"] 规则，并把色名加进 ACCENTS。
+const ACCENTS = ['gold', 'green', 'blue', 'purple', 'rose'];
+function applyAccent(accent) {
+  const v = ACCENTS.indexOf(accent) >= 0 ? accent : 'gold';
+  document.documentElement.dataset.accent = v;
+  document.querySelectorAll('#accentSwatches .accent-swatch').forEach((b) => {
+    b.classList.toggle('active', b.dataset.accent === v);
+  });
+}
+applyAccent(localStorage.getItem('pf_accent') || 'gold');
 document.addEventListener('DOMContentLoaded', () => {
   applyTheme(localStorage.getItem('pf_theme') || 'dark');
   const btn = document.getElementById('themeToggleBtn');
@@ -16,6 +30,14 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('pf_theme', next);
     applyTheme(next);
   };
+
+  applyAccent(localStorage.getItem('pf_accent') || 'gold');
+  document.querySelectorAll('#accentSwatches .accent-swatch').forEach((b) => {
+    b.onclick = () => {
+      applyAccent(b.dataset.accent);
+      localStorage.setItem('pf_accent', b.dataset.accent);
+    };
+  });
 
   // 页脚版本信息：commit 短哈希 + 提交时间戳（后端构建时注入）
   const vi = document.getElementById('versionInfo');
@@ -3661,8 +3683,8 @@ function renderAssetToolbar(tab) {
   if (!t) return;
   const L = (s) => `<span class="atool-label">${s}</span>`;
   const B = (id, icon, tip) => `<button id="${id}" class="btn icon-btn" type="button" data-tip="${tip}" aria-label="${tip}">${icon}</button>`;
-  const icoPnl = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><path d="M3.5 20.5 H20.5" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round"/><path d="M5 16 L10 10.5 L13.5 13.5 L19 6.5" fill="none" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.2 6.5 H19 V10.3" fill="none" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  const icoPie = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><circle cx="12" cy="12" r="8.6" fill="none" stroke="#f0b429" stroke-width="1.9"/><path d="M12 3.4 V12 L18.1 17.9" fill="none" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round"/></svg>`;
+  const icoPnl = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><path d="M3.5 20.5 H20.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M5 16 L10 10.5 L13.5 13.5 L19 6.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.2 6.5 H19 V10.3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const icoPie = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 3.4 V12 L18.1 17.9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>`;
   t.innerHTML =
     B('assetPnlBtn', icoPnl, '盈亏分析（日历/走势）') + B('assetPieBtn', icoPie, '资产构成');
 }
@@ -3670,12 +3692,13 @@ function renderAssetToolbar(tab) {
 function renderGlobalAssetToolbar() {
   const t = document.getElementById('assetToolbar');
   if (!t) return;
-  const icoCalc = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2.5" fill="none" stroke="#f0b429" stroke-width="1.8"/><rect x="7.5" y="5.5" width="9" height="4" rx="1" fill="#f0b429" opacity=".8"/><circle cx="9" cy="13" r="1.15" fill="#f0b429"/><circle cx="12" cy="13" r="1.15" fill="#f0b429"/><circle cx="15" cy="13" r="1.15" fill="#f0b429"/><circle cx="9" cy="16.5" r="1.15" fill="#f0b429"/><circle cx="12" cy="16.5" r="1.15" fill="#f0b429"/><circle cx="15" cy="16.5" r="1.15" fill="#f0b429"/></svg>`;
-  const icoIngot = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><g stroke="#ffd968" stroke-width="1.6" stroke-linecap="round"><path d="M6.2 6.4 L4.6 4.4"/><path d="M12 5.2 V2.6"/><path d="M17.8 6.4 L19.4 4.4"/><path d="M9 5.7 L8.2 3.3"/><path d="M15 5.7 L15.8 3.3"/></g><path d="M8.6 11.4 C8.6 8.8 10.1 7.4 12 7.4 C13.9 7.4 15.4 8.8 15.4 11.4 C14.3 10.7 13.2 10.4 12 10.4 C10.8 10.4 9.7 10.7 8.6 11.4 Z" fill="#ffd968"/><path d="M2.5 14.2 C2.5 11.6 5 10.5 7 11.1 C8.3 9.9 10 9.3 12 9.3 C14 9.3 15.7 9.9 17 11.1 C19 10.5 21.5 11.6 21.5 14.2 C21.5 17.3 17 19 12 19 C7 19 2.5 17.3 2.5 14.2 Z" fill="#f0b429"/><ellipse cx="9.5" cy="13.2" rx="3.2" ry="1.4" fill="#ffe08a" opacity=".55"/></svg>`;
+  const icoCalc = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="7.5" y="5.5" width="9" height="4" rx="1" fill="currentColor" opacity=".8"/><circle cx="9" cy="13" r="1.15" fill="currentColor"/><circle cx="12" cy="13" r="1.15" fill="currentColor"/><circle cx="15" cy="13" r="1.15" fill="currentColor"/><circle cx="9" cy="16.5" r="1.15" fill="currentColor"/><circle cx="12" cy="16.5" r="1.15" fill="currentColor"/><circle cx="15" cy="16.5" r="1.15" fill="currentColor"/></svg>`;
+  const icoIngot = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.2 6.4 L4.6 4.4"/><path d="M12 5.2 V2.6"/><path d="M17.8 6.4 L19.4 4.4"/><path d="M9 5.7 L8.2 3.3"/><path d="M15 5.7 L15.8 3.3"/></g><path d="M8.6 11.4 C8.6 8.8 10.1 7.4 12 7.4 C13.9 7.4 15.4 8.8 15.4 11.4 C14.3 10.7 13.2 10.4 12 10.4 C10.8 10.4 9.7 10.7 8.6 11.4 Z" fill="currentColor"/><path d="M2.5 14.2 C2.5 11.6 5 10.5 7 11.1 C8.3 9.9 10 9.3 12 9.3 C14 9.3 15.7 9.9 17 11.1 C19 10.5 21.5 11.6 21.5 14.2 C21.5 17.3 17 19 12 19 C7 19 2.5 17.3 2.5 14.2 Z" fill="currentColor"/><ellipse cx="9.5" cy="13.2" rx="3.2" ry="1.4" fill="currentColor" opacity=".55"/></svg>`;
+  const icoBell = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><path d="M18 8.5 A6 6 0 0 0 6 8.5 C6 15 4 16.5 4 16.5 H20 C20 16.5 18 15 18 8.5 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M13.7 20 A2 2 0 0 1 10.3 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>`;
   t.innerHTML =
     `<button id="assetToolsBtn" class="btn icon-btn" type="button" data-tip="资产工具" aria-label="资产工具">${icoCalc}</button>` +
     `<button id="assetPanoNavBtn" class="btn icon-btn" type="button" data-tip="资产全景" aria-label="资产全景">${icoIngot}</button>` +
-    `<button id="notifyNavBtn" class="btn icon-btn" type="button" data-tip="通知渠道" aria-label="通知渠道">🔔</button>`;
+    `<button id="notifyNavBtn" class="btn icon-btn" type="button" data-tip="通知渠道" aria-label="通知渠道">${icoBell}</button>`;
   t.hidden = false;
 }
 renderGlobalAssetToolbar();
@@ -3815,7 +3838,7 @@ function renderWealth(body) {
       <button class="btn vt-btn ${wealthView === 'table' ? 'active' : ''}" data-wview="table" type="button">表格</button>
       <button class="btn vt-btn ${wealthView === 'card' ? 'active' : ''}" data-wview="card" type="button">卡片</button>
     </div>` : '';
-  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn asset-add" id="assetSnapBtn" title="更新理财持仓"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px"><path d="M12 3.5 V13.5 M8 10 L12 14 L16 10" fill="none" stroke="#f0b429" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5 V19 A1.5 1.5 0 0 0 6 20.5 H18 A1.5 1.5 0 0 0 19.5 19 V16.5" fill="none" stroke="#f0b429" stroke-width="2" stroke-linecap="round"/></svg> 更新</button><button class="btn asset-add" id="addWealthBtn"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px"><path d="M12 5 V19 M5 12 H19" stroke="#f0b429" stroke-width="2.2" stroke-linecap="round"/></svg> 添加</button>${toggleHtml}</div></div>`;
+  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn asset-add" id="assetSnapBtn" title="更新理财持仓"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px"><path d="M12 3.5 V13.5 M8 10 L12 14 L16 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5 V19 A1.5 1.5 0 0 0 6 20.5 H18 A1.5 1.5 0 0 0 19.5 19 V16.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> 更新</button><button class="btn asset-add" id="addWealthBtn"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px"><path d="M12 5 V19 M5 12 H19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg> 添加</button>${toggleHtml}</div></div>`;
   if (!w.length) html += `<div class="empty-block"><p class="empty">还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn asset-add-inline" data-empty-add="wealth" type="button">➕ 添加第一笔理财</button></div>`;
   else if (wealthView === 'table') html += renderWealthTable(w);
   else {
