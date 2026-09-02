@@ -782,7 +782,7 @@ func migrateRoundHoldingPrices() error {
 
 // List returns holdings for a user (userID). Pass 0 to get all (used by scheduled jobs).
 func List(userID int64) ([]Holding, error) {
-	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,analysis_signal,analysis_up_pct,analysis_at,transaction_cost FROM holdings"
+	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,analysis_signal,analysis_up_pct,analysis_at,transaction_cost,asset_type FROM holdings"
 	var args []interface{}
 	if userID > 0 {
 		q += " WHERE user_id=?"
@@ -807,7 +807,7 @@ func List(userID int64) ([]Holding, error) {
 
 func Get(id int64) (*Holding, error) {
 	var h Holding
-	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,analysis_signal,analysis_up_pct,analysis_at,transaction_cost FROM holdings WHERE id=?", id).
+	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,analysis_signal,analysis_up_pct,analysis_at,transaction_cost,asset_type FROM holdings WHERE id=?", id).
 		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt, &h.TransactionCost, &h.AssetType)
 	if err != nil {
 		return nil, err
@@ -842,8 +842,8 @@ func Update(h *Holding) error {
 	h.CurrentPrice = roundByCategory(h.Category, h.CurrentPrice)
 	h.PrevClose = roundByCategory(h.Category, h.PrevClose)
 	h.TransactionCost = roundByCategory(h.Category, h.TransactionCost)
-	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=?,transaction_cost=? WHERE id=?",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.TransactionCost, h.ID)
+	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=?,transaction_cost=?,asset_type=? WHERE id=?",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.TransactionCost, h.AssetType, h.ID)
 	return err
 }
 
@@ -1768,6 +1768,53 @@ func CalcHoldingDays(buyDate string) int {
 // DeleteCalcInput removes the stored inputs for a kind+user (used by 清空).
 func DeleteCalcInput(kind string, userID int64) error {
 	_, err := DB.Exec(`DELETE FROM calc_inputs WHERE kind=? AND user_id=?`, kind, userID)
+	return err
+}
+
+// ============================================================================
+// 设置（风险偏好 / 资产类型标签等 JSON 配置）—— portfolio_settings
+// ============================================================================
+
+// initPortfolioSettings 建表：按 (kind, user_id) 隔离的 JSON 配置存储。
+func initPortfolioSettings() error {
+	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS portfolio_settings (
+		kind       TEXT NOT NULL,
+		user_id    INTEGER NOT NULL DEFAULT 0,
+		payload    TEXT NOT NULL DEFAULT '{}',
+		updated_at TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (kind, user_id)
+	)`)
+	return err
+}
+
+// GetSetting 读取某类设置的 JSON payload；不存在时返回 ok=false（调用方回退默认）。
+func GetSetting(kind string, userID int64) (payload string, ok bool, err error) {
+	var s string
+	e := DB.QueryRow(`SELECT payload FROM portfolio_settings WHERE kind=? AND user_id=?`, kind, userID).Scan(&s)
+	if e == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if e != nil {
+		return "", false, e
+	}
+	if s == "" {
+		s = "{}"
+	}
+	return s, true, nil
+}
+
+// SaveSetting 覆盖保存某类设置的 JSON payload（按 kind+user_id upsert）。
+func SaveSetting(kind, payload string, userID int64) error {
+	now := time.Now().Format("2006-01-02T15:04:05Z07:00")
+	_, err := DB.Exec(`INSERT INTO portfolio_settings(kind,user_id,payload,updated_at) VALUES(?,?,?,?)
+		ON CONFLICT(kind,user_id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at`,
+		kind, userID, payload, now)
+	return err
+}
+
+// DeleteSetting 清空某类设置（下次读取回退到内置默认）。
+func DeleteSetting(kind string, userID int64) error {
+	_, err := DB.Exec(`DELETE FROM portfolio_settings WHERE kind=? AND user_id=?`, kind, userID)
 	return err
 }
 
