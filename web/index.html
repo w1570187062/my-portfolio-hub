@@ -383,8 +383,11 @@
             </label>
             <label>交易成本 <input id="f_cost" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="买入/卖出手续费等（可选）"></label>
           </div>
-          <div class="f-row f-row2">
+          <div class="f-row">
             <label>描述 <input id="f_note" placeholder="可选，备忘用途"></label>
+            <label>资产类型
+              <select id="f_asset_type"><option value="">（未分类）</option></select>
+            </label>
             <label>交易日期 <input id="f_buy_date" type="date"></label>
           </div>
           <label id="linked_symbol_row" style="display:none">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL"></label>
@@ -517,6 +520,25 @@
     <div class="modal-card chart-card">
       <h2 id="chartTitle">图表</h2>
       <div id="chartBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== 资产全景：构成 / 再平衡 / 设置 三 Tab ===== -->
+  <div id="assetCompModal" class="modal" hidden>
+    <div class="modal-card" style="width:780px; max-width:96vw;">
+      <h2>资产全景</h2>
+      <button class="card-close" type="button" id="acCompClose" title="关闭" aria-label="关闭">✕</button>
+      <div class="hist-tabs ac-tabs">
+        <button id="acTabCompBtn" class="btn tab active" type="button" data-tab="comp">资产构成</button>
+        <button id="acTabRebalBtn" class="btn tab" type="button" data-tab="rebal">资产再平衡</button>
+        <button id="acTabSetBtn" class="btn tab" type="button" data-tab="settings">设置</button>
+      </div>
+      <div id="acTabComp" class="ac-panel">
+        <h3 id="acCompTitle"></h3>
+        <div id="acCompBody"></div>
+      </div>
+      <div id="acTabRebal" class="ac-panel" hidden></div>
+      <div id="acTabSet" class="ac-panel" hidden></div>
     </div>
   </div>
 

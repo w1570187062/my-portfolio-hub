@@ -29,6 +29,7 @@ type Holding struct {
 	Note         string  `json:"note"`
 	LinkedSymbol string  `json:"linked_symbol"` // 基金关��的股票代码，非空时点击基金可做技术分析
 	BuyDate      string  `json:"buy_date"`       // 买入日期（交易日期），YYYY-MM-DD，为空则不计持有天数
+	AssetType    string  `json:"asset_type"`     // 资产类型标签（红利价值/成长科技/消费/医药等，来自设置）
 	TransactionCost float64 `json:"transaction_cost"` // 交易成本/手续费，按持仓币种计，可选
 	BuyPlan       string  `json:"buy_plan"`       // 基金补仓计划 JSON（净值刷新时计算，不写 note 列）
 	Closed        bool    `json:"closed"`          // 是否已清仓（份额已归零）
@@ -125,7 +126,12 @@ func Init(path string) error {
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='transaction_cost'`).Scan(&tcc); e == nil && tcc == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN transaction_cost REAL NOT NULL DEFAULT 0`)
 	}
-	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
+		// 兼容旧库：新增 asset_type 列（资产类型标签：红利价值/成长科技/消费/医药等，来自设置）
+	var atc int
+	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='asset_type'`).Scan(&atc); e == nil && atc == 0 {
+		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN asset_type TEXT NOT NULL DEFAULT ''`)
+	}
+_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 		date    TEXT NOT NULL,
 		symbol  TEXT NOT NULL,
 		close   REAL NOT NULL,
@@ -171,6 +177,9 @@ func Init(path string) error {
 	}
 	if err := initOperationGuides(); err != nil {
 		return fmt.Errorf("init operation_guides: %w", err)
+	}
+	if err := initPortfolioSettings(); err != nil {
+		return fmt.Errorf("init portfolio_settings: %w", err)
 	}
 	if err := initNotifySettings(); err != nil {
 		return fmt.Errorf("init notify_settings: %w", err)
@@ -788,7 +797,7 @@ func List(userID int64) ([]Holding, error) {
 	var out []Holding
 	for rows.Next() {
 		var h Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt, &h.TransactionCost); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt, &h.TransactionCost, &h.AssetType); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -799,7 +808,7 @@ func List(userID int64) ([]Holding, error) {
 func Get(id int64) (*Holding, error) {
 	var h Holding
 	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,analysis_signal,analysis_up_pct,analysis_at,transaction_cost FROM holdings WHERE id=?", id).
-		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt, &h.TransactionCost)
+		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt, &h.TransactionCost, &h.AssetType)
 	if err != nil {
 		return nil, err
 	}
@@ -808,8 +817,8 @@ func Get(id int64) (*Holding, error) {
 
 func Create(h *Holding) (int64, error) {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost)
+	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost,asset_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost, h.AssetType)
 	if err != nil {
 		return 0, err
 	}

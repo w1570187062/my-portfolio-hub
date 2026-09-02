@@ -734,12 +734,12 @@ function renderSummary(hs) {
   if (otherMV > 0) mvSegs.push({ name: '其他', v: otherMV, c: '#94a3b8' });
   const mvBar = mvSegs.map((s) => `<span class="seg" style="width:${pctMV(s.v).toFixed(2)}%;background:${s.c}" title="${esc(s.name)} ${money(s.v)}"></span>`).join('');
   const mvLeg = mvSegs.map((s) => `<div class="cl"><span class="dot" style="background:${s.c}"></span>${esc(s.name)}<b>${money(s.v)}</b><span class="cpct">${pctMV(s.v).toFixed(1)}%</span></div>`).join('');
-  // 卡片一：总市值（含股票/基金分类彩色堆叠进度条）
+  // 卡片一：总市值（含股票/基金分类彩色组合圆环）
   const cardMV =
     `<div class="pano-sum">` +
       `<div class="ps-head">总市值</div>` +
       `<div class="ps-big">¥${fmt(totalCNY)}</div>` +
-      `<div class="comp-bar">${mvBar}</div>` +
+      `<div class="donut-wrap">${donutSVG(mvSegs, { size: 132 })}</div>` +
       `<div class="comp-legend">${mvLeg}</div>` +
     `</div>`;
   // 卡片二：盈亏 + 涨跌 合并（总盈亏带箭头色 / 当日 / 本月 / 涨跌家数）
@@ -973,6 +973,7 @@ function openModal(h) {
   $('#f_cost').value = h ? roundByCat(h.transaction_cost, eCat) : '';
   $('#f_buy_date').value = h ? (h.buy_date || '') : '';
   $('#f_linked_symbol').value = h ? (h.linked_symbol || '') : '';
+  fillAssetTypeSelect(h ? (h.asset_type || '') : '');
   toggleLinkedSymbol($('#f_category').value);
   $('#formErr').textContent = '';
   $('#modal').hidden = false;
@@ -1416,6 +1417,7 @@ $('#form').onsubmit = async (e) => {
     note: $('#f_note').value || '',
     buy_date: $('#f_buy_date').value || '',
     linked_symbol: $('#f_linked_symbol').value || '',
+    asset_type: document.getElementById('f_asset_type').value || '',
   };
   let r;
   if (id) {
@@ -1503,11 +1505,13 @@ function getSubSegs(d, key) {
   });
 }
 
+// 饼图目标容器：默认渲染进 #chartBody（图表弹框）；资产全景「资产构成」tab 复用为 #acCompBody
+let pieTargetSel = '#chartBody';
 // Draw a pie (single-level) + legend into #chartBody.
 function drawPie(segs, total, title, opts) {
   opts = opts || {};
   $('#chartTitle').textContent = title;
-  if (total <= 0 || segs.length === 0) { $('#chartBody').innerHTML = '<p style="color:#8a8f99">暂无数据</p>'; openChart(); return; }
+  if (total <= 0 || segs.length === 0) { document.querySelector(pieTargetSel).innerHTML = '<p style="color:#8a8f99">暂无数据</p>'; if (pieTargetSel === '#chartBody') openChart(); return; }
   const cx = 110, cy = 110, r = 90;
   let paths;
   const segClick = opts.onSeg
@@ -1538,20 +1542,22 @@ function drawPie(segs, total, title, opts) {
     ? `<div class="pie-back" data-back="1">← 返回总览</div>`
     : '';
   const hint = opts.onSeg ? `<div class="pie-hint">${opts.hint || '点击区块可查看二级细分'}</div>` : '';
-  $('#chartBody').innerHTML = `${back}${hint}<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center">
+  document.querySelector(pieTargetSel).innerHTML = `${back}${hint}<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center">
     <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center"><svg width="220" height="220" viewBox="0 0 220 220">${paths}</svg></div>
     <div style="display:flex;flex-direction:column;gap:10px">${legend}</div></div>`;
   if (opts.onSeg) {
-    $('#chartBody').querySelectorAll('[data-label]').forEach((el) => (el.onclick = () => opts.onSeg(el.dataset.label)));
+    document.querySelector(pieTargetSel).querySelectorAll('[data-label]').forEach((el) => (el.onclick = () => opts.onSeg(el.dataset.label)));
   }
   if (opts.onBack) {
-    const b = $('#chartBody').querySelector('[data-back]');
+    const b = document.querySelector(pieTargetSel).querySelector('[data-back]');
     if (b) b.onclick = opts.onBack;
   }
-  openChart();
+  if (pieTargetSel === '#chartBody') openChart();
 }
 
-async function renderPie() {
+async function renderPie(opts) {
+  opts = opts || {};
+  if (opts.target) pieTargetSel = opts.target;
   let d = assetData;
   if (!d || !d.equity) {
     try {
@@ -1576,7 +1582,7 @@ function showPieDrill(key) {
   const sub = getSubSegs(d, key);
   const total = sub.reduce((a, s) => a + s.value, 0);
   drawPie(sub, total, `资产构成 › ${key}（二级细分占比）`, {
-    onBack: () => renderPie(),
+    onBack: () => renderPie({ target: pieTargetSel }),
     onSeg: (label) => showItemDetail(key, label),
     hint: '点击区块查看该标的明细',
   });
@@ -1616,10 +1622,238 @@ function showItemDetail(key, label) {
   }
   const back = `<div class="pie-back" data-back="1">← 返回${key}明细</div>`;
   const body = rows.map(([k, v, c]) => `<div style="display:flex;justify-content:space-between;gap:16px;padding:9px 4px;border-bottom:1px solid rgba(0,0,0,.06)"><span style="color:#8a8f99">${k}</span><span style="font-weight:600${c ? ' class="' + c + '"' : ''}">${v}</span></div>`).join('');
-  $('#chartBody').innerHTML = back + `<div style="max-width:440px;margin:14px auto 0">${body}</div>`;
-  const b = $('#chartBody').querySelector('[data-back]');
+  document.querySelector(pieTargetSel).innerHTML = back + `<div style="max-width:440px;margin:14px auto 0">${body}</div>`;
+  const b = document.querySelector(pieTargetSel).querySelector('[data-back]');
   if (b) b.onclick = () => showPieDrill(key);
-  openChart();
+  if (pieTargetSel === '#chartBody') openChart();
+}
+
+// ===== 彩色组合圆环（donut）=====
+// 参照再平衡仪表盘：viewBox 0 0 42 42，circle r=15.915（周长=100，dasharray 即百分比），
+// stroke-dashoffset 按累计占比前移，rotate(-90) 使起点在 12 点方向。
+function donutSVG(segs, opts) {
+  opts = opts || {};
+  const size = opts.size || 130;
+  const total = segs.reduce((a, s) => a + (s.v || 0), 0);
+  const R = 15.9155, cx = 21, cy = 21;
+  let acc = 0, circles = '';
+  if (total <= 0) {
+    circles = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border)" stroke-width="3.2"/>`;
+  } else {
+    segs.forEach((s) => {
+      const len = (s.v || 0) / total * 100;
+      circles += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.c}" stroke-width="3.2" stroke-dasharray="${len.toFixed(2)} ${(100 - len).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+      acc += len;
+    });
+  }
+  const center = opts.center || '', sub = opts.sub || '';
+  return `<svg class="donut" viewBox="0 0 42 42" width="${size}" height="${size}" style="width:${size}px;height:${size}px">
+    ${circles}
+    ${center ? `<text x="21" y="20.5" text-anchor="middle" class="donut-center">${esc(center)}</text>` : ''}
+    ${sub ? `<text x="21" y="26" text-anchor="middle" class="donut-sub">${esc(sub)}</text>` : ''}
+  </svg>`;
+}
+
+// ===== 资产类型标签（来自设置，编辑持仓下拉 + 再平衡均复用）=====
+let assetTypeLabelsCache = null;
+async function getAssetTypeLabels() {
+  if (assetTypeLabelsCache) return assetTypeLabelsCache;
+  try {
+    const r = await api('/api/settings/asset_type_labels');
+    if (r.ok) { const d = await r.json(); try { assetTypeLabelsCache = JSON.parse(d.payload || '[]'); } catch (_) { assetTypeLabelsCache = []; } }
+    else assetTypeLabelsCache = ['红利价值', '成长科技', '消费', '医药', '未分类'];
+  } catch (_) { assetTypeLabelsCache = ['红利价值', '成长科技', '消费', '医药', '未分类']; }
+  return assetTypeLabelsCache;
+}
+async function fillAssetTypeSelect(current) {
+  const sel = document.getElementById('f_asset_type');
+  if (!sel) return;
+  const labels = await getAssetTypeLabels();
+  const cur = current || '';
+  sel.innerHTML = '<option value="">（未分类）</option>' + labels.map((l) => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+  sel.value = cur;
+}
+
+// ===== 资产全景三 Tab 弹框：构成 / 再平衡 / 设置 =====
+function openAssetCompModal(tab) {
+  const modal = document.getElementById('assetCompModal');
+  if (!modal) return;
+  if (!window.__acWired) {
+    window.__acWired = true;
+    const close = () => { modal.hidden = true; settingsDraft = null; };
+    document.getElementById('acCompClose').onclick = close;
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    ['comp', 'rebal', 'settings'].forEach((t) => {
+      const cap = t.charAt(0).toUpperCase() + t.slice(1);
+      const btn = document.getElementById('acTab' + cap + 'Btn');
+      if (btn) btn.onclick = () => showAcTab(t);
+    });
+  }
+  modal.hidden = false;
+  showAcTab(tab || 'comp');
+}
+function showAcTab(tab) {
+  ['comp', 'rebal', 'settings'].forEach((t) => {
+    const cap = t.charAt(0).toUpperCase() + t.slice(1);
+    const btn = document.getElementById('acTab' + cap + 'Btn');
+    const panel = document.getElementById('acTab' + cap);
+    if (btn) btn.classList.toggle('active', t === tab);
+    if (panel) panel.hidden = (t !== tab);
+  });
+  if (tab === 'comp') renderCompTab();
+  else if (tab === 'rebal') renderRebalTab();
+  else if (tab === 'settings') renderSettingsTab();
+}
+async function renderCompTab() {
+  const t = document.getElementById('acCompTitle');
+  if (t) t.textContent = '当前资产构成（现金 / 股票 / 基金 / 理财）';
+  await renderPie({ target: '#acCompBody' });
+}
+
+// ===== 资产再平衡 tab =====
+async function renderRebalTab() {
+  const panel = document.getElementById('acTabRebal');
+  if (!panel) return;
+  panel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:8px 0">加载中…</div>';
+  let profiles = [];
+  try {
+    const r = await api('/api/settings/risk_profiles');
+    if (r.ok) { const d = await r.json(); try { profiles = JSON.parse(d.payload || '[]'); } catch (_) { profiles = []; } }
+  } catch (_) {}
+  if (!profiles.length) {
+    panel.innerHTML = '<p style="color:var(--text-muted)">尚未配置风险偏好，请先在「设置」中新增后再查看再平衡。</p>';
+    return;
+  }
+  panel.innerHTML =
+    `<div class="rebal-head"><label>风险偏好
+      <select id="rebalSel" class="rp-sel">${profiles.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label>
+      <span class="rebal-total" id="rebalTotal"></span></div>
+    <div id="rebalBody"></div>`;
+  const sel = document.getElementById('rebalSel');
+  sel.onchange = () => renderRebalance(sel.value);
+  await renderRebalance(profiles[0].id);
+}
+async function renderRebalance(profileId) {
+  const body = document.getElementById('rebalBody');
+  if (!body) return;
+  const tEl = document.getElementById('rebalTotal');
+  let data = null;
+  try {
+    const r = await api('/api/asset/rebalance?profile=' + encodeURIComponent(profileId));
+    if (r.ok) data = await r.json();
+    else { body.innerHTML = '<p style="color:var(--danger)">加载失败 (HTTP ' + r.status + ')</p>'; return; }
+  } catch (e) { body.innerHTML = '<p style="color:var(--danger)">异常：' + esc(e.message) + '</p>'; return; }
+  const rows = data.rows || [];
+  const total = data.total || 0;
+  if (tEl) tEl.textContent = '总市值 ¥' + fmt(total);
+  if (!rows.length) { body.innerHTML = '<p style="color:var(--text-muted)">暂无持仓数据。</p>'; return; }
+  const palette = ['#5b8cff', '#6f9e5e', '#ffce5c', '#9b7bff', '#43e5c0', '#f87171', '#38bdf8', '#7e8aa6'];
+  const segs = rows.map((r, i) => ({ name: r.label, v: r.current_value || 0, c: palette[i % palette.length] }));
+  const donut = donutSVG(segs, { size: 150 });
+  const bars = rows.map((r, i) => {
+    const cp = r.current_pct || 0, tp = r.target_pct || 0, dp = r.deviation_pct || 0;
+    const driftCls = Math.abs(dp) <= 5 ? 'flat' : (dp > 0 ? 'up' : 'down');
+    const driftTxt = Math.abs(dp) <= 5 ? '达标' : (dp > 0 ? '超配' : '低配');
+    const c = palette[i % palette.length];
+    return `<div class="bar-block">
+      <div class="bar-head"><span class="bl-name">${esc(r.label)}</span><span class="drift ${driftCls}">${driftTxt}</span></div>
+      <div class="track">
+        <div class="fill-target" style="left:${tp.toFixed(2)}%"></div>
+        <div class="fill-cur" style="width:${Math.min(cp, 100).toFixed(2)}%;background:${c}"></div>
+      </div>
+      <div class="bar-foot"><span>当前 ${cp.toFixed(1)}% · ¥${fmt(r.current_value || 0)}</span><span>目标 ${tp.toFixed(1)}%</span><span class="${driftCls}">偏离 ${dp > 0 ? '+' : ''}${dp.toFixed(1)}%</span></div>
+    </div>`;
+  }).join('');
+  const tblRows = rows.map((r) => {
+    const dp = r.deviation_pct || 0, adj = r.adjust || 0;
+    const adjCls = Math.abs(adj) < 0.5 ? 'flat' : (adj > 0 ? 'up' : 'down');
+    const adjTxt = Math.abs(adj) < 0.5 ? '—' : (adj > 0 ? '增持 ¥' + fmt(adj) : '减持 ¥' + fmt(-adj));
+    return `<tr><td>${esc(r.label)}</td><td>${r.current_pct.toFixed(1)}%</td><td>${r.target_pct.toFixed(1)}%</td><td class="${dp > 0 ? 'up' : 'down'}">${dp > 0 ? '+' : ''}${dp.toFixed(1)}%</td><td class="${adjCls}">${adjTxt}</td></tr>`;
+  }).join('');
+  body.innerHTML = `<div class="rebal-grid">
+      <div class="rebal-donut">${donut}<div class="rebal-donut-cap">当前资产配置</div></div>
+      <div class="rebal-bars">${bars}</div>
+    </div>
+    <h4 class="rebal-tbl-h">调仓建议</h4>
+    <table class="tbl rebal-tbl"><thead><tr><th>资产类别</th><th>当前占比</th><th>目标占比</th><th>偏离</th><th>建议调整</th></tr></thead><tbody>${tblRows}</tbody></table>`;
+}
+
+// ===== 设置 tab：风险偏好 / 资产类型标签 =====
+let settingsDraft = null;
+async function renderSettingsTab() {
+  const set = document.getElementById('acTabSet');
+  if (!set) return;
+  if (!settingsDraft) {
+    let profiles = [], labels = [];
+    try {
+      const [rp, at] = await Promise.all([api('/api/settings/risk_profiles'), api('/api/settings/asset_type_labels')]);
+      if (rp.ok) { const d = await rp.json(); try { profiles = JSON.parse(d.payload || '[]'); } catch (_) { profiles = []; } }
+      if (at.ok) { const d = await at.json(); try { labels = JSON.parse(d.payload || '[]'); } catch (_) { labels = []; } }
+    } catch (_) {}
+    settingsDraft = { risk_profiles: profiles, asset_type_labels: labels };
+  }
+  set.innerHTML = buildSettingsHTML(settingsDraft);
+  bindSettingsEvents(set, settingsDraft);
+}
+function buildSettingsHTML(d) {
+  const profiles = d.risk_profiles.map((p, pi) => {
+    const allocs = (p.allocations || []).map((a, ai) => `
+      <div class="al-row" data-pi="${pi}" data-ai="${ai}">
+        <select class="al-key" data-pi="${pi}" data-ai="${ai}">${d.asset_type_labels.map((l) => `<option value="${esc(l)}"${l === a.key ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+        <input class="al-pct" data-pi="${pi}" data-ai="${ai}" type="number" step="1" min="0" max="100" value="${a.pct != null ? a.pct : 0}"><span class="al-pct-sign">%</span>
+        <button class="btn danger-soft al-del" data-pi="${pi}" data-ai="${ai}" type="button">✕</button>
+      </div>`).join('');
+    return `<div class="rp" data-pi="${pi}">
+      <div class="rp-head"><input class="rp-name" data-pi="${pi}" value="${esc(p.name || '')}" placeholder="偏好名称">
+        <button class="btn danger-soft rp-del" data-pi="${pi}" type="button">删除偏好</button></div>
+      <div class="al-list">${allocs || '<div class="rp-empty">尚未配置资产比例</div>'}</div>
+      <button class="btn al-add" data-pi="${pi}" type="button">+ 新增资产比例</button>
+    </div>`;
+  }).join('');
+  const labels = d.asset_type_labels.map((l, i) => `<span class="at-chip" data-li="${i}">${esc(l)}<button class="at-del" data-li="${i}" type="button" title="移除">✕</button></span>`).join('');
+  return `
+    <h4 class="set-h">风险偏好</h4>
+    <div id="rpList">${profiles || '<div class="rp-empty">尚无风险偏好</div>'}</div>
+    <button class="btn primary rp-add-btn" type="button">+ 新增风险偏好</button>
+    <h4 class="set-h">资产类型标签</h4>
+    <div class="at-list">${labels || '<span class="rp-empty">尚无标签</span>'}</div>
+    <div class="at-add-row"><input id="atNew" placeholder="新标签，如 周期/金融"><button class="btn at-add-btn" type="button">添加</button></div>
+    <div class="modal-actions" style="position:static;padding:16px 0 8px">
+      <button class="btn primary set-save" type="button">保存设置</button>
+    </div>`;
+}
+function bindSettingsEvents(set, d) {
+  const labelsOf = () => d.asset_type_labels;
+  set.querySelectorAll('.rp-name').forEach((el) => el.oninput = () => { d.risk_profiles[+el.dataset.pi].name = el.value; });
+  set.querySelectorAll('.al-key').forEach((el) => el.onchange = () => { d.risk_profiles[+el.dataset.pi].allocations[+el.dataset.ai].key = el.value; });
+  set.querySelectorAll('.al-pct').forEach((el) => el.oninput = () => { d.risk_profiles[+el.dataset.pi].allocations[+el.dataset.ai].pct = parseFloat(el.value) || 0; });
+  set.querySelectorAll('.al-del').forEach((el) => el.onclick = () => { d.risk_profiles[+el.dataset.pi].allocations.splice(+el.dataset.ai, 1); renderSettingsTab(); });
+  set.querySelectorAll('.al-add').forEach((el) => el.onclick = () => { const pi = +el.dataset.pi; d.risk_profiles[pi].allocations.push({ key: labelsOf()[0] || '未分类', pct: 0 }); renderSettingsTab(); });
+  set.querySelectorAll('.rp-del').forEach((el) => el.onclick = () => { d.risk_profiles.splice(+el.dataset.pi, 1); renderSettingsTab(); });
+  set.querySelectorAll('.rp-add-btn').forEach((el) => el.onclick = () => {
+    const id = 'p' + Date.now();
+    d.risk_profiles.push({ id, name: '新偏好', allocations: [{ key: labelsOf()[0] || '未分类', pct: 0 }] });
+    renderSettingsTab();
+  });
+  set.querySelectorAll('.at-del').forEach((el) => el.onclick = () => { d.asset_type_labels.splice(+el.dataset.li, 1); renderSettingsTab(); });
+  set.querySelectorAll('.at-add-btn').forEach((el) => el.onclick = () => {
+    const inp = set.querySelector('#atNew'); const v = (inp.value || '').trim();
+    if (!v) return;
+    if (!d.asset_type_labels.includes(v)) d.asset_type_labels.push(v);
+    inp.value = '';
+    renderSettingsTab();
+  });
+  const save = set.querySelector('.set-save');
+  if (save) save.onclick = async () => {
+    save.disabled = true; save.textContent = '保存中…';
+    try {
+      const rpR = await api('/api/settings/risk_profiles', { method: 'PUT', body: JSON.stringify({ payload: d.risk_profiles }) });
+      const atR = await api('/api/settings/asset_type_labels', { method: 'PUT', body: JSON.stringify({ payload: d.asset_type_labels }) });
+      if (!rpR.ok || !atR.ok) toast('保存失败', 'err');
+      else { toast('设置已保存', 'ok'); assetTypeLabelsCache = d.asset_type_labels.slice(); }
+    } catch (e) { toast('保存异常：' + e.message, 'err'); }
+    finally { save.disabled = false; save.textContent = '保存设置'; }
+  };
 }
 
 // Daily P&L history: bar (daily P&L) + overlaid line (cumulative P&L).
@@ -1652,7 +1886,7 @@ function shiftTrend(dir) {
 function drawTrend() {
   const hist = trendHist || [];
   if (hist.length === 0) {
-    $('#chartBody').innerHTML = '<p style="color:#8a8f99;line-height:1.6">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；之后此处显示每日盈亏柱状图与累计折线。<br>从记录之日起，每个交易日会生成一个数据点。</p>';
+    document.querySelector(pieTargetSel).innerHTML = '<p style="color:#8a8f99;line-height:1.6">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；之后此处显示每日盈亏柱状图与累计折线。<br>从记录之日起，每个交易日会生成一个数据点。</p>';
     openChart();
     return;
   }
@@ -1746,7 +1980,7 @@ function drawTrend() {
     <button type="button" id="trendNext" class="btn cal-nav-btn" title="后 15 天"${atLatest ? ' disabled' : ''}>›</button>
     ${atLatest ? '' : '<button type="button" id="trendLatest" class="btn btn-sm" title="回到最新">最新</button>'}
   </div>`;
-  $('#chartBody').innerHTML = `
+  document.querySelector(pieTargetSel).innerHTML = `
     ${nav}<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
       ${grid}${area}${bars}${hotspots}
       <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2" stroke-linejoin="round"/>
@@ -3379,7 +3613,7 @@ function onAssetToolbarClick(e) {
   switch (b.id) {
     case 'assetCalendarBtn': openCalendarView(); break;
     case 'assetTrendBtn': renderTrend(); break;
-    case 'assetPieBtn': renderPie(); break;
+    case 'assetPieBtn': openAssetCompModal('comp'); break;
     case 'assetToolsBtn': showToolsView(); break;
     case 'assetPanoNavBtn':
       navigate('asset');

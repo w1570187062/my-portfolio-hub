@@ -194,6 +194,14 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/calc/inputs", calcInputsPut)
 		g.DELETE("/calc/inputs", calcInputsDelete)
 
+		// 设置：风险偏好 / 资产类型标签（JSON 配置，按用户隔离）
+		g.GET("/settings/:kind", settingsGet)
+		g.PUT("/settings/:kind", settingsPut)
+		g.DELETE("/settings/:kind", settingsDelete)
+
+		// 资产再平衡：当前 vs 目标配置对比
+		g.GET("/asset/rebalance", assetRebalance)
+
 		// 自定义评级脚本（资产工具 → 评级逻辑）
 		g.GET("/analysis-script", analysisScriptGet)
 		g.PUT("/analysis-script", analysisScriptPut)

@@ -3501,3 +3501,58 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
   padding-left: 36px;
   padding-right: 36px;
 }
+
+/* ===== 彩色组合圆环 donut（首页总市值卡 / 再平衡当前配置） ===== */
+.donut-wrap { display: flex; justify-content: center; align-items: center; margin: 10px 0 4px; }
+.donut { display: block; }
+.donut-center { font-size: 3.4px; font-weight: 700; fill: var(--text); }
+.donut-sub { font-size: 2.6px; fill: var(--text-muted); }
+
+/* ===== 资产再平衡 tab ===== */
+.rebal-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.rebal-head .rp-sel { width: auto; min-width: 140px; }
+.rebal-total { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.rebal-grid { display: grid; grid-template-columns: 180px 1fr; gap: 20px; align-items: start; }
+@media (max-width: 680px) { .rebal-grid { grid-template-columns: 1fr; } }
+.rebal-donut { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.rebal-donut-cap { font-size: 12px; color: var(--text-muted); }
+.rebal-bars { display: flex; flex-direction: column; gap: 14px; }
+.bar-block { display: flex; flex-direction: column; gap: 5px; }
+.bar-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.bar-head .bl-name { font-weight: 600; color: var(--text); }
+.drift { font-size: 11px; padding: 1px 8px; border-radius: 999px; }
+.drift.flat { background: rgba(148,163,184,.18); color: var(--text-muted); }
+.drift.up { background: rgba(248,113,113,.18); color: #f87171; }
+.drift.down { background: rgba(74,222,128,.18); color: #4ade80; }
+.track { position: relative; height: 12px; border-radius: 8px; background: var(--border); overflow: hidden; }
+.fill-cur { position: absolute; left: 0; top: 0; height: 100%; border-radius: 8px; }
+.fill-target { position: absolute; top: -3px; height: 18px; width: 0; border-left: 2px dashed var(--text); opacity: .7; }
+.bar-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.bar-foot .up { color: #f87171; }
+.bar-foot .down { color: #4ade80; }
+.rebal-tbl-h { margin: 20px 0 8px; font-size: 14px; color: var(--text); }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th, .tbl td { padding: 9px 12px; border-bottom: 1px solid var(--row-divider); text-align: left; }
+.tbl th { color: var(--text-muted); font-weight: 600; background: var(--bg-input); }
+.tbl td { color: var(--text); font-variant-numeric: tabular-nums; }
+.tbl td.up { color: #f87171; }
+.tbl td.down { color: #4ade80; }
+.tbl td.flat { color: var(--text-muted); }
+
+/* ===== 设置 tab：风险偏好 / 资产类型标签 ===== */
+.set-h { margin: 18px 0 10px; font-size: 14px; color: var(--primary); font-weight: 700; }
+.set-h:first-child { margin-top: 4px; }
+.rp { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px; background: var(--bg-input); }
+.rp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.rp-name { flex: 1; margin: 0; }
+.rp-empty { font-size: 12px; color: var(--text-muted); padding: 4px 0; }
+.al-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.al-row { display: flex; align-items: center; gap: 8px; }
+.al-row .al-key { flex: 1; margin: 0; }
+.al-row .al-pct { width: 72px; margin: 0; }
+.al-pct-sign { color: var(--text-muted); font-size: 13px; }
+.at-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.at-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: 13px; }
+.at-chip .at-del { border: none; background: none; color: var(--primary); cursor: pointer; font-size: 13px; padding: 0 2px; }
+.at-add-row { display: flex; gap: 8px; }
+.at-add-row input { flex: 1; }
