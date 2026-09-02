@@ -2,11 +2,6 @@ services:
   portfolio:
     build:
       context: .
-      args:
-        - HTTP_PROXY=http://192.168.31.254:1082
-        - HTTPS_PROXY=http://192.168.31.254:1082
-        - http_proxy=http://192.168.31.254:1082
-        - https_proxy=http://192.168.31.254:1082
     container_name: portfolio
     ports:
       - "9989:9989"
@@ -16,6 +11,10 @@ services:
       - ADMIN_USER=admin
       - ADMIN_PASS=asd2335979545
       - TZ=Asia/Shanghai
+      # 容器出网必须走 passwall2 显式代理，否则直连会被路由器透明拦截成空 200
+      - HTTP_PROXY=http://192.168.31.254:1082
+      - HTTPS_PROXY=http://192.168.31.254:1082
+      - NO_PROXY=localhost,127.0.0.1
     volumes:
       - /mnt/nvme0n1-4/portfolio/data:/data
     restart: unless-stopped
