@@ -327,31 +327,39 @@
     </div>
   </div>
 
-  <div id="calendarModal" class="modal" hidden>
+  <!-- 盈亏分析弹框：日历 + 走势 双 Tab（原两个独立弹框合并） -->
+  <div id="pnlModal" class="modal" hidden>
     <div class="modal-card" style="width:min(900px, 96vw); max-width:96vw;">
-      <h2>盈亏日历</h2>
-      <button class="card-close" type="button" id="calClose" title="关闭" aria-label="关闭">✕</button>
-      <div class="cal-body">
-        <div class="cal-head">
-          <div class="cal-nav">
-            <button id="calPrev" class="btn cal-nav-btn" type="button">‹</button>
-            <span id="calTitle" class="cal-title"></span>
-            <button id="calNext" class="btn cal-nav-btn" type="button">›</button>
-          </div>
-          <div id="calMonthSummary" class="cal-month-summary"></div>
-          <div class="cal-legend">
-            <span class="lg-text">跌</span>
-            <span class="lg lg-down4"></span><span class="lg lg-down3"></span><span class="lg lg-down2"></span><span class="lg lg-down1"></span>
-            <span class="lg lg-zero"></span>
-            <span class="lg lg-up1"></span><span class="lg lg-up2"></span><span class="lg lg-up3"></span><span class="lg lg-up4"></span>
-            <span class="lg-text">涨</span>
-            <span class="lg lg-none"></span><span class="lg-text">无数据</span>
-          </div>
-        </div>
-        <div id="calWeekdays" class="cal-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
-        <div id="calGrid" class="cal-grid"></div>
+      <h2 id="pnlModalTitle">盈亏日历</h2>
+      <button class="card-close" type="button" id="pnlClose" title="关闭" aria-label="关闭">✕</button>
+      <div class="ana-tabs ac-tabs">
+        <button id="pnlTabCalBtn" class="ana-tab-btn active" type="button" data-tab="cal">盈亏日历</button>
+        <button id="pnlTabTrendBtn" class="ana-tab-btn" type="button" data-tab="trend">盈亏走势</button>
       </div>
+      <div id="pnlTabCal" class="ac-panel">
+        <div class="cal-body">
+          <div class="cal-head">
+            <div class="cal-nav">
+              <button id="calPrev" class="btn cal-nav-btn" type="button">‹</button>
+              <span id="calTitle" class="cal-title"></span>
+              <button id="calNext" class="btn cal-nav-btn" type="button">›</button>
+            </div>
+            <div id="calMonthSummary" class="cal-month-summary"></div>
+            <div class="cal-legend">
+              <span class="lg-text">跌</span>
+              <span class="lg lg-down4"></span><span class="lg lg-down3"></span><span class="lg lg-down2"></span><span class="lg lg-down1"></span>
+              <span class="lg lg-zero"></span>
+              <span class="lg lg-up1"></span><span class="lg lg-up2"></span><span class="lg lg-up3"></span><span class="lg lg-up4"></span>
+              <span class="lg lg-none"></span><span class="lg-text">无数据</span>
+            </div>
+          </div>
+          <div id="calWeekdays" class="cal-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+          <div id="calGrid" class="cal-grid"></div>
+        </div>
+      </div>
+      <div id="pnlTabTrend" class="ac-panel" hidden></div>
     </div>
+  </div>
   </div>
 
   <div id="modal" class="modal" hidden>
@@ -385,13 +393,11 @@
           </div>
           <div class="f-row">
             <label>描述 <input id="f_note" placeholder="可选，备忘用途"></label>
-            <label>资产类型
-              <select id="f_asset_type"><option value="">（未分类）</option></select>
-            </label>
             <label>交易日期 <input id="f_buy_date" type="date"></label>
           </div>
           <label id="linked_symbol_row" style="display:none">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL"></label>
           <div id="formErr" class="err"></div>
+          <div id="f_at_chips" class="at-chips-row" title="资产类型标签（可多选）"></div>
           <div class="modal-actions">
             <button class="btn" type="submit">保存</button>
           </div>

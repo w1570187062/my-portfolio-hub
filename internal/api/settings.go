@@ -180,18 +180,28 @@ func assetRebalance(c *gin.Context) {
 	cnyRate, hkdRate, _ := market.FetchFXRates()
 
 	// 当前配置：按 asset_type 聚合持仓市值（折算 CNY）
+	// 资产类型支持多标签（逗号分隔）：市值均分到各标签参与再平衡，保证各类占比合计仍为 100%
 	hs, _ := db.List(uid)
 	curMap := map[string]float64{}
 	var total float64
 	for _, h := range hs {
 		v := enrich(h, uid)
 		mv := round2(v.MarketValue * rateChoice(h.Currency, cnyRate, hkdRate))
-		at := strings.TrimSpace(h.AssetType)
-		if at == "" {
-			at = "未分类"
-		}
-		curMap[at] += mv
 		total += mv
+		parts := strings.Split(h.AssetType, ",")
+		tags := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if k := strings.TrimSpace(p); k != "" {
+				tags = append(tags, k)
+			}
+		}
+		if len(tags) == 0 {
+			tags = append(tags, "未分类")
+		}
+		share := mv / float64(len(tags))
+		for _, k := range tags {
+			curMap[k] += share
+		}
 	}
 
 	// 目标配置：读取选中的风险偏好（缺省取第一个）

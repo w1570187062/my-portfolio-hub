@@ -55,7 +55,7 @@ function navigate(view) {
   }
   switch (view) {
     case 'tools': showToolsView(); break;
-    case 'calendar': openCalendarView(); break;
+    case 'calendar': openPnlModal('cal'); break;
     case 'notify': showNotifyView(); break;
     default: showHoldingsView();
   }
@@ -973,7 +973,7 @@ function openModal(h) {
   $('#f_cost').value = h ? roundByCat(h.transaction_cost, eCat) : '';
   $('#f_buy_date').value = h ? (h.buy_date || '') : '';
   $('#f_linked_symbol').value = h ? (h.linked_symbol || '') : '';
-  fillAssetTypeSelect(h ? (h.asset_type || '') : '');
+  fillAssetTypeChips(h ? (h.asset_type || '') : '');
   toggleLinkedSymbol($('#f_category').value);
   $('#formErr').textContent = '';
   $('#modal').hidden = false;
@@ -1417,7 +1417,7 @@ $('#form').onsubmit = async (e) => {
     note: $('#f_note').value || '',
     buy_date: $('#f_buy_date').value || '',
     linked_symbol: $('#f_linked_symbol').value || '',
-    asset_type: document.getElementById('f_asset_type').value || '',
+    asset_type: (fAtSelected || []).join(','),
   };
   let r;
   if (id) {
@@ -1674,13 +1674,28 @@ async function getAssetTypeLabels() {
   } catch (_) { assetTypeLabelsCache = ['红利价值', '成长科技', '消费', '医药', '未分类']; }
   return assetTypeLabelsCache;
 }
-async function fillAssetTypeSelect(current) {
-  const sel = document.getElementById('f_asset_type');
-  if (!sel) return;
+// 编辑持仓：资产类型标签多选（chip 形式浮动在表单最下方，样式同设置的资产类型标签）
+let fAtSelected = []; // 当前选中的标签
+async function fillAssetTypeChips(current) {
+  const box = document.getElementById('f_at_chips');
+  if (!box) return;
   const labels = await getAssetTypeLabels();
-  const cur = current || '';
-  sel.innerHTML = '<option value="">（未分类）</option>' + labels.map((l) => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
-  sel.value = cur;
+  const cur = String(current || '').split(',').map((s) => s.trim()).filter(Boolean);
+  fAtSelected = cur.slice();
+  // 历史遗留的不在标签库的值也保留展示，避免保存时静默丢失
+  const all = labels.slice();
+  cur.forEach((c) => { if (!all.includes(c)) all.push(c); });
+  box.innerHTML = all.length
+    ? all.map((l) => `<button type="button" class="at-chip-toggle${fAtSelected.includes(l) ? ' on' : ''}" data-v="${esc(l)}">${esc(l)}</button>`).join('')
+    : '<span class="rp-empty">尚无标签，可在 资产全景 → 设置 中添加</span>';
+  box.querySelectorAll('.at-chip-toggle').forEach((b) => {
+    b.onclick = () => {
+      const v = b.dataset.v;
+      const i = fAtSelected.indexOf(v);
+      if (i >= 0) fAtSelected.splice(i, 1); else fAtSelected.push(v);
+      b.classList.toggle('on', i < 0);
+    };
+  });
 }
 
 // ===== 资产全景三 Tab 弹框：构成 / 再平衡 / 设置 =====
@@ -1872,7 +1887,14 @@ function bindSettingsEvents(set, d) {
       const rpR = await api('/api/settings/risk_profiles', { method: 'PUT', body: JSON.stringify({ payload: d.risk_profiles }) });
       const atR = await api('/api/settings/asset_type_labels', { method: 'PUT', body: JSON.stringify({ payload: d.asset_type_labels }) });
       if (!rpR.ok || !atR.ok) toast('保存失败', 'err');
-      else { toast('设置已保存', 'ok'); assetTypeLabelsCache = d.asset_type_labels.slice(); }
+      else {
+        toast('设置已保存', 'ok');
+        assetTypeLabelsCache = d.asset_type_labels.slice();
+        // 保存成功后自动关闭资产全景弹框
+        const m = document.getElementById('assetCompModal');
+        if (m) m.hidden = true;
+        settingsDraft = null;
+      }
     } catch (e) { toast('保存异常：' + e.message, 'err'); }
     finally { save.disabled = false; save.textContent = '保存设置'; }
   };
@@ -1882,15 +1904,17 @@ function bindSettingsEvents(set, d) {
 // 支持左右翻页（每页 15 天），导航时复用缓存数据不重复请求接口。
 let trendHist = null;    // 缓存的盈亏历史
 let trendEndDate = null; // null=最新(今天)；否则为当前查看页的结束日期 YYYY-MM-DD
+let trendTargetSel = null; // 当前走势渲染目标容器（翻页沿用）
 
-async function renderTrend() {
-  $('#chartTitle').textContent = '盈亏走势（每日盈亏柱状 + 累计折线）';
+async function renderTrend() { return renderTrendInto(pieTargetSel); }
+// 渲染盈亏走势到指定容器（默认 #chartBody 图表弹框；盈亏分析弹框嵌入 #pnlTabTrend）
+async function renderTrendInto(targetSel) {
   const r = await api('/api/pnl/history');
   if (!r.ok) { toast('加载盈亏历史失败 (HTTP ' + r.status + ')', 'err'); return; }
   const d = await r.json();
   trendHist = d.history || [];
   trendEndDate = null; // 每次打开回到最新
-  drawTrend();
+  drawTrend(targetSel);
 }
 
 // 翻页：dir=-1 前 15 天，dir=+1 后 15 天；不超过今天
@@ -1902,14 +1926,17 @@ function shiftTrend(dir) {
   let nxt = addDays(cur, dir * PAGE);
   if (nxt > today) nxt = new Date(today);
   trendEndDate = ymd(nxt);
-  drawTrend();
+  drawTrend(trendTargetSel || pieTargetSel); // 沿用当前渲染容器（嵌入/独立）
 }
 
-function drawTrend() {
+function drawTrend(targetSel) {
+  const tgt = document.querySelector(targetSel || pieTargetSel);
+  trendTargetSel = targetSel || pieTargetSel; // 翻页时沿用同一容器
+  const standalone = !targetSel || targetSel === pieTargetSel; // 独立图表弹框模式
   const hist = trendHist || [];
   if (hist.length === 0) {
-    document.querySelector(pieTargetSel).innerHTML = '<p style="color:#8a8f99;line-height:1.6">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；之后此处显示每日盈亏柱状图与累计折线。<br>从记录之日起，每个交易日会生成一个数据点。</p>';
-    openChart();
+    tgt.innerHTML = '<p style="color:#8a8f99;line-height:1.6">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；之后此处显示每日盈亏柱状图与累计折线。<br>从记录之日起，每个交易日会生成一个数据点。</p>';
+    if (standalone) openChart();
     return;
   }
   // 始终以 trendEndDate（默认今天）为终点展示最近 15 个日期槽位；无快照的日期用浅色占位柱补齐，
@@ -2002,14 +2029,14 @@ function drawTrend() {
     <button type="button" id="trendNext" class="btn cal-nav-btn" title="后 15 天"${atLatest ? ' disabled' : ''}>›</button>
     ${atLatest ? '' : '<button type="button" id="trendLatest" class="btn btn-sm" title="回到最新">最新</button>'}
   </div>`;
-  document.querySelector(pieTargetSel).innerHTML = `
+  tgt.innerHTML = `
     ${nav}<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
       ${grid}${area}${bars}${hotspots}
       <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2" stroke-linejoin="round"/>
       ${dots}${yLabels}${xlabels}
     </svg>${legend}`;
   // 绑定柱子交互热区 tooltip
-  document.querySelectorAll('#chartBody .trend-hot').forEach((r) => {
+  tgt.querySelectorAll('.trend-hot').forEach((r) => {
     const i = +r.dataset.i;
     r.addEventListener('mouseenter', (e) => showTrendTip(e, data[i]));
     r.addEventListener('mousemove', moveTrendTip);
@@ -2018,8 +2045,8 @@ function drawTrend() {
   // 绑定翻页按钮
   const p = document.getElementById('trendPrev'); if (p) p.onclick = () => shiftTrend(-1);
   const nx = document.getElementById('trendNext'); if (nx) nx.onclick = () => shiftTrend(1);
-  const lt = document.getElementById('trendLatest'); if (lt) lt.onclick = () => { trendEndDate = null; drawTrend(); };
-  openChart();
+  const lt = document.getElementById('trendLatest'); if (lt) lt.onclick = () => { trendEndDate = null; drawTrend(trendTargetSel); };
+  if (standalone) openChart();
 }
 
 // 盈亏走势 tooltip：hover 柱子显示当日/累计盈亏
@@ -2060,16 +2087,38 @@ const saturdayOf = (d) => addDays(new Date(d), 6 - d.getDay());
 
 let calData = {};
 
-// 打开盈亏日历视图（资产全景工具栏「📅 盈亏日历」）
-// 路由模式下只负责「进入」：已显示则保持（返回用浏览器后退/主页）
-async function openCalendarView() {
+// 盈亏分析弹框：日历 + 走势 双 Tab（原两个独立弹框/按钮合并，tab 样式同资产构成弹框）
+const PNL_TABS = [
+  { key: 'cal', btn: 'pnlTabCalBtn', panel: 'pnlTabCal', title: '盈亏日历' },
+  { key: 'trend', btn: 'pnlTabTrendBtn', panel: 'pnlTabTrend', title: '盈亏走势' },
+];
+async function openPnlModal(tab) {
   // 无可见视图时，先落回首页作弹框背景
   if ($('#holdingsView').hidden && $('#assetView').hidden) {
     showHoldingsView();
   }
-  $('#calendarModal').hidden = false;
-  calViewDate = new Date();   // 打开时回到当月
-  await renderCalendar();
+  const modal = document.getElementById('pnlModal');
+  if (!modal) return;
+  if (!window.__pnlWired) {
+    window.__pnlWired = true;
+    document.getElementById('pnlClose').onclick = () => { modal.hidden = true; };
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+  }
+  modal.hidden = false;
+  await showPnlTab(tab || 'cal');
+}
+async function showPnlTab(tab) {
+  PNL_TABS.forEach((t) => {
+    const b = document.getElementById(t.btn);
+    const p = document.getElementById(t.panel);
+    if (b) b.classList.toggle('active', t.key === tab);
+    if (p) p.hidden = (t.key !== tab);
+  });
+  const meta = PNL_TABS.find((t) => t.key === tab) || PNL_TABS[0];
+  const title = document.getElementById('pnlModalTitle');
+  if (title) title.textContent = meta.title;
+  if (tab === 'trend') await renderTrendInto('#pnlTabTrend');
+  else { calViewDate = new Date(); await renderCalendar(); } // 打开时回到当月
 }
 
 function showHoldingsView() {
@@ -2939,8 +2988,8 @@ function injectPageHead(viewId, title) {
 async function showAssetView() {
   $('#holdingsView').hidden = true;
   $('#assetView').hidden = false;
-  // 关闭可能打开的弹框（日历/工具/通知）
-  $('#calendarModal').hidden = true;
+  // 关闭可能打开的弹框（盈亏分析/工具/通知）
+  $('#pnlModal').hidden = true;
   $('#toolsModal').hidden = true;
   $('#notifyModal').hidden = true;
   // 资产工具条已移至 header 暗黑按钮右侧（全局 #assetToolbar）：进入资产全景时显示，离开时隐藏
@@ -3024,7 +3073,7 @@ $('#fxFrom').onchange = fxCalcRun;
 $('#fxTo').onchange = fxCalcRun;
 async function showToolsView() {
   // 无可见视图时，先落回首页作弹框背景
-  if ($('#holdingsView').hidden && $('#assetView').hidden && $('#calendarModal').hidden) {
+  if ($('#holdingsView').hidden && $('#assetView').hidden && $('#pnlModal').hidden) {
     showHoldingsView();
   }
   $('#toolsModal').hidden = false;
@@ -3608,7 +3657,7 @@ function renderAssetToolbar(tab) {
   const L = (s) => `<span class="atool-label">${s}</span>`;
   const B = (id, icon, tip) => `<button id="${id}" class="btn icon-btn" type="button" data-tip="${tip}" aria-label="${tip}">${icon}</button>`;
   t.innerHTML =
-    B('assetCalendarBtn', '📅', '盈亏日历') + B('assetTrendBtn', '📈', '盈亏走势') + B('assetPieBtn', '🥧', '资产构成');
+    B('assetPnlBtn', '📈', '盈亏分析（日历/走势）') + B('assetPieBtn', '🥧', '资产构成');
 }
 // 全局 header 工具条：资产工具 + 资产全景 + 通知渠道三个图标按钮，常驻暗黑模式切换按钮右侧
 function renderGlobalAssetToolbar() {
@@ -3638,8 +3687,7 @@ function onAssetToolbarClick(e) {
   const b = e.target.closest('button');
   if (!b || !b.id) return;
   switch (b.id) {
-    case 'assetCalendarBtn': openCalendarView(); break;
-    case 'assetTrendBtn': renderTrend(); break;
+    case 'assetPnlBtn': openPnlModal('cal'); break;
     case 'assetPieBtn': openAssetCompModal('comp'); break;
     case 'assetToolsBtn': showToolsView(); break;
     case 'assetPanoNavBtn':
@@ -4406,9 +4454,7 @@ $('#scrTest').onclick = async () => {
   } catch (e) { out.innerHTML = `<span class="scr-err">测试异常：${esc(e.message)}</span>`; }
 };
 
-// 盈亏日历弹框：关闭
-$('#calClose').onclick = () => { $('#calendarModal').hidden = true; };
-$('#calendarModal').addEventListener('click', (e) => { if (e.target === $('#calendarModal')) $('#calendarModal').hidden = true; });
+// 盈亏分析弹框（日历+走势双 Tab）的关闭/遮罩点击已在 openPnlModal 内绑定，此处无需重复
 
 async function openSnapModal() {
   await loadAsset();

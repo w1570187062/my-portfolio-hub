@@ -1832,7 +1832,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 
 /* ===== 日历 ===== */
 .cal-wrap { width: 100%; margin: 0 auto; }
-#calendarModal .modal-card { width: min(900px, 96vw); max-width: 96vw; }
+#pnlModal .modal-card { width: min(900px, 96vw); max-width: 96vw; }
 .cal-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 8px 0 0; }
 .cal-head > * { margin: 0; }
 .cal-legend { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
@@ -3561,3 +3561,9 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .at-chip .at-del { border: none; background: none; color: var(--primary); cursor: pointer; font-size: 13px; padding: 0 2px; }
 .at-add-row { display: flex; gap: 8px; }
 .at-add-row input { flex: 1; }
+
+/* 编辑持仓：资产类型标签多选（浮动在表单最下方，样式同设置的资产类型标签） */
+.at-chips-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0 2px; }
+.at-chip-toggle { cursor: pointer; border: 1px solid var(--border); background: var(--bg-input); color: var(--text); border-radius: 999px; padding: 4px 12px; font-size: 13px; transition: background .15s, border-color .15s, color .15s; }
+.at-chip-toggle:hover { border-color: var(--primary); color: var(--primary); }
+.at-chip-toggle.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
