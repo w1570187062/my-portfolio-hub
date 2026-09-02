@@ -525,6 +525,40 @@
 .asset-ov-head { font-size: 13px; color: var(--text-muted); margin: 4px 2px 2px; }
 .asset-ov-head b { color: var(--primary); font-weight: 700; }
 .asset-cards { width: 100%; }
+
+/* === 资产全景顶部汇总卡片：参考「再平衡仪表盘」KPI 风格重构（大圆角+浅边+柔阴影+右上柔光）=== */
+.pano-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; width: 100%; }
+@media (max-width: 880px){ .pano-summary { grid-template-columns: 1fr; } }
+.pano-sum {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 18px 16px;
+  background: linear-gradient(160deg, var(--bg-card), var(--bg-input));
+  box-shadow: 0 6px 24px rgba(27, 40, 72, .08);
+}
+:root[data-theme="dark"] .pano-sum { box-shadow: 0 8px 28px rgba(0, 0, 0, .38); }
+.pano-sum::after {
+  content: ""; position: absolute; right: -28px; top: -28px; width: 104px; height: 104px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(111, 158, 94, .14), transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+.pano-sum > * { position: relative; z-index: 1; }
+.pano-sum .ps-head { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.pano-sum .ps-big { font-size: 26px; font-weight: 800; color: var(--text); margin-top: 8px; letter-spacing: .3px; font-variant-numeric: tabular-nums; }
+.pano-sum .ps-rows { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.pano-sum .ps-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12.5px; }
+.pano-sum .ps-row .pr-lbl { color: var(--text-muted); }
+.pano-sum .ps-row .pr-val { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* 组合/包含关系：彩色堆叠进度条（如 总资产=权益+理财+现金、净资产+负债=总资产） */
+.comp-bar { display: flex; height: 12px; border-radius: 8px; overflow: hidden; background: var(--border); margin: 12px 0 10px; border: 1px solid var(--border); }
+.comp-bar .seg { height: 100%; min-width: 0; }
+.comp-legend { display: flex; flex-direction: column; gap: 5px; }
+.comp-legend .cl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.comp-legend .cl .dot { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
+.comp-legend .cl b { color: var(--text); font-weight: 600; margin-left: auto; font-variant-numeric: tabular-nums; }
+.comp-legend .cl .cpct { color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
 /* 来源列表行内区域标记（境内/境外） */
 .src-region { font-size: 10px; padding: 1px 5px; border-radius: 6px; margin-left: 4px; vertical-align: middle; white-space: nowrap; }
 .src-region.dom { background: rgba(111,158,94,.18); color: #6f9e5e; }

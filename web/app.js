@@ -3254,34 +3254,61 @@ function renderAssetSummary() {
   const total = eqMV + wTotal + cTotal;
   // 境内/境外资产：后端已按来源 region 归集（domestic_assets / overseas_assets，CNY）
   const dom = d.domestic_assets || 0, ovs = d.overseas_assets || 0;
-  // 合并为 3 张卡片：净资产(含总资产/负债行) / 境内外 / 资产分布(权益·理财·现金)
+  // 三种卡片均为「包含/组合关系」：净资产+负债=总资产、境内+境外=总资产、权益+理财+现金=总资产；
+  // 用 base=总资产 统一折算宽度，使各卡堆叠条均满 100%（total=0 时回退避免除零）
+  const base = Math.max(total, 1);
+  const pct = (v) => (v / base * 100);
+  // 渲染彩色堆叠进度条 + 图例（金额/占比）
+  const stack = (segs) => {
+    const bar = segs.map((s) =>
+      `<span class="seg" style="width:${pct(s.v).toFixed(2)}%;background:${s.c}" title="${esc(s.name)} ${money(s.v)}"></span>`).join('');
+    const leg = segs.map((s) =>
+      `<div class="cl"><span class="dot" style="background:${s.c}"></span>${esc(s.name)}<b>${money(s.v)}</b><span class="cpct">${pct(s.v).toFixed(1)}%</span></div>`).join('');
+    return `<div class="comp-bar">${bar}</div><div class="comp-legend">${leg}</div>`;
+  };
+  // 卡片一：净资产（净资产+负债=总资产，负债以红色段体现杠杆）
   const cardNet =
-    `<div class="sum-card sum-merged">` +
-      `<span class="sum-head">净资产</span>` +
-      `<b class="sum-big">${money(net)}</b>` +
-      `<div class="sum-rows">` +
-        `<div class="sum-row"><span class="sr-lbl">总资产</span><span class="sr-val">${money(total)}</span></div>` +
-        `<div class="sum-row"><span class="sr-lbl">负债</span><span class="sr-val ov-liab">${money(lTotal)}</span></div>` +
+    `<div class="pano-sum">` +
+      `<div class="ps-head">净资产</div>` +
+      `<div class="ps-big">${money(net)}</div>` +
+      `<div class="ps-rows">` +
+        `<div class="ps-row"><span class="pr-lbl">总资产</span><span class="pr-val">${money(total)}</span></div>` +
+        `<div class="ps-row"><span class="pr-lbl">负债</span><span class="pr-val" style="color:var(--danger)">${money(lTotal)}</span></div>` +
       `</div>` +
+      stack([
+        { name: '净资产', v: Math.max(net, 0), c: '#6f9e5e' },
+        { name: '负债', v: lTotal, c: '#f87171' },
+      ]) +
     `</div>`;
+  // 卡片二：境内/境外资产（境内+境外=总资产）
   const cardRegion =
-    `<div class="sum-card sum-merged">` +
-      `<span class="sum-head">境内 / 境外资产</span>` +
-      `<div class="sum-rows sum-rows-plain">` +
-        `<div class="sum-row"><span class="sr-lbl">境内资产</span><span class="sr-val ov-dom">${money(dom)}</span></div>` +
-        `<div class="sum-row"><span class="sr-lbl">境外资产</span><span class="sr-val ov-ovs">${money(ovs)}</span></div>` +
+    `<div class="pano-sum">` +
+      `<div class="ps-head">境内 / 境外资产</div>` +
+      stack([
+        { name: '境内资产', v: dom, c: '#6f9e5e' },
+        { name: '境外资产', v: ovs, c: '#38bdf8' },
+      ]) +
+      `<div class="ps-rows">` +
+        `<div class="ps-row"><span class="pr-lbl">境内资产</span><span class="pr-val" style="color:var(--primary)">${money(dom)}</span></div>` +
+        `<div class="ps-row"><span class="pr-lbl">境外资产</span><span class="pr-val" style="color:#38bdf8">${money(ovs)}</span></div>` +
       `</div>` +
     `</div>`;
+  // 卡片三：资产分布（权益+理财+现金=总资产）
   const cardDist =
-    `<div class="sum-card sum-merged">` +
-      `<span class="sum-head">资产分布</span>` +
-      `<div class="sum-rows sum-rows-plain">` +
-        `<div class="sum-row"><span class="sr-lbl">权益</span><span class="sr-val">${money(eqMV)}</span></div>` +
-        `<div class="sum-row"><span class="sr-lbl">理财</span><span class="sr-val">${money(wTotal)}</span></div>` +
-        `<div class="sum-row"><span class="sr-lbl">现金</span><span class="sr-val">${money(cTotal)}</span></div>` +
+    `<div class="pano-sum">` +
+      `<div class="ps-head">资产分布</div>` +
+      stack([
+        { name: '权益', v: eqMV, c: '#5b8cff' },
+        { name: '理财', v: wTotal, c: '#6f9e5e' },
+        { name: '现金', v: cTotal, c: '#94a3b8' },
+      ]) +
+      `<div class="ps-rows">` +
+        `<div class="ps-row"><span class="pr-lbl">权益</span><span class="pr-val">${money(eqMV)}</span></div>` +
+        `<div class="ps-row"><span class="pr-lbl">理财</span><span class="pr-val">${money(wTotal)}</span></div>` +
+        `<div class="ps-row"><span class="pr-lbl">现金</span><span class="pr-val">${money(cTotal)}</span></div>` +
       `</div>` +
     `</div>`;
-  $('#assetSummaryBody').innerHTML = `<div class="ac-summary-cards asset-cards">${cardNet}${cardRegion}${cardDist}</div>`;
+  $('#assetSummaryBody').innerHTML = `<div class="pano-summary">${cardNet}${cardRegion}${cardDist}</div>`;
 }
 
 function renderAssetTab() {
