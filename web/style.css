@@ -609,8 +609,8 @@
 .holdings-group.collapsed .collapse-body { display: none; }
 .holdings-group .subtable-wrap { overflow-x: auto; }
 .holdings-group .holdings-subtable { width: 100%; }
-.holdings-group .holdings-subtable th { font-size: 12px; color: var(--text-muted); padding: 6px 4px; }
-.holdings-group .holdings-subtable td { padding: 6px 4px; border-top: 1px solid var(--border); }
+.holdings-group .holdings-subtable th { font-size: 12px; color: var(--text-muted); padding: 6px 4px; border-bottom: 1px solid var(--row-divider); }
+.holdings-group .holdings-subtable td { padding: 6px 4px; border-top: 1px solid var(--row-divider); }
 /* 首页持仓子表：固定列宽，确保各来源子表的列头/列宽跨卡片完全一致对齐 */
 .holdings-group .holdings-subtable { table-layout: fixed; }
 .holdings-group .holdings-subtable th, .holdings-group .holdings-subtable td { overflow: hidden; text-overflow: ellipsis; }
@@ -2267,7 +2267,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .asset-table th { font-size: 13px; text-align: left; }
 .asset-table th, .asset-table td {
   padding: 6px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, .05);
+  /* 用主题感知的分割线：暗色=白6%，亮色=黑6%（原先硬编码白色5%在白底上不可见） */
+  border-bottom: 1px solid var(--row-divider);
 }
 .asset-table td { text-align: left; }
 .asset-table td.num, .asset-table th.num { text-align: right; }
