@@ -3503,7 +3503,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 }
 
 /* ===== 彩色组合圆环 donut（首页总市值卡 / 再平衡当前配置） ===== */
-.donut-wrap { display: flex; justify-content: center; align-items: center; margin: 6px 0 2px; }
+.donut-wrap { display: flex; justify-content: center; align-items: center; margin: 3px 0 1px; }
 .donut { display: block; }
 /* 圆环中心文字：viewBox 42 单位，按比例换算到显示尺寸（150px 时约 14px / 10px） */
 .donut-center { font-size: 4.2px; font-weight: 800; fill: var(--text); }
@@ -3511,7 +3511,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 
 /* 资产全景弹框的 tab 复用技术分析弹框的小胶囊样式（.ana-tab-btn），
    仅在其处于 modal 内时取消 sticky 与底边线，避免与弹框布局冲突 */
-.ana-tabs.ac-tabs { position: static; top: auto; border-bottom: none; background: transparent; padding: 2px 0 14px; margin: 4px 0 0; }
+.ana-tabs.ac-tabs { position: static; top: auto; border-bottom: none; background: transparent; padding: 2px 28px 14px; margin: 4px 0 0; }
 
 /* ===== 资产再平衡 tab ===== */
 .rebal-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }

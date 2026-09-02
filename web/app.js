@@ -1688,9 +1688,9 @@ async function fillAssetTypeSelect(current) {
 // acTabComp/acTabRebal/acTabSet —— 用显式映射，避免按 tab 名大写拼接得到的
 // acTabSettingsBtn（实际是 acTabSetBtn）取不到元素导致「设置」点击无反应。
 const AC_TABS = [
-  { key: 'comp', btn: 'acTabCompBtn', panel: 'acTabComp' },
-  { key: 'rebal', btn: 'acTabRebalBtn', panel: 'acTabRebal' },
-  { key: 'settings', btn: 'acTabSetBtn', panel: 'acTabSet' },
+  { key: 'comp', btn: 'acTabCompBtn', panel: 'acTabComp', modalTitle: '资产构成' },
+  { key: 'rebal', btn: 'acTabRebalBtn', panel: 'acTabRebal', modalTitle: '资产再平衡' },
+  { key: 'settings', btn: 'acTabSetBtn', panel: 'acTabSet', modalTitle: '设置' },
 ];
 function openAssetCompModal(tab) {
   const modal = document.getElementById('assetCompModal');
@@ -1716,6 +1716,8 @@ function showAcTab(tab) {
     if (b) b.classList.toggle('active', t.key === tab);
     if (p) p.hidden = (t.key !== tab);
   });
+  const titleEl = document.getElementById('acModalTitle');
+  if (titleEl) titleEl.textContent = (AC_TABS.find((t) => t.key === tab) || {}).modalTitle || '资产全景';
   if (tab === 'comp') renderCompTab();
   else if (tab === 'rebal') renderRebalTab();
   else if (tab === 'settings') renderSettingsTab();
