@@ -734,12 +734,12 @@ function renderSummary(hs) {
   if (otherMV > 0) mvSegs.push({ name: '其他', v: otherMV, c: '#94a3b8' });
   const mvBar = mvSegs.map((s) => `<span class="seg" style="width:${pctMV(s.v).toFixed(2)}%;background:${s.c}" title="${esc(s.name)} ${money(s.v)}"></span>`).join('');
   const mvLeg = mvSegs.map((s) => `<div class="cl"><span class="dot" style="background:${s.c}"></span>${esc(s.name)}<b>${money(s.v)}</b><span class="cpct">${pctMV(s.v).toFixed(1)}%</span></div>`).join('');
-  // 卡片一：总市值（含股票/基金分类彩色组合圆环）
+  // 卡片一：总市值（含股票/基金分类彩色组合圆环；金额置于圆环中心，减少留白并增加文字描述）
+  const topSeg = mvSegs.slice().sort((a, b) => b.v - a.v)[0];
   const cardMV =
     `<div class="pano-sum">` +
       `<div class="ps-head">总市值</div>` +
-      `<div class="ps-big">¥${fmt(totalCNY)}</div>` +
-      `<div class="donut-wrap">${donutSVG(mvSegs, { size: 132 })}</div>` +
+      `<div class="donut-wrap">${donutSVG(mvSegs, { size: 150, center: '¥' + fmtShort(totalCNY), sub: (topSeg ? topSeg.name + ' ' + (topSeg.v / Math.max(totalCNY, 1) * 100).toFixed(0) + '%' : '') })}</div>` +
       `<div class="comp-legend">${mvLeg}</div>` +
     `</div>`;
   // 卡片二：盈亏 + 涨跌 合并（总盈亏带箭头色 / 当日 / 本月 / 涨跌家数）
@@ -1629,28 +1629,37 @@ function showItemDetail(key, label) {
 }
 
 // ===== 彩色组合圆环（donut）=====
+// 紧凑金额：万/亿 为单位，用于圆环中心文字（避免过长溢出）
+function fmtShort(n) {
+  n = n || 0;
+  const a = Math.abs(n);
+  if (a >= 1e8) return (n / 1e8).toFixed(2).replace(/\.?0+$/, '') + '亿';
+  if (a >= 1e4) return (n / 1e4).toFixed(1).replace(/\.0$/, '') + '万';
+  return fmt(n);
+}
+
 // 参照再平衡仪表盘：viewBox 0 0 42 42，circle r=15.915（周长=100，dasharray 即百分比），
-// stroke-dashoffset 按累计占比前移，rotate(-90) 使起点在 12 点方向。
+// stroke-width=6（与参考一致，加粗环带），rotate(-90) 使起点在 12 点方向；中心可放文字描述。
 function donutSVG(segs, opts) {
   opts = opts || {};
-  const size = opts.size || 130;
+  const size = opts.size || 150;
   const total = segs.reduce((a, s) => a + (s.v || 0), 0);
-  const R = 15.9155, cx = 21, cy = 21;
+  const R = 15.9155, cx = 21, cy = 21, SW = 6;
   let acc = 0, circles = '';
-  if (total <= 0) {
-    circles = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border)" stroke-width="3.2"/>`;
-  } else {
+  circles = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border)" stroke-width="${SW}"/>`;
+  if (total > 0) {
     segs.forEach((s) => {
       const len = (s.v || 0) / total * 100;
-      circles += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.c}" stroke-width="3.2" stroke-dasharray="${len.toFixed(2)} ${(100 - len).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+      if (len <= 0) return;
+      circles += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.c}" stroke-width="${SW}" stroke-dasharray="${len.toFixed(2)} ${(100 - len).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
       acc += len;
     });
   }
   const center = opts.center || '', sub = opts.sub || '';
   return `<svg class="donut" viewBox="0 0 42 42" width="${size}" height="${size}" style="width:${size}px;height:${size}px">
     ${circles}
-    ${center ? `<text x="21" y="20.5" text-anchor="middle" class="donut-center">${esc(center)}</text>` : ''}
-    ${sub ? `<text x="21" y="26" text-anchor="middle" class="donut-sub">${esc(sub)}</text>` : ''}
+    ${center ? `<text x="21" y="20.2" text-anchor="middle" class="donut-center">${esc(center)}</text>` : ''}
+    ${sub ? `<text x="21" y="25.4" text-anchor="middle" class="donut-sub">${esc(sub)}</text>` : ''}
   </svg>`;
 }
 
@@ -1675,30 +1684,37 @@ async function fillAssetTypeSelect(current) {
 }
 
 // ===== 资产全景三 Tab 弹框：构成 / 再平衡 / 设置 =====
+// 注意：按钮/面板 ID 在 HTML 中是 acTabCompBtn/acTabRebalBtn/acTabSetBtn 与
+// acTabComp/acTabRebal/acTabSet —— 用显式映射，避免按 tab 名大写拼接得到的
+// acTabSettingsBtn（实际是 acTabSetBtn）取不到元素导致「设置」点击无反应。
+const AC_TABS = [
+  { key: 'comp', btn: 'acTabCompBtn', panel: 'acTabComp' },
+  { key: 'rebal', btn: 'acTabRebalBtn', panel: 'acTabRebal' },
+  { key: 'settings', btn: 'acTabSetBtn', panel: 'acTabSet' },
+];
 function openAssetCompModal(tab) {
   const modal = document.getElementById('assetCompModal');
   if (!modal) return;
   if (!window.__acWired) {
     window.__acWired = true;
     const close = () => { modal.hidden = true; settingsDraft = null; };
-    document.getElementById('acCompClose').onclick = close;
+    const closeEl = document.getElementById('acCompClose');
+    if (closeEl) closeEl.onclick = close;
     modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-    ['comp', 'rebal', 'settings'].forEach((t) => {
-      const cap = t.charAt(0).toUpperCase() + t.slice(1);
-      const btn = document.getElementById('acTab' + cap + 'Btn');
-      if (btn) btn.onclick = () => showAcTab(t);
+    AC_TABS.forEach((t) => {
+      const b = document.getElementById(t.btn);
+      if (b) b.onclick = () => showAcTab(t.key);
     });
   }
   modal.hidden = false;
   showAcTab(tab || 'comp');
 }
 function showAcTab(tab) {
-  ['comp', 'rebal', 'settings'].forEach((t) => {
-    const cap = t.charAt(0).toUpperCase() + t.slice(1);
-    const btn = document.getElementById('acTab' + cap + 'Btn');
-    const panel = document.getElementById('acTab' + cap);
-    if (btn) btn.classList.toggle('active', t === tab);
-    if (panel) panel.hidden = (t !== tab);
+  AC_TABS.forEach((t) => {
+    const b = document.getElementById(t.btn);
+    const p = document.getElementById(t.panel);
+    if (b) b.classList.toggle('active', t.key === tab);
+    if (p) p.hidden = (t.key !== tab);
   });
   if (tab === 'comp') renderCompTab();
   else if (tab === 'rebal') renderRebalTab();
@@ -1749,7 +1765,7 @@ async function renderRebalance(profileId) {
   if (!rows.length) { body.innerHTML = '<p style="color:var(--text-muted)">暂无持仓数据。</p>'; return; }
   const palette = ['#5b8cff', '#6f9e5e', '#ffce5c', '#9b7bff', '#43e5c0', '#f87171', '#38bdf8', '#7e8aa6'];
   const segs = rows.map((r, i) => ({ name: r.label, v: r.current_value || 0, c: palette[i % palette.length] }));
-  const donut = donutSVG(segs, { size: 150 });
+  const donut = donutSVG(segs, { size: 170, center: '¥' + fmtShort(total), sub: (rows.length) + ' 类资产' });
   const bars = rows.map((r, i) => {
     const cp = r.current_pct || 0, tp = r.target_pct || 0, dp = r.deviation_pct || 0;
     const driftCls = Math.abs(dp) <= 5 ? 'flat' : (dp > 0 ? 'up' : 'down');
