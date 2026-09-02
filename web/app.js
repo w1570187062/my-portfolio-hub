@@ -3661,15 +3661,17 @@ function renderAssetToolbar(tab) {
   if (!t) return;
   const L = (s) => `<span class="atool-label">${s}</span>`;
   const B = (id, icon, tip) => `<button id="${id}" class="btn icon-btn" type="button" data-tip="${tip}" aria-label="${tip}">${icon}</button>`;
+  const icoPnl = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><path d="M3.5 20.5 H20.5" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round"/><path d="M5 16 L10 10.5 L13.5 13.5 L19 6.5" fill="none" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.2 6.5 H19 V10.3" fill="none" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const icoPie = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><circle cx="12" cy="12" r="8.6" fill="none" stroke="#f0b429" stroke-width="1.9"/><path d="M12 3.4 V12 L18.1 17.9" fill="none" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round"/></svg>`;
   t.innerHTML =
-    B('assetPnlBtn', '📈', '盈亏分析（日历/走势）') + B('assetPieBtn', '🥧', '资产构成');
+    B('assetPnlBtn', icoPnl, '盈亏分析（日历/走势）') + B('assetPieBtn', icoPie, '资产构成');
 }
 // 全局 header 工具条：资产工具 + 资产全景 + 通知渠道三个图标按钮，常驻暗黑模式切换按钮右侧
 function renderGlobalAssetToolbar() {
   const t = document.getElementById('assetToolbar');
   if (!t) return;
   const icoCalc = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2.5" fill="none" stroke="#f0b429" stroke-width="1.8"/><rect x="7.5" y="5.5" width="9" height="4" rx="1" fill="#f0b429" opacity=".8"/><circle cx="9" cy="13" r="1.15" fill="#f0b429"/><circle cx="12" cy="13" r="1.15" fill="#f0b429"/><circle cx="15" cy="13" r="1.15" fill="#f0b429"/><circle cx="9" cy="16.5" r="1.15" fill="#f0b429"/><circle cx="12" cy="16.5" r="1.15" fill="#f0b429"/><circle cx="15" cy="16.5" r="1.15" fill="#f0b429"/></svg>`;
-  const icoIngot = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><defs><filter id="ingotGlow" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="1.5" flood-color="#ffd968" flood-opacity=".9"/></filter></defs><g filter="url(#ingotGlow)"><path d="M8.6 11.4 C8.6 8.8 10.1 7.4 12 7.4 C13.9 7.4 15.4 8.8 15.4 11.4 C14.3 10.7 13.2 10.4 12 10.4 C10.8 10.4 9.7 10.7 8.6 11.4 Z" fill="#ffd968"/><path d="M2.5 14.2 C2.5 11.6 5 10.5 7 11.1 C8.3 9.9 10 9.3 12 9.3 C14 9.3 15.7 9.9 17 11.1 C19 10.5 21.5 11.6 21.5 14.2 C21.5 17.3 17 19 12 19 C7 19 2.5 17.3 2.5 14.2 Z" fill="#f0b429"/><ellipse cx="9.5" cy="13.2" rx="3.2" ry="1.4" fill="#ffe08a" opacity=".55"/></g></svg>`;
+  const icoIngot = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><g stroke="#ffd968" stroke-width="1.6" stroke-linecap="round"><path d="M6.2 6.4 L4.6 4.4"/><path d="M12 5.2 V2.6"/><path d="M17.8 6.4 L19.4 4.4"/><path d="M9 5.7 L8.2 3.3"/><path d="M15 5.7 L15.8 3.3"/></g><path d="M8.6 11.4 C8.6 8.8 10.1 7.4 12 7.4 C13.9 7.4 15.4 8.8 15.4 11.4 C14.3 10.7 13.2 10.4 12 10.4 C10.8 10.4 9.7 10.7 8.6 11.4 Z" fill="#ffd968"/><path d="M2.5 14.2 C2.5 11.6 5 10.5 7 11.1 C8.3 9.9 10 9.3 12 9.3 C14 9.3 15.7 9.9 17 11.1 C19 10.5 21.5 11.6 21.5 14.2 C21.5 17.3 17 19 12 19 C7 19 2.5 17.3 2.5 14.2 Z" fill="#f0b429"/><ellipse cx="9.5" cy="13.2" rx="3.2" ry="1.4" fill="#ffe08a" opacity=".55"/></svg>`;
   t.innerHTML =
     `<button id="assetToolsBtn" class="btn icon-btn" type="button" data-tip="资产工具" aria-label="资产工具">${icoCalc}</button>` +
     `<button id="assetPanoNavBtn" class="btn icon-btn" type="button" data-tip="资产全景" aria-label="资产全景">${icoIngot}</button>` +
@@ -3813,7 +3815,7 @@ function renderWealth(body) {
       <button class="btn vt-btn ${wealthView === 'table' ? 'active' : ''}" data-wview="table" type="button">表格</button>
       <button class="btn vt-btn ${wealthView === 'card' ? 'active' : ''}" data-wview="card" type="button">卡片</button>
     </div>` : '';
-  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn asset-add" id="assetSnapBtn" title="更新理财持仓">📥 更新</button><button class="btn asset-add" id="addWealthBtn">＋ 添加</button>${toggleHtml}</div></div>`;
+  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn asset-add" id="assetSnapBtn" title="更新理财持仓"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px"><path d="M12 3.5 V13.5 M8 10 L12 14 L16 10" fill="none" stroke="#f0b429" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5 V19 A1.5 1.5 0 0 0 6 20.5 H18 A1.5 1.5 0 0 0 19.5 19 V16.5" fill="none" stroke="#f0b429" stroke-width="2" stroke-linecap="round"/></svg> 更新</button><button class="btn asset-add" id="addWealthBtn"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px"><path d="M12 5 V19 M5 12 H19" stroke="#f0b429" stroke-width="2.2" stroke-linecap="round"/></svg> 添加</button>${toggleHtml}</div></div>`;
   if (!w.length) html += `<div class="empty-block"><p class="empty">还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn asset-add-inline" data-empty-add="wealth" type="button">➕ 添加第一笔理财</button></div>`;
   else if (wealthView === 'table') html += renderWealthTable(w);
   else {

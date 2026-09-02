@@ -93,7 +93,7 @@
     <div class="act-group">
       <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式">🌙</button>
       <div class="asset-toolbar header-toolbar" id="assetToolbar" hidden></div>
-      <button id="userBtn" class="btn act-user" type="button" title="用户切换">👤<span id="userNameText" style="display:none">默认</span></button>
+      <button id="userBtn" class="btn act-user" type="button" title="用户切换"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto"><circle cx="12" cy="8.2" r="3.6" fill="none" stroke="#f0b429" stroke-width="1.9"/><path d="M4.8 19.2 C4.8 15.3 8 13.6 12 13.6 C16 13.6 19.2 15.3 19.2 19.2" fill="none" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round"/></svg><span id="userNameText" style="display:none">默认</span></button>
     </div>
   </header>
 
@@ -115,9 +115,9 @@
     <div id="filters" class="filters"></div>
     <div class="list-actions">
       <div class="action-btns">
-        <button id="aiHomeBtn" class="btn" type="button">🤖 AI</button>
-        <button id="addBtn" class="btn">➕ 添加</button>
-        <button id="guideBtn" class="btn">📋 计划</button>
+        <button id="aiHomeBtn" class="btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="5" y="7.5" width="14" height="11" rx="3.5" fill="none" stroke="#f0b429" stroke-width="1.9"/><circle cx="9.5" cy="12.5" r="1.3" fill="#f0b429"/><circle cx="14.5" cy="12.5" r="1.3" fill="#f0b429"/><path d="M12 7.5 V4.6" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="3.6" r="1.3" fill="#f0b429"/><path d="M8.5 18.5 V21 M15.5 18.5 V21" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round"/></svg> AI</button>
+        <button id="addBtn" class="btn"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><circle cx="12" cy="12" r="9" fill="none" stroke="#f0b429" stroke-width="1.9"/><path d="M12 7.8 V16.2 M7.8 12 H16.2" stroke="#f0b429" stroke-width="1.9" stroke-linecap="round"/></svg> 添加</button>
+        <button id="guideBtn" class="btn"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="5.5" y="4.5" width="13" height="16" rx="2" fill="none" stroke="#f0b429" stroke-width="1.9"/><rect x="9" y="2.8" width="6" height="3.4" rx="1.2" fill="#f0b429"/><path d="M9 10.5 H15 M9 14 H15 M9 17.5 H12.5" stroke="#f0b429" stroke-width="1.7" stroke-linecap="round"/></svg> 计划</button>
       </div>
       <div class="action-tools">
         <input type="search" id="filterInput" name="q" class="filter-search" placeholder="搜索名称 / 代码" aria-label="筛选持仓" autocomplete="off" spellcheck="false" enterkeyhint="search" hidden data-1p-ignore data-lpignore="true" data-form-type="other" data-dashlane-ignored="true">
@@ -574,10 +574,10 @@
     <div class="modal-card" style="width:800px; max-width:94vw; position: relative;">
       <h2>AI 中枢</h2>
       <button class="card-close" type="button" id="aiHubXClose" title="关闭" aria-label="关闭">✕</button>
-      <div class="hist-tabs more-tabs">
-        <button id="hubTabSummary" class="btn tab active" type="button">AI 总结</button>
-        <button id="hubTabSettings" class="btn tab" type="button">AI 设置</button>
-        <button id="hubTabHistory" class="btn tab" type="button">AI 历史</button>
+      <div class="ana-tabs ac-tabs">
+        <button id="hubTabSummary" class="ana-tab-btn active" type="button">AI 总结</button>
+        <button id="hubTabSettings" class="ana-tab-btn" type="button">AI 设置</button>
+        <button id="hubTabHistory" class="ana-tab-btn" type="button">AI 历史</button>
       </div>
 
       <!-- 总结：下拉选择类型后生成 -->
