@@ -3867,10 +3867,10 @@ function renderWealthTable(w) {
       <td class="num ${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</td>
       <td class="num ${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
       <td class="num">${p.snap_count || 0}</td>
-      <td class="num asset-row-actions">
-        <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}" title="每日盈亏">📈 每日盈亏</button>
-        <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}" title="编辑">✏️ 编辑</button>
-        <button class="btn btn-icon danger" data-act="del-wealth" data-id="${p.id}" title="删除">🗑️ 删除</button>
+      <td class="row-actions">
+        <button class="btn act-hist" data-act="wealth-hist" data-id="${p.id}" title="每日盈亏">每日盈亏</button>
+        <button class="btn act-edit" data-act="edit-wealth" data-id="${p.id}" title="编辑">编辑</button>
+        <button class="btn act-del danger" data-act="del-wealth" data-id="${p.id}" title="删除">删除</button>
       </td>
     </tr>`;
   }).join('');
