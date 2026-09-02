@@ -2103,6 +2103,11 @@ async function openPnlModal(tab) {
     window.__pnlWired = true;
     document.getElementById('pnlClose').onclick = () => { modal.hidden = true; };
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+    // 双 Tab 按钮点击切换（此前漏绑导致「盈亏走势」点不动）
+    PNL_TABS.forEach((t) => {
+      const b = document.getElementById(t.btn);
+      if (b) b.onclick = () => showPnlTab(t.key);
+    });
   }
   modal.hidden = false;
   await showPnlTab(tab || 'cal');
@@ -3663,9 +3668,11 @@ function renderAssetToolbar(tab) {
 function renderGlobalAssetToolbar() {
   const t = document.getElementById('assetToolbar');
   if (!t) return;
+  const icoCalc = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="7.5" y="5.5" width="9" height="4" rx="1" fill="currentColor" opacity=".8"/><circle cx="9" cy="13" r="1.15" fill="currentColor"/><circle cx="12" cy="13" r="1.15" fill="currentColor"/><circle cx="15" cy="13" r="1.15" fill="currentColor"/><circle cx="9" cy="16.5" r="1.15" fill="currentColor"/><circle cx="12" cy="16.5" r="1.15" fill="currentColor"/><circle cx="15" cy="16.5" r="1.15" fill="currentColor"/></svg>`;
+  const icoIngot = `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;margin:auto" aria-hidden="true"><path d="M8.6 11.4 C8.6 8.8 10.1 7.4 12 7.4 C13.9 7.4 15.4 8.8 15.4 11.4 C14.3 10.7 13.2 10.4 12 10.4 C10.8 10.4 9.7 10.7 8.6 11.4 Z" fill="#ffd968"/><path d="M2.5 14.2 C2.5 11.6 5 10.5 7 11.1 C8.3 9.9 10 9.3 12 9.3 C14 9.3 15.7 9.9 17 11.1 C19 10.5 21.5 11.6 21.5 14.2 C21.5 17.3 17 19 12 19 C7 19 2.5 17.3 2.5 14.2 Z" fill="#f0b429"/><ellipse cx="9.5" cy="13.2" rx="3.2" ry="1.4" fill="#ffe08a" opacity=".55"/></svg>`;
   t.innerHTML =
-    `<button id="assetToolsBtn" class="btn icon-btn" type="button" data-tip="资产工具" aria-label="资产工具">🛠️</button>` +
-    `<button id="assetPanoNavBtn" class="btn icon-btn" type="button" data-tip="资产全景" aria-label="资产全景">🗂️</button>` +
+    `<button id="assetToolsBtn" class="btn icon-btn" type="button" data-tip="资产工具" aria-label="资产工具">${icoCalc}</button>` +
+    `<button id="assetPanoNavBtn" class="btn icon-btn" type="button" data-tip="资产全景" aria-label="资产全景">${icoIngot}</button>` +
     `<button id="notifyNavBtn" class="btn icon-btn" type="button" data-tip="通知渠道" aria-label="通知渠道">🔔</button>`;
   t.hidden = false;
 }
