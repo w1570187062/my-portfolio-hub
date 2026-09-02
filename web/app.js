@@ -1506,9 +1506,9 @@ function drawPie(segs, total, title, opts) {
     ? `<div class="pie-back" data-back="1">← 返回总览</div>`
     : '';
   const hint = opts.onSeg ? `<div class="pie-hint">${opts.hint || '点击区块可查看二级细分'}</div>` : '';
-  $('#chartBody').innerHTML = `${back}${hint}<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">
-    <svg width="220" height="220" viewBox="0 0 220 220">${paths}</svg>
-    <div style="min-width:200px">${legend}</div></div>`;
+  $('#chartBody').innerHTML = `${back}${hint}<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center">
+    <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center"><svg width="220" height="220" viewBox="0 0 220 220">${paths}</svg></div>
+    <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center;min-width:200px">${legend}</div></div>`;
   if (opts.onSeg) {
     $('#chartBody').querySelectorAll('[data-label]').forEach((el) => (el.onclick = () => opts.onSeg(el.dataset.label)));
   }
