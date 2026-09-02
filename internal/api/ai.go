@@ -181,9 +181,13 @@ func aiSummary(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	// Persist to history (keep latest 10). Failure is non-fatal.
-	if err := db.SaveAISummary(content, b.Model, uid); err != nil {
-		log.Printf("warn: save ai summary history failed: %v", err)
+	// Persist to history (keep latest 10). Failure is non-fatal. 空内容不写库，避免污染历史。
+	if strings.TrimSpace(content) != "" {
+		if err := db.SaveAISummary(content, b.Model, uid); err != nil {
+			log.Printf("warn: save ai summary history failed: %v", err)
+		}
+	} else {
+		log.Printf("[ai] model=%s 返回内容为空，跳过历史保存", b.Model)
 	}
 	// If the key actually used differs from the saved one (e.g. the user typed a
 	// fresh key and generated without clicking "保存设置"), persist it so it
@@ -210,6 +214,12 @@ func injectData(tmpl, data string) string {
 
 // callChatCompletions calls an OpenAI-compatible /chat/completions endpoint
 // (DeepSeek by default) and returns the assistant message content.
+//
+// 容错要点（针对线上“解析响应失败”复盘）：
+//  1. 部分网关/代理在 stream:false 时仍返回 SSE 流（text/event-stream），标准
+//     JSON 反序列化会失败 → 先识别并按事件流拼接 content。
+//  2. 解析失败时在服务端记录原始响应体（前 800 字节），便于后续排查而非盲改。
+//  3. DeepSeek-Reasoner 等模型正文可能落在 reasoning_content，content 为空时回退。
 func callChatCompletions(baseURL, apiKey, model, prompt string) (string, error) {
 	base := strings.TrimRight(baseURL, "/")
 	url := base + "/chat/completions"
@@ -242,10 +252,23 @@ func callChatCompletions(baseURL, apiKey, model, prompt string) (string, error) 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("模型返回 %d: %s", resp.StatusCode, truncate(string(rb), 600))
 	}
+	raw := string(rb)
+	// 兼容 SSE：Content-Type 为事件流，或响应体以 data: 起头/含换行 data:
+	ct := resp.Header.Get("Content-Type")
+	isSSE := strings.Contains(ct, "text/event-stream") ||
+		strings.HasPrefix(strings.TrimSpace(raw), "data:") ||
+		strings.Contains(raw, "\ndata:")
+	if isSSE {
+		if c, ok := parseSSEContent(raw); ok {
+			return strings.TrimSpace(c), nil
+		}
+		// SSE 解析未命中也可能只是首行带 data: 前缀的普通 JSON，继续走 JSON 分支
+	}
 	var out struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
 			} `json:"message"`
 		} `json:"choices"`
 		Error *struct {
@@ -253,7 +276,9 @@ func callChatCompletions(baseURL, apiKey, model, prompt string) (string, error) 
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(rb, &out); err != nil {
-		return "", fmt.Errorf("解析响应失败: %s", truncate(string(rb), 400))
+		// 记录原始响应体，便于定位（截断到 800 字节）
+		log.Printf("[ai] 解析模型响应失败 model=%s base=%s ct=%q: %s", model, base, ct, truncate(raw, 800))
+		return "", fmt.Errorf("解析响应失败: %s", truncate(raw, 400))
 	}
 	if len(out.Choices) == 0 {
 		if out.Error != nil {
@@ -261,7 +286,53 @@ func callChatCompletions(baseURL, apiKey, model, prompt string) (string, error) 
 		}
 		return "", fmt.Errorf("模型未返回内容")
 	}
-	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+	content := strings.TrimSpace(out.Choices[0].Message.Content)
+	if content == "" {
+		// DeepSeek-Reasoner 等可能把正文放在 reasoning_content
+		if rc := strings.TrimSpace(out.Choices[0].Message.ReasoningContent); rc != "" {
+			log.Printf("[ai] model=%s content 为空，回退使用 reasoning_content (len=%d)", model, len(rc))
+			content = rc
+		}
+	}
+	return content, nil
+}
+
+// parseSSEContent 从 SSE 流（data: 行）中拼接 content / reasoning_content。
+// 返回 (拼接文本, 是否至少解析到一段)。无法解析时返回 ("", false)。
+func parseSSEContent(raw string) (string, bool) {
+	var sb strings.Builder
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		var ev struct {
+			Choices []struct {
+				Delta struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue
+		}
+		for _, c := range ev.Choices {
+			if c.Delta.Content != "" {
+				sb.WriteString(c.Delta.Content)
+			} else if c.Delta.ReasoningContent != "" {
+				sb.WriteString(c.Delta.ReasoningContent)
+			}
+		}
+	}
+	if sb.Len() == 0 {
+		return "", false
+	}
+	return sb.String(), true
 }
 
 // buildPortfolioStats assembles a human- and model-readable text snapshot of the
