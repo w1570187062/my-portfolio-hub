@@ -1041,7 +1041,8 @@ function renderAdjCashSelect(h) {
   const opts = list.map((c) => {
     const star = c.is_default ? '★ ' : '';
     const cur = c.currency === 'usd' ? '＄' : (c.currency === 'hkd' ? 'HK＄' : '¥');
-    return `<option value="${c.id}">${star}${esc(c.name)}（${cur}${fmt(c.amount || 0)}）</option>`;
+    const src = c.source_name ? c.source_name + '·' : '';
+    return `<option value="${c.id}">${star}${esc(src)}${esc(c.name)}（${cur}${fmt(c.amount || 0)}）</option>`;
   }).join('');
   sel.innerHTML = `<option value="0">（自动：该来源默认账户 ★）</option>` + opts;
   const def = list.find((c) => c.is_default && Number(c.source_id) === srcId)

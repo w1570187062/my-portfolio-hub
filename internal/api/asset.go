@@ -517,12 +517,28 @@ func deleteWealth(c *gin.Context) {
 // ---- 现金 CRUD ----
 
 func listCash(c *gin.Context) {
-	out, err := db.ListCash(currentUserID(c))
+	uid := currentUserID(c)
+	out, err := db.ListCash(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"cash": out})
+	// 补上来源名：加减仓「资金账户」下拉要按来源区分同名账户
+	srcs, _ := db.ListSources(uid)
+	srcName := make(map[int64]string, len(srcs))
+	for _, s := range srcs {
+		srcName[s.ID] = s.Name
+	}
+	items := make([]gin.H, 0, len(out))
+	for _, cc := range out {
+		items = append(items, gin.H{
+			"id": cc.ID, "user_id": cc.UserID, "source_id": cc.SourceID,
+			"source_name": srcName[cc.SourceID],
+			"name":        cc.Name, "currency": cc.Currency, "amount": cc.Amount,
+			"note": cc.Note, "is_default": cc.IsDefault, "created_at": cc.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"cash": items})
 }
 
 func createCash(c *gin.Context) {
