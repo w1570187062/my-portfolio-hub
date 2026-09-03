@@ -157,6 +157,7 @@ func assetOverview(c *gin.Context) {
 			"source_name": srcName[cc.SourceID],
 			"amount":      round2(cc.Amount),
 			"note":        cc.Note,
+			"is_default":  cc.IsDefault,
 		})
 	}
 
@@ -285,6 +286,10 @@ func listSources(c *gin.Context) {
 	// 关联数：该来源被持仓/理财/现金/负债/消费引用的条目总数
 	items := make([]gin.H, 0, len(out))
 	for _, s := range out {
+		// 存量兼容：为尚未初始化默认现金账户的来源补齐（幂等，已有则直接返回）
+		if _, err := db.EnsureDefaultCash(uid, s.ID, s.Name); err != nil {
+			log.Printf("[source] 补齐默认现金账户失败(source=%d): %v", s.ID, err)
+		}
 		cnt, _ := db.SourceRefCount(s.ID)
 		items = append(items, gin.H{
 			"id": s.ID, "user_id": s.UserID, "name": s.Name, "type": s.Type, "region": s.Region, "note": s.Note, "created_at": s.CreatedAt,
@@ -374,6 +379,12 @@ func createSource(c *gin.Context) {
 		return
 	}
 	s.ID = id
+	// 每个来源自带一个默认现金账户（前端名称前加 ★ 标记）：随来源创建，随来源删除级联删除。
+	if cashID, err := db.EnsureDefaultCash(s.UserID, id, s.Name); err != nil {
+		log.Printf("[source] 初始化默认现金账户失败(source=%d): %v", id, err)
+	} else {
+		log.Printf("[source] 来源 %s(%d) 默认现金账户 %d", s.Name, id, cashID)
+	}
 	c.JSON(http.StatusOK, gin.H{"source": s})
 }
 
@@ -535,6 +546,21 @@ func createCash(c *gin.Context) {
 		return
 	}
 	cc.ID = id
+	// 默认账户唯一性：显式勾选 → 设为本来源默认；未勾选但该来源尚无默认账户 → 兜底设为默认，
+	// 保证「每个来源有且仅有一个 ★ 默认现金账户」。
+	needDefault := cc.IsDefault
+	if !needDefault {
+		if cur, e := db.GetDefaultCash(cc.UserID, cc.SourceID); e == nil && cur == nil {
+			needDefault = true
+		}
+	}
+	if needDefault {
+		if err := db.SetDefaultCash(cc.UserID, cc.SourceID, cc.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		cc.IsDefault = true
+	}
 	c.JSON(http.StatusOK, gin.H{"cash": cc})
 }
 
@@ -559,11 +585,50 @@ func updateCash(c *gin.Context) {
 		cc.Currency = "rmb"
 	}
 	cc.UserID = currentUserID(c)
+	// 设为默认现金账户：同一来源下唯一，切换时该来源其他账户自动取消默认标记。
+	if cc.IsDefault {
+		if err := db.SetDefaultCash(cc.UserID, cc.SourceID, cc.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		// 不允许取消唯一的默认账户：每个来源必须保留一个 ★ 账户。
+		// 想换默认账户，请在目标账户上勾选「设为默认」，原账户会自动取消。
+		if old, e := db.GetCash(cc.ID); e == nil && old != nil && old.IsDefault {
+			cc.IsDefault = true
+		}
+	}
 	if err := db.UpdateCash(&cc); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 回读库中真实状态返回（is_default 可能已被 SetDefaultCash 改写）
+	if fresh, err := db.GetCash(cc.ID); err == nil && fresh != nil {
+		c.JSON(http.StatusOK, gin.H{"cash": fresh})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"cash": cc})
+}
+
+// listCashFlows 返回某现金账户的余额变动流水（加仓付款 / 减仓回款 / 手工调整）。
+func listCashFlows(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	uid := currentUserID(c)
+	acc, err := db.GetCash(id)
+	if err != nil || acc == nil || acc.UserID != uid {
+		c.JSON(http.StatusNotFound, gin.H{"error": "现金账户不存在"})
+		return
+	}
+	flows, err := db.ListCashFlows(id, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"flows": flows, "account": acc})
 }
 
 func deleteCash(c *gin.Context) {

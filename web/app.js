@@ -1023,10 +1023,38 @@ async function editHolding(id) {
 let adjType = 'BUY';
 let lastAdd = null;        // 调仓计算器最近一次有效方案 { q1, p1, fee, mode, side }
 let pendingApplyAdd = false; // 确认弹框：计入持仓 pending 标记
-function openAdjust(id) {
+// 现金账户列表缓存（供加减仓「资金账户」下拉使用）
+let cashAccountsCache = [];
+async function loadCashAccounts() {
+  try {
+    const r = await api('/api/asset/cash');
+    if (r.ok) { const d = await r.json(); cashAccountsCache = d.cash || []; }
+  } catch (_) {}
+  return cashAccountsCache;
+}
+// 渲染加减仓的资金账户下拉：优先选中该持仓所属来源的默认账户（★）
+function renderAdjCashSelect(h) {
+  const sel = $('#adj_cash_id');
+  if (!sel) return;
+  const list = cashAccountsCache || [];
+  const srcId = Number(h && h.source_id) || 0;
+  const opts = list.map((c) => {
+    const star = c.is_default ? '★ ' : '';
+    const cur = c.currency === 'usd' ? '＄' : (c.currency === 'hkd' ? 'HK＄' : '¥');
+    return `<option value="${c.id}">${star}${esc(c.name)}（${cur}${fmt(c.amount || 0)}）</option>`;
+  }).join('');
+  sel.innerHTML = `<option value="0">（自动：该来源默认账户 ★）</option>` + opts;
+  const def = list.find((c) => c.is_default && Number(c.source_id) === srcId)
+    || list.find((c) => Number(c.source_id) === srcId);
+  sel.value = def ? String(def.id) : '0';
+}
+
+async function openAdjust(id) {
   const h = allHoldings.find((x) => String(x.id) === String(id));
   if (!h) { toast('未找到该持仓', 'err'); return; }
   $('#adj_id').value = h.id;
+  await loadCashAccounts();
+  renderAdjCashSelect(h);
   adjType = 'BUY';
   syncAdjSeg();
   $('#adjustTitle').textContent = '加减仓 · ' + (h.name || h.symbol);
@@ -1141,7 +1169,10 @@ $('#adjustForm').onsubmit = async (e) => {
     const r = await api('/api/holdings/' + id + '/adjust', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: adjType, quantity: qty, price: price, fee: fee, note: note }),
+      body: JSON.stringify({
+        type: adjType, quantity: qty, price: price, fee: fee, note: note,
+        cash_account_id: Number($('#adj_cash_id').value) || 0,
+      }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { $('#adjErr').textContent = d.error || ('操作失败 (HTTP ' + r.status + ')'); return; }
@@ -3941,11 +3972,20 @@ function renderCash(body) {
   let html = `<div class="asset-section-head"><h3>现金（${list.length}）</h3><button class="btn asset-add" id="addCashBtn">＋ 添加现金</button></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">还没有现金记录，添加各账户的现金余额即可纳入总资产。</p><button class="btn asset-add-inline" data-empty-add="cash" type="button">➕ 添加现金</button></div>`;
   else {
-    html += `<table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th class="num">余额</th><th>币种</th><th>来源</th><th>备注</th><th></th></tr></thead><tbody>`;
+    html += `<table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th class="num">余额</th><th>币种</th><th>来源</th><th>备注</th><th>操作</th></tr></thead><tbody>`;
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
-      html += `<tr><td class="num">${i + 1}</td><td>${esc(c.name)}</td><td class="num">${moneyCur(c.amount || 0, c.currency)}</td><td>${curSymbolJS(c.currency)}</td><td>${esc(c.source_name || '')}</td><td>${esc(c.note || '')}</td>
-        <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-cash" data-id="${c.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-cash" data-id="${c.id}">🗑️ 删除</button></td></tr>`;
+      // 默认现金账户：名称前加 ★ 标记，且不支持单独删除（随来源级联删除）
+      const nameHtml = c.is_default
+        ? `<span class="cash-star" title="该来源的默认现金账户（加减仓默认走这个账户）">★</span>${esc(c.name)}`
+        : esc(c.name);
+      const delBtn = c.is_default ? '' : `<button class="btn act-del danger" data-act="del-cash" data-id="${c.id}" title="删除">删除</button>`;
+      html += `<tr><td class="num">${i + 1}</td><td>${nameHtml}</td><td class="num">${moneyCur(c.amount || 0, c.currency)}</td><td>${curSymbolJS(c.currency)}</td><td>${esc(c.source_name || '')}</td><td>${esc(c.note || '')}</td>
+        <td class="row-actions">
+          <button class="btn act-hist" data-act="cash-hist" data-id="${c.id}" title="资金变动历史">历史</button>
+          <button class="btn act-edit" data-act="edit-cash" data-id="${c.id}" title="编辑">编辑</button>
+          ${delBtn}
+        </td></tr>`;
     }
     html += `</tbody></table>`;
   }
@@ -3953,6 +3993,47 @@ function renderCash(body) {
   $('#addCashBtn').onclick = () => openCashModal(null);
   body.querySelectorAll('[data-act="edit-cash"]').forEach((b) => b.onclick = () => openCashModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="del-cash"]').forEach((b) => b.onclick = () => assetDel('cash', Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="cash-hist"]').forEach((b) => b.onclick = () => openCashHistory(Number(b.dataset.id)));
+}
+
+// 现金账户资金变动历史：加仓付款 / 减仓回款 / 手工调整，复用历史弹框的表格 tab
+async function openCashHistory(id) {
+  const chartTab = $('#histTabChart');
+  try {
+    const r = await api('/api/asset/cash/' + id + '/flows');
+    if (!r.ok) { toast('加载失败 (HTTP ' + r.status + ')', 'err'); return; }
+    const d = await r.json();
+    const acc = d.account || {};
+    const flows = d.flows || [];
+    $('#histTitle').textContent = (acc.name || ('现金账户 #' + id)) + ' · 资金变动历史';
+    // 现金历史只有表格，隐藏「盈亏曲线」tab（理财历史会再显示回来）
+    if (chartTab) chartTab.hidden = true;
+    $('#histModal').hidden = false;
+    switchHistTab('table');
+    let html = `<div class="wh-actions"><span class="ua-hint">当前余额 ${moneyCur(acc.amount || 0, acc.currency)}${acc.is_default ? '　｜　★ 该来源的默认现金账户' : ''}</span></div>`;
+    if (!flows.length) html += '<p class="empty">暂无资金变动记录。首页持仓的加仓/减仓会自动记到这里。</p>';
+    else {
+      html += '<table class="asset-table"><thead><tr><th>日期</th><th>类型</th><th class="num">变动</th><th class="num">变动后余额</th><th>关联标的</th><th>说明</th></tr></thead><tbody>';
+      for (const f of flows) {
+        const amt = f.amount || 0;
+        html += `<tr><td>${esc(f.date)}</td><td>${cashFlowTypeTag(f.type)}</td>
+          <td class="num ${amt >= 0 ? 'up' : 'down'}">${(amt >= 0 ? '+' : '')}${money(amt)}</td>
+          <td class="num">${money(f.balance || 0)}</td>
+          <td>${esc(f.ref_name || '')}</td><td>${esc(f.note || '')}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    $('#histTable').innerHTML = html;
+  } catch (err) { toast('异常：' + err.message, 'err'); }
+}
+
+function cashFlowTypeTag(t) {
+  switch (t) {
+    case 'adjust_buy': return '<span class="adj-tag buy">加仓付款</span>';
+    case 'adjust_sell': return '<span class="adj-tag sell">减仓回款</span>';
+    case 'manual': return '<span class="adj-tag">手工调整</span>';
+    default: return esc(t || '-');
+  }
 }
 
 async function openCashModal(id) {
@@ -3968,6 +4049,8 @@ async function openCashModal(id) {
   $('#c_amount').value = c ? c.amount : '';
   $('#c_source').value = c ? c.source_id : (assetSources[0] ? assetSources[0].id : '');
   $('#c_note').value = c ? (c.note || '') : '';
+  // 默认现金账户标记：勾选保存后，该来源下其它账户自动取消默认（唯一性由后端保证）
+  $('#c_is_default').checked = c ? !!c.is_default : false;
   $('#cashErr').textContent = '';
   $('#cashModal').hidden = false;
 }
@@ -3993,6 +4076,9 @@ let currentWealthHistId = 0;
 async function openWealthHistory(id) {
   currentWealthHistId = id;
   try {
+    // 现金历史会隐藏「盈亏曲线」tab，理财历史用得到，这里恢复显示
+    const chartTab = $('#histTabChart');
+    if (chartTab) chartTab.hidden = false;
     const r = await api('/api/asset/wealth/' + id + '/history');
     if (!r.ok) { toast('加载失败 (HTTP ' + r.status + ')', 'err'); return; }
     const d = await r.json();

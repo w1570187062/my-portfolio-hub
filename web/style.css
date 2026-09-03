@@ -856,6 +856,32 @@ h2 > svg, .sheet-title > svg, .page-head__title > svg { color: var(--primary); }
 .act-hist { color: var(--primary); }
 .act-del { color: var(--danger); }
 
+/* ===== 现金：默认账户 ★ 标记 / 表单默认勾选行 / 流水类型标签 ===== */
+.cash-star {
+  color: var(--primary);
+  font-size: 13px;
+  margin-right: 3px;
+  vertical-align: 1px;
+}
+.c-default-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.c-default-row input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--primary); }
+.adj-tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+}
+.adj-tag.buy { color: var(--danger); border-color: var(--danger); }
+.adj-tag.sell { color: var(--success); border-color: var(--success); }
+
 /* ===== 登录框按钮 ===== */
 .login-box button {
   width: 100%;

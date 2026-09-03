@@ -1194,6 +1194,22 @@ func initAssetTables() error {
 			note TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT ''
 		)`,
+		// 现金流水：记录每个现金账户的余额变动（加仓付款 / 减仓回款 / 手工调整），
+		// 供资产全景现金表格「历史」按钮展示。
+		`CREATE TABLE IF NOT EXISTS cash_flow (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL DEFAULT 0,
+			cash_id INTEGER NOT NULL,
+			date TEXT NOT NULL DEFAULT '',
+			type TEXT NOT NULL DEFAULT '',
+			amount REAL NOT NULL DEFAULT 0,
+			balance REAL NOT NULL DEFAULT 0,
+			ref_type TEXT NOT NULL DEFAULT '',
+			ref_id INTEGER NOT NULL DEFAULT 0,
+			ref_name TEXT NOT NULL DEFAULT '',
+			note TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT ''
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := DB.Exec(s); err != nil {
@@ -1204,6 +1220,11 @@ func initAssetTables() error {
 	addColumnIfMissing("wealth_products", "currency", "TEXT NOT NULL DEFAULT 'rmb'")
 	addColumnIfMissing("wealth_products", "cum_pnl", "REAL NOT NULL DEFAULT 0")
 	addColumnIfMissing("asset_sources", "region", "TEXT NOT NULL DEFAULT 'domestic'")
+	addColumnIfMissing("cash_accounts", "user_id", "INTEGER NOT NULL DEFAULT 0")
+	// is_default：该账户是否为其所属来源的默认现金账户（每个来源唯一，前端名称前加 ★ 标记）。
+	addColumnIfMissing("cash_accounts", "is_default", "INTEGER NOT NULL DEFAULT 0")
+	// 索引：按账户查流水（历史弹框）
+	_, _ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_cash_flow_cash ON cash_flow(cash_id)`)
 	return nil
 }
 
@@ -1264,6 +1285,10 @@ func DeleteSource(id int64) error {
 		return err
 	}
 	if _, err := DB.Exec(`DELETE FROM liabilities WHERE source_id=?`, id); err != nil {
+		return err
+	}
+	// 现金账户随来源级联删除（含其流水）；默认现金账户不支持单独删除，只能走这里。
+	if err := DeleteCashBySource(id); err != nil {
 		return err
 	}
 	if _, err := DB.Exec(`UPDATE consumptions SET source_id=0 WHERE source_id=?`, id); err != nil {
@@ -1374,11 +1399,29 @@ type Cash struct {
 	Currency  string  `json:"currency"`
 	Amount    float64 `json:"amount"`
 	Note      string  `json:"note"`
+	IsDefault bool    `json:"is_default"` // 该来源的默认现金账户（每个来源唯一）
+	CreatedAt string  `json:"created_at"`
+}
+
+// ---- 现金流水（余额变动历史）----
+
+type CashFlow struct {
+	ID        int64   `json:"id"`
+	UserID    int64   `json:"user_id"`
+	CashID    int64   `json:"cash_id"`
+	Date      string  `json:"date"`     // YYYY-MM-DD
+	Type      string  `json:"type"`     // adjust_buy 加仓付款 | adjust_sell 减仓回款 | manual 手工调整
+	Amount    float64 `json:"amount"`   // 变动额：正=入账，负=出账
+	Balance   float64 `json:"balance"`  // 变动后的账户余额
+	RefType   string  `json:"ref_type"` // holding | wealth | ""
+	RefID     int64   `json:"ref_id"`
+	RefName   string  `json:"ref_name"`
+	Note      string  `json:"note"`
 	CreatedAt string  `json:"created_at"`
 }
 
 func ListCash(userID int64) ([]Cash, error) {
-	rows, err := DB.Query(`SELECT id,user_id,source_id,name,currency,amount,note,created_at FROM cash_accounts WHERE user_id=? ORDER BY id DESC`, userID)
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,currency,amount,note,is_default,created_at FROM cash_accounts WHERE user_id=? ORDER BY is_default DESC, id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1386,12 +1429,50 @@ func ListCash(userID int64) ([]Cash, error) {
 	var out []Cash
 	for rows.Next() {
 		var c Cash
-		if err := rows.Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Amount, &c.Note, &c.CreatedAt); err != nil {
+		var def int
+		if err := rows.Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Amount, &c.Note, &def, &c.CreatedAt); err != nil {
 			return nil, err
 		}
+		c.IsDefault = def == 1
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// ListCashBySource 返回某来源下的全部现金账户（默认账户排最前）。
+func ListCashBySource(userID, sourceID int64) ([]Cash, error) {
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,currency,amount,note,is_default,created_at FROM cash_accounts WHERE user_id=? AND source_id=? ORDER BY is_default DESC, id DESC`, userID, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Cash
+	for rows.Next() {
+		var c Cash
+		var def int
+		if err := rows.Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Amount, &c.Note, &def, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		c.IsDefault = def == 1
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// GetCash 按 ID 取单个现金账户；不存在返回 (nil, nil)。
+func GetCash(id int64) (*Cash, error) {
+	var c Cash
+	var def int
+	err := DB.QueryRow(`SELECT id,user_id,source_id,name,currency,amount,note,is_default,created_at FROM cash_accounts WHERE id=?`, id).
+		Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Amount, &c.Note, &def, &c.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	c.IsDefault = def == 1
+	return &c, nil
 }
 
 func CreateCash(c *Cash) (int64, error) {
@@ -1399,8 +1480,12 @@ func CreateCash(c *Cash) (int64, error) {
 		c.Currency = "rmb"
 	}
 	c.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO cash_accounts(user_id,source_id,name,currency,amount,note,created_at) VALUES(?,?,?,?,?,?,?)`,
-		c.UserID, c.SourceID, c.Name, c.Currency, c.Amount, c.Note, c.CreatedAt)
+	def := 0
+	if c.IsDefault {
+		def = 1
+	}
+	res, err := DB.Exec(`INSERT INTO cash_accounts(user_id,source_id,name,currency,amount,note,is_default,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		c.UserID, c.SourceID, c.Name, c.Currency, c.Amount, c.Note, def, c.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -1411,14 +1496,161 @@ func UpdateCash(c *Cash) error {
 	if c.Currency == "" {
 		c.Currency = "rmb"
 	}
-	_, err := DB.Exec(`UPDATE cash_accounts SET user_id=?,source_id=?,name=?,currency=?,amount=?,note=? WHERE id=?`,
-		c.UserID, c.SourceID, c.Name, c.Currency, c.Amount, c.Note, c.ID)
+	def := 0
+	if c.IsDefault {
+		def = 1
+	}
+	_, err := DB.Exec(`UPDATE cash_accounts SET user_id=?,source_id=?,name=?,currency=?,amount=?,note=?,is_default=? WHERE id=?`,
+		c.UserID, c.SourceID, c.Name, c.Currency, c.Amount, c.Note, def, c.ID)
 	return err
 }
 
+// DeleteCash 删除现金账户。默认现金账户（is_default=1）不支持单独删除 ——
+// 它随来源创建、随来源删除而级联删除；如需删除请先删除对应来源。
 func DeleteCash(id int64) error {
+	var def int
+	if err := DB.QueryRow(`SELECT is_default FROM cash_accounts WHERE id=?`, id).Scan(&def); err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if def == 1 {
+		return fmt.Errorf("默认现金账户不支持单独删除（删除所属来源时会自动级联删除）")
+	}
+	if _, err := DB.Exec(`DELETE FROM cash_flow WHERE cash_id=?`, id); err != nil {
+		return err
+	}
 	_, err := DB.Exec(`DELETE FROM cash_accounts WHERE id=?`, id)
 	return err
+}
+
+// DeleteCashBySource 删除来源时级联清理其现金账户及流水（与理财/负债同级处理）。
+func DeleteCashBySource(sourceID int64) error {
+	if _, err := DB.Exec(`DELETE FROM cash_flow WHERE cash_id IN (SELECT id FROM cash_accounts WHERE source_id=?)`, sourceID); err != nil {
+		return err
+	}
+	_, err := DB.Exec(`DELETE FROM cash_accounts WHERE source_id=?`, sourceID)
+	return err
+}
+
+// GetDefaultCash 返回该来源的默认现金账户；不存在返回 (nil, nil)。
+func GetDefaultCash(userID, sourceID int64) (*Cash, error) {
+	var c Cash
+	var def int
+	err := DB.QueryRow(`SELECT id,user_id,source_id,name,currency,amount,note,is_default,created_at FROM cash_accounts WHERE user_id=? AND source_id=? AND is_default=1 LIMIT 1`, userID, sourceID).
+		Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Amount, &c.Note, &def, &c.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	c.IsDefault = def == 1
+	return &c, nil
+}
+
+// EnsureDefaultCash 保证该来源存在且仅存在一个默认现金账户。
+// 若尚无默认账户：优先把该来源现有账户中 ID 最小的升级为默认；一条都没有时才新建。
+func EnsureDefaultCash(userID, sourceID int64, sourceName string) (int64, error) {
+	if c, err := GetDefaultCash(userID, sourceID); err == nil && c != nil {
+		return c.ID, nil
+	}
+	existing, err := ListCashBySource(userID, sourceID)
+	if err != nil {
+		return 0, err
+	}
+	if len(existing) > 0 {
+		target := existing[0]
+		if err := SetDefaultCash(userID, sourceID, target.ID); err != nil {
+			return 0, err
+		}
+		return target.ID, nil
+	}
+	name := strings.TrimSpace(sourceName)
+	if name == "" {
+		return CreateCash(&Cash{
+			UserID:    userID,
+			SourceID:  sourceID,
+			Name:      "默认现金账户",
+			Currency:  "rmb",
+			Amount:    0,
+			IsDefault: true,
+			Note:      "来源默认现金账户（随来源自动创建）",
+		})
+	}
+	return CreateCash(&Cash{
+		UserID:    userID,
+		SourceID:  sourceID,
+		Name:      name + " 现金",
+		Currency:  "rmb",
+		Amount:    0,
+		IsDefault: true,
+		Note:      "来源默认现金账户（随来源自动创建）",
+	})
+}
+
+// SetDefaultCash 将指定账户设为该来源的唯一默认账户（同来源其他账户自动取消默认标记）。
+func SetDefaultCash(userID, sourceID, cashID int64) error {
+	if _, err := DB.Exec(`UPDATE cash_accounts SET is_default=0 WHERE user_id=? AND source_id=? AND id<>?`, userID, sourceID, cashID); err != nil {
+		return err
+	}
+	_, err := DB.Exec(`UPDATE cash_accounts SET is_default=1 WHERE id=? AND user_id=?`, cashID, userID)
+	return err
+}
+
+// ---- 现金流水 ----
+
+func AddCashFlow(f *CashFlow) error {
+	f.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+	_, err := DB.Exec(`INSERT INTO cash_flow(user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		f.UserID, f.CashID, f.Date, f.Type, f.Amount, f.Balance, f.RefType, f.RefID, f.RefName, f.Note, f.CreatedAt)
+	return err
+}
+
+func ListCashFlows(cashID int64, limit int) ([]CashFlow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := DB.Query(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at FROM cash_flow WHERE cash_id=? ORDER BY id DESC LIMIT ?`, cashID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CashFlow
+	for rows.Next() {
+		var f CashFlow
+		if err := rows.Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// AddCashAmount 调整现金账户余额（delta 正=入账 / 负=出账）并写入一条流水，
+// 保证账户余额与流水始终成对一致。调用方需保证 cashID 属于当前用户。
+func AddCashAmount(cashID int64, delta float64, typ, refType string, refID int64, refName, note string) error {
+	c, err := GetCash(cashID)
+	if err != nil {
+		return err
+	}
+	if c == nil {
+		return fmt.Errorf("现金账户不存在（id=%d）", cashID)
+	}
+	bal := math.Round((c.Amount+delta)*100) / 100
+	if _, err := DB.Exec(`UPDATE cash_accounts SET amount=? WHERE id=?`, bal, cashID); err != nil {
+		return err
+	}
+	return AddCashFlow(&CashFlow{
+		UserID:  c.UserID,
+		CashID:  cashID,
+		Date:    time.Now().Format("2006-01-02"),
+		Type:    typ,
+		Amount:  math.Round(delta*100) / 100,
+		Balance: bal,
+		RefType: refType,
+		RefID:   refID,
+		RefName: refName,
+		Note:    note,
+	})
 }
 
 // ---- Wealth daily snapshots (每日持仓金额) ----

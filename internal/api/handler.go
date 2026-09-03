@@ -176,6 +176,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/asset/wealth/:id/audit", assetWealthAuditList)
 		g.GET("/asset/wealth/:id/history", assetWealthHistory)
 		g.GET("/asset/cash", listCash)
+		g.GET("/asset/cash/:id/flows", listCashFlows)
 		g.POST("/asset/cash", createCash)
 		g.PUT("/asset/cash/:id", updateCash)
 		g.DELETE("/asset/cash/:id", deleteCash)
@@ -453,11 +454,12 @@ func adjustHolding(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Type     string  `json:"type"`
-		Quantity float64 `json:"quantity"`
-		Price    float64 `json:"price"`
-		Fee      float64 `json:"fee"`
-		Note     string  `json:"note"`
+		Type          string  `json:"type"`
+		Quantity      float64 `json:"quantity"`
+		Price         float64 `json:"price"`
+		Fee           float64 `json:"fee"`
+		Note          string  `json:"note"`
+		CashAccountID int64   `json:"cash_account_id"` // 资金往来账户：加仓付款 / 减仓回款；为空则回落到该来源的默认现金账户
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
@@ -468,29 +470,23 @@ func adjustHolding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// 减仓（SELL）：将实现盈亏落库到当日盈亏，并把卖出回款计入现金表。
+	uid := currentUserID(c)
+	// 减仓（SELL）：将实现盈亏落库到当日盈亏（回款入账统一走 applyCashForAdjust）。
 	if req.Type == "SELL" {
-		uid := currentUserID(c)
 		today := time.Now().Format("2006-01-02")
 		if realized < -1e-9 || realized > 1e-9 {
 			if e := db.RecordRealizedPnl(uid, today, id, h.Symbol, h.Name, h.Currency, realized); e != nil {
 				log.Printf("[adjust] 记录已实现盈亏失败(uid=%d hid=%d): %v", uid, id, e)
 			}
 		}
-		proceeds := req.Quantity*req.Price - req.Fee
-		if proceeds > 0 {
-		if _, e := db.CreateCash(&db.Cash{
-			UserID: uid, SourceID: h.SourceID, Name: h.Name + " 减仓回款",
-			Currency: mapCashCurrency(h.Currency), Amount: round2(proceeds),
-			Note: "减仓回款 " + h.Symbol + " " + today,
-		}); e != nil {
-				log.Printf("[adjust] 入账现金失败(uid=%d hid=%d): %v", uid, id, e)
-			}
-		}
 		// 立即将已实现盈亏并入当日盈亏（非交易日 doSnapshot 会提前返回，已实现盈亏仍保留在 ledger，下一交易日合并）
 		if e := doSnapshot(uid); e != nil {
 			log.Printf("[adjust] 重算当日盈亏失败(uid=%d): %v", uid, e)
 		}
+	}
+	// 现金联动：加仓（BUY）从所选账户扣款，减仓（SELL）回款入账到所选账户。
+	if e := applyCashForAdjust(uid, *h, req.Type, req.Quantity, req.Price, req.Fee, req.CashAccountID, req.Note); e != nil {
+		log.Printf("[adjust] 现金联动失败(uid=%d hid=%d): %v", uid, id, e)
 	}
 	realizedTotal, _ := db.SumRealizedPnl(id)
 	c.JSON(http.StatusOK, gin.H{
@@ -527,6 +523,72 @@ func mapCashCurrency(cur string) string {
 	default:
 		return "rmb"
 	}
+}
+
+// applyCashForAdjust 把一次加仓/减仓的资金变动落到现金账户（并写一条流水）：
+//   加仓 BUY ：从账户扣款  数量×价格 + 费用
+//   减仓 SELL：回款入账    数量×价格 − 费用
+// 未指定账户时回落到该持仓所属来源的默认现金账户（★ 账户，不存在则自动创建）。
+// 注意：减仓不再自动生成「XX 减仓回款」现金条目，改为并入账户余额 + 记流水。
+func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee float64, cashID int64, note string) error {
+	typ = strings.ToUpper(strings.TrimSpace(typ))
+	var delta float64
+	var flowType, label string
+	switch typ {
+	case "BUY":
+		cost := qty*price + fee
+		if cost <= 0 {
+			return nil
+		}
+		delta, flowType, label = -cost, "adjust_buy", "加仓付款"
+	case "SELL":
+		proceeds := qty*price - fee
+		if proceeds <= 0 {
+			return nil
+		}
+		delta, flowType, label = proceeds, "adjust_sell", "减仓回款"
+	default:
+		return nil
+	}
+	acc, err := resolveCashAccount(uid, cashID, h.SourceID)
+	if err != nil {
+		return err
+	}
+	detail := fmt.Sprintf("%s %s %s｜数量 %g｜价 %g｜费 %g", label, h.Name, h.Symbol, qty, price, fee)
+	if s := strings.TrimSpace(note); s != "" {
+		detail += "｜" + s
+	}
+	return db.AddCashAmount(acc.ID, delta, flowType, "holding", h.ID, h.Name, detail)
+}
+
+// resolveCashAccount 返回本次资金变动使用的现金账户：显式指定优先（并校验归属当前用户），
+// 否则取该来源的默认现金账户，仍没有则现场创建一个。
+func resolveCashAccount(uid, cashID, sourceID int64) (*db.Cash, error) {
+	if cashID > 0 {
+		acc, err := db.GetCash(cashID)
+		if err != nil {
+			return nil, err
+		}
+		if acc == nil || acc.UserID != uid {
+			return nil, fmt.Errorf("现金账户不存在或不属于当前用户（id=%d）", cashID)
+		}
+		return acc, nil
+	}
+	if acc, err := db.GetDefaultCash(uid, sourceID); err == nil && acc != nil {
+		return acc, nil
+	}
+	id, err := db.EnsureDefaultCash(uid, sourceID, "")
+	if err != nil {
+		return nil, err
+	}
+	acc, err := db.GetCash(id)
+	if err != nil {
+		return nil, err
+	}
+	if acc == nil {
+		return nil, fmt.Errorf("默认现金账户创建失败（source=%d）", sourceID)
+	}
+	return acc, nil
 }
 
 func normalize(h *db.Holding) {
