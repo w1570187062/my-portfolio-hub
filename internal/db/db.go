@@ -1661,6 +1661,23 @@ func AddCashAmount(cashID int64, delta float64, typ, refType string, refID int64
 	})
 }
 
+// FindCashFlowByRef 查找某引用对象（ref_type+ref_id）最近一条金额匹配的现金流水，
+// 用于理财快照删除/撤销时定位当初落账的资金账户。无匹配返回 (nil, nil)。
+func FindCashFlowByRef(refType string, refID int64, amount float64) (*CashFlow, error) {
+	var f CashFlow
+	err := DB.QueryRow(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at
+		FROM cash_flow WHERE ref_type=? AND ref_id=? AND ABS(amount-?)<0.01 ORDER BY id DESC LIMIT 1`,
+		refType, refID, amount).
+		Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
 // AddCashTransfer 在同币种现金账户间转账：源账户扣 amount、目标账户加 amount，
 // 并成对写入 transfer_out / transfer_in 流水。amount 必须 > 0，源账户余额充足。
 // 失败时尝试回滚已扣款项（写入 transfer_rollback 流水）以避免出现"扣了没入"的不一致。
@@ -1810,6 +1827,20 @@ func WealthProductOwner(wealthID int64) (int64, error) {
 		return 0, nil
 	}
 	return uid, err
+}
+
+// GetWealthProduct 按 ID 取单个理财产品；不存在返回 (nil, nil)。
+func GetWealthProduct(id int64) (*WealthProduct, error) {
+	var w WealthProduct
+	err := DB.QueryRow(`SELECT id,user_id,source_id,name,code,currency,cum_pnl,note,created_at FROM wealth_products WHERE id=?`, id).
+		Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.CumPnl, &w.Note, &w.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &w, nil
 }
 
 // DeleteWealthSnapshot 删除某产品某天的快照行。

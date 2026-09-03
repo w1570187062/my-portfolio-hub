@@ -703,15 +703,64 @@ func transferCash(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// adjustCash 对已有现金账户做 ±资金调整（弹框「已有账户 ± 资金」模式）：
+// delta > 0 = 存入现金，delta < 0 = 取出现金；写 manual 流水（资金变动历史可见）。
+func adjustCash(c *gin.Context) {
+	var b struct {
+		CashID int64   `json:"cash_id"`
+		Delta  float64 `json:"delta"`
+		Note   string  `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if b.CashID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择现金账户"})
+		return
+	}
+	delta := math.Round(b.Delta*100) / 100
+	if math.Abs(delta) < 0.005 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "调整金额不能为 0（存入填正数，取出填负数）"})
+		return
+	}
+	uid := currentUserID(c)
+	acc, err := db.GetCash(b.CashID)
+	if err != nil || acc == nil || acc.UserID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "现金账户不存在或无权访问"})
+		return
+	}
+	if acc.Amount+delta < -0.004 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("取出金额超过账户余额（当前余额 %.2f）", acc.Amount)})
+		return
+	}
+	note := strings.TrimSpace(b.Note)
+	if note == "" {
+		if delta > 0 {
+			note = "手工存入"
+		} else {
+			note = "手工取出"
+		}
+	}
+	if err := db.AddCashAmount(acc.ID, delta, "manual", "manual", acc.ID, acc.Name, note); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // assetWealthSnapshotsPost upserts today's holding amounts for many products at once.
-// Body: { "date": "YYYY-MM-DD", "items": [ {"wealth_id":N,"amount":F,"cashflow":F}, ... ] }
+// Body: { "date": "YYYY-MM-DD", "items": [ {"wealth_id":N,"amount":F,"cashflow":F,"cash_account_id":N}, ... ] }
+// 净存入联动现金账户：cashflow 相对旧值的增量 cfDelta > 0（申购/存入理财）→ 从 cash_account_id
+// 账户扣款；cfDelta < 0（赎回/取出）→ 回款入账到 cash_account_id 账户。账户均缺省回落同来源默认账户。
 func assetWealthSnapshotsPost(c *gin.Context) {
 	var b struct {
 		Date  string `json:"date"`
 		Items []struct {
-			WealthID int64   `json:"wealth_id"`
-			Amount   float64 `json:"amount"`
-			Cashflow float64 `json:"cashflow"`
+			WealthID      int64   `json:"wealth_id"`
+			Amount        float64 `json:"amount"`
+			Cashflow      float64 `json:"cashflow"`
+			CashAccountID int64   `json:"cash_account_id"`
 		} `json:"items"`
 	}
 	if err := c.ShouldBindJSON(&b); err != nil {
@@ -745,7 +794,7 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 			_, prevAmt, prevOk, pe := db.GetWealthPrevSnapshot(it.WealthID, b.Date)
 			if pe == nil && prevOk {
 				if math.Abs(prevAmt-it.Amount) < 0.005 {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "产品 " + strconv.FormatInt(it.WealthID, 10) + " 在 " + b.Date + " 的净存入不为0，但持仓金额与前一日相同，将产生错误盈亏。请同步调整持仓金额，或确认净存入应填 0。"})
+					c.JSON(http.StatusBadRequest, gin.H{"error": "产品 " + strconv.FormatInt(it.WealthID, 10) + " 在 " + b.Date + " 的净存入不为 0，但持仓金额与前一日相同，将产生错误盈亏。全部取出请把今日持仓金额改为 0；部分取出请填写取出后的实际持仓；无资金变动请把净存入填 0。"})
 					return
 				}
 			}
@@ -761,8 +810,70 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 			OldAmount: oldAmt, OldCash: oldCf, NewAmount: it.Amount, NewCash: it.Cashflow,
 			OldExists: existed, UserID: uid, CreatedAt: now,
 		})
+		// 净存入变动联动现金账户（按新旧 cashflow 差值落账，重复保存只补差额，天然幂等）
+		if e := applyWealthCash(uid, it.WealthID, b.Date, it.Cashflow-oldCf, it.CashAccountID); e != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "date": b.Date})
+}
+
+// applyWealthCash 把一次理财快照「当日净存入」的变动落到现金账户（并写一条流水）：
+//   - cfDelta > 0（净申购/存入理财）：现金账户扣款（理财存入），账户取前端选定的 cashIDIn；
+//   - cfDelta < 0（净赎回/取出理财）：现金账户入账（理财回款），账户同样取前端选定的 cashIDIn；
+//
+// cashIDIn 为 0（未选）时由 resolveCashAccount 回落该理财同来源的默认现金账户（★）。
+// 调用方传入的应是「新 cashflow − 旧 cashflow」的差值，使重复保存/改录只补差额。
+func applyWealthCash(uid, wealthID int64, date string, cfDelta float64, cashIDIn int64) error {
+	cfDelta = math.Round(cfDelta*100) / 100
+	if math.Abs(cfDelta) < 0.005 {
+		return nil
+	}
+	p, err := db.GetWealthProduct(wealthID)
+	if err != nil {
+		return err
+	}
+	if p == nil {
+		return fmt.Errorf("理财产品不存在（id=%d）", wealthID)
+	}
+	accountDelta := -cfDelta // 存入理财 → 账户扣款（负）；取出理财 → 账户入账（正）
+	flowType, label := "wealth_deposit", "理财存入"
+	if accountDelta > 0 {
+		flowType, label = "wealth_redeem", "理财回款"
+	}
+	acc, err := resolveCashAccount(uid, cashIDIn, p.SourceID)
+	if err != nil {
+		return err
+	}
+	detail := fmt.Sprintf("%s %s｜%s 净存入 %+.2f", label, p.Name, date, cfDelta)
+	return db.AddCashAmount(acc.ID, accountDelta, flowType, "wealth", p.ID, p.Name, detail)
+}
+
+// reverseWealthCash 对一条已入账的理财资金流水做反向冲正（快照删除/撤销时调用）：
+// postedAmount 为当初入账金额（正=入账/负=出账），优先冲正到原流水所在账户，找不到则回落来源默认账户。
+func reverseWealthCash(uid, wealthID int64, postedAmount float64, note string) error {
+	postedAmount = math.Round(postedAmount*100) / 100
+	if math.Abs(postedAmount) < 0.005 {
+		return nil
+	}
+	p, err := db.GetWealthProduct(wealthID)
+	if err != nil {
+		return err
+	}
+	if p == nil {
+		return nil
+	}
+	cashID := int64(0)
+	if f, e := db.FindCashFlowByRef("wealth", wealthID, postedAmount); e == nil && f != nil {
+		cashID = f.CashID
+	}
+	acc, err := resolveCashAccount(uid, cashID, p.SourceID)
+	if err != nil {
+		return err
+	}
+	detail := fmt.Sprintf("理财冲正 %s｜%s", p.Name, note)
+	return db.AddCashAmount(acc.ID, -postedAmount, "wealth_reverse", "wealth", p.ID, p.Name, detail)
 }
 
 // assetWealthSnapshotDelete 删除某产品某天的快照（带归属校验 + 审计）。
@@ -801,6 +912,11 @@ func assetWealthSnapshotDelete(c *gin.Context) {
 		OldAmount: oldAmt, OldCash: oldCf, OldExists: true, UserID: uid,
 		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
 	})
+	// 冲正该快照净存入对应的现金账户变动（当初入账金额 = -oldCf）
+	if e := reverseWealthCash(uid, wid, -oldCf, "删除 "+date+" 快照"); e != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -849,6 +965,7 @@ func assetWealthSnapshotUndo(c *gin.Context) {
 		return
 	}
 	now := time.Now().Format("2006-01-02 15:04:05")
+	var cashPosted float64 // 该审计动作当初落到现金账户的金额（用于冲正）
 	if a.Action == "upsert" {
 		if !a.OldExists {
 			// 原为新建行（撤销 = 删除该行）
@@ -862,18 +979,27 @@ func assetWealthSnapshotUndo(c *gin.Context) {
 				return
 			}
 		}
+		// upsert 当初入账金额 = 旧净存入 − 新净存入（账户视角）
+		cashPosted = a.OldCash - a.NewCash
 	} else if a.Action == "delete" {
 		// 恢复被删除的行
 		if err := db.UpsertWealthSnapshot(a.WealthID, a.Date, a.OldAmount, a.OldCash); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		// delete 当初冲正入账金额 = +旧净存入
+		cashPosted = a.OldCash
 	}
 	_ = db.InsertWealthAudit(db.WealthAudit{
 		WealthID: a.WealthID, Date: a.Date, Action: "undo", Field: "row",
 		OldAmount: a.OldAmount, OldCash: a.OldCash, NewAmount: a.OldAmount, NewCash: a.OldCash,
 		OldExists: true, UserID: uid, CreatedAt: now,
 	})
+	// 反向冲正当初的现金账户变动
+	if e := reverseWealthCash(uid, a.WealthID, cashPosted, "撤销 "+a.Date+" 记录"); e != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

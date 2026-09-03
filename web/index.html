@@ -183,7 +183,6 @@
     <div class="modal-card" style="width:560px; max-width:94vw;">
       <h2><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><path d="M18 8.5 A6 6 0 0 0 6 8.5 C6 15 4 16.5 4 16.5 H20 C20 16.5 18 15 18 8.5 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M13.7 20 A2 2 0 0 1 10.3 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>通知渠道</h2>
       <button class="card-close" type="button" id="notifyClose" title="关闭" aria-label="关闭">✕</button>
-      <p class="tool-hint">配置净值更新后的通知方式，并用开关启用。点「保存配置」生效；点「测试通知」可验证渠道是否可用。手动或自动更新净值数据后会自动推送。</p>
       <div class="ana-tabs ac-tabs">
         <button id="ntTabPolicy" class="ana-tab-btn active" type="button">推送策略</button>
         <button id="ntTabDt" class="ana-tab-btn" type="button">钉钉</button>
@@ -289,7 +288,8 @@
 
       <!-- 美元资产盈亏计算器 -->
       <div id="tlPanelUsd" hidden>
-        <p class="tool-hint">买入与盈亏是两件独立的事：① 逐笔录入「美元买入」（金额 + 买入汇率），按金额加权得平均买入汇率；② 逐笔录入「盈亏」（USD 盈亏额）。两者与当前汇率对比，判断美元资产是否跑赢汇率贬值。</p>
+        <p class="tool-hint">买入与盈亏是两件独立的事：① 逐笔录入「美元买入」（金额 + 买入汇率），按金额加权得平均买入汇率。</p>
+        <p class="tool-hint">② 逐笔录入「盈亏」（USD 盈亏额），与当前汇率对比，判断美元资产是否跑赢汇率贬值。</p>
         <label class="tool-rate">当前汇率（RMB / 1 USD）<input id="usdRate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="自动填充实时汇率"></label>
         <div class="tool-sub">① 买入美元记录</div>
         <div class="tool-table" id="usdBuyRows"></div>
@@ -762,14 +762,26 @@
       <h2 id="cashTitle">添加现金</h2>
       <form id="cashForm">
         <input type="hidden" id="c_id">
-        <label>名称 <input id="c_name" placeholder="如 招行活期 / 微信零钱" required></label>
-        <label>货币类型
-          <select id="c_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
-        </label>
-        <label>当前余额 <input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
-        <label>所属来源 <select id="c_source"></select></label>
-        <label class="c-default-row"><input type="checkbox" id="c_is_default"> 设为该来源的默认现金账户<span class="ua-hint">（同名来源唯一；加减仓资金默认走此账户）</span></label>
-        <label>备注 <input id="c_note"></label>
+        <div class="cash-mode-row" id="cashModeRow">
+          <button type="button" class="cash-mode active" data-mode="adjust">已有账户 ± 资金</button>
+          <button type="button" class="cash-mode" data-mode="new">新增账户</button>
+        </div>
+        <div id="cashAdjustFields">
+          <label>现金账户 <select id="c_cash_acc"></select></label>
+          <div class="ua-hint" id="c_acc_info" style="margin:-4px 0 8px;"></div>
+          <label>± 资金（正=存入，负=取出） <input id="c_delta" type="number" step="0.0001" oninput="clampDecimals(this,4)" placeholder="如 500 存入 / -300 取出"></label>
+          <label>备注 <input id="c_note_adj"></label>
+        </div>
+        <div id="cashNewFields" hidden>
+          <label>名称 <input id="c_name" placeholder="如 招行活期 / 微信零钱"></label>
+          <label>货币类型
+            <select id="c_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
+          </label>
+          <label>当前余额 <input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
+          <label>所属来源 <select id="c_source"></select></label>
+          <label class="c-default-row"><input type="checkbox" id="c_is_default"> 设为该来源的默认现金账户<span class="ua-hint">（同名来源唯一；加减仓资金默认走此账户）</span></label>
+          <label>备注 <input id="c_note"></label>
+        </div>
         <div id="cashErr" class="err"></div>
         <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
       </form>
@@ -801,7 +813,6 @@
   <div id="snapModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
       <h2>更新理财持仓</h2>
-      <p class="snap-hint">填写各理财当日「持仓金额」，系统自动计算：每日盈亏 = 当日金额 − 昨日金额 − 当日净存入。留空则不更新该项。</p>
       <div id="snapBody" class="snap-body"></div>
       <div class="modal-actions"><button type="button" id="snapSave" class="btn">保存</button></div>
     </div>
@@ -844,8 +855,8 @@
         <button class="accent-swatch" type="button" data-accent="gold" title="土豪金（默认）" aria-label="土豪金"></button>
         <button class="accent-swatch" type="button" data-accent="green" title="豆沙护眼绿" aria-label="豆沙绿"></button>
         <button class="accent-swatch" type="button" data-accent="blue" title="经典蓝" aria-label="经典蓝"></button>
-        <button class="accent-swatch" type="button" data-accent="purple" title="葡萄紫" aria-label="葡萄紫"></button>
-        <button class="accent-swatch" type="button" data-accent="rose" title="胭脂红" aria-label="胭脂红"></button>
+        <button class="accent-swatch accent-custom" type="button" id="accentCustomBtn" title="自定义主题色（铅笔挑选任意颜色）" aria-label="自定义主题色">✏️</button>
+        <input type="color" id="accentCustom" value="#d9a52b" style="position:absolute;opacity:0;width:0;height:0;border:0;padding:0" tabindex="-1" aria-hidden="true">
       </div>
     </div>
   <div class="user-data">

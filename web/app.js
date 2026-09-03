@@ -12,13 +12,42 @@ function applyTheme(theme) {
 applyTheme(localStorage.getItem('pf_theme') || 'dark');
 
 // ===== 主题色（后期可调）：给 <html> 挂 data-accent，具体色值见 style.css 的预设块 =====
-// 新增一种主题色：在 style.css 追加一对 :root[data-accent="x"] 规则，并把色名加进 ACCENTS。
-const ACCENTS = ['gold', 'green', 'blue', 'purple', 'rose'];
+// 预设主题：在 style.css 追加一对 :root[data-accent="x"] 规则并把色名加进 ACCENTS；
+// 自定义主题（铅笔）：任意颜色以内联 CSS 变量覆盖 --primary/--tint 及 hover/active 衍生色，
+// 不与亮暗主题预设冲突（去掉的 purple/rose 与负债珊瑚红、境外紫分类色过近，已移除）。
+const ACCENTS = ['gold', 'green', 'blue', 'custom'];
+// hex → "R, G, B"（供 rgba(var(--tint),x) 使用）
+function hexToTint(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
+// 明度调整：t>0 向白靠拢（hover），t<0 向黑靠拢（active）
+function shadeHex(hex, t) {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c) => Math.round(t >= 0 ? c + (255 - c) * t : c * (1 + t));
+  return '#' + [mix((n >> 16) & 255), mix((n >> 8) & 255), mix(n & 255)].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+function applyCustomAccent(hex) {
+  const root = document.documentElement;
+  root.dataset.accent = 'custom';
+  root.style.setProperty('--primary', hex);
+  root.style.setProperty('--tint', hexToTint(hex));
+  root.style.setProperty('--primary-hover', shadeHex(hex, 0.18));
+  root.style.setProperty('--primary-active', shadeHex(hex, -0.15));
+}
 function applyAccent(accent) {
-  const v = ACCENTS.indexOf(accent) >= 0 ? accent : 'gold';
-  document.documentElement.dataset.accent = v;
+  if (accent === 'custom' && localStorage.getItem('pf_accent_custom')) {
+    applyCustomAccent(localStorage.getItem('pf_accent_custom'));
+  } else {
+    if (accent === 'custom') accent = 'gold'; // 无自定义色历史时回退默认
+    const v = ACCENTS.indexOf(accent) >= 0 ? accent : 'gold';
+    const root = document.documentElement;
+    root.dataset.accent = v;
+    // 清除自定义内联覆盖，恢复预设色值
+    ['--primary', '--tint', '--primary-hover', '--primary-active'].forEach((p) => root.style.removeProperty(p));
+  }
   document.querySelectorAll('#accentSwatches .accent-swatch').forEach((b) => {
-    b.classList.toggle('active', b.dataset.accent === v);
+    b.classList.toggle('active', b.dataset.accent === document.documentElement.dataset.accent);
   });
 }
 applyAccent(localStorage.getItem('pf_accent') || 'gold');
@@ -38,6 +67,17 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('pf_accent', b.dataset.accent);
     };
   });
+  // 铅笔按钮：打开系统取色器；选定颜色后立即应用并记忆（下次点铅笔直接恢复该颜色）
+  const cBtn = document.getElementById('accentCustomBtn');
+  const cInput = document.getElementById('accentCustom');
+  if (cBtn && cInput) {
+    cBtn.onclick = () => cInput.click();
+    cInput.oninput = () => {
+      localStorage.setItem('pf_accent_custom', cInput.value);
+      localStorage.setItem('pf_accent', 'custom');
+      applyAccent('custom');
+    };
+  }
 
   // 页脚版本信息：commit 短哈希 + 提交时间戳（后端构建时注入）
   const vi = document.getElementById('versionInfo');
@@ -634,7 +674,7 @@ function renderGroupRow(h, i) {
     <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
     <td class="num" style="font-size:12px;color:var(--text-muted)">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
     <td style="font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
-    <td class="num spark-td">${sparkCell(h.symbol)}</td>
+    <td class="num spark-td">${sparkCell(h.symbol, h.pnl)}</td>
     <td class="row-act-cell">
       <button class="row-act" data-edit="${h.id}" title="编辑持仓">编辑</button>
       <button class="row-act" data-hist="${h.id}" title="历史走势">历史</button>
@@ -750,8 +790,8 @@ function renderSummary(hs) {
   const baseMV = Math.max(totalCNY, 1);
   const pctMV = (v) => (v / baseMV * 100);
   const mvSegs = [
-    { name: '股票', v: stockMV, c: '#5b8cff' },
-    { name: '基金', v: fundMV, c: '#d9a52b' },
+    { name: '股票', v: stockMV, c: 'rgb(var(--cat-equity))' },
+    { name: '基金', v: fundMV, c: 'rgb(var(--cat-fund))' },
   ];
   if (otherMV > 0) mvSegs.push({ name: '其他', v: otherMV, c: '#94a3b8' });
   const mvBar = mvSegs.map((s) => `<span class="seg" style="width:${pctMV(s.v).toFixed(2)}%;background:${s.c}" title="${esc(s.name)} ${money(s.v)}"></span>`).join('');
@@ -886,12 +926,12 @@ function sparkline(data, opts) {
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="${w}" height="${h}" style="vertical-align:middle;display:block" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="2.2" fill="${stroke}"/></svg>`;
 }
 
-// 表格迷你走势单元格：末价 vs 首价定涨跌色（涨红跌绿），无数据时显示占位符。
-function sparkCell(sym) {
+// 表格迷你走势单元格：线条为近20日收盘价走势，颜色跟随该持仓「总盈亏」正负（盈红/亏绿，
+// 与总盈亏列同色，不再按 20 日线首尾涨跌定色），无数据时显示占位符。
+function sparkCell(sym, pnl) {
   const arr = sparkCache[sym];
   if (!arr || arr.length < 2) return '<span class="spark-empty">—</span>';
-  const up = arr[arr.length - 1] >= arr[0];
-  const color = up ? 'var(--up)' : 'var(--down)';
+  const color = (pnl || 0) >= 0 ? 'var(--up)' : 'var(--down)';
   return sparkline(arr, { w: 110, h: 26, stroke: color, fill: color });
 }
 
@@ -914,7 +954,7 @@ function renderRows(hs) {
      <td class="num">${fmt(h.quantity)}</td>
      <td class="num">${fmtNav(h.cost_price, h.category)}</td>
      <td class="num">${fmtNav(h.current_price, h.category)}</td>
-     <td class="num spark-td">${sparkCell(h.symbol)}</td>
+     <td class="num spark-td">${sparkCell(h.symbol, h.pnl)}</td>
      <td class="num"${mvOrigTitle(h)}>${fmt(toRmb(h, h.market_value))}</td>
      <td class="num ${cls(h.day_pnl)}">${fmt(toRmb(h, h.day_pnl))}</td>
      <td class="num ${cls(h.day_pnl_pct)}">${pct(h.day_pnl_pct)}</td>
@@ -1505,21 +1545,8 @@ function closeChart() {
 
 // Asset composition pie: 现金 / 股票 / 基金 / 理财 across the WHOLE portfolio,
 // with click-to-drill second-level breakdown (e.g. 股票 -> each sub-stock's share).
-const PIE_BASE = { 现金: '#E6DDD4', 理财: '#87C9C0', 基金: '#C39FC2', 股票: '#E6957A' };
-
-// Blend hex color a toward b by ratio t∈[0,1] (used for sub-segment shades).
-function mixHex(a, b, t) {
-  const pa = [parseInt(a.slice(1, 3), 16), parseInt(a.slice(3, 5), 16), parseInt(a.slice(5, 7), 16)];
-  const pb = [parseInt(b.slice(1, 3), 16), parseInt(b.slice(3, 5), 16), parseInt(b.slice(5, 7), 16)];
-  const c = pa.map((v, i) => Math.round(v + (pb[i] - v) * t));
-  return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('');
-}
-
-// Parse "#rrggbb" to {r,g,b} for building rgba() strings.
-function hexToRgb(hex) {
-  const h = hex.replace('#', '');
-  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
-}
+// 分类色统一走 CSS 变量（亮/暗两套，见 style.css --cat-*），此处存变量名供 rgb()/rgba() 拼接。
+const PIE_CAT = { 现金: '--cat-cash', 理财: '--cat-wealth', 基金: '--cat-fund', 股票: '--cat-equity' };
 
 // Top-level segments (现金/股票/基金/理财), values already in CNY.
 function getTopSegs(d) {
@@ -1534,7 +1561,7 @@ function getTopSegs(d) {
   const cash = (d.cash && d.cash.total) || 0;       // CNY
   const seg = { 现金: cash, 股票: stock, 基金: fund, 理财: wealth };
   return Object.keys(seg)
-    .map((k) => ({ label: k, value: seg[k], color: PIE_BASE[k] }))
+    .map((k) => ({ label: k, value: seg[k], color: `rgb(var(${PIE_CAT[k]}))` }))
     .filter((s) => s.value > 0);
 }
 
@@ -1552,14 +1579,12 @@ function getSubSegs(d, key) {
   }
   // 仅保留正值，并按总金额从小到大排序（饼图扇区与图例均按此顺序）
   items = items.filter((s) => s.value > 0).sort((a, b) => a.value - b.value);
-  const base = PIE_BASE[key];
-  const rgb = hexToRgb(base);
   const n = items.length;
   // 透明度按 10% 递减：占比越大越不透明（最大=1.0），最小不低于 0.4 以保证可见。
-  // 用「同色相 + 透明度阶梯」替代原来的「向白色渐变」——相邻子项因透明度等差而区分度更高。
+  // 用「同色相（分类 CSS 变量）+ 透明度阶梯」区分子项，并自动跟随亮/暗主题。
   return items.map((it, i) => {
     const op = Math.max(0.4, 1 - (n - 1 - i) * 0.1);
-    return { ...it, color: `rgba(${rgb.r},${rgb.g},${rgb.b},${op.toFixed(2)})` };
+    return { ...it, color: `rgba(var(${PIE_CAT[key]}),${op.toFixed(2)})` };
   });
 }
 
@@ -1572,11 +1597,8 @@ function drawPie(segs, total, title, opts) {
   if (total <= 0 || segs.length === 0) { document.querySelector(pieTargetSel).innerHTML = '<p style="color:#8a8f99">暂无数据</p>'; if (pieTargetSel === '#chartBody') openChart(); return; }
   const cx = 110, cy = 110, r = 90;
   let paths;
-  const segClick = opts.onSeg
-    ? ` data-label="${esc(segs[0].label)}" style="cursor:pointer"`
-    : '';
   if (segs.length === 1) {
-    paths = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${segs[0].color}" stroke="#fff" stroke-width="2"${segClick}/>`;
+    paths = `<circle cx="${cx}" cy="${cy}" r="${r}" style="fill:${segs[0].color}${opts.onSeg ? ';cursor:pointer' : ''}" stroke="#fff" stroke-width="2"${opts.onSeg ? ` data-label="${esc(segs[0].label)}"` : ''}/>`;
   } else {
     let angle = -Math.PI / 2;
     paths = '';
@@ -1586,7 +1608,7 @@ function drawPie(segs, total, title, opts) {
       const large = frac > 0.5 ? 1 : 0;
       const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
       const x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2);
-      paths += `<path d="M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z" fill="${s.color}" stroke="#fff" stroke-width="2"${opts.onSeg ? ` data-label="${esc(s.label)}" style="cursor:pointer"` : ''}/>`;
+      paths += `<path d="M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z" style="fill:${s.color}" stroke="#fff" stroke-width="2"${opts.onSeg ? ` data-label="${esc(s.label)}" style="cursor:pointer;fill:${s.color}"` : ''}/>`;
       angle = a2;
     });
   }
@@ -1704,12 +1726,12 @@ function donutSVG(segs, opts) {
   const total = segs.reduce((a, s) => a + (s.v || 0), 0);
   const R = 15.9155, cx = 21, cy = 21, SW = 6;
   let acc = 0, circles = '';
-  circles = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--bg-input)" stroke-width="${SW}"/>`;
+  circles = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" style="stroke:var(--bg-input)" stroke-width="${SW}"/>`;
   if (total > 0) {
     segs.forEach((s) => {
       const len = (s.v || 0) / total * 100;
       if (len <= 0) return;
-      circles += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.c}" stroke-width="${SW}" stroke-dasharray="${len.toFixed(2)} ${(100 - len).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+      circles += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" style="stroke:${s.c}" stroke-width="${SW}" stroke-dasharray="${len.toFixed(2)} ${(100 - len).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
       acc += len;
     });
   }
@@ -1838,7 +1860,8 @@ async function renderRebalance(profileId) {
   const total = data.total || 0;
   if (tEl) tEl.textContent = '总市值 ¥' + fmt(total);
   if (!rows.length) { body.innerHTML = '<p style="color:var(--text-muted)">暂无持仓数据。</p>'; return; }
-  const palette = ['#5b8cff', '#6f9e5e', '#ffce5c', '#9b7bff', '#43e5c0', '#f87171', '#38bdf8', '#7e8aa6'];
+  // 调色板取自资产分类色（--cat-*，自动跟随亮/暗主题），超出 6 类后接主题金/灰循环
+  const palette = ['rgb(var(--cat-equity))', 'rgb(var(--cat-fund))', 'rgb(var(--cat-wealth))', 'rgb(var(--cat-cash))', 'rgb(var(--cat-overseas))', 'rgb(var(--cat-debt))', 'var(--primary)', '#94a3b8'];
   const segs = rows.map((r, i) => ({ name: r.label, v: r.current_value || 0, c: palette[i % palette.length] }));
   const donut = donutSVG(segs, { size: 170, center: '¥' + fmtShort(total), sub: (rows.length) + ' 类资产' });
   const bars = rows.map((r, i) => {
@@ -3658,19 +3681,26 @@ function renderAssetSummary() {
   // 用 base=总资产 统一折算宽度，使各卡堆叠条均满 100%（total=0 时回退避免除零）
   const base = Math.max(total, 1);
   const pct = (v) => (v / base * 100);
-  // 渲染彩色堆叠进度条 + 图例（金额/占比）
-  const stack = (segs) => {
-    const bar = segs.map((s) =>
-      `<span class="seg" style="width:${pct(s.v).toFixed(2)}%;background:${s.c}" title="${esc(s.name)} ${money(s.v)}"></span>`).join('');
-    const leg = segs.map((s) =>
-      `<div class="cl"><span class="dot" style="background:${s.c}"></span>${esc(s.name)}<b>${money(s.v)}</b><span class="cpct">${pct(s.v).toFixed(1)}%</span></div>`).join('');
-    return `<div class="comp-bar">${bar}</div><div class="comp-legend">${leg}</div>`;
+  // 渲染图例（金额/占比），配合圆环使用
+  const legend = (segs) => segs.map((s) =>
+    `<div class="cl"><span class="dot" style="background:${s.c}"></span>${esc(s.name)}<b>${money(s.v)}</b><span class="cpct">${pct(s.v).toFixed(1)}%</span></div>`).join('');
+  // 圆环卡：布局/尺寸与首页总市值卡一致（donut size 150，金额居中，图例在右）
+  const donutCard = (title, segs) => {
+    const sum = segs.reduce((a, s) => a + s.v, 0);
+    const top = segs.slice().sort((a, b) => b.v - a.v)[0];
+    return `<div class="pano-sum">` +
+      `<div class="ps-head">${title}</div>` +
+      `<div class="pano-body">` +
+        `<div class="donut-wrap">${donutSVG(segs, { size: 150, center: '¥' + fmtShort(sum), sub: top && sum > 0 ? top.name + ' ' + (top.v / sum * 100).toFixed(0) + '%' : '' })}</div>` +
+        `<div class="comp-legend">${legend(segs)}</div>` +
+      `</div>` +
+    `</div>`;
   };
   // 卡片一：净资产（净资产+负债=总资产，负债以红色段体现杠杆；圆环布局与首页总市值卡一致，
   // 金额置于圆环中心，图例保留金额/占比）
   const netSegs = [
-    { name: '净资产', v: Math.max(net, 0), c: '#d9a52b' },
-    { name: '负债', v: lTotal, c: '#f87171' },
+    { name: '净资产', v: Math.max(net, 0), c: 'var(--primary)' },
+    { name: '负债', v: lTotal, c: 'rgb(var(--cat-debt))' },
   ];
   const netTop = netSegs.slice().sort((a, b) => b.v - a.v)[0];
   const netLeg = netSegs.map((s) =>
@@ -3683,29 +3713,17 @@ function renderAssetSummary() {
         `<div class="comp-legend">${netLeg}</div>` +
       `</div>` +
     `</div>`;
-  // 卡片二：境内/境外资产（境内+境外=总资产）
-  const cardRegion =
-    `<div class="pano-sum">` +
-      `<div class="ps-head">境内 / 境外资产</div>` +
-      `<div class="pano-body">` +
-        stack([
-          { name: '境内资产', v: dom, c: '#d9a52b' },
-          { name: '境外资产', v: ovs, c: '#38bdf8' },
-        ]) +
-      `</div>` +
-    `</div>`;
-  // 卡片三：资产分布（权益+理财+现金=总资产）
-  const cardDist =
-    `<div class="pano-sum">` +
-      `<div class="ps-head">资产分布</div>` +
-      `<div class="pano-body">` +
-        stack([
-          { name: '权益', v: eqMV, c: '#5b8cff' },
-          { name: '理财', v: wTotal, c: '#d9a52b' },
-          { name: '现金', v: cTotal, c: '#94a3b8' },
-        ]) +
-      `</div>` +
-    `</div>`;
+  // 卡片二：境内/境外资产（境内+境外=总资产；圆环同总市值卡样式）
+  const cardRegion = donutCard('境内 / 境外资产', [
+    { name: '境内资产', v: dom, c: 'var(--primary)' },
+    { name: '境外资产', v: ovs, c: 'rgb(var(--cat-overseas))' },
+  ]);
+  // 卡片三：资产分布（权益+理财+现金=总资产；圆环同总市值卡样式）
+  const cardDist = donutCard('资产分布', [
+    { name: '权益', v: eqMV, c: 'rgb(var(--cat-equity))' },
+    { name: '理财', v: wTotal, c: 'rgb(var(--cat-wealth))' },
+    { name: '现金', v: cTotal, c: 'rgb(var(--cat-cash))' },
+  ]);
   $('#assetSummaryBody').innerHTML = `<div class="pano-summary">${cardNet}${cardRegion}${cardDist}</div>`;
 }
 
@@ -3806,13 +3824,13 @@ function renderSources(body) {
       html += `<div class="collapsible source-group asset-pano collapsed"><div class="collapse-hat asset-pano-head">`;
       html += `<div class="ac-left"><span class="ac-name"><span class="src-ico">${srcTypeIcon(g.t)}</span> ${typeName[g.t]}（${g.items.length}）</span></div>`;
       html += `<div class="ac-right"><div class="ac-stat"><span class="ac-stat-lbl">关联资金</span><b>${money(gTotal)}</b></div><span class="hat-chevron">▾</span></div></div>`;
-      html += `<div class="collapse-body source-group-body"><table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联数</th><th class="num">关联资金(CNY)</th><th>备注</th><th></th></tr></thead><tbody>`;
+      html += `<div class="collapse-body source-group-body"><table class="asset-table"><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联数</th><th class="num">关联资金(CNY)</th><th>备注</th><th>操作</th></tr></thead><tbody>`;
       for (let i = 0; i < g.items.length; i++) {
         const s = g.items[i];
         html += `<tr><td class="num">${i + 1}</td><td><span class="src-ico">${srcTypeIcon(typeOf(s))}</span> ${esc(s.name)}</td><td>${typeName[typeOf(s)]} <span class="src-region ${s.region === 'overseas' ? 'ovs' : 'dom'}">${s.region === 'overseas' ? '境外' : '境内'}</span></td>
           <td class="num" title="被持仓/理财/现金/负债/消费引用的条目数">${s.ref_count || 0}</td>
           <td class="num" title="该来源下持仓市值+理财金额+现金余额（折算 CNY）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
-          <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-source" data-id="${s.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-source" data-id="${s.id}">🗑️ 删除</button></td></tr>`;
+          <td class="row-actions"><button class="btn act-edit" data-act="edit-source" data-id="${s.id}" title="编辑">编辑</button><button class="btn act-del danger" data-act="del-source" data-id="${s.id}" title="删除">删除</button></td></tr>`;
       }
       html += `</tbody></table></div></div>`;
     }
@@ -3932,6 +3950,7 @@ function renderWealthTable(w) {
       <td class="num ${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</td>
       <td class="num ${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
       <td class="num">${p.snap_count || 0}</td>
+      <td style="font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.note || '')}">${esc(p.note || '')}</td>
       <td class="row-actions">
         <button class="btn act-hist" data-act="wealth-hist" data-id="${p.id}" title="每日盈亏">每日盈亏</button>
         <button class="btn act-edit" data-act="edit-wealth" data-id="${p.id}" title="编辑">编辑</button>
@@ -3941,7 +3960,7 @@ function renderWealthTable(w) {
   }).join('');
   // 不包 .table-wrap：与现金等其它资产表格保持一致的左右间距
   return `<table class="asset-table"><thead><tr>
-    <th class="num">#</th><th>名称</th><th>代码</th><th>来源</th><th class="num">总金额</th><th class="num">今日收益</th><th class="num">累计收益</th><th class="num">录入天数</th><th>操作</th>
+    <th class="num">#</th><th>名称</th><th>代码</th><th>来源</th><th class="num">总金额</th><th class="num">今日收益</th><th class="num">累计收益</th><th class="num">录入天数</th><th>备注</th><th>操作</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -3957,7 +3976,7 @@ async function openWealthModal(id) {
   $('#w_code').value = w ? (w.code || '') : '';
   $('#w_source').value = w ? w.source_id : (assetSources[0] ? assetSources[0].id : '');
   $('#w_currency').value = w ? (w.currency || 'rmb') : 'rmb';
-  $('#w_cum').value = w ? (w.cum_pnl != null ? w.cum_pnl : '') : '';
+  $('#w_cum').value = w && w.cum_pnl != null ? round2(w.cum_pnl) : '';
   $('#w_note').value = w ? (w.note || '') : '';
   $('#wealthErr').textContent = '';
   $('#wealthModal').hidden = false;
@@ -4048,6 +4067,9 @@ function cashFlowTypeTag(t) {
     case 'transfer_out': return '<span class="flow-tag out">转出</span>';
     case 'transfer_in': return '<span class="flow-tag in">转入</span>';
     case 'transfer_rollback': return '<span class="flow-tag manual">回滚</span>';
+    case 'wealth_deposit': return '<span class="flow-tag out">理财存入</span>';
+    case 'wealth_redeem': return '<span class="flow-tag in">理财回款</span>';
+    case 'wealth_reverse': return '<span class="flow-tag manual">理财冲正</span>';
     default: return esc(t || '-');
   }
 }
@@ -4101,33 +4123,85 @@ $('#cashTransferForm').onsubmit = async (e) => {
   }
 };
 
+// 现金弹框双模式：adjust=已有账户 ± 资金（存入/取出），new=新增账户资料；编辑现金固定走 new 模式
+let cashModalMode = 'adjust';
+function setCashMode(m) {
+  cashModalMode = m;
+  document.querySelectorAll('#cashModeRow .cash-mode').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+  $('#cashAdjustFields').hidden = m !== 'adjust';
+  $('#cashNewFields').hidden = m !== 'new';
+}
+function updateCashAccInfo() {
+  const info = $('#c_acc_info');
+  if (!info) return;
+  const acc = ((assetData.cash || {}).items || []).find((x) => Number(x.id) === Number($('#c_cash_acc').value || 0));
+  info.textContent = acc ? `当前余额 ${moneyCur(acc.amount || 0, acc.currency)}，正数=存入，负数=取出` : '';
+}
+
 async function openCashModal(id) {
   await loadSourcesCache();
   const sel = $('#c_source');
   sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加来源）</option>';
   let c = null;
   if (id) { const r = await api('/api/asset/cash'); if (r.ok) { const d = await r.json(); c = (d.cash || []).find((x) => x.id === id); } }
-  $('#cashTitle').textContent = c ? '编辑现金' : '添加现金';
-  $('#c_id').value = c ? c.id : '';
-  $('#c_name').value = c ? c.name : '';
-  $('#c_currency').value = c ? (c.currency || 'rmb') : 'rmb';
-  $('#c_amount').value = c ? c.amount : '';
-  $('#c_source').value = c ? c.source_id : (assetSources[0] ? assetSources[0].id : '');
-  $('#c_note').value = c ? (c.note || '') : '';
-  // 默认现金账户标记：勾选保存后，该来源下其它账户自动取消默认（唯一性由后端保证）
-  $('#c_is_default').checked = c ? !!c.is_default : false;
   $('#cashErr').textContent = '';
+  if (id) {
+    // 编辑现金：直接进「新增账户」模式改资料，不显示模式切换
+    $('#cashModeRow').hidden = true;
+    setCashMode('new');
+    $('#cashTitle').textContent = '编辑现金';
+    $('#c_id').value = c ? c.id : '';
+    $('#c_name').value = c ? c.name : '';
+    $('#c_currency').value = c ? (c.currency || 'rmb') : 'rmb';
+    $('#c_amount').value = c ? c.amount : '';
+    $('#c_source').value = c ? c.source_id : (assetSources[0] ? assetSources[0].id : '');
+    $('#c_note').value = c ? (c.note || '') : '';
+    // 默认现金账户标记：勾选保存后，该来源下其它账户自动取消默认（唯一性由后端保证）
+    $('#c_is_default').checked = c ? !!c.is_default : false;
+  } else {
+    $('#cashModeRow').hidden = false;
+    setCashMode('adjust');
+    $('#cashTitle').textContent = '添加现金';
+    $('#c_id').value = '';
+    // ± 资金模式：来源下拉切换为现金账户选择下拉
+    const list = ((assetData.cash || {}).items || []).slice().sort((a, b) => toRmb(b, b.amount || 0) - toRmb(a, a.amount || 0));
+    $('#c_cash_acc').innerHTML = list.map((x) => {
+      const star = x.is_default ? '★ ' : '';
+      const src = x.source_name ? x.source_name + '·' : '';
+      return `<option value="${x.id}">${star}${esc(src)}${esc(x.name)}（${curSymbolJS(x.currency)}${fmt(x.amount || 0)}）</option>`;
+    }).join('') || '<option value="">（暂无现金账户，请切换到「新增账户」）</option>';
+    $('#c_delta').value = '';
+    $('#c_note_adj').value = '';
+    updateCashAccInfo();
+  }
   $('#cashModal').hidden = false;
 }
+document.querySelectorAll('#cashModeRow .cash-mode').forEach((b) => b.onclick = () => setCashMode(b.dataset.mode));
+$('#c_cash_acc').onchange = updateCashAccInfo;
 $('#cashForm').onsubmit = async (e) => {
   e.preventDefault();
   const id = $('#c_id').value ? Number($('#c_id').value) : 0;
+  // 已有账户 ± 资金模式：存入/取出直接落余额并写 manual 流水
+  if (!id && cashModalMode === 'adjust') {
+    const cashId = Number($('#c_cash_acc').value || 0);
+    const delta = Number($('#c_delta').value || 0);
+    if (!cashId) { $('#cashErr').textContent = '请选择现金账户'; return; }
+    if (!delta) { $('#cashErr').textContent = '请输入 ± 资金金额（存入填正数，取出填负数，不能为 0）'; return; }
+    try {
+      const r = await api('/api/asset/cash/adjust', { method: 'POST', body: JSON.stringify({ cash_id: cashId, delta, note: $('#c_note_adj').value.trim() }) });
+      if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
+      $('#cashModal').hidden = true;
+      await loadAsset();
+      toast(delta > 0 ? '已存入现金' : '已取出现金', 'ok');
+    } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
+    return;
+  }
   const payload = {
     name: $('#c_name').value.trim(), currency: $('#c_currency').value,
     amount: Number($('#c_amount').value || 0), source_id: Number($('#c_source').value) || 0, note: $('#c_note').value.trim(),
   };
   if (!payload.name) { $('#cashErr').textContent = '名称不能为空'; return; }
-  if (!payload.amount) { $('#cashErr').textContent = '余额不能为空'; return; }
+  if (!payload.amount && !id) { $('#cashErr').textContent = '余额不能为空'; return; }
   try {
     const r = id ? await api('/api/asset/cash/' + id, { method: 'PUT', body: JSON.stringify(payload) })
                  : await api('/api/asset/cash', { method: 'POST', body: JSON.stringify(payload) });
@@ -4160,12 +4234,12 @@ async function openWealthHistory(id) {
     let html = `<div class="wh-actions"><button type="button" class="btn" id="whAuditBtn">审计记录</button></div>`;
     if (!rows.length) { html += '<p class="empty">暂无录入记录。</p>'; }
     else {
-      html += '<table class="asset-table"><thead><tr><th>日期</th><th class="num">持仓金额</th><th class="num">净存入</th><th class="num">当日盈亏</th><th class="num">累计盈亏</th><th></th></tr></thead><tbody>';
+      html += '<table class="asset-table"><thead><tr><th>日期</th><th class="num">持仓金额</th><th class="num">净存入</th><th class="num">当日盈亏</th><th class="num">累计盈亏</th><th>操作</th></tr></thead><tbody>';
       for (const r2 of rows) {
         const p = r2.pnl || 0, cum = r2.cum_pnl || 0;
         html += `<tr><td>${r2.date}</td><td class="num">${money(r2.amount || 0)}</td><td class="num">${money(r2.cashflow || 0)}</td>
           <td class="num ${pnlCls(p)}">${pnlTxt(p)}</td><td class="num ${pnlCls(cum)}">${pnlTxt(cum)}</td>
-          <td class="num asset-row-actions"><button class="btn btn-icon danger" data-del-date="${r2.date}">🗑️ 删除</button></td></tr>`;
+          <td class="row-actions"><button class="btn act-del danger" data-del-date="${r2.date}" title="删除当日快照">删除</button></td></tr>`;
       }
       html += '</tbody></table>';
     }
@@ -4269,13 +4343,13 @@ async function loadWealthAudit() {
     const rows = d.rows || [];
     if (!rows.length) { body.innerHTML = '<p class="empty">暂无变更记录。</p>'; return; }
     const label = { upsert: '修改', delete: '删除', undo: '撤销' };
-    let html = '<table class="asset-table"><thead><tr><th>时间</th><th>操作</th><th>日期</th><th class="num">旧值(金额/净存)</th><th class="num">新值(金额/净存)</th><th></th></tr></thead><tbody>';
+    let html = '<table class="asset-table"><thead><tr><th>时间</th><th>操作</th><th>日期</th><th class="num">旧值(金额/净存)</th><th class="num">新值(金额/净存)</th><th>操作</th></tr></thead><tbody>';
     for (const a of rows) {
       const oldV = a.old_exists ? `${money(a.old_amount)} / ${money(a.old_cashflow)}` : '（无）';
       const newV = a.action === 'delete' ? '—' : `${money(a.new_amount)} / ${money(a.new_cashflow)}`;
       html += `<tr><td>${a.created_at}</td><td>${label[a.action] || a.action}</td><td>${a.date}</td>
         <td class="num">${oldV}</td><td class="num">${newV}</td>
-        <td class="num asset-row-actions">${a.action === 'undo' ? '' : `<button class="btn btn-icon" data-undo="${a.id}">↩ 撤销</button>`}</td></tr>`;
+        <td class="row-actions">${a.action === 'undo' ? '' : `<button class="btn act-edit" data-undo="${a.id}" title="撤销该操作并冲正现金账户">撤销</button>`}</td></tr>`;
     }
     html += '</tbody></table>';
     body.innerHTML = html;
@@ -4297,12 +4371,12 @@ function renderLiability(body) {
   let html = `<div class="asset-section-head"><h3>负债（${list.length}）</h3><button class="btn asset-add" id="addLbBtn">＋ 添加负债</button></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">暂无负债记录。</p><button class="btn asset-add-inline" data-empty-add="liability" type="button">➕ 添加负债</button></div>`;
   else {
-    html += `<table class="asset-table"><thead><tr><th>名称</th><th>类型</th><th>来源</th><th class="num">欠款</th><th class="num">年利率</th><th class="num">月供</th><th>备注</th><th></th></tr></thead><tbody>`;
+    html += `<table class="asset-table"><thead><tr><th>名称</th><th>类型</th><th>来源</th><th class="num">欠款</th><th class="num">年利率</th><th class="num">月供</th><th>备注</th><th>操作</th></tr></thead><tbody>`;
     for (const l of list) {
       html += `<tr><td>${esc(l.name)}</td><td>${esc(l.type || '')}</td><td>${esc(l.source_name || '')}</td>
         <td class="num">${money(l.amount || 0)}</td><td class="num">${l.rate ? l.rate + '%' : ''}</td><td class="num">${money(l.monthly_payment || 0)}</td>
         <td>${esc(l.note || '')}</td>
-        <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-lb" data-id="${l.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-lb" data-id="${l.id}">🗑️ 删除</button></td></tr>`;
+        <td class="row-actions"><button class="btn act-edit" data-act="edit-lb" data-id="${l.id}" title="编辑">编辑</button><button class="btn act-del danger" data-act="del-lb" data-id="${l.id}" title="删除">删除</button></td></tr>`;
     }
     html += `</tbody></table>`;
   }
@@ -4641,11 +4715,26 @@ $('#scrTest').onclick = async () => {
 
 async function openSnapModal() {
   await loadAsset();
+  await loadCashAccounts();
   // 与理财卡片列表保持相同顺序（按原币持仓金额从大到小）
   const raw = (assetData.wealth || {}).products || [];
   const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount));
   if (!w.length) { toast('请先在「理财」里添加一个产品', 'err'); return; }
   const today = ymd(new Date());
+  const cashList = cashAccountsCache || [];
+  // 资金账户下拉选项（净存入为正时选择扣款账户）：默认选中该理财同来源的 ★ 默认账户
+  const cashOpts = (srcId) => {
+    const def = cashList.find((c) => c.is_default && Number(c.source_id) === Number(srcId))
+      || cashList.find((c) => Number(c.source_id) === Number(srcId));
+    const opts = cashList.map((c) => {
+      const star = c.is_default ? '★ ' : '';
+      const cur = c.currency === 'usd' ? '＄' : (c.currency === 'hkd' ? 'HK＄' : '¥');
+      const src = c.source_name ? c.source_name + '·' : '';
+      const sel = def && String(c.id) === String(def.id) ? ' selected' : '';
+      return `<option value="${c.id}"${sel}>${star}${esc(src)}${esc(c.name)}（${cur}${fmt(c.amount || 0)}）</option>`;
+    }).join('');
+    return `<option value="0">（自动：该来源默认账户 ★）</option>` + opts;
+  };
   const body = $('#snapBody');
   body.innerHTML = w.map((p) => `
     <div class="snap-row">
@@ -4653,18 +4742,37 @@ async function openSnapModal() {
       <div class="sr-fields">
         <div class="sr-field">
           <label class="sr-label" for="amt-${p.id}">① 今日持仓金额 ${curSymbolJS(p.currency)}</label>
-          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" value="${round2(p.amount || 0)}" placeholder="如 105000（今天收盘后的总市值）">
-          <div class="sr-hint">该理财今天的总持仓金额（本金+收益）。默认带出上次录入值，留空则不更新此项。</div>
+          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2);this.dataset.touched=1" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" data-base="${round2(p.amount || 0)}" value="${round2(p.amount || 0)}" placeholder="今天收盘后的总市值">
         </div>
         <div class="sr-field">
           <label class="sr-label" for="cf-${p.id}">② 当日净存入 ${curSymbolJS(p.currency)}</label>
-          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0" placeholder="转入为正，转出为负，无变动填 0">
-          <div class="sr-hint">今天新存入(+)或取出(−)的本金。用于剔除本金变动：当日盈亏 = 今日金额 − 昨日金额 − 当日净存入。</div>
+          <input type="number" step="0.01" oninput="clampDecimals(this,2);snapCfSync(this)" class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0" placeholder="转入为正，取出为负" title="持仓金额未手动改过时，会自动把净存入加到今日持仓上">
+        </div>
+        <div class="sr-cash-slot">
+          <select class="sr-cash" data-id="${p.id}" title="资金账户：转入时从此账户扣款，取出时回款转入此账户">${cashOpts(p.source_id)}</select>
         </div>
       </div>
     </div>`).join('');
   $('#snapModal').dataset.date = today;
   $('#snapModal').hidden = false;
+}
+
+// 净存入联动持仓金额：持仓金额未手动改过时，今日持仓自动 = 上次值 + 净存入，
+// 避免「存款未计入持仓 → 当日盈亏把存款全额算成亏损」；持仓一旦手动修改即停止联动。
+function snapCfSync(input) {
+  const row = input.closest('.snap-row');
+  const amt = row && row.querySelector('.sr-amt');
+  if (amt && !amt.dataset.touched) {
+    amt.value = round2(Number(amt.dataset.base || 0) + Number(input.value || 0));
+  }
+  syncSnapCash(input);
+}
+// 净存入输入联动：下拉常显，按正/负切换提示——正（转入理财）= 从此账户扣款；负（取出理财）= 回款转入此账户
+function syncSnapCash(input) {
+  const sel = input.closest('.snap-row') && input.closest('.snap-row').querySelector('.sr-cash');
+  if (!sel) return;
+  const v = Number(input.value || 0);
+  sel.title = v > 0 ? '转入理财：资金从该账户扣出' : (v < 0 ? '取出理财：回款转入该账户' : '资金账户：净存入≠0 时联动扣款/入账');
 }
 $('#snapSave').onclick = async () => {
   const date = $('#snapModal').dataset.date || ymd(new Date());
@@ -4674,13 +4782,34 @@ $('#snapSave').onclick = async () => {
     const amtInput = row.querySelector('.sr-amt');
     if (amtInput.value === '') return;
     const id = Number(amtInput.dataset.id);
-    const amount = Number(amtInput.value);
+    let amount = Number(amtInput.value);
     const cashflow = Number(row.querySelector('.sr-cf').value || 0);
     const old = ((assetData.wealth || {}).products || []).find((p) => p.id === id);
     const oldAmt = old ? Number(old.amount || 0) : 0;
-    items.push({ wealth_id: id, amount, cashflow });
+    // 全部取出识别：净存入为负且覆盖全部持仓、最终持仓归零（自动联动或手填均适用）
+    // → 视为全部赎回，今日持仓按 0 落库（确认弹窗中可核对）
+    let autoZero = false;
+    if (cashflow < 0 && amount <= 0.005 && cashflow <= -(oldAmt - 0.005)) {
+      amount = 0;
+      autoZero = true;
+    }
+    // 资金账户下拉常显：正（转入）= 扣款账户，负（取出）= 入账账户；value=0 时后端回落同来源默认账户
+    const cashSel = row.querySelector('.sr-cash');
+    const cashAccountID = Math.abs(cashflow) > 0.005 && cashSel ? Number(cashSel.value || 0) : 0;
+    let cashName = '';
+    if (Math.abs(cashflow) > 0.005) {
+      let accName = '';
+      if (cashAccountID) {
+        const acc = (cashAccountsCache || []).find((x) => Number(x.id) === cashAccountID);
+        if (acc) accName = (acc.source_name ? acc.source_name + '·' : '') + acc.name;
+      }
+      if (!accName) accName = '同来源默认账户 ★';
+      cashName = (cashflow > 0 ? '扣自：' : '入账：') + accName;
+      if (autoZero) cashName += '；全部取出，持仓归零';
+    }
+    items.push({ wealth_id: id, amount, cashflow, cash_account_id: cashAccountID });
     if (Math.abs(amount - oldAmt) > 0.005 || Math.abs(cashflow) > 0.005) {
-      diff.push({ name: old ? old.name : ('#' + id), currency: old ? old.currency : 'rmb', oldAmt, amount, cashflow });
+      diff.push({ name: old ? old.name : ('#' + id), currency: old ? old.currency : 'rmb', oldAmt, amount, cashflow, cashName });
     }
   });
   if (!items.length) { toast('没有可保存的数据', 'err'); return; }
@@ -4692,9 +4821,9 @@ let pendingSnapSave = null;
 function renderSnapConfirm(date, diff, items) {
   pendingSnapSave = { date, items };
   const body = $('#snapConfirmBody');
-  body.innerHTML = `<p class="snap-hint">请核对以下 ${diff.length} 项「旧值 → 新值」，确认无误后保存。保存后若录错，可到该理财「每日盈亏 → 审计记录」里一键撤销或删除。</p>
+  body.innerHTML = `<p class="snap-hint">请核对以下 ${diff.length} 项「旧值 → 新值」，确认无误后保存。净存入会同步联动现金账户（存入扣款 / 取出入账）；保存后若录错，可到该理财「每日盈亏 → 审计记录」里一键撤销或删除。</p>
     <table class="asset-table"><thead><tr><th>理财</th><th class="num">旧持仓</th><th></th><th class="num">新持仓</th><th class="num">当日净存入</th></tr></thead><tbody>
-    ${diff.map((d) => `<tr><td>${esc(d.name)}</td><td class="num">${moneyCur(d.oldAmt, d.currency)}</td><td class="num">→</td><td class="num">${moneyCur(d.amount, d.currency)}</td><td class="num ${d.cashflow >= 0 ? 'up' : 'down'}">${d.cashflow >= 0 ? '+' : ''}${moneyCur(d.cashflow, d.currency)}</td></tr>`).join('')}
+    ${diff.map((d) => `<tr><td>${esc(d.name)}</td><td class="num">${moneyCur(d.oldAmt, d.currency)}</td><td class="num">→</td><td class="num">${moneyCur(d.amount, d.currency)}</td><td class="num ${d.cashflow >= 0 ? 'up' : 'down'}">${d.cashflow >= 0 ? '+' : ''}${moneyCur(d.cashflow, d.currency)}${d.cashName ? `<div class="snap-cash-note">${esc(d.cashName)}</div>` : ''}</td></tr>`).join('')}
     </tbody></table>`;
   $('#snapConfirmModal').hidden = false;
 }
@@ -5489,7 +5618,7 @@ function dsCurve(ds, T) {
   const svg = '<svg viewBox="0 0 ' + SW + ' ' + SH + '" class="ret-curve" preserveAspectRatio="none">'
     + yGrid + xGrid
     + '<line x1="' + px0 + '" y1="' + zy + '" x2="' + px1 + '" y2="' + zy + '" stroke="rgba(255,255,255,.28)" stroke-width="1" vector-effect="non-scaling-stroke"/>'
-    + '<polyline points="' + pts + '" fill="none" stroke="#d9a52b" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>'
+    + '<polyline points="' + pts + '" fill="none" style="stroke:var(--primary)" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>'
     + '<rect class="curve-hit" x="' + px0 + '" y="' + py0 + '" width="' + (px1 - px0) + '" height="' + (py1 - py0) + '" fill="transparent" data-pts="' + ptsJSON + '" data-n="' + meta.length + '" onmousemove="__sigHover(event,this)" onmouseleave="__sigLeave(this)"/></svg>';
   const axis = '<div class="curve-axis">' + yLabels + xLabels + '</div>';
   return '<div class="daily-sig-curve"><div class="curve-box">' + svg + axis + '<div class="curve-tip" hidden></div></div><div class="curve-cap">累计策略收益曲线（持有 ' + T + ' 日·按信号方向等权累加·悬停查看每日明细）</div></div>';

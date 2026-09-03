@@ -34,6 +34,15 @@
   --up: #f87171;
   --down: #4ade80;
 
+  /* 资产分类色（RGB 三元组，用 rgb(var(--cat-x)) / rgba(var(--cat-x),.a) 引用；
+     圆环/堆叠条/饼图/图例/徽标全站统一，亮暗两套在 [data-theme="light"] 覆盖） */
+  --cat-fund: 99, 157, 255;     /* 基金：柔和蓝（夜间 #639DFF）—— 理性、资本市场 */
+  --cat-debt: 242, 119, 107;    /* 负债：珊瑚红（夜间 #F2776B）—— 风险警示，非正红 */
+  --cat-overseas: 176, 132, 240;/* 境外资产：紫（夜间 #B084F0）—— 异域、跨境 */
+  --cat-equity: 255, 171, 62;   /* 权益/股票：琥珀橙（夜间 #FFAB3E）—— 波动、活力 */
+  --cat-wealth: 54, 211, 89;    /* 理财：薄荷绿（夜间 #36D359）—— 稳健、固收 */
+  --cat-cash: 76, 210, 207;     /* 现金：青蓝（夜间 #4CD2CF）—— 流动性、清爽 */
+
   /* 按钮变量（沿用，但适配深色） */
   --btn-primary: var(--primary);
   --btn-primary-hover: var(--primary-hover);
@@ -111,6 +120,14 @@
   --warning: #d97706;
   --warning-soft: rgba(217, 119, 6, .1);
 
+  /* 资产分类色（日间主色，进度条/圆环/饼图在浅底下的色阶） */
+  --cat-fund: 64, 128, 255;     /* #4080FF 柔和蓝 */
+  --cat-debt: 230, 92, 79;      /* #E65C4F 珊瑚红 */
+  --cat-overseas: 146, 84, 222; /* #9254DE 紫 */
+  --cat-equity: 247, 144, 9;    /* #F79009 琥珀橙 */
+  --cat-wealth: 0, 180, 42;     /* #00B42A 薄荷绿 */
+  --cat-cash: 15, 198, 194;     /* #0FC6C2 青蓝 */
+
   --btn-ghost: rgba(15, 23, 42, .05);
   --btn-ghost-hover: rgba(15, 23, 42, .09);
   --btn-ghost-active: rgba(15, 23, 42, .13);
@@ -123,19 +140,16 @@
 }
 
 /* ===== 主题色预设（后期可调）=====
-   用法：<html data-accent="gold|green|blue|purple|rose">，默认 gold（土豪金，见 :root 默认值）。
+   用法：<html data-accent="gold|green|blue">，默认 gold（土豪金，见 :root 默认值）；
+   自定义主题（铅笔）由 JS 以内联变量覆盖 --primary/--tint，不依赖预设块。
    新增一种主题色：只需追加一对规则（暗色 + 日间），给出 --tint(RGB 三元组) 与
    --primary / --primary-hover / --primary-active 四个变量，其余派生色（边框、hover 背景、
    soft/glow、图标 currentColor）自动跟随。切换入口见「用户面板 → 主题色」。 */
 :root:not([data-theme="light"])[data-accent="green"]  { --tint: 111, 158, 94;  --primary: #6f9e5e; --primary-hover: #84b373; --primary-active: #639253; }
 :root:not([data-theme="light"])[data-accent="blue"]   { --tint: 105, 155, 255; --primary: #699bff; --primary-hover: #85b0ff; --primary-active: #4f7ee6; }
-:root:not([data-theme="light"])[data-accent="purple"] { --tint: 166, 128, 245; --primary: #a680f5; --primary-hover: #b89af8; --primary-active: #9a74ee; }
-:root:not([data-theme="light"])[data-accent="rose"]   { --tint: 219, 90, 110;  --primary: #db5a6e; --primary-hover: #e87a8b; --primary-active: #d05f70; }
 
 :root[data-theme="light"][data-accent="green"]  { --tint: 74, 117, 60;   --primary: #4a753c; --primary-hover: #3f6433; --primary-active: #35552b; }
 :root[data-theme="light"][data-accent="blue"]   { --tint: 26, 86, 219;   --primary: #1a56db; --primary-hover: #1e63f5; --primary-active: #1648b8; }
-:root[data-theme="light"][data-accent="purple"] { --tint: 109, 40, 217;  --primary: #6d28d9; --primary-hover: #7c3aed; --primary-active: #5b21b6; }
-:root[data-theme="light"][data-accent="rose"]   { --tint: 190, 18, 60;   --primary: #be123c; --primary-hover: #d51a47; --primary-active: #9f0f2e; }
 
 /* 金色高光（金元宝等插画元素的亮部/暗部）：跟随主题的两级派生色 */
 :root { --accent-hi: #f2d27a; --accent-lo: var(--primary); }
@@ -540,14 +554,14 @@
 .ov-net-sub { color: var(--text-muted); font-size: 11px; min-width: 52px; }
 .ov-net-row b { font-size: 14px; font-weight: 600; }
 .ov-dom { color: var(--primary); }
-.ov-ovs { color: #38bdf8; }
+.ov-ovs { color: rgb(var(--cat-overseas)); }
 .ov-net-total { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 4px; }
 .ov-net-total .ov-net-sub { font-weight: 600; color: var(--text); }
 .ov-net-total .ov-net { font-size: 17px; }
 /* 颜色类提升为全局（供资产全景小卡片复用，不再依赖 .asset-overview-card 作用域） */
 .ov-dom { color: var(--primary); }
-.ov-ovs { color: #38bdf8; }
-.ov-liab { color: var(--danger); }
+.ov-ovs { color: rgb(var(--cat-overseas)); }
+.ov-liab { color: rgb(var(--cat-debt)); }
 /* 资产全景小卡片标题（资产全景 · 用户名） */
 .asset-ov-head { font-size: 13px; color: var(--text-muted); margin: 4px 2px 2px; }
 .asset-ov-head b { color: var(--primary); font-weight: 700; }
@@ -569,7 +583,7 @@
   box-shadow: 0 6px 24px rgba(27, 40, 72, .08);
   transition: transform .18s ease, box-shadow .18s ease;
   /* 不带圆环卡片：除标题外内容整体上下居中。grid 双行：标题锁定顶部 0，
-     其余子项（donut-wrap/ps-big/ps-rows/comp-bar/comp-legend）由 .pano-body 居中 */
+     其余子项（donut-wrap/ps-big/ps-rows/comp-legend）由 .pano-body 居中 */
   display: grid;
   grid-template-rows: auto 1fr;
 }
@@ -586,9 +600,8 @@
 .pano-sum .ps-row .pr-lbl { color: var(--text-muted); }
 .pano-sum .ps-row .pr-val { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 
-/* 组合/包含关系：彩色堆叠进度条（如 总资产=权益+理财+现金、净资产+负债=总资产） */
-.comp-bar { display: flex; height: 12px; border-radius: 8px; overflow: hidden; background: var(--border); margin: 12px 0 10px; border: 1px solid var(--border); }
-.comp-bar .seg { height: 100%; min-width: 0; }
+/* 组合/包含关系卡片：圆环右侧图例（金额/占比），flex:1 占据圆环旁剩余宽度 */
+.comp-legend { flex: 1; min-width: 0; }
 .comp-legend { display: flex; flex-direction: column; gap: 5px; }
 .comp-legend .cl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
 .comp-legend .cl .dot { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
@@ -597,7 +610,7 @@
 /* 来源列表行内区域标记（境内/境外） */
 .src-region { font-size: 10px; padding: 1px 5px; border-radius: 6px; margin-left: 4px; vertical-align: middle; white-space: nowrap; }
 .src-region.dom { background: rgba(var(--tint), .18); color: var(--primary); }
-.src-region.ovs { background: rgba(56,189,248,.18); color: #38bdf8; }
+.src-region.ovs { background: rgba(var(--cat-overseas),.18); color: rgb(var(--cat-overseas)); }
 .source-group.holdings-group {
   margin-bottom: 12px;
   border: 1px solid var(--border);
@@ -905,6 +918,24 @@ h2 > svg, .sheet-title > svg, .page-head__title > svg { color: var(--primary); }
   flex-wrap: wrap;
 }
 .c-default-row input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--primary); }
+/* 现金弹框双模式切换：已有账户 ± 资金 / 新增账户 */
+.cash-mode-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.cash-mode {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--btn-radius);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.cash-mode.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-weight: 600;
+}
 /* 加减仓「交易记录」标签：加仓取主题色、减仓中性灰。
    注意：唯一定义放在这里 —— index.html 的 <style> 内联块加载在 style.css 之后，
    同优先级规则会反向覆盖，因此不要把 .adj-tag 再写进 index.html。 */
@@ -1206,7 +1237,8 @@ header h1 {
 }
 /* 标题栏为 sticky，下方主视图内容需留出与标题栏的间距 */
 #holdingsView { padding-top: 8px; }
-#assetView { padding-top: 14px; }
+/* 与首页（holdingsView 8px + market-bar 上下 margin 8px）保持一致：视图 8px + page-head 上下 8px */
+#assetView { padding-top: 8px; }
 .actions {
   display: flex;
   align-items: center;
@@ -2404,10 +2436,11 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 [data-theme="light"] .snap-row { background: rgba(15, 23, 42, .02); }
 .snap-row .sr-name { font-size: 13px; margin-bottom: 8px; color: var(--text); }
 .snap-row .sr-name small { color: var(--text-muted); display: block; }
-.sr-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.sr-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(210px, 280px); gap: 14px; align-items: end; }
 .sr-field { display: flex; flex-direction: column; min-width: 0; }
 .sr-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
-.sr-field input {
+.sr-field input,
+.sr-field select {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -2416,12 +2449,26 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   background: var(--bg-input);
   color: var(--text);
 }
-.sr-field input:focus {
+.sr-field input:focus,
+.sr-field select:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
-.sr-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
+/* 净存入资金账户下拉独立列：持仓/净存入输入框等宽，多余宽度给下拉（正=扣款账户/负=入账账户） */
+.sr-cash-slot { display: flex; min-width: 0; }
+.sr-cash-slot .sr-cash {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--btn-radius);
+  font-size: 13px;
+  background: var(--bg-input);
+  color: var(--text);
+}
+.sr-cash-slot .sr-cash:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+/* 快照确认弹窗：净存入单元格内的资金账户去向附注 */
+.snap-cash-note { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-top: 2px; white-space: nowrap; }
 .snap-hint { font-size: 12px; color: var(--text-muted); margin: 0 0 10px; }
 .wh-actions { margin-bottom: 10px; }
 #whAuditPanel { margin-top: 14px; border-top: var(--card-border); padding-top: 12px; }
@@ -2559,6 +2606,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .tool-card.merge-card { grid-column: 1 / -1; background: var(--bg-glass); border-style: dashed; }
 .tool-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin: 0 0 12px; }
 .tool-fx { color: var(--primary); }
+/* 工具弹框：句尾的汇率/保存时间提示独占一行（与说明文字分行） */
+#eqFxHint, #fxRateHint, #scrMeta { display: block; margin-top: 4px; }
 .tool-rate { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 12px; padding: 0 28px; }
 .tool-rate input {
   width: 200px;
@@ -2668,8 +2717,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .scr-code { width: 100%; box-sizing: border-box; font-family: Consolas, 'Courier New', monospace; font-size: 12.5px; line-height: 1.55; padding: 10px 12px; border: var(--card-border); border-radius: 8px; background: var(--bg-card); color: var(--text); resize: vertical; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; tab-size: 2; }
 .scr-code:focus { outline: none; border-color: var(--btn-primary); }
 .scr-actions { flex-wrap: wrap; align-items: center; margin-top: 10px; }
-.scr-enabled { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text); cursor: pointer; user-select: none; }
-.scr-enabled input { cursor: pointer; }
+.scr-enabled { display: inline-flex; align-items: center; align-self: center; gap: 6px; font-size: 13px; line-height: 1; white-space: nowrap; color: var(--text); cursor: pointer; user-select: none; }
+/* 覆盖 .modal-card input 的 width:100%+padding：复选框收窄为方框，与「启用自定义脚本」文字上下对齐同行 */
+.scr-enabled input { cursor: pointer; width: 15px; height: 15px; padding: 0; margin: 0; flex: 0 0 auto; align-self: center; accent-color: var(--primary); }
 .scr-select { padding: 4px 8px; border: var(--card-border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: 13px; max-width: 160px; }
 .scr-test-result { margin-top: 10px; }
 .scr-test-head { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
@@ -2706,6 +2756,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   /* 美元计算器「当前汇率」输入框宽度自适应容器 */
   .tool-rate { display: flex; flex-direction: column; }
   .tool-rate input { width: 100%; }
+  /* 理财快照弹框：窄屏三列改单列（下拉自动独占一行） */
+  .sr-fields { grid-template-columns: 1fr; }
   /* 资产全景合并卡片：手机端占满一行 */
   .asset-summary .card-merged { flex: 1 1 100%; }
   /* 盈亏工具 / 通知渠道卡片：手机端收窄左右间距，避免贴边且输入框过窄 */
@@ -3438,7 +3490,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
 
 /* 二级页统一页头：标题 + 操作区（无返回箭头） */
-.page-head { display: flex; align-items: center; gap: 10px; padding: 8px 20px 4px; }
+.page-head { display: flex; align-items: center; gap: 10px; padding: 8px 20px; }
 .page-head__title { font-size: 18px; font-weight: 700; margin: 0; }
 .page-head__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
@@ -3600,8 +3652,16 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .accent-swatch[data-accent="gold"]   { background: #d9a52b; }
 .accent-swatch[data-accent="green"]  { background: #6f9e5e; }
 .accent-swatch[data-accent="blue"]   { background: #3370ff; }
-.accent-swatch[data-accent="purple"] { background: #7c3aed; }
-.accent-swatch[data-accent="rose"]   { background: #db5a6e; }
+/* 铅笔按钮：自定义主题色入口（虚线框 + 铅笔图标，点击弹出系统取色器） */
+.accent-swatch.accent-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  background: var(--bg-input);
+  border: 1px dashed var(--border);
+}
 .accent-swatch.active { box-shadow: 0 0 0 2px var(--bg-card-solid), 0 0 0 4px currentColor; }
 .user-add input {
   flex: 1;
