@@ -1558,7 +1558,15 @@ func EnsureDefaultCash(userID, sourceID int64, sourceName string) (int64, error)
 		return 0, err
 	}
 	if len(existing) > 0 {
+		// 优先挑一个「正常」账户当默认：跳过旧版自动生成的「XX 减仓回款」条目
+		// （这类条目是历史产物，不该顶着 ★ 当来源主账户），实在没有再退回第一条。
 		target := existing[0]
+		for _, c := range existing {
+			if !strings.Contains(c.Name, "减仓回款") {
+				target = c
+				break
+			}
+		}
 		if err := SetDefaultCash(userID, sourceID, target.ID); err != nil {
 			return 0, err
 		}
