@@ -751,7 +751,7 @@ function renderSummary(hs) {
   const pctMV = (v) => (v / baseMV * 100);
   const mvSegs = [
     { name: '股票', v: stockMV, c: '#5b8cff' },
-    { name: '基金', v: fundMV, c: '#6f9e5e' },
+    { name: '基金', v: fundMV, c: '#d9a52b' },
   ];
   if (otherMV > 0) mvSegs.push({ name: '其他', v: otherMV, c: '#94a3b8' });
   const mvBar = mvSegs.map((s) => `<span class="seg" style="width:${pctMV(s.v).toFixed(2)}%;background:${s.c}" title="${esc(s.name)} ${money(s.v)}"></span>`).join('');
@@ -3665,7 +3665,7 @@ function renderAssetSummary() {
   // 卡片一：净资产（净资产+负债=总资产，负债以红色段体现杠杆；圆环布局与首页总市值卡一致，
   // 金额置于圆环中心，图例保留金额/占比）
   const netSegs = [
-    { name: '净资产', v: Math.max(net, 0), c: '#6f9e5e' },
+    { name: '净资产', v: Math.max(net, 0), c: '#d9a52b' },
     { name: '负债', v: lTotal, c: '#f87171' },
   ];
   const netTop = netSegs.slice().sort((a, b) => b.v - a.v)[0];
@@ -3682,7 +3682,7 @@ function renderAssetSummary() {
     `<div class="pano-sum">` +
       `<div class="ps-head">境内 / 境外资产</div>` +
       stack([
-        { name: '境内资产', v: dom, c: '#6f9e5e' },
+        { name: '境内资产', v: dom, c: '#d9a52b' },
         { name: '境外资产', v: ovs, c: '#38bdf8' },
       ]) +
     `</div>`;
@@ -3692,7 +3692,7 @@ function renderAssetSummary() {
       `<div class="ps-head">资产分布</div>` +
       stack([
         { name: '权益', v: eqMV, c: '#5b8cff' },
-        { name: '理财', v: wTotal, c: '#6f9e5e' },
+        { name: '理财', v: wTotal, c: '#d9a52b' },
         { name: '现金', v: cTotal, c: '#94a3b8' },
       ]) +
     `</div>`;
@@ -4030,9 +4030,9 @@ async function openCashHistory(id) {
 
 function cashFlowTypeTag(t) {
   switch (t) {
-    case 'adjust_buy': return '<span class="adj-tag buy">加仓付款</span>';
-    case 'adjust_sell': return '<span class="adj-tag sell">减仓回款</span>';
-    case 'manual': return '<span class="adj-tag">手工调整</span>';
+    case 'adjust_buy': return '<span class="flow-tag out">加仓付款</span>';
+    case 'adjust_sell': return '<span class="flow-tag in">减仓回款</span>';
+    case 'manual': return '<span class="flow-tag manual">手工调整</span>';
     default: return esc(t || '-');
   }
 }
@@ -5425,7 +5425,7 @@ function dsCurve(ds, T) {
   const svg = '<svg viewBox="0 0 ' + SW + ' ' + SH + '" class="ret-curve" preserveAspectRatio="none">'
     + yGrid + xGrid
     + '<line x1="' + px0 + '" y1="' + zy + '" x2="' + px1 + '" y2="' + zy + '" stroke="rgba(255,255,255,.28)" stroke-width="1" vector-effect="non-scaling-stroke"/>'
-    + '<polyline points="' + pts + '" fill="none" stroke="#6f9e5e" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>'
+    + '<polyline points="' + pts + '" fill="none" stroke="#d9a52b" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>'
     + '<rect class="curve-hit" x="' + px0 + '" y="' + py0 + '" width="' + (px1 - px0) + '" height="' + (py1 - py0) + '" fill="transparent" data-pts="' + ptsJSON + '" data-n="' + meta.length + '" onmousemove="__sigHover(event,this)" onmouseleave="__sigLeave(this)"/></svg>';
   const axis = '<div class="curve-axis">' + yLabels + xLabels + '</div>';
   return '<div class="daily-sig-curve"><div class="curve-box">' + svg + axis + '<div class="curve-tip" hidden></div></div><div class="curve-cap">累计策略收益曲线（持有 ' + T + ' 日·按信号方向等权累加·悬停查看每日明细）</div></div>';

@@ -23,17 +23,15 @@
   .adj-row { display:flex; gap:10px; margin-bottom:10px; align-items:flex-start; }
   .adj-preview { display:none; margin:6px 0 10px; padding:10px 12px; border-radius:8px; font-size:13px; line-height:1.6; color:var(--text,#1f2329); }
   .adj-preview .warn { color:#e5484d; }
-  .adj-preview b { color:var(--primary,#6f9e5e); }
+  .adj-preview b { color:var(--primary,#d9a52b); }
   .adj-history { margin-top:14px; border-top:1px solid var(--border,#e5e7eb); padding-top:10px; }
   .adj-history h3 { font-size:13px; color:var(--text-muted,#6b7280); margin:0 0 8px; font-weight:600; }
   .adj-realized { font-size:13px; margin-bottom:8px; }
-  .adj-realized b { color:var(--primary,#6f9e5e); }
+  .adj-realized b { color:var(--primary,#d9a52b); }
   .adj-history-list { max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
   .adj-empty { font-size:12px; color:var(--text-muted,#9aa0a6); padding:6px 0; }
   .adj-tx { border:1px solid var(--border,#e5e7eb); border-radius:8px; padding:8px 10px; font-size:12px; }
-  .adj-tag { display:inline-block; padding:1px 8px; border-radius:999px; font-weight:600; font-size:11px; margin-right:8px; }
-  .adj-tag.buy { background:var(--primary-soft, rgba(111,158,94,.14)); color:var(--primary,#6f9e5e); }
-  .adj-tag.sell { background:rgba(138,143,153,.14); color:#6b7280; }
+  /* .adj-tag / .flow-tag 已统一收拢到 style.css（此处内联块加载晚于 style.css，重复定义会反向覆盖） */
   .adj-meta { color:var(--text-muted,#9aa0a6); font-size:11px; }
   .adj-rl { float:right; font-weight:600; }
   .adj-rl.up { color:#e5484d; }
@@ -72,11 +70,11 @@
   /* 操作指南 */
   .guide-list { max-height:360px; overflow-y:auto; margin-bottom:12px; }
   .guide-item { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px; transition:background .15s; }
-  .guide-item:hover { background:var(--bg-hover,rgba(110,156,122,.06)); }
+  .guide-item:hover { background:var(--bg-hover,rgba(217,165,43,.06)); }
   .guide-item-body { flex:1; min-width:0; }
   .guide-item-title { font-weight:600; color:var(--text); margin-bottom:2px; }
   .guide-item-tags { display:flex; flex-wrap:wrap; gap:4px; margin:4px 0; }
-  .guide-tag { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; background:var(--primary-soft,rgba(111,158,94,.14)); color:var(--primary,#6f9e5e); }
+  .guide-tag { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; background:var(--primary-soft,rgba(217,165,43,.14)); color:var(--primary,#d9a52b); }
   .guide-item-info { font-size:12px; color:var(--text-muted,#6b7280); display:flex; gap:12px; flex-wrap:wrap; }
   .guide-item-content { font-size:13px; color:var(--text); white-space:pre-wrap; word-break:break-word; line-height:1.5; margin:6px 0; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card,#fff); max-height:180px; overflow-y:auto; }
   .guide-item-actions { display:flex; flex-direction:column; gap:4px; flex-shrink:0; }
