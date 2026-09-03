@@ -768,10 +768,32 @@
         </label>
         <label>当前余额 <input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
         <label>所属来源 <select id="c_source"></select></label>
-        <label class="c-default-row"><input type="checkbox" id="c_is_default"> 设为该来源的默认现金账户<span class="ua-hint">（切换后原默认账户自动取消，加减仓资金默认走这个账户，名称前会显示 ★；默认账户不能单独删除）</span></label>
+        <label class="c-default-row"><input type="checkbox" id="c_is_default"> 设为该来源的默认现金账户<span class="ua-hint">（同名来源唯一；加减仓资金默认走此账户）</span></label>
         <label>备注 <input id="c_note"></label>
         <div id="cashErr" class="err"></div>
         <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="cashTransferModal" class="modal" hidden>
+    <div class="modal-card">
+      <h2 id="cashTransferTitle">账户转账</h2>
+      <form id="cashTransferForm">
+        <input type="hidden" id="ct_from_id">
+        <label>转出账户
+          <input id="ct_from_name" type="text" readonly disabled>
+        </label>
+        <label>转入账户
+          <select id="ct_to_id" required></select>
+        </label>
+        <label>转账金额（仅同币种） <input id="ct_amount" type="number" step="0.0001" min="0.0001" oninput="clampDecimals(this,4)" required></label>
+        <label>说明 <input id="ct_note" placeholder="如 调拨 / 还款 / 入金"></label>
+        <div id="cashTransferErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="ctCancel">取消</button>
+          <button class="btn" type="submit" id="ctSubmit">确认转账</button>
+        </div>
       </form>
     </div>
   </div>

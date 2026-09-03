@@ -1661,6 +1661,53 @@ func AddCashAmount(cashID int64, delta float64, typ, refType string, refID int64
 	})
 }
 
+// AddCashTransfer 在同币种现金账户间转账：源账户扣 amount、目标账户加 amount，
+// 并成对写入 transfer_out / transfer_in 流水。amount 必须 > 0，源账户余额充足。
+// 失败时尝试回滚已扣款项（写入 transfer_rollback 流水）以避免出现"扣了没入"的不一致。
+// 暂未启用 SQL 事务（保持现有代码风格），并发场景下极少数失败可能需手工对账。
+func AddCashTransfer(fromID, toID int64, amount float64, note string) error {
+	if amount <= 0 {
+		return fmt.Errorf("转账金额必须大于 0")
+	}
+	if fromID == toID {
+		return fmt.Errorf("源账户与目标账户不能相同")
+	}
+	src, err := GetCash(fromID)
+	if err != nil {
+		return fmt.Errorf("读取源账户失败：%w", err)
+	}
+	if src == nil {
+		return fmt.Errorf("源现金账户不存在（id=%d）", fromID)
+	}
+	dst, err := GetCash(toID)
+	if err != nil {
+		return fmt.Errorf("读取目标账户失败：%w", err)
+	}
+	if dst == nil {
+		return fmt.Errorf("目标现金账户不存在（id=%d）", toID)
+	}
+	if src.Currency != dst.Currency {
+		return fmt.Errorf("币种不一致（%s → %s），请手动换汇后转账", strings.ToUpper(src.Currency), strings.ToUpper(dst.Currency))
+	}
+	if src.UserID != dst.UserID {
+		return fmt.Errorf("跨用户转账不被允许")
+	}
+	// 余额不足拦截（精度容差 0.005）
+	if math.Round((src.Amount-amount)*100)/100 < -0.005 {
+		return fmt.Errorf("源账户余额不足（余额 %.2f，转出 %.2f）", src.Amount, amount)
+	}
+	// 先扣源账户
+	if err := AddCashAmount(fromID, -amount, "transfer_out", "cash", toID, dst.Name, note); err != nil {
+		return fmt.Errorf("扣减源账户失败：%w", err)
+	}
+	// 入账目标账户；失败则回滚源账户
+	if err := AddCashAmount(toID, amount, "transfer_in", "cash", fromID, src.Name, note); err != nil {
+		_ = AddCashAmount(fromID, amount, "transfer_rollback", "", 0, "", "转账失败回滚")
+		return fmt.Errorf("入账目标账户失败：%w", err)
+	}
+	return nil
+}
+
 // ---- Wealth daily snapshots (每日持仓金额) ----
 
 type WealthSnapshot struct {

@@ -55,7 +55,7 @@
   --btn-transition: all .2s ease;
 
   /* 形状与间距 token（设计系统收敛点） */
-  --radius: 12px;                     /* 圆角统一 12px */
+  --radius: 10px;                     /* 圆角统一 10px —— 与首页持仓分组卡片一致 */
   --card-radius: var(--radius);       /* 卡片/表格/工具卡圆角 */
   --btn-radius: var(--radius);        /* 按钮圆角统一 */
   --card-gap: 12px;                   /* 卡片之间间距 */
@@ -562,12 +562,19 @@
 .pano-sum {
   position: relative; overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--card-radius);
   padding: 14px 16px 14px;
-  background: linear-gradient(160deg, var(--bg-card), var(--bg-input));
+  /* 平铺底色与普通卡片一致，避免圆环卡片因渐变下沿显得比无圆环卡片更深 */
+  background: var(--bg-card);
   box-shadow: 0 6px 24px rgba(27, 40, 72, .08);
   transition: transform .18s ease, box-shadow .18s ease;
+  /* 不带圆环卡片：除标题外内容整体上下居中。grid 双行：标题锁定顶部 0，
+     其余子项（donut-wrap/ps-big/ps-rows/comp-bar/comp-legend）由 .pano-body 居中 */
+  display: grid;
+  grid-template-rows: auto 1fr;
 }
+.pano-sum > .ps-head { align-self: start; }
+.pano-sum > .pano-body { display: flex; flex-direction: column; align-items: stretch; gap: 10px; justify-content: center; min-height: 0; }
 :root[data-theme="dark"] .pano-sum { box-shadow: 0 8px 28px rgba(0, 0, 0, .38); }
 /* 取消右上角光晕，改为悬停放大（轻微抬起+缩放）效果 */
 .pano-sum:hover { transform: translateY(-4px) scale(1.012); box-shadow: 0 12px 30px rgba(27, 40, 72, .16); }
@@ -798,6 +805,29 @@
 }
 /* 标题内的图标（非 .btn，无主色继承）显式取主题色 */
 h2 > svg, .sheet-title > svg, .page-head__title > svg { color: var(--primary); }
+
+/* 夜间模式切换 / 用户切换：与资产工具条同款圆角芯片（之前是纯线条图标，与资产工具按钮视觉不一致） */
+.theme-toggle,
+.act-user {
+  border-color: transparent;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: var(--btn-radius);
+  box-shadow: none;
+}
+.theme-toggle:hover,
+.act-user:hover {
+  border-color: transparent;
+  background: rgba(var(--tint), .22);
+  color: var(--primary-hover);
+}
+.theme-toggle:active,
+.act-user:active {
+  border-color: transparent;
+  background: rgba(var(--tint), .28);
+  color: var(--primary-active);
+  transform: translateY(1px);
+}
 
 /* 资产全景工具条移入 header 暗黑按钮右侧：与主题按钮同组、背景保持一致 */
 .asset-toolbar.header-toolbar {

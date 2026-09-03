@@ -761,18 +761,22 @@ function renderSummary(hs) {
   const cardMV =
     `<div class="pano-sum">` +
       `<div class="ps-head">总市值</div>` +
-      `<div class="donut-wrap">${donutSVG(mvSegs, { size: 150, center: '¥' + fmtShort(totalCNY), sub: (topSeg ? topSeg.name + ' ' + (topSeg.v / Math.max(totalCNY, 1) * 100).toFixed(0) + '%' : '') })}</div>` +
-      `<div class="comp-legend">${mvLeg}</div>` +
+      `<div class="pano-body">` +
+        `<div class="donut-wrap">${donutSVG(mvSegs, { size: 150, center: '¥' + fmtShort(totalCNY), sub: (topSeg ? topSeg.name + ' ' + (topSeg.v / Math.max(totalCNY, 1) * 100).toFixed(0) + '%' : '') })}</div>` +
+        `<div class="comp-legend">${mvLeg}</div>` +
+      `</div>` +
     `</div>`;
   // 卡片二：盈亏 + 涨跌 合并（总盈亏带箭头色 / 当日 / 本月 / 涨跌家数）
   const cardPnl =
     `<div class="pano-sum">` +
       `<div class="ps-head">盈亏 / 涨跌</div>` +
-      `<div class="ps-big ${pCls}">¥${fmt(totalPnl)} <small>(${pct(totalPct)})</small></div>` +
-      `<div class="ps-rows">` +
-        `<div class="ps-row"><span class="pr-lbl">当日盈亏</span><span class="pr-val ${dpCls}">¥${fmt(dayPnlCNY)}</span></div>` +
-        `<div class="ps-row"><span class="pr-lbl">本月盈亏</span><span class="pr-val ${mpCls}">¥${fmt(monthPnlCNY)}</span></div>` +
-        `<div class="ps-row"><span class="pr-lbl">涨跌家数</span><span class="pr-val"><span class="up">▲ ${upCount}</span> <span class="down">▼ ${downCount}</span></span></div>` +
+      `<div class="pano-body">` +
+        `<div class="ps-big ${pCls}">¥${fmt(totalPnl)} <small>(${pct(totalPct)})</small></div>` +
+        `<div class="ps-rows">` +
+          `<div class="ps-row"><span class="pr-lbl">当日盈亏</span><span class="pr-val ${dpCls}">¥${fmt(dayPnlCNY)}</span></div>` +
+          `<div class="ps-row"><span class="pr-lbl">本月盈亏</span><span class="pr-val ${mpCls}">¥${fmt(monthPnlCNY)}</span></div>` +
+          `<div class="ps-row"><span class="pr-lbl">涨跌家数</span><span class="pr-val"><span class="up">▲ ${upCount}</span> <span class="down">▼ ${downCount}</span></span></div>` +
+        `</div>` +
       `</div>` +
     `</div>`;
   el.className = 'pano-home';
@@ -1700,7 +1704,7 @@ function donutSVG(segs, opts) {
   const total = segs.reduce((a, s) => a + (s.v || 0), 0);
   const R = 15.9155, cx = 21, cy = 21, SW = 6;
   let acc = 0, circles = '';
-  circles = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border)" stroke-width="${SW}"/>`;
+  circles = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--bg-input)" stroke-width="${SW}"/>`;
   if (total > 0) {
     segs.forEach((s) => {
       const len = (s.v || 0) / total * 100;
@@ -3674,27 +3678,33 @@ function renderAssetSummary() {
   const cardNet =
     `<div class="pano-sum">` +
       `<div class="ps-head">净资产</div>` +
-      `<div class="donut-wrap">${donutSVG(netSegs, { size: 150, center: '¥' + fmtShort(net), sub: netTop.name + ' ' + (netTop.v / base * 100).toFixed(0) + '%' })}</div>` +
-      `<div class="comp-legend">${netLeg}</div>` +
+      `<div class="pano-body">` +
+        `<div class="donut-wrap">${donutSVG(netSegs, { size: 150, center: '¥' + fmtShort(net), sub: netTop.name + ' ' + (netTop.v / base * 100).toFixed(0) + '%' })}</div>` +
+        `<div class="comp-legend">${netLeg}</div>` +
+      `</div>` +
     `</div>`;
   // 卡片二：境内/境外资产（境内+境外=总资产）
   const cardRegion =
     `<div class="pano-sum">` +
       `<div class="ps-head">境内 / 境外资产</div>` +
-      stack([
-        { name: '境内资产', v: dom, c: '#d9a52b' },
-        { name: '境外资产', v: ovs, c: '#38bdf8' },
-      ]) +
+      `<div class="pano-body">` +
+        stack([
+          { name: '境内资产', v: dom, c: '#d9a52b' },
+          { name: '境外资产', v: ovs, c: '#38bdf8' },
+        ]) +
+      `</div>` +
     `</div>`;
   // 卡片三：资产分布（权益+理财+现金=总资产）
   const cardDist =
     `<div class="pano-sum">` +
       `<div class="ps-head">资产分布</div>` +
-      stack([
-        { name: '权益', v: eqMV, c: '#5b8cff' },
-        { name: '理财', v: wTotal, c: '#d9a52b' },
-        { name: '现金', v: cTotal, c: '#94a3b8' },
-      ]) +
+      `<div class="pano-body">` +
+        stack([
+          { name: '权益', v: eqMV, c: '#5b8cff' },
+          { name: '理财', v: wTotal, c: '#d9a52b' },
+          { name: '现金', v: cTotal, c: '#94a3b8' },
+        ]) +
+      `</div>` +
     `</div>`;
   $('#assetSummaryBody').innerHTML = `<div class="pano-summary">${cardNet}${cardRegion}${cardDist}</div>`;
 }
@@ -3985,6 +3995,7 @@ function renderCash(body) {
         <td class="row-actions">
           <button class="btn act-hist" data-act="cash-hist" data-id="${c.id}" title="资金变动历史">历史</button>
           <button class="btn act-edit" data-act="edit-cash" data-id="${c.id}" title="编辑">编辑</button>
+          <button class="btn act-transfer" data-act="cash-transfer" data-id="${c.id}" title="从此账户转入其他现金账户">转账</button>
           ${delBtn}
         </td></tr>`;
     }
@@ -3995,6 +4006,7 @@ function renderCash(body) {
   body.querySelectorAll('[data-act="edit-cash"]').forEach((b) => b.onclick = () => openCashModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="del-cash"]').forEach((b) => b.onclick = () => assetDel('cash', Number(b.dataset.id)));
   body.querySelectorAll('[data-act="cash-hist"]').forEach((b) => b.onclick = () => openCashHistory(Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="cash-transfer"]').forEach((b) => b.onclick = () => openCashTransfer(Number(b.dataset.id)));
 }
 
 // 现金账户资金变动历史：加仓付款 / 减仓回款 / 手工调整，复用历史弹框的表格 tab
@@ -4033,9 +4045,61 @@ function cashFlowTypeTag(t) {
     case 'adjust_buy': return '<span class="flow-tag out">加仓付款</span>';
     case 'adjust_sell': return '<span class="flow-tag in">减仓回款</span>';
     case 'manual': return '<span class="flow-tag manual">手工调整</span>';
+    case 'transfer_out': return '<span class="flow-tag out">转出</span>';
+    case 'transfer_in': return '<span class="flow-tag in">转入</span>';
+    case 'transfer_rollback': return '<span class="flow-tag manual">回滚</span>';
     default: return esc(t || '-');
   }
 }
+
+// 现金账户转账（仅同币种之间），写入 transfer_out / transfer_in 两条流水。
+async function openCashTransfer(fromId) {
+  const list = ((assetData.cash || {}).items || []);
+  const src = list.find((x) => x.id === fromId);
+  if (!src) { toast('找不到源账户', 'err'); return; }
+  $('#ct_from_id').value = String(fromId);
+  $('#ct_from_name').value = `${src.name}（余额 ${moneyCur(src.amount || 0, src.currency)} ${src.currency}）`;
+  // 仅同币种、非自身账户可作为转入方
+  const targets = list.filter((x) => x.id !== fromId && x.currency === src.currency);
+  const sel = $('#ct_to_id');
+  sel.innerHTML = targets.length
+    ? targets.map((x) => `<option value="${x.id}">${esc(x.name)}（${esc(x.source_name || '')}）</option>`).join('')
+    : '<option value="">（暂无同币种账户）</option>';
+  $('#ct_amount').value = '';
+  $('#ct_note').value = '';
+  $('#cashTransferErr').textContent = '';
+  $('#cashTransferTitle').textContent = `从「${src.name}」转入其它账户`;
+  $('#cashTransferModal').hidden = false;
+}
+$('#ctCancel').onclick = () => { $('#cashTransferModal').hidden = true; };
+$('#cashTransferForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const fromId = Number($('#ct_from_id').value || 0);
+  const toId = Number($('#ct_to_id').value || 0);
+  const amount = Number($('#ct_amount').value || 0);
+  const note = ($('#ct_note').value || '').trim();
+  if (!fromId || !toId) { $('#cashTransferErr').textContent = '请选择转入账户'; return; }
+  if (fromId === toId) { $('#cashTransferErr').textContent = '源账户与目标账户不能相同'; return; }
+  if (!(amount > 0)) { $('#cashTransferErr').textContent = '请输入大于 0 的转账金额'; return; }
+  const submit = $('#ctSubmit');
+  submit.disabled = true;
+  try {
+    const r = await api('/api/asset/cash/transfer', { method: 'POST', body: JSON.stringify({ from_id: fromId, to_id: toId, amount, note }) });
+    if (!r.ok) {
+      let m = '转账失败';
+      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
+      $('#cashTransferErr').textContent = m;
+      return;
+    }
+    $('#cashTransferModal').hidden = true;
+    await loadAsset();
+    toast('转账完成', 'ok');
+  } catch (err) {
+    $('#cashTransferErr').textContent = '异常：' + err.message;
+  } finally {
+    submit.disabled = false;
+  }
+};
 
 async function openCashModal(id) {
   await loadSourcesCache();

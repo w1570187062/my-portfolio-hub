@@ -178,6 +178,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/asset/cash", listCash)
 		g.GET("/asset/cash/:id/flows", listCashFlows)
 		g.POST("/asset/cash", createCash)
+		g.POST("/asset/cash/transfer", transferCash)
 		g.PUT("/asset/cash/:id", updateCash)
 		g.DELETE("/asset/cash/:id", deleteCash)
 		g.GET("/asset/liabilities", listLiabilities)

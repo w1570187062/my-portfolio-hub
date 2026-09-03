@@ -660,6 +660,49 @@ func deleteCash(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// transferCash 在两个同币种现金账户间转账（同一用户下），并写入成对流水。
+// 入参：{from_id, to_id, amount, note?}。币种不一致、余额不足或跨用户均拒绝。
+func transferCash(c *gin.Context) {
+	var b struct {
+		FromID int64   `json:"from_id"`
+		ToID   int64   `json:"to_id"`
+		Amount float64 `json:"amount"`
+		Note   string  `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if b.FromID <= 0 || b.ToID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择源账户与目标账户"})
+		return
+	}
+	if b.FromID == b.ToID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "源账户与目标账户不能相同"})
+		return
+	}
+	if b.Amount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "转账金额必须大于 0"})
+		return
+	}
+	uid := currentUserID(c)
+	src, err := db.GetCash(b.FromID)
+	if err != nil || src == nil || src.UserID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "源账户不存在或无权访问"})
+		return
+	}
+	dst, err := db.GetCash(b.ToID)
+	if err != nil || dst == nil || dst.UserID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "目标账户不存在或无权访问"})
+		return
+	}
+	if err := db.AddCashTransfer(b.FromID, b.ToID, b.Amount, strings.TrimSpace(b.Note)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // assetWealthSnapshotsPost upserts today's holding amounts for many products at once.
 // Body: { "date": "YYYY-MM-DD", "items": [ {"wealth_id":N,"amount":F,"cashflow":F}, ... ] }
 func assetWealthSnapshotsPost(c *gin.Context) {
