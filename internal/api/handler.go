@@ -572,7 +572,11 @@ func resolveCashAccount(uid, cashID, sourceID int64) (*db.Cash, error) {
 			return nil, err
 		}
 		if acc == nil || acc.UserID != uid {
-			return nil, fmt.Errorf("现金账户不存在或不属于当前用户（id=%d）", cashID)
+			return nil, fmt.Errorf("子账户不存在或不属于当前用户（id=%d）", cashID)
+		}
+		// 资金只能来自与持仓/理财相同来源的现金账户（跨来源账户拒绝，防止资金链路串源）
+		if sourceID > 0 && acc.SourceID != sourceID {
+			return nil, fmt.Errorf("子账户与该持仓/理财所属账户不一致，只能选择同一账户下的子账户")
 		}
 		return acc, nil
 	}
@@ -588,7 +592,7 @@ func resolveCashAccount(uid, cashID, sourceID int64) (*db.Cash, error) {
 		return nil, err
 	}
 	if acc == nil {
-		return nil, fmt.Errorf("默认现金账户创建失败（source=%d）", sourceID)
+		return nil, fmt.Errorf("默认子账户创建失败（source=%d）", sourceID)
 	}
 	return acc, nil
 }

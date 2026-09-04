@@ -116,23 +116,28 @@ func assetOverview(c *gin.Context) {
 		wToday += fxToCNY(todayPnl, w.Currency, cnyRate, hkdRate)
 		wByCur[w.Currency] += amt
 		cnt, _ := db.CountWealthSnapshots(w.ID)
+		// 持有天数：从首次录入快照日期起算（与持仓 buy_date 口径一致），无快照记 0
+		firstDate, _, _ := db.GetWealthFirst(w.ID)
+		wDays := db.CalcHoldingDays(firstDate)
 		// 累计收益：手动编辑值优先（CumPnl 非 0），否则按每日快照自动累计。
 		cum := round2(w.CumPnl)
 		if cum == 0 {
 			cum = round2(wealthCumPnl(w.ID))
 		}
 		wItems = append(wItems, gin.H{
-			"id":          w.ID,
-			"name":        w.Name,
-			"code":        w.Code,
-			"currency":    w.Currency,
-			"source_id":   w.SourceID,
-			"source_name": srcName[w.SourceID],
-			"amount":      amt,
-			"today_pnl":   todayPnl,
-			"cum_pnl":     cum,
-			"snap_date":   latestDate,
-			"snap_count":  cnt,
+			"id":           w.ID,
+			"name":         w.Name,
+			"code":         w.Code,
+			"currency":     w.Currency,
+			"note":         w.Note,
+			"source_id":    w.SourceID,
+			"source_name":  srcName[w.SourceID],
+			"amount":       amt,
+			"today_pnl":    todayPnl,
+			"cum_pnl":      cum,
+			"snap_date":    latestDate,
+			"snap_count":   cnt,
+			"holding_days": wDays,
 		})
 	}
 
@@ -636,7 +641,7 @@ func listCashFlows(c *gin.Context) {
 	uid := currentUserID(c)
 	acc, err := db.GetCash(id)
 	if err != nil || acc == nil || acc.UserID != uid {
-		c.JSON(http.StatusNotFound, gin.H{"error": "现金账户不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "子账户不存在"})
 		return
 	}
 	flows, err := db.ListCashFlows(id, 0)
@@ -716,7 +721,7 @@ func adjustCash(c *gin.Context) {
 		return
 	}
 	if b.CashID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择现金账户"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择子账户"})
 		return
 	}
 	delta := math.Round(b.Delta*100) / 100
@@ -727,7 +732,7 @@ func adjustCash(c *gin.Context) {
 	uid := currentUserID(c)
 	acc, err := db.GetCash(b.CashID)
 	if err != nil || acc == nil || acc.UserID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"error": "现金账户不存在或无权访问"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "子账户不存在或无权访问"})
 		return
 	}
 	if acc.Amount+delta < -0.004 {
@@ -801,15 +806,21 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 		}
 		// 写审计：记录改前/改后
 		oldAmt, oldCf, existed, _ := db.GetWealthSnapshot(it.WealthID, b.Date)
+		// 与当日快照完全一致 → 无变化：跳过落库与审计（防御性兜底，前端本就只提交有变化的行）
+		if existed && math.Abs(oldAmt-it.Amount) < 0.005 && math.Abs(oldCf-it.Cashflow) < 0.005 {
+			continue
+		}
 		if err := db.UpsertWealthSnapshot(it.WealthID, b.Date, it.Amount, it.Cashflow); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		_ = db.InsertWealthAudit(db.WealthAudit{
+		if e := db.InsertWealthAudit(db.WealthAudit{
 			WealthID: it.WealthID, Date: b.Date, Action: "upsert", Field: "row",
 			OldAmount: oldAmt, OldCash: oldCf, NewAmount: it.Amount, NewCash: it.Cashflow,
 			OldExists: existed, UserID: uid, CreatedAt: now,
-		})
+		}); e != nil {
+			log.Printf("[wealth-audit] 写入审计失败(wealth=%d date=%s): %v", it.WealthID, b.Date, e)
+		}
 		// 净存入变动联动现金账户（按新旧 cashflow 差值落账，重复保存只补差额，天然幂等）
 		if e := applyWealthCash(uid, it.WealthID, b.Date, it.Cashflow-oldCf, it.CashAccountID); e != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
@@ -907,11 +918,13 @@ func assetWealthSnapshotDelete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	_ = db.InsertWealthAudit(db.WealthAudit{
+	if e := db.InsertWealthAudit(db.WealthAudit{
 		WealthID: wid, Date: date, Action: "delete", Field: "row",
 		OldAmount: oldAmt, OldCash: oldCf, OldExists: true, UserID: uid,
 		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
-	})
+	}); e != nil {
+		log.Printf("[wealth-audit] 写入审计失败(wealth=%d date=%s): %v", wid, date, e)
+	}
 	// 冲正该快照净存入对应的现金账户变动（当初入账金额 = -oldCf）
 	if e := reverseWealthCash(uid, wid, -oldCf, "删除 "+date+" 快照"); e != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
@@ -990,11 +1003,13 @@ func assetWealthSnapshotUndo(c *gin.Context) {
 		// delete 当初冲正入账金额 = +旧净存入
 		cashPosted = a.OldCash
 	}
-	_ = db.InsertWealthAudit(db.WealthAudit{
+	if e := db.InsertWealthAudit(db.WealthAudit{
 		WealthID: a.WealthID, Date: a.Date, Action: "undo", Field: "row",
 		OldAmount: a.OldAmount, OldCash: a.OldCash, NewAmount: a.OldAmount, NewCash: a.OldCash,
 		OldExists: true, UserID: uid, CreatedAt: now,
-	})
+	}); e != nil {
+		log.Printf("[wealth-audit] 写入审计失败(wealth=%d date=%s): %v", a.WealthID, a.Date, e)
+	}
 	// 反向冲正当初的现金账户变动
 	if e := reverseWealthCash(uid, a.WealthID, cashPosted, "撤销 "+a.Date+" 记录"); e != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})

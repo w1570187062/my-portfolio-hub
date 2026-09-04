@@ -113,18 +113,23 @@
     <div id="filters" class="filters"></div>
     <div class="list-actions">
       <div class="action-btns">
-        <button id="aiHomeBtn" class="btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="5" y="7.5" width="14" height="11" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="9.5" cy="12.5" r="1.3" fill="currentColor"/><circle cx="14.5" cy="12.5" r="1.3" fill="currentColor"/><path d="M12 7.5 V4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="3.6" r="1.3" fill="currentColor"/><path d="M8.5 18.5 V21 M15.5 18.5 V21" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg> AI</button>
-        <button id="addBtn" class="btn"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 7.8 V16.2 M7.8 12 H16.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg> 添加</button>
-        <button id="guideBtn" class="btn"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="5.5" y="4.5" width="13" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="9" y="2.8" width="6" height="3.4" rx="1.2" fill="currentColor"/><path d="M9 10.5 H15 M9 14 H15 M9 17.5 H12.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg> 计划</button>
+        <button id="aiHomeBtn" class="btn icon-btn" type="button" title="AI 总结" aria-label="AI 总结"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="5" y="7.5" width="14" height="11" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="9.5" cy="12.5" r="1.3" fill="currentColor"/><circle cx="14.5" cy="12.5" r="1.3" fill="currentColor"/><path d="M12 7.5 V4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="3.6" r="1.3" fill="currentColor"/><path d="M8.5 18.5 V21 M15.5 18.5 V21" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>
+        <button id="addBtn" class="btn icon-btn" title="添加持仓" aria-label="添加持仓"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 7.8 V16.2 M7.8 12 H16.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>
+        <button id="guideBtn" class="btn icon-btn" title="调仓计划" aria-label="调仓计划"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="5.5" y="4.5" width="13" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="9" y="2.8" width="6" height="3.4" rx="1.2" fill="currentColor"/><path d="M9 10.5 H15 M9 14 H15 M9 17.5 H12.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
       </div>
       <div class="action-tools">
         <input type="search" id="filterInput" name="q" class="filter-search" placeholder="搜索名称 / 代码" aria-label="筛选持仓" autocomplete="off" spellcheck="false" enterkeyhint="search" hidden data-1p-ignore data-lpignore="true" data-form-type="other" data-dashlane-ignored="true">
-        <div class="view-toggle" id="viewToggle">
-          <span class="vt-indicator" id="vtIndicator"></span>
-          <button class="btn vt-btn active" data-view="table" type="button">表格</button>
-          <button class="btn vt-btn" data-view="card" type="button">卡片</button>
-        </div>
       </div>
+    </div>
+  </div>
+
+  <!-- 表格/卡片切换行：上方分割线；左侧为列表描述（持仓数量动态计算），右侧为视图切换；上下间距一致 -->
+  <div class="tbl-meta-bar">
+    <span class="tbl-desc" id="tblDesc">持仓（0）</span>
+    <div class="view-toggle" id="viewToggle">
+      <span class="vt-indicator" id="vtIndicator"></span>
+      <button class="btn vt-btn active" data-view="table" type="button">表格</button>
+      <button class="btn vt-btn" data-view="card" type="button">卡片</button>
     </div>
   </div>
 
@@ -132,9 +137,9 @@
   <table id="tbl">
     <thead>
       <tr>
-        <th class="num">#</th><th>名称</th><th>代码</th><th id="sourceTh" class="src-th" title="按来源筛选">来源 <span class="src-caret">▾</span><span id="sourceBadge" class="src-badge" hidden></span></th><th class="hide-col">类型</th><th class="hide-col">市场</th><th class="hide-col">币种</th>
+        <th class="num">#</th><th>名称</th><th>代码</th><th id="sourceTh" class="src-th" title="按账户筛选">账户 <span class="src-caret">▾</span><span id="sourceBadge" class="src-badge" hidden></span></th><th class="hide-col">类型</th><th class="hide-col">市场</th><th class="hide-col">币种</th>
         <th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th><th class="num" title="近20个交易日收盘价走势">近20日</th>
-        <th class="num sortable" data-sort="market_value" onclick="setSort('market_value')">市值(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="day_pnl" onclick="setSort('day_pnl')">当日盈亏(<span id="dayDateLbl"></span>) <span class="sort-ind"></span></th><th class="num sortable" data-sort="day_pnl_pct" onclick="setSort('day_pnl_pct')">当日盈亏率 <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl" onclick="setSort('pnl')">总盈亏(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl_pct" onclick="setSort('pnl_pct')">盈亏率 <span class="sort-ind"></span></th><th class="num">持仓天数</th><th>备注</th><th>操作</th>
+        <th class="num sortable" data-sort="market_value" onclick="setSort('market_value')">市值(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="day_pnl" onclick="setSort('day_pnl')">当日盈亏(<span id="dayDateLbl"></span>) <span class="sort-ind"></span></th><th class="num sortable" data-sort="day_pnl_pct" onclick="setSort('day_pnl_pct')">当日盈亏率 <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl" onclick="setSort('pnl')">总盈亏(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl_pct" onclick="setSort('pnl_pct')">盈亏率 <span class="sort-ind"></span></th><th class="num">持仓</th><th>备注</th><th>操作</th>
       </tr>
     </thead>
     <tbody id="rows"></tbody>
@@ -143,7 +148,7 @@
   <div id="holdingsBySource" class="holdings-by-source"></div>
   <div id="sourceFilterPop" class="src-pop" hidden>
     <div class="src-pop-head">
-      <span>按来源筛选</span>
+      <span>按账户筛选</span>
       <span>
         <button type="button" class="src-link" id="srcAll">全选</button>
         <button type="button" class="src-link" id="srcNone">清空</button>
@@ -169,10 +174,9 @@
     <div class="asset-tabs-row">
       <div class="asset-tabs" id="assetTabs">
         <button class="btn atab active" data-tab="wealth" type="button">理财</button>
-        <button class="btn atab" data-tab="cash" type="button">现金</button>
         <button class="btn atab" data-tab="liability" type="button">负债</button>
         <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
-        <button class="btn atab" data-tab="sources" type="button">来源</button>
+        <button class="btn atab" data-tab="sources" type="button">账户</button>
       </div>
       <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar"></div>
     </div>
@@ -318,10 +322,6 @@
         </div>
         <div class="tool-result scr-test-result" id="scrTestResult" hidden></div>
       </div>
-
-      <div class="modal-actions">
-        <button id="mergeBtn" class="btn" type="button">合并汇总（权益 + 美元）</button>
-      </div>
     </div>
   </div>
 
@@ -381,7 +381,7 @@
             <label>现价 <input id="f_current_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="美股手动填；其余留空刷新自动更新"></label>
           </div>
           <div class="f-row">
-            <label>来源
+            <label>账户
               <select id="f_source"></select>
             </label>
             <label>币种
@@ -426,7 +426,7 @@
             <label class="adj-inline">成本<input id="adj_fee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" value="0"></label>
           </div>
           <label>金额（自动计算）<input id="adj_amount" type="number" step="any" readonly></label>
-          <label>资金账户<span class="ua-hint">加仓从此账户付款，减仓回款入此账户（留空则用该来源的默认账户 ★）</span>
+          <label>资金账户<span class="ua-hint">加仓从此账户付款，减仓回款入此账户（留空则用默认子账户 ★）</span>
             <select id="adj_cash_id"></select>
           </label>
           <div id="adjPreview" class="adj-preview"></div>
@@ -466,10 +466,10 @@
             <label class="adj-inline">原持仓数量（股/份）<input id="addOldQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 1000"></label>
           </div>
           <div class="adj-row">
-            <label class="adj-inline" id="addQtyWrap">补仓数量（股/份）<input id="addNewQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 500"></label>
-            <label class="adj-inline" id="addAmtWrap" style="display:none">补仓金额（元，含买入费）<input id="addAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 5000"></label>
-            <label class="adj-inline">补仓现价（元/份）<input id="addNewPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 9.80"></label>
-            <label class="adj-inline">手续费（单次）<input id="addFee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 0 或 5"></label>
+            <label class="adj-inline" id="addQtyWrap">补仓数量<input id="addNewQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 500"></label>
+            <label class="adj-inline" id="addAmtWrap" style="display:none">补仓金额<input id="addAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 5000"></label>
+            <label class="adj-inline">补仓现价<input id="addNewPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 9.80"></label>
+            <label class="adj-inline">手续费<input id="addFee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 0 或 5"></label>
           </div>
           <div class="tool-result" id="addResult"></div>
           <div class="tool-actions">
@@ -562,14 +562,6 @@
     </div>
   </div>
 
-  <div id="mergeModal" class="modal" hidden>
-    <div class="modal-card" style="width:520px; max-width:94vw;">
-      <h2>合并盈亏汇总</h2>
-      <p class="tool-hint">将「权益资产盈亏」与「美元资产盈亏」的计算结果合并汇总（单位均为人民币）。未计算的来源按 0 计入并标注。</p>
-      <div class="tool-result" id="mergeResult"></div>
-    </div>
-  </div>
-
   <!-- AI 中枢：总结 / 功能 / 设置 / 历史（tab 切换） -->
   <div id="aiHubModal" class="modal" hidden>
     <div class="modal-card" style="width:800px; max-width:94vw; position: relative;">
@@ -654,9 +646,7 @@
   <!-- AI 持仓总结结果（独立顶层弹框，避免被 aiHubModal 的 hidden 态影响） -->
   <div id="aiResultModal" class="modal" hidden>
     <div class="modal-card" style="width:700px; max-width:94vw;">
-      <h2 style="padding-right:42px">AI 持仓总结
-        <button type="button" id="ai_copy" class="btn btn-sm" style="float:right;margin-top:2px">复制</button>
-      </h2>
+      <h2>AI 持仓总结</h2>
       <div id="aiResultBody" class="ai-result">生成中…</div>
     </div>
   </div>
@@ -667,9 +657,18 @@
       <div class="ana-tabs ac-tabs">
         <button id="histTabTable" class="ana-tab-btn active" type="button">每日盈亏</button>
         <button id="histTabChart" class="ana-tab-btn" type="button">盈亏曲线</button>
+        <button id="histTabAudit" class="ana-tab-btn" type="button">审计记录</button>
       </div>
       <div id="histTableWrap"><div id="histTable" class="hist-table"></div></div>
       <div id="histChartWrap" hidden><div id="histChartBody"></div></div>
+    </div>
+  </div>
+
+  <!-- ===== 现金资金变动历史弹框（独立，无盈亏 tab）===== -->
+  <div id="cashHistModal" class="modal" hidden>
+    <div class="modal-card" style="width:720px; max-width:94vw;">
+      <h2 id="cashHistTitle">资金变动历史</h2>
+      <div id="cashHistBody"></div>
     </div>
   </div>
 
@@ -687,7 +686,7 @@
   <!-- ===== 资产全景弹框 ===== -->
   <div id="assetSourceModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="assetSourceTitle">添加来源</h2>
+      <h2 id="assetSourceTitle">添加账户</h2>
       <form id="assetSourceForm">
         <input type="hidden" id="as_id">
         <label>名称 <input id="as_name" placeholder="如 招商银行 / 支付宝" required></label>
@@ -711,11 +710,10 @@
         <input type="hidden" id="w_id">
         <label>名称 <input id="w_name" placeholder="如 安心天天成长3号163期A" required></label>
         <label>产品代码/登记编码 <input id="w_code"></label>
-        <label>所属来源 <select id="w_source"></select></label>
+        <label>所属账户 <select id="w_source"></select></label>
         <label>货币类型
           <select id="w_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
         </label>
-        <label>累计收益 <input id="w_cum" type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" placeholder="留空则按每日盈亏自动累计"></label>
         <label>备注 <input id="w_note"></label>
         <div id="wealthErr" class="err"></div>
         <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
@@ -730,7 +728,7 @@
         <input type="hidden" id="lb_id">
         <label>名称 <input id="lb_name" placeholder="如 房贷 / 招行信用卡" required></label>
         <label>类型 <input id="lb_type" placeholder="房贷/信用卡/消费贷/其他"></label>
-        <label>所属来源 <select id="lb_source"></select></label>
+        <label>所属账户 <select id="lb_source"></select></label>
         <label>当前欠款余额 <input id="lb_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
         <label>年利率(%) <input id="lb_rate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
         <label>月供 <input id="lb_monthly" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
@@ -749,7 +747,7 @@
         <label>日期 <input id="cs_date" type="date"></label>
         <label>类别 <input id="cs_category" placeholder="餐饮/交通/购物..." required></label>
         <label>金额 <input id="cs_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
-        <label>支付来源 <select id="cs_source"></select></label>
+        <label>所属账户 <select id="cs_source"></select></label>
         <label>备注 <input id="cs_note"></label>
         <div id="consumeErr" class="err"></div>
         <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
@@ -759,27 +757,24 @@
 
   <div id="cashModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="cashTitle">添加现金</h2>
+      <h2 id="cashTitle">添加子账户</h2>
       <form id="cashForm">
-        <input type="hidden" id="c_id">
-        <div class="cash-mode-row" id="cashModeRow">
-          <button type="button" class="cash-mode active" data-mode="adjust">已有账户 ± 资金</button>
-          <button type="button" class="cash-mode" data-mode="new">新增账户</button>
-        </div>
-        <div id="cashAdjustFields">
-          <label>现金账户 <select id="c_cash_acc"></select></label>
-          <div class="ua-hint" id="c_acc_info" style="margin:-4px 0 8px;"></div>
+        <!-- 编辑子账户（操作按钮所在行）：可改名称 + 对该账户 ± 资金，无 tab、无账户下拉 -->
+        <div id="cashEditFields" hidden>
+          <div class="cash-edit-info" id="cashEditInfo"></div>
+          <label>子账户名称 <input id="c_name_edit" placeholder="修改后保存即生效"></label>
           <label>± 资金（正=存入，负=取出） <input id="c_delta" type="number" step="0.0001" oninput="clampDecimals(this,4)" placeholder="如 500 存入 / -300 取出"></label>
-          <label>备注 <input id="c_note_adj"></label>
+          <label>备注（可选） <input id="c_note_adj" placeholder="缺省记「手工存入/手工取出」"></label>
         </div>
+        <!-- 添加子账户：干净的新增表单 -->
         <div id="cashNewFields" hidden>
           <label>名称 <input id="c_name" placeholder="如 招行活期 / 微信零钱"></label>
           <label>货币类型
             <select id="c_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
           </label>
           <label>当前余额 <input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
-          <label>所属来源 <select id="c_source"></select></label>
-          <label class="c-default-row"><input type="checkbox" id="c_is_default"> 设为该来源的默认现金账户<span class="ua-hint">（同名来源唯一；加减仓资金默认走此账户）</span></label>
+          <label>所属账户 <select id="c_source"></select></label>
+          <label class="c-default-row"><input type="checkbox" id="c_is_default"> 设为默认子账户<span class="ua-hint">（同一账户唯一；加减仓资金默认走此账户）</span></label>
           <label>备注 <input id="c_note"></label>
         </div>
         <div id="cashErr" class="err"></div>

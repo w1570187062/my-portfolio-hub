@@ -1223,6 +1223,22 @@ func initAssetTables() error {
 	addColumnIfMissing("cash_accounts", "user_id", "INTEGER NOT NULL DEFAULT 0")
 	// is_default：该账户是否为其所属来源的默认现金账户（每个来源唯一，前端名称前加 ★ 标记）。
 	addColumnIfMissing("cash_accounts", "is_default", "INTEGER NOT NULL DEFAULT 0")
+	// 存量更名：「现金账户」统一改称「子账户」，自动创建的默认账户名一并更新。
+	_, _ = DB.Exec(`UPDATE cash_accounts SET name='默认子账户' WHERE name='默认现金账户'`)
+	// 清理冗余审计记录（一次性）：旧版整批保存会把未编辑的产品也 upsert 并写审计，两类冗余：
+	//   a) old==new 无变化保存（old_exists=1，旧值与新值完全一致）；
+	//   b) 当日首次录入但金额与更早某天快照相同、净存入 0（当日什么都没发生）。
+	// created_at 上限限定只清理历史数据；修复后新产生的记录不受影响（前端只提交有变化的行 + 后端跳过无变化行）。
+	_, _ = DB.Exec(`DELETE FROM wealth_snapshot_audit
+		WHERE action='upsert' AND created_at < '2026-09-04 12:00:00'
+		  AND (
+		    (old_exists=1 AND abs(old_amount-new_amount)<0.005 AND abs(old_cashflow-new_cashflow)<0.005)
+		    OR (old_exists=0 AND abs(new_cashflow)<0.005 AND EXISTS (
+		        SELECT 1 FROM wealth_snapshots s
+		        WHERE s.wealth_id = wealth_snapshot_audit.wealth_id
+		          AND s.date < wealth_snapshot_audit.date
+		          AND abs(s.amount - wealth_snapshot_audit.new_amount) < 0.005))
+		  )`)
 	// 索引：按账户查流水（历史弹框）
 	_, _ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_cash_flow_cash ON cash_flow(cash_id)`)
 	return nil
@@ -1513,7 +1529,7 @@ func DeleteCash(id int64) error {
 		return err
 	}
 	if def == 1 {
-		return fmt.Errorf("默认现金账户不支持单独删除（删除所属来源时会自动级联删除）")
+		return fmt.Errorf("默认子账户不支持单独删除（删除所属账户时会自动级联删除）")
 	}
 	if _, err := DB.Exec(`DELETE FROM cash_flow WHERE cash_id=?`, id); err != nil {
 		return err
@@ -1577,21 +1593,21 @@ func EnsureDefaultCash(userID, sourceID int64, sourceName string) (int64, error)
 		return CreateCash(&Cash{
 			UserID:    userID,
 			SourceID:  sourceID,
-			Name:      "默认现金账户",
+			Name:      "默认子账户",
 			Currency:  "rmb",
 			Amount:    0,
 			IsDefault: true,
-			Note:      "来源默认现金账户（随来源自动创建）",
+			Note:      "账户默认子账户（随账户自动创建）",
 		})
 	}
 	return CreateCash(&Cash{
 		UserID:    userID,
 		SourceID:  sourceID,
-		Name:      name + " 现金",
+		Name:      name + " 子账户",
 		Currency:  "rmb",
 		Amount:    0,
 		IsDefault: true,
-		Note:      "来源默认现金账户（随来源自动创建）",
+		Note:      "账户默认子账户（随账户自动创建）",
 	})
 }
 
@@ -1641,7 +1657,7 @@ func AddCashAmount(cashID int64, delta float64, typ, refType string, refID int64
 		return err
 	}
 	if c == nil {
-		return fmt.Errorf("现金账户不存在（id=%d）", cashID)
+		return fmt.Errorf("子账户不存在（id=%d）", cashID)
 	}
 	bal := math.Round((c.Amount+delta)*100) / 100
 	if _, err := DB.Exec(`UPDATE cash_accounts SET amount=? WHERE id=?`, bal, cashID); err != nil {
@@ -1694,14 +1710,14 @@ func AddCashTransfer(fromID, toID int64, amount float64, note string) error {
 		return fmt.Errorf("读取源账户失败：%w", err)
 	}
 	if src == nil {
-		return fmt.Errorf("源现金账户不存在（id=%d）", fromID)
+		return fmt.Errorf("源子账户不存在（id=%d）", fromID)
 	}
 	dst, err := GetCash(toID)
 	if err != nil {
 		return fmt.Errorf("读取目标账户失败：%w", err)
 	}
 	if dst == nil {
-		return fmt.Errorf("目标现金账户不存在（id=%d）", toID)
+		return fmt.Errorf("目标子账户不存在（id=%d）", toID)
 	}
 	if src.Currency != dst.Currency {
 		return fmt.Errorf("币种不一致（%s → %s），请手动换汇后转账", strings.ToUpper(src.Currency), strings.ToUpper(dst.Currency))
@@ -1758,6 +1774,20 @@ func GetWealthLatest(wealthID int64) (date string, amount float64, ok bool, err 
 		return "", 0, false, err
 	}
 	return date, amount, true, nil
+}
+
+// GetWealthFirst returns the earliest snapshot date of a wealth product (ok=false if none).
+// 用于计算理财持有天数（从首次录入快照起算）。
+func GetWealthFirst(wealthID int64) (date string, ok bool, err error) {
+	err = DB.QueryRow(`SELECT date FROM wealth_snapshots WHERE wealth_id=? ORDER BY date ASC LIMIT 1`, wealthID).
+		Scan(&date)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return date, true, nil
 }
 
 // GetWealthPrevSnapshot returns the latest snapshot strictly before the given date.
