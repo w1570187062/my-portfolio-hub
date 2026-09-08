@@ -42,7 +42,23 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 ## 快速开始
 
-### Docker（推荐）
+### 云端镜像（推荐，无需克隆源码）
+
+镜像由 GitHub Actions 自动构建（`linux/amd64` + `linux/arm64`），推送到 GHCR，每个 main 提交更新 `latest`、每个 `v*` 标签发布版本号：
+
+```bash
+docker run -d --name portfolio -p 9989:9989 \
+  -v portfolio-data:/data \
+  -e TZ=Asia/Shanghai \
+  ghcr.io/w1570187062/my_folio_hub:latest
+
+# 或用 docker compose（compose.yml 里 image 填 ghcr.io/w1570187062/my_folio_hub:latest）
+docker compose up -d
+```
+
+访问 <http://localhost:9989> 即可；升级只需 `docker pull` 后重建容器。
+
+### 从源码构建
 
 ```bash
 docker compose up -d --build
