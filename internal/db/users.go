@@ -228,6 +228,14 @@ func columnExists(table, col string) (bool, error) {
 // ---- users CRUD ----
 
 func CreateUser(name string) (int64, error) {
+	// 用户总数上限：右上角可切换的用户最多 MaxUsers 个。
+	var n int
+	if err := DB.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		return 0, err
+	}
+	if n >= MaxUsers {
+		return 0, ErrUserLimit
+	}
 	now := time.Now().Format("2006-01-02 15:04:05")
 	res, err := DB.Exec(`INSERT INTO users(name,created_at) VALUES(?,?)`, name, now)
 	if err != nil {

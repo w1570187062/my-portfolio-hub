@@ -800,6 +800,9 @@ func Get(id int64) (*Holding, error) {
 }
 
 func Create(h *Holding) (int64, error) {
+	if err := checkEntityLimit(h.UserID, "holdings"); err != nil {
+		return 0, err
+	}
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
 	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost,asset_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost, h.AssetType)
@@ -1274,28 +1277,30 @@ func ListSources(userID int64) ([]AssetSource, error) {
 	return out, rows.Err()
 }
 
-// MaxSources 每个用户最多可添加的账户（资产来源）数量，超过禁止新增。
-const MaxSources = 5
+// 数量上限：可切换的用户总数 5 个；账户/子账户/持仓/理财/负债/消费等数据每用户 200 条。
+const MaxUsers = 5
+const MaxEntities = 200
 
-// ErrSourceLimit 账户数量达到上限时返回。
-var ErrSourceLimit = fmt.Errorf("最多只能添加 %d 个账户", MaxSources)
+var ErrUserLimit = fmt.Errorf("最多只能创建 %d 个用户", MaxUsers)
+var ErrEntityLimit = fmt.Errorf("该类型数据最多只能添加 %d 条", MaxEntities)
 
-func CountSources(userID int64) (int, error) {
+// checkEntityLimit 统计某用户在指定表的记录数，达到 MaxEntities 时返回错误。
+// table 仅由内部固定字符串调用，无注入风险。
+func checkEntityLimit(userID int64, table string) error {
 	var n int
-	if err := DB.QueryRow(`SELECT COUNT(*) FROM asset_sources WHERE user_id=?`, userID).Scan(&n); err != nil {
-		return 0, err
+	if err := DB.QueryRow("SELECT COUNT(*) FROM "+table+" WHERE user_id=?", userID).Scan(&n); err != nil {
+		return err
 	}
-	return n, nil
+	if n >= MaxEntities {
+		return ErrEntityLimit
+	}
+	return nil
 }
 
 func CreateSource(s *AssetSource) (int64, error) {
 	// 账户数量上限：新建入口（手工新增/导入）统一走 CreateSource，在此拦截。
-	n, err := CountSources(s.UserID)
-	if err != nil {
+	if err := checkEntityLimit(s.UserID, "asset_sources"); err != nil {
 		return 0, err
-	}
-	if n >= MaxSources {
-		return 0, ErrSourceLimit
 	}
 	s.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
 	res, err := DB.Exec(`INSERT INTO asset_sources(user_id,name,type,region,currencies,note,created_at) VALUES(?,?,?,?,?,?,?)`,
@@ -1396,6 +1401,9 @@ func ListWealthBySource(sourceID int64) ([]WealthProduct, error) {
 }
 
 func CreateWealth(w *WealthProduct) (int64, error) {
+	if err := checkEntityLimit(w.UserID, "wealth_products"); err != nil {
+		return 0, err
+	}
 	if w.Currency == "" {
 		w.Currency = "rmb"
 	}
@@ -1513,6 +1521,9 @@ func GetCash(id int64) (*Cash, error) {
 }
 
 func CreateCash(c *Cash) (int64, error) {
+	if err := checkEntityLimit(c.UserID, "cash_accounts"); err != nil {
+		return 0, err
+	}
 	if c.Currency == "" {
 		c.Currency = "rmb"
 	}
@@ -2064,6 +2075,9 @@ func ListLiabilities(userID int64) ([]Liability, error) {
 }
 
 func CreateLiability(l *Liability) (int64, error) {
+	if err := checkEntityLimit(l.UserID, "liabilities"); err != nil {
+		return 0, err
+	}
 	l.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
 	res, err := DB.Exec(`INSERT INTO liabilities(user_id,source_id,name,type,amount,rate,monthly_payment,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
 		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Note, l.CreatedAt)
@@ -2178,6 +2192,9 @@ func ListConsumptions(limit int, userID int64) ([]Consumption, error) {
 }
 
 func CreateConsumption(c *Consumption) (int64, error) {
+	if err := checkEntityLimit(c.UserID, "consumptions"); err != nil {
+		return 0, err
+	}
 	if c.Date == "" {
 		c.Date = time.Now().Format("2006-01-02")
 	}
