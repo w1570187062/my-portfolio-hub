@@ -3,7 +3,6 @@ module portfolio
 go 1.25.0
 
 require (
-	github.com/dop251/goja v0.0.0-20260901132549-43234fa61381
 	github.com/gin-gonic/gin v1.10.1
 	golang.org/x/text v0.16.0
 	modernc.org/sqlite v1.28.0

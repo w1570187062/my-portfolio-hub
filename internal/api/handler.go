@@ -131,6 +131,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/holdings/:id/analysis", getAnalysis)
 		g.POST("/refresh", refresh)
 		g.POST("/holdings/:id/adjust", adjustHolding)
+		g.POST("/holdings/:id/dividend", dividendHolding)
 		g.GET("/holdings/:id/transactions", listTransactions)
 		g.POST("/holdings/:id/buy-plan/execute", executeBuyPlanTier)
 		g.GET("/holdings/:id/buy-plan/executed", listExecutedBuyPlan)
@@ -170,6 +171,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/asset/wealth", createWealth)
 		g.PUT("/asset/wealth/:id", updateWealth)
 		g.DELETE("/asset/wealth/:id", deleteWealth)
+		g.POST("/asset/wealth/:id/redeem", redeemWealth)
 		g.POST("/asset/wealth/snapshots", assetWealthSnapshotsPost)
 		g.DELETE("/asset/wealth/snapshots", assetWealthSnapshotDelete)
 		g.POST("/asset/wealth/snapshots/undo", assetWealthSnapshotUndo)
@@ -186,6 +188,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/asset/liabilities", createLiability)
 		g.PUT("/asset/liabilities/:id", updateLiability)
 		g.DELETE("/asset/liabilities/:id", deleteLiability)
+		g.GET("/asset/liabilities/:id/flows", liabilityFlows)
 		g.GET("/asset/consumptions", listConsumptionsH)
 		g.POST("/asset/consumptions", createConsumption)
 		g.PUT("/asset/consumptions/:id", updateConsumption)
@@ -206,9 +209,6 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/asset/rebalance", assetRebalance)
 
 		// 自定义评级脚本（资产工具 → 评级逻辑）
-		g.GET("/analysis-script", analysisScriptGet)
-		g.PUT("/analysis-script", analysisScriptPut)
-		g.POST("/analysis-script/test", analysisScriptTest)
 	}
 }
 
@@ -498,6 +498,48 @@ func adjustHolding(c *gin.Context) {
 	})
 }
 
+// dividendHolding 记一次现金分红：份额不变、成本价按每股分红下调（除息摊薄），
+// 分红金额入账到所选（或默认 ★）现金账户并写流水；DIV 记录进 position_tx 留痕。
+func dividendHolding(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	var req struct {
+		PerShare      float64 `json:"per_share"`       // 每股分红（税前口径，用于摊薄成本）
+		CashAccountID int64   `json:"cash_account_id"` // 分红入账账户；为空则回落到该来源的默认现金账户
+		Note          string  `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	uid := currentUserID(c)
+	h, total, err := db.AdjustDividend(id, req.PerShare, strings.TrimSpace(req.Note))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// 现金联动：分红入账（失败不阻断——成本已摊薄，流水缺失可手工对账，与加减仓联动同风格）
+	if acc, accErr := resolveCashAccount(uid, req.CashAccountID, h.SourceID, h.Currency); accErr != nil {
+		log.Printf("[dividend] 解析现金账户失败(uid=%d hid=%d): %v", uid, id, accErr)
+	} else {
+		detail := fmt.Sprintf("分红入账 %s %s｜每股 %g｜份额 %g", h.Name, h.Symbol, req.PerShare, h.Quantity)
+		if s := strings.TrimSpace(req.Note); s != "" {
+			detail += "｜" + s
+		}
+		if e := db.AddCashAmount(acc.ID, total, "dividend", "holding", h.ID, h.Name, detail); e != nil {
+			log.Printf("[dividend] 现金入账失败(uid=%d hid=%d): %v", uid, id, e)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"holding":        enrich(*h, uid),
+		"dividend_total": total,
+		"new_cost_price": h.CostPrice,
+	})
+}
+
 // listTransactions returns a holding's 加仓/减仓 history plus cumulative realized P&L.
 func listTransactions(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -552,7 +594,7 @@ func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee flo
 	default:
 		return nil
 	}
-	acc, err := resolveCashAccount(uid, cashID, h.SourceID)
+	acc, err := resolveCashAccount(uid, cashID, h.SourceID, h.Currency)
 	if err != nil {
 		return err
 	}
@@ -564,8 +606,8 @@ func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee flo
 }
 
 // resolveCashAccount 返回本次资金变动使用的现金账户：显式指定优先（并校验归属当前用户），
-// 否则取该来源的默认现金账户，仍没有则现场创建一个。
-func resolveCashAccount(uid, cashID, sourceID int64) (*db.Cash, error) {
+// 否则取该来源同币种的默认子账户（★），仍没有则按币种现场补建一个。
+func resolveCashAccount(uid, cashID, sourceID int64, currency string) (*db.Cash, error) {
 	if cashID > 0 {
 		acc, err := db.GetCash(cashID)
 		if err != nil {
@@ -580,10 +622,10 @@ func resolveCashAccount(uid, cashID, sourceID int64) (*db.Cash, error) {
 		}
 		return acc, nil
 	}
-	if acc, err := db.GetDefaultCash(uid, sourceID); err == nil && acc != nil {
+	if acc, err := db.GetDefaultCash(uid, sourceID, currency); err == nil && acc != nil {
 		return acc, nil
 	}
-	id, err := db.EnsureDefaultCash(uid, sourceID, "")
+	id, err := db.EnsureCurrencyDefaults(uid, sourceID, "", currency)
 	if err != nil {
 		return nil, err
 	}
@@ -992,7 +1034,7 @@ func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
 		return "", 0
 	}
 	ind := market.CalculateIndicators(bars)
-	prob := market.EvaluateProbability(ind)
+	prob := market.CalculateProbability(ind)
 	if prob == nil {
 		return "", 0
 	}
@@ -1102,7 +1144,15 @@ func doSnapshot(uid int64) error {
 		// the list's real-time daily P&L, and avoids a missed snapshot day
 		// silently turning "daily P&L" into a multi-day cumulative figure.
 		var dp float64
+		// 防重复（全市场通用，2026-09-08 美股 Labor Day 复现）：休市日行情源仍返回上一
+		// 已记录收盘的快照（美股/港股独有假期、QDII 净值滞后多日），若 price_daily 最近
+		// 一条已记录收盘 == 当前价，说明没有新数据，当日盈亏记 0，避免同一份涨跌被
+		// 重复计入（美股同一天 07:00/21:00 两次任务、以及休市跨天都会中招）。
+		lastClose, lastOk, lastErr := db.GetPrevClose(h.Symbol, today, uid)
+		staleQuote := lastErr == nil && lastOk && lastClose == h.CurrentPrice
 		switch {
+		case staleQuote:
+			dp = 0
 		case h.Market == "美股":
 			// 美股 T+1：仅在美东盘中（北京对应时段）把当日盈亏视为 0（盘中浮动不算数）；
 			// 收盘后 (现价-昨收) 即最近一个已收盘美股交易日的涨跌，于下一中国交易日体现，

@@ -573,8 +573,6 @@ func ComputeDailySignals(bars []KlineBar) []DailySignal {
 	}
 	const start = 60
 	out := make([]DailySignal, 0, len(bars)-start)
-	// 自定义脚本总预算：逐日最多执行约500次脚本，用共享预算防止病态脚本拖垮接口
-	budget := scriptDailyBudget
 	sigRet := func(close0, futureClose float64, isBuy bool) *float64 {
 		if close0 <= 0 {
 			return nil
@@ -590,7 +588,7 @@ func ComputeDailySignals(bars []KlineBar) []DailySignal {
 		if ind == nil {
 			continue
 		}
-		prob := EvaluateProbabilityBounded(ind, &budget)
+		prob := CalculateProbability(ind)
 		if prob == nil {
 			continue
 		}

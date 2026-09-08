@@ -11,7 +11,7 @@
 - 资产全景（来源 / 理财 / 负债 / 现金 / 消费）、动态补仓计划
 - 技术分析：K 线 + MA / MACD / RSI / KDJ / BOLL + 逐日信号回测胜率
 - 小工具：补仓计算器、权益 / 美元资产盈亏录入
-- AI 总结（全资产 / 权益类），支持 **goja 引擎** 自定义评级脚本（编写 / 测试 / 热加载）
+- AI 总结（全资产 / 权益类）
 - 通知渠道：钉钉（加签）、邮件（隐式 TLS / STARTTLS），按策略推送
 - 多用户隔离（`X-User-Id` 请求头），支持数据隔离、清空、删除
 - **暗黑 / 亮色双主题**；UI 主色豆沙护眼绿 `#6f9e5e`；**涨红跌绿**（国内惯例）
@@ -88,7 +88,7 @@ portfolio/
 | `liabilities` / `consumptions` / `cash_accounts` | 负债 / 消费 / 现金 |
 | `operation_guides` | 持仓买卖笔记（操作指南） |
 | `users` | 多用户（按 `X-User-Id` 隔离数据） |
-| `analysis_cache` / `analysis_script` | 技术分析缓存 / 全局自定义评级脚本 |
+| `analysis_cache` | 技术分析缓存 |
 | `fx_cache` / `meta` / `notify_settings` / `ai_settings` / `ai_summary_history` | 汇率缓存 / KV / 通知 / AI 配置 / 总结历史 |
 
 > `buy_plan` 字段（`holdings` 上）保存净值刷新时计算的动态补仓档位 JSON，操作指南弹框直接展示，不写入 `note`。

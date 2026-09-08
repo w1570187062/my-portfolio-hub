@@ -31,16 +31,6 @@ func main() {
 		log.Fatalf("ensure users: %v", err)
 	}
 
-	// 自定义评级脚本：启动时加载进 goja 引擎（启用状态跨重启保持）
-	if s, err := db.GetAnalysisScript(); err == nil {
-		market.ConfigureEngine(s.Code, s.Enabled)
-		if s.Enabled {
-			log.Printf("[startup] 自定义评级脚本已启用（更新于 %s）", s.UpdatedAt)
-		}
-	} else {
-		log.Printf("[startup] 加载自定义评级脚本失败（使用内置逻辑）: %v", err)
-	}
-
 	// FX rates: warm cache from DB and refresh in background (handlers no longer block on upstream).
 	market.StartFXUpdater()
 

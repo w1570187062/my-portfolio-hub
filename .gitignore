@@ -17,3 +17,4 @@ DEPLOY.md
 
 # WorkBuddy 工作目录（记忆/配置，不入库）
 .workbuddy/
+/.trae
