@@ -1,0 +1,24 @@
+# 运行时数据与备份（不入库）
+data/
+.bak/
+*.db
+*.db-journal
+*.log
+
+# 根目录遗留的旧前端（不参与构建，以 web/ 下版本为准，后者被 //go:embed web 嵌入）
+/app.js
+/index.html
+
+# 本地部署流程说明（仅本地参考，不入库）
+DEPLOY.md
+
+# 本地临时核验目录
+.verify/
+
+# WorkBuddy 工作目录（记忆/配置，不入库）
+.workbuddy/
+/.trae
+
+# 设计系统文档（仅本地参考，不入库）
+DESIGN_SYSTEM.md
+

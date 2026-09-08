@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<title>观澜</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* 加减仓弹窗 */
+  /* 加仓=红(涨) / 减仓=绿(跌)：圆形切换按钮，与上方绿色 tab 形成颜色区分 */
+  .adj-toprow { display:flex; align-items:flex-end; gap:10px; margin-bottom:10px; }
+  #adjustModal .adj-toprow .adj-inline { margin-bottom:0; }
+  .seg-circ { display:flex; align-items:center; gap:6px; flex:none; }
+  .circ-sep { color:var(--text-muted,#9aa0a6); font-size:15px; line-height:1; user-select:none; }
+  .circ-btn { width:34px; height:34px; border-radius:50%; padding:0; line-height:1; display:flex; align-items:center; justify-content:center; border:1px solid var(--border,#d0d5dd); background:var(--bg-soft,#f4f5f7); color:var(--text-muted,#6b7280); font-size:14px; cursor:pointer; transition:var(--btn-transition, all .15s ease); }
+  .circ-btn:not(.active):hover { border-color:#9aa0a6; color:#4b5563; }
+  .circ-btn.active[data-type="BUY"] { background:#e5484d; border-color:#e5484d; color:#fff; font-weight:600; }
+  .circ-btn.active[data-type="SELL"] { background:#16a34a; border-color:#16a34a; color:#fff; font-weight:600; }
+  .adj-inline { flex:1; display:flex; flex-direction:column; gap:4px; margin:0; font-size:12px; color:var(--text-muted,#6b7280); }
+  .adj-inline input,
+  .adj-inline select { width:100%; margin-top:4px; }
+  .adj-row { display:flex; gap:10px; margin-bottom:10px; align-items:flex-start; }
+  .adj-preview { display:none; margin:6px 0 10px; padding:10px 12px; border-radius:8px; font-size:13px; line-height:1.6; color:var(--text,#1f2329); }
+  .adj-preview .warn { color:#e5484d; }
+  .adj-preview b { color:var(--primary,#d9a52b); }
+  .adj-history { margin-top:14px; border-top:1px solid var(--border,#e5e7eb); padding-top:10px; }
+  .adj-history h3 { font-size:13px; color:var(--text-muted,#6b7280); margin:0 0 8px; font-weight:600; }
+  .adj-realized { font-size:13px; margin-bottom:8px; }
+  .adj-realized b { color:var(--primary,#d9a52b); }
+  .adj-history-list { max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
+  .adj-empty { font-size:12px; color:var(--text-muted,#9aa0a6); padding:6px 0; }
+  .adj-tx { border:1px solid var(--border,#e5e7eb); border-radius:8px; padding:8px 10px; font-size:12px; }
+  /* .adj-tag / .flow-tag 已统一收拢到 style.css（此处内联块加载晚于 style.css，重复定义会反向覆盖） */
+  .adj-meta { color:var(--text-muted,#9aa0a6); font-size:11px; }
+  .adj-rl { float:right; font-weight:600; }
+  .adj-rl.up { color:#e5484d; }
+  .adj-rl.down { color:#16a34a; }
+  .adj-detail { margin-top:4px; color:var(--text-muted,#6b7280); word-break:break-all; }
+  .adj-calc { padding-top:4px; }
+  /* 弹框内密度收紧：空错误不占空间、标签间距减小、确认按钮上下更紧凑 */
+  #adjErr:empty { display:none; }
+  #adjustModal label { margin-bottom:10px; }
+  #adjustModal .modal-actions { margin-top:4px; padding-top:8px; padding-bottom:12px; }
+  /* 加减仓弹框 tab 切换：连体胶囊（有边框、圆角、两段连在一起） */
+  .adj-tabs { display:flex; border:1px solid var(--border,#e5e7eb); border-radius:10px; overflow:hidden; margin:2px 28px 12px; padding:0; }
+  .adj-tab { flex:1; padding:7px 0; border:none; background:transparent; cursor:pointer; font-size:12px; text-align:center; color:var(--text-muted,#6b7280); transition:var(--btn-transition, all .15s ease); }
+  .adj-tab + .adj-tab { border-left:1px solid var(--border,#e5e7eb); }
+  .adj-tab:not(.active):hover { background:var(--bg-soft,#f4f5f7); color:var(--text,#1f2329); }
+  .adj-tab.active { background:var(--btn-primary); color:#fff; font-weight:600; }
+  /* 调整弹框底部「确定」按钮上下间距收紧 */
+  #adjustModal .modal-actions { margin-top:4px; padding-top:8px; padding-bottom:12px; }
+  /* 面板：自身滚动；内部 form 不另起滚动，避免双重内边距 */
+  .modal-card .adj-panel form { flex:none; min-height:0; overflow:visible; padding:0; }
+  /* 计算器：描述与输入框左边缘对齐，输入框占满宽度 */
+  .adj-calc .tool-rate { padding:0; }
+  .adj-calc .tool-rate input,
+  .adj-calc .tool-rate select { width:100%; }
+  /* 编辑持仓弹框：三列网格，标签在上、控件在下，跨列对齐 */
+  #modal .f-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:10px; }
+  #modal .f-row.f-row2 { grid-template-columns:1fr 1fr; }
+  #modal .f-row > label { display:flex; flex-direction:column; gap:4px; margin-bottom:0; font-size:12px; color:var(--text-muted,#6b7280); }
+  #modal .f-row > label input,
+  #modal .f-row > label select { width:100%; margin-top:4px; }
+  @media (max-width:520px) { #modal .f-row { grid-template-columns:repeat(2,1fr); } #modal .f-row2 { grid-template-columns:1fr; } }
+
+  /* 导航区 */
+  .brand-nav { position:relative; display:flex; align-items:center; gap:10px; }
+
+  /* 操作指南 */
+  .guide-list { max-height:360px; overflow-y:auto; margin-bottom:12px; }
+  .guide-item { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px; transition:background .15s; }
+  .guide-item:hover { background:var(--bg-hover,rgba(217,165,43,.06)); }
+  .guide-item-body { flex:1; min-width:0; }
+  .guide-item-title { font-weight:600; color:var(--text); margin-bottom:2px; }
+  .guide-item-tags { display:flex; flex-wrap:wrap; gap:4px; margin:4px 0; }
+  .guide-tag { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; background:var(--primary-soft,rgba(217,165,43,.14)); color:var(--primary,#d9a52b); }
+  .guide-item-info { font-size:12px; color:var(--text-muted,#6b7280); display:flex; gap:12px; flex-wrap:wrap; }
+  .guide-item-content { font-size:13px; color:var(--text); white-space:pre-wrap; word-break:break-word; line-height:1.5; margin:6px 0; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card,#fff); max-height:180px; overflow-y:auto; }
+  .guide-item-actions { display:flex; flex-direction:column; gap:4px; flex-shrink:0; }
+  .guide-item-actions button { padding:4px 8px; font-size:12px; }
+  .guide-empty { text-align:center; padding:32px 0; color:var(--text-muted,#6b7280); }
+</style>
+</head>
+<body>
+<div id="app" hidden>
+  <header>
+    <div class="brand-nav">
+      <h1 id="brandTitle" title="点击回到主页" style="cursor:pointer"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>观澜</h1>
+    </div>
+    <div class="act-group">
+      <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto"><path d="M21 12.79 A9 9 0 1 1 11.21 3 A7 7 0 0 0 21 12.79 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg></button>
+      <div class="asset-toolbar header-toolbar" id="assetToolbar" hidden></div>
+      <button id="userBtn" class="btn act-user" type="button" title="用户切换"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto"><circle cx="12" cy="8.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M4.8 19.2 C4.8 15.3 8 13.6 12 13.6 C16 13.6 19.2 15.3 19.2 19.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span id="userNameText" style="display:none">默认</span></button>
+    </div>
+  </header>
+
+  <div id="holdingsView">
+  <div class="market-bar" id="marketBar" hidden>
+    <div class="mb-left">
+      <span class="breadcrumb" id="mbBreadcrumb"><span class="breadcrumb-item breadcrumb-current">首页</span></span>
+      <span class="mb-sep">·</span>
+      <span class="mb-time" id="mbTime"></span>
+    </div>
+    <div class="header-fx" id="headerFx">
+      <div class="hf-marquee" id="hfMarquee"><div class="hf-track" id="hfTrack"></div></div>
+    </div>
+  </div>
+  <div id="accountCard" class="account-card" hidden>
+    <div class="ac-summary-cards" id="acSummaryData"></div>
+  </div>
+  <div class="list-bar">
+    <div id="filters" class="filters"></div>
+    <div class="list-actions">
+      <div class="action-btns">
+        <button id="aiHomeBtn" class="btn icon-btn" type="button" title="AI 总结" aria-label="AI 总结"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="5" y="7.5" width="14" height="11" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="9.5" cy="12.5" r="1.3" fill="currentColor"/><circle cx="14.5" cy="12.5" r="1.3" fill="currentColor"/><path d="M12 7.5 V4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="3.6" r="1.3" fill="currentColor"/><path d="M8.5 18.5 V21 M15.5 18.5 V21" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>
+        <button id="addBtn" class="btn icon-btn" title="添加持仓" aria-label="添加持仓"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 7.8 V16.2 M7.8 12 H16.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>
+        <button id="guideBtn" class="btn icon-btn" title="调仓计划" aria-label="调仓计划"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="5.5" y="4.5" width="13" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="9" y="2.8" width="6" height="3.4" rx="1.2" fill="currentColor"/><path d="M9 10.5 H15 M9 14 H15 M9 17.5 H12.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span id="guideBadge" class="guide-badge" hidden></span></button>
+      </div>
+      <div class="action-tools">
+        <input type="search" id="filterInput" name="q" class="filter-search" placeholder="搜索名称 / 代码" aria-label="筛选持仓" autocomplete="off" spellcheck="false" enterkeyhint="search" hidden data-1p-ignore data-lpignore="true" data-form-type="other" data-dashlane-ignored="true">
+      </div>
+    </div>
+  </div>
+
+  <!-- 表格/卡片切换行：上方分割线；左侧为列表描述（持仓数量动态计算），右侧为视图切换；上下间距一致 -->
+  <div class="tbl-meta-bar">
+    <span class="tbl-desc" id="tblDesc">持仓（0）</span>
+    <div class="view-toggle" id="viewToggle">
+      <span class="vt-indicator" id="vtIndicator"></span>
+      <button class="btn vt-btn active" data-view="table" type="button">表格</button>
+      <button class="btn vt-btn" data-view="card" type="button">卡片</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th class="num">#</th><th>名称</th><th>代码</th><th id="sourceTh" class="src-th" title="按账户筛选">账户 <span class="src-caret">▾</span><span id="sourceBadge" class="src-badge" hidden></span></th><th class="hide-col">类型</th><th class="hide-col">市场</th><th class="hide-col">币种</th>
+        <th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th><th class="num" title="近20个交易日收盘价走势">近20日</th>
+        <th class="num sortable" data-sort="market_value" onclick="setSort('market_value')">市值(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="day_pnl" onclick="setSort('day_pnl')">当日盈亏(<span id="dayDateLbl"></span>) <span class="sort-ind"></span></th><th class="num sortable" data-sort="day_pnl_pct" onclick="setSort('day_pnl_pct')">当日盈亏率 <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl" onclick="setSort('pnl')">总盈亏(¥) <span class="sort-ind"></span></th><th class="num sortable" data-sort="pnl_pct" onclick="setSort('pnl_pct')">盈亏率 <span class="sort-ind"></span></th><th class="num">持仓</th><th>备注</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  </div>
+  <div id="holdingsBySource" class="holdings-by-source"></div>
+  <div id="sourceFilterPop" class="src-pop" hidden>
+    <div class="src-pop-head">
+      <span>按账户筛选</span>
+      <span>
+        <button type="button" class="src-link" id="srcAll">全选</button>
+        <button type="button" class="src-link" id="srcNone">清空</button>
+      </span>
+    </div>
+    <div id="sourceFilterList" class="src-pop-list"></div>
+    <div class="src-pop-foot"><button type="button" class="btn btn-sm" id="srcApply">确定</button></div>
+  </div>
+  <div id="cards" class="cards-grid" hidden></div>
+  <div id="pager" class="pager"></div>
+  <div id="holdingsEmpty" class="empty-state" hidden>
+    <div class="empty-icon">📭</div>
+    <p id="emptyMsg">还没有任何持仓，添加第一笔开始记录吧。</p>
+    <button class="btn" id="emptyAddBtn" type="button">➕ 添加第一笔持仓</button>
+  </div>
+  </div>
+
+  <div id="assetView" hidden>
+    <section id="assetSummary" class="summary asset-summary">
+      <div class="collapse-body" id="assetSummaryBody"></div>
+    </section>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <div class="asset-tabs-row">
+      <div class="asset-tabs" id="assetTabs">
+        <button class="btn atab active" data-tab="wealth" type="button">理财</button>
+        <button class="btn atab" data-tab="consume" type="button" style="display:none">消费</button>
+        <button class="btn atab" data-tab="sources" type="button">账户</button>
+      </div>
+      <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar"></div>
+    </div>
+    <div id="assetTabBody"></div>
+  </div>
+
+  <div id="notifyModal" class="modal" hidden>
+    <div class="modal-card" style="width:560px; max-width:94vw;">
+      <h2><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><path d="M18 8.5 A6 6 0 0 0 6 8.5 C6 15 4 16.5 4 16.5 H20 C20 16.5 18 15 18 8.5 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M13.7 20 A2 2 0 0 1 10.3 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>通知渠道</h2>
+      <button class="card-close" type="button" id="notifyClose" title="关闭" aria-label="关闭">✕</button>
+      <div class="ana-tabs ac-tabs">
+        <button id="ntTabPolicy" class="ana-tab-btn active" type="button">推送策略</button>
+        <button id="ntTabDt" class="ana-tab-btn" type="button">钉钉</button>
+        <button id="ntTabEm" class="ana-tab-btn" type="button">邮箱</button>
+      </div>
+
+      <!-- 推送策略 -->
+      <div id="ntPanelPolicy">
+        <label>推送频率
+          <select id="ntfPolicy">
+            <option value="every">每次净值更新都推送</option>
+            <option value="only_close">仅收盘后（定时快照）</option>
+            <option value="only_signal">仅出现补仓信号时</option>
+          </select>
+        </label>
+        <p class="tool-hint">控制净值更新后何时推送通知，避免频繁打扰。</p>
+      </div>
+
+      <!-- 钉钉 -->
+      <div id="ntPanelDt" hidden>
+        <label>启用钉钉通知
+          <label class="switch"><input type="checkbox" id="dtEnabled"><span class="switch-knob"></span></label>
+        </label>
+        <label>Webhook 地址<span class="input-eye"><input type="text" id="dtWebhook" readonly placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."><button type="button" class="eye-toggle" data-eye-for="dtWebhook" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+        <label>加签密钥（可选）<span class="input-eye"><input type="text" id="dtSecret" readonly placeholder="机器人安全设置中的加签密钥，不填则无需加签"><button type="button" class="eye-toggle" data-eye-for="dtSecret" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+      </div>
+
+      <!-- 邮箱 -->
+      <div id="ntPanelEm" hidden>
+        <label>启用邮箱通知
+          <label class="switch"><input type="checkbox" id="emEnabled"><span class="switch-knob"></span></label>
+        </label>
+        <label>SMTP 服务器<input type="text" id="emHost" placeholder="smtp.qq.com"></label>
+        <label>端口<input type="number" id="emPort" value="465" step="1"></label>
+        <label>账号<input type="text" id="emUser" placeholder="1570187062@qq.com"></label>
+        <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）"></label>
+        <label>发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com"></label>
+        <label>收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com"></label>
+      </div>
+
+      <div id="notifyErr" class="err"></div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="notifyTestBtn"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px;margin-right:2px"><path d="M21.5 2.5 L2.5 10.5 L10 13.5 L13.5 21.5 L21.5 2.5 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M10 13.5 L21.5 2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg> 测试通知</button>
+        <button class="btn" type="button" id="notifySaveBtn"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px;margin-right:2px"><path d="M19 21 H5 A2 2 0 0 1 3 19 V5 A2 2 0 0 1 5 3 H16 L21 8 V19 A2 2 0 0 1 19 21 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M17 21 V13 H7 V21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M7 3 V8 H14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg> 保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toolsModal" class="modal" hidden>
+    <div class="modal-card" style="width:720px; max-width:94vw;">
+      <h2>资产工具</h2>
+      <button class="card-close" type="button" id="toolsClose" title="关闭" aria-label="关闭">✕</button>
+      <div class="ana-tabs ac-tabs">
+        <button id="tlTabEq" class="ana-tab-btn active" type="button">权益盈亏</button>
+        <button id="tlTabUsd" class="ana-tab-btn" type="button">美元盈亏</button>
+        <button id="tlTabFx" class="ana-tab-btn" type="button">汇率计算</button>
+        <button id="tlTabLoan" class="ana-tab-btn" type="button">贷款计算器</button>
+      </div>
+
+      <!-- 汇率计算 -->
+      <div id="tlPanelFx">
+        <p class="tool-hint">在 CNY / HKD / USD 之间换算金额，汇率取页面实时汇率。<span class="tool-fx" id="fxRateHint"></span></p>
+        <div class="fx-calc">
+          <div class="fx-row">
+            <div class="fx-side">
+              <label>金额</label>
+              <input id="fxAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="0.00">
+            </div>
+            <div class="fx-side">
+              <label>从</label>
+              <select id="fxFrom">
+                <option value="CNY">CNY 人民币</option>
+                <option value="HKD">HKD 港币</option>
+                <option value="USD">USD 美元</option>
+              </select>
+            </div>
+            <div class="fx-arrow">⇄</div>
+            <div class="fx-side">
+              <label>到</label>
+              <select id="fxTo">
+                <option value="CNY">CNY 人民币</option>
+                <option value="USD">USD 美元</option>
+                <option value="HKD">HKD 港币</option>
+              </select>
+            </div>
+          </div>
+          <div class="tool-result" id="fxResult"></div>
+        </div>
+      </div>
+
+      <!-- 权益资产盈亏计算器 -->
+      <div id="tlPanelEq" hidden>
+        <p class="tool-hint">逐笔录入每笔盈亏（正=盈利，负=亏损），选择类型与币种，自动汇总为人民币。<span id="eqFxHint" class="tool-fx"></span></p>
+        <div class="tool-table" id="eqRows"></div>
+        <button id="eqAddRow" class="btn btn-sm" type="button">＋ 添加一笔</button>
+        <div class="tool-result" id="eqResult"></div>
+        <div class="tool-actions">
+          <button id="eqCalc" class="btn" type="button">计算</button>
+          <button id="eqSave" class="btn" type="button">保存</button>
+          <button id="eqClear" class="btn danger" type="button">清空</button>
+        </div>
+      </div>
+
+      <!-- 美元资产盈亏计算器 -->
+      <div id="tlPanelUsd" hidden>
+        <p class="tool-hint">买入与盈亏是两件独立的事：① 逐笔录入「美元买入」（金额 + 买入汇率），按金额加权得平均买入汇率。</p>
+        <p class="tool-hint">② 逐笔录入「盈亏」（USD 盈亏额），与当前汇率对比，判断美元资产是否跑赢汇率贬值。</p>
+        <label class="tool-rate">当前汇率（RMB / 1 USD）<input id="usdRate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="自动填充实时汇率"></label>
+        <div class="tool-sub">① 买入美元记录</div>
+        <div class="tool-table" id="usdBuyRows"></div>
+        <button id="usdAddBuy" class="btn btn-sm" type="button">＋ 添加一笔买入</button>
+        <div class="tool-sub">② 盈亏记录（USD）</div>
+        <div class="tool-table" id="usdPnlRows"></div>
+        <button id="usdAddPnl" class="btn btn-sm" type="button">＋ 添加一笔盈亏</button>
+        <div class="tool-result" id="usdResult"></div>
+        <div class="tool-actions">
+          <button id="usdCalc" class="btn" type="button">计算</button>
+          <button id="usdSave" class="btn" type="button">保存</button>
+          <button id="usdClear" class="btn danger" type="button">清空</button>
+        </div>
+      </div>
+
+      <!-- 贷款计算器：等额本息 / 等额本金，本金利息彩色条 -->
+      <div id="tlPanelLoan" hidden>
+        <div class="loan-grid">
+          <label>贷款本金（¥） <input id="loanAmount" type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" placeholder="如 1000000"></label>
+          <label>年利率（%） <input id="loanRate" type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" placeholder="如 3.6"></label>
+          <label>贷款月数 <input id="loanMonths" type="number" step="1" min="1" placeholder="如 360"></label>
+          <label>还款方式
+            <select id="loanType">
+              <option value="bx" selected>等额本息</option>
+              <option value="bj">等额本金</option>
+            </select>
+          </label>
+        </div>
+        <div class="tool-actions"><button id="loanCalc" class="btn" type="button">计算</button></div>
+        <div class="tool-result" id="loanResult" hidden></div>
+        <div id="loanBarWrap" hidden>
+          <div class="loan-bar" id="loanBar"></div>
+          <div class="loan-legend" id="loanLegend"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 盈亏分析弹框：日历 + 走势 双 Tab（原两个独立弹框合并） -->
+  <div id="pnlModal" class="modal" hidden>
+    <div class="modal-card" style="width:min(900px, 96vw); max-width:96vw;">
+      <h2 id="pnlModalTitle">盈亏日历</h2>
+      <button class="card-close" type="button" id="pnlClose" title="关闭" aria-label="关闭">✕</button>
+      <div class="ana-tabs ac-tabs">
+        <button id="pnlTabCalBtn" class="ana-tab-btn active" type="button" data-tab="cal">盈亏日历</button>
+        <button id="pnlTabTrendBtn" class="ana-tab-btn" type="button" data-tab="trend">盈亏走势</button>
+      </div>
+      <div id="pnlTabCal" class="ac-panel">
+        <div class="cal-body">
+          <div class="cal-head">
+            <div class="cal-nav">
+              <button id="calPrev" class="btn cal-nav-btn" type="button">‹</button>
+              <span id="calTitle" class="cal-title"></span>
+              <button id="calNext" class="btn cal-nav-btn" type="button">›</button>
+            </div>
+            <div id="calMonthSummary" class="cal-month-summary"></div>
+            <div class="cal-legend">
+              <span class="lg-text">跌</span>
+              <span class="lg lg-down4"></span><span class="lg lg-down3"></span><span class="lg lg-down2"></span><span class="lg lg-down1"></span>
+              <span class="lg lg-zero"></span>
+              <span class="lg lg-up1"></span><span class="lg lg-up2"></span><span class="lg lg-up3"></span><span class="lg lg-up4"></span>
+              <span class="lg lg-none"></span><span class="lg-text">无数据</span>
+            </div>
+          </div>
+          <div id="calWeekdays" class="cal-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+          <div id="calGrid" class="cal-grid"></div>
+        </div>
+      </div>
+      <div id="pnlTabTrend" class="ac-panel" hidden></div>
+    </div>
+  </div>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card">
+      <h2 id="modalTitle">添加持仓</h2>
+        <form id="form">
+          <input type="hidden" id="f_id">
+          <label>名称 <input id="f_name" required></label>
+          <div class="f-row">
+            <label>代码 <input id="f_symbol" placeholder="600519 / 110011 / AAPL" required></label>
+            <label>类别
+              <select id="f_category"><option value="stock">股票</option><option value="fund">基金</option></select>
+            </label>
+            <label>市场
+              <select id="f_market"></select>
+            </label>
+          </div>
+          <div class="f-row">
+            <label>份额 <input id="f_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
+            <label>成本价 <input id="f_cost_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
+            <label>现价 <input id="f_current_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="美股手动填；其余留空刷新自动更新"></label>
+          </div>
+          <div class="f-row">
+            <label>账户
+              <select id="f_source"></select>
+            </label>
+            <label>币种
+              <select id="f_currency"><option value="CNY">RMB</option><option value="HKD">HKD</option><option value="USD">USD</option></select>
+            </label>
+            <label>交易成本 <input id="f_cost" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="买入/卖出手续费等（可选）"></label>
+          </div>
+          <div class="f-row">
+            <label>描述 <input id="f_note" placeholder="可选，备忘用途"></label>
+            <label>交易日期 <input id="f_buy_date" type="date"></label>
+          </div>
+          <label id="linked_symbol_row" style="display:none">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL"></label>
+          <div id="formErr" class="err"></div>
+          <div id="f_at_chips" class="at-chips-row" title="资产类型标签（可多选）"></div>
+          <div class="modal-actions">
+            <button class="btn" type="submit">保存</button>
+          </div>
+        </form>
+    </div>
+  </div>
+
+  <div id="adjustModal" class="modal" hidden>
+    <div class="modal-card" style="width:480px; max-width:94vw;">
+      <h2 id="adjustTitle">加减仓</h2>
+      <div class="adj-tabs">
+        <button type="button" class="adj-tab active" data-tab="adjust">加减仓</button>
+        <button type="button" class="adj-tab" data-tab="calc">调仓计算器</button>
+        <button type="button" class="adj-tab" data-tab="dividend">分红</button>
+      </div>
+      <div class="adj-panel" data-panel="adjust">
+        <form id="adjustForm">
+          <input type="hidden" id="adj_id">
+          <div class="adj-toprow">
+            <label class="adj-inline" style="flex:none">操作
+              <div class="seg-circ" id="adjTypeSeg">
+                <button type="button" class="circ-btn active" data-type="BUY">加</button>
+                <span class="circ-sep">/</span>
+                <button type="button" class="circ-btn" data-type="SELL">减</button>
+              </div>
+            </label>
+            <label class="adj-inline">数量<input id="adj_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="份额" required></label>
+            <label class="adj-inline">价格<input id="adj_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="留空用现价"></label>
+            <label class="adj-inline">成本<input id="adj_fee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" value="0"></label>
+          </div>
+          <label>金额（自动计算）<input id="adj_amount" type="number" step="any" readonly></label>
+          <label>资金账户<span class="ua-hint">加仓从此账户付款，减仓回款入此账户（留空则用默认子账户 ★）</span>
+            <select id="adj_cash_id"></select>
+          </label>
+          <div id="adjPreview" class="adj-preview"></div>
+          <label>备注<input id="adj_note" placeholder="可选，如 补仓/止盈"></label>
+          <div id="adjErr" class="err"></div>
+          <div class="modal-actions">
+            <button class="btn" type="submit">确认</button>
+          </div>
+        </form>
+        <div class="adj-history">
+          <h3>交易记录</h3>
+          <div id="adjHistoryList" class="adj-history-list"><div class="adj-empty">暂无记录</div></div>
+        </div>
+      </div>
+      <div class="adj-panel" data-panel="dividend" hidden>
+        <form id="dividendForm">
+          <input type="hidden" id="div_id">
+          <label>每股分红<span class="ua-hint">税前口径；份额不变，成本价按此下调</span>
+            <input id="div_per_share" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 1.35" required>
+          </label>
+          <label>分红总额（自动）<input id="div_amount" type="number" step="any" readonly></label>
+          <label>入账账户<span class="ua-hint">分红金额入此账户（留空则用默认子账户 ★）</span>
+            <select id="div_cash_id"></select>
+          </label>
+          <div id="divPreview" class="adj-preview"></div>
+          <label>备注<input id="div_note" placeholder="可选，如 2026Q3 分红（税前）"></label>
+          <div id="divErr" class="err"></div>
+          <div class="modal-actions">
+            <button class="btn" type="submit">确认分红</button>
+          </div>
+        </form>
+        <p class="tool-hint">分红记录见「加减仓」tab 的交易记录（标记为「分红」），同时在现金账户流水中留痕。</p>
+      </div>
+      <div class="adj-panel" data-panel="calc" hidden>
+        <div class="adj-calc">
+          <p class="tool-hint">• 填原有持仓 + 一笔调仓，自动算合并后的成本、数量与净盈亏<br>
+• 调仓方式：按数量 / 按金额（金额含买入费，从金额中扣除）<br>
+• 调仓现价同时作成交价与盈亏参考价，数量支持非整数（如基金份数）<br>
+• 手续费买卖各一笔：买入费进成本，卖出费从盈亏扣除</p>
+          <div class="adj-row">
+            <label class="adj-inline">调仓方式
+              <select id="addMode">
+                <option value="qty">按数量</option>
+                <option value="amount">按金额</option>
+              </select>
+            </label>
+            <label class="adj-inline">买卖方向
+              <select id="addSide">
+                <option value="buy">买入</option>
+                <option value="sell">卖出</option>
+              </select>
+            </label>
+          </div>
+          <div class="adj-row">
+            <label class="adj-inline">原成交价（元/份）<input id="addOldPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 10.50"></label>
+            <label class="adj-inline">原持仓数量（股/份）<input id="addOldQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 1000"></label>
+          </div>
+          <div class="adj-row">
+            <label class="adj-inline" id="addQtyWrap">补仓数量<input id="addNewQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 500"></label>
+            <label class="adj-inline" id="addAmtWrap" style="display:none">补仓金额<input id="addAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 5000"></label>
+            <label class="adj-inline">补仓现价<input id="addNewPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 9.80"></label>
+            <label class="adj-inline">手续费<input id="addFee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 0 或 5"></label>
+          </div>
+          <div class="tool-result" id="addResult"></div>
+          <div class="tool-actions">
+            <button id="addCalc" class="btn" type="button">计算</button>
+            <button id="addClear" class="btn danger" type="button">清空</button>
+            <button id="addApply" class="btn primary" type="button" disabled>计入持仓</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="guideModal" class="modal" hidden>
+    <div class="modal-card" style="width:560px; max-width:94vw;">
+      <h2>调仓计划</h2>
+      <div class="guide-plan">
+        <div class="guide-plan-head">
+          <span class="guide-plan-title">📊 动态调仓计划</span>
+        </div>
+        <div id="guidePlanBody" class="guide-plan-body"></div>
+      </div>
+      <div class="guide-manual">
+        <div class="guide-plan-head">
+          <span class="guide-plan-title">📝 手动添加调仓计划</span>
+        </div>
+        <div id="guideList" class="guide-list"><div class="guide-empty">暂无操作记录</div></div>
+      <form id="guideForm" hidden>
+        <input type="hidden" id="guide_id">
+        <label>标题 *<input id="guide_title" placeholder="如：买入 PEP 100股 @150" required></label>
+        <label>关联持仓
+          <select id="guide_holding"><option value="0">不关联</option></select>
+        </label>
+        <label>买卖方向
+          <select id="guide_side">
+            <option value="buy">买入</option>
+            <option value="sell">卖出</option>
+          </select>
+        </label>
+        <label>标签（逗号分隔）<input id="guide_tags" placeholder="如：买入,美股,加仓"></label>
+        <label>内容<textarea id="guide_content" rows="4" placeholder="记录买卖理由、价格、数量、复盘等..."></textarea></label>
+        <div id="guideErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="guideCancel">取消</button>
+          <button class="btn" type="submit">保存</button>
+        </div>
+      </form>
+      <div class="modal-actions" id="guideActions">
+        <button class="btn" type="button" id="guideNew">新增记录</button>
+      </div>
+      </div><!-- /guide-manual -->
+    </div>
+  </div>
+
+  <div id="chartModal" class="modal" hidden>
+    <div class="modal-card chart-card">
+      <h2 id="chartTitle">图表</h2>
+      <div id="chartBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== 资产全景：构成 / 再平衡 / 设置 三 Tab ===== -->
+  <div id="assetCompModal" class="modal" hidden>
+    <div class="modal-card" style="width:780px; max-width:96vw;">
+      <h2 id="acModalTitle">资产全景</h2>
+      <button class="card-close" type="button" id="acCompClose" title="关闭" aria-label="关闭">✕</button>
+      <div class="ana-tabs ac-tabs">
+        <button id="acTabCompBtn" class="ana-tab-btn active" type="button" data-tab="comp">资产构成</button>
+        <button id="acTabRebalBtn" class="ana-tab-btn" type="button" data-tab="rebal">资产再平衡</button>
+        <button id="acTabSetBtn" class="ana-tab-btn" type="button" data-tab="settings">设置</button>
+      </div>
+      <div id="acTabComp" class="ac-panel">
+        <h3 id="acCompTitle"></h3>
+        <div id="acCompBody"></div>
+      </div>
+      <div id="acTabRebal" class="ac-panel" hidden></div>
+      <div id="acTabSet" class="ac-panel" hidden></div>
+    </div>
+  </div>
+
+  <div id="calModal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="cal-modal-head">
+        <h2 id="calModalDate">日期明细</h2>
+      </div>
+      <div id="calModalBody"></div>
+      <!-- 前一天/后一天按钮：由 openCalDay 每次渲染时重建拼入统计行（静态元素 append 进 innerHTML 内容区会被销毁，故改重建+事件委托） -->
+    </div>
+  </div>
+
+  <!-- AI 中枢：总结 / 功能 / 设置 / 历史（tab 切换） -->
+  <div id="aiHubModal" class="modal" hidden>
+    <div class="modal-card" style="width:800px; max-width:94vw; position: relative;">
+      <h2>AI 中枢</h2>
+      <button class="card-close" type="button" id="aiHubXClose" title="关闭" aria-label="关闭">✕</button>
+      <div class="ana-tabs ac-tabs">
+        <button id="hubTabSummary" class="ana-tab-btn active" type="button">AI 总结</button>
+        <button id="hubTabSettings" class="ana-tab-btn" type="button">AI 设置</button>
+        <button id="hubTabHistory" class="ana-tab-btn" type="button">AI 历史</button>
+      </div>
+
+      <!-- 总结：下拉选择类型后生成 -->
+      <div id="hubSummaryPanel" class="more-panel">
+        <label>总结类型
+          <select id="aiPickType">
+            <option value="all">一键 AI 总结（汇总全部资产）</option>
+            <option value="equity">权益类总结（股票 / 基金）</option>
+          </select>
+        </label>
+        <label>提示词模板
+          <select id="aiPickTpl"></select>
+        </label>
+        <label>模型
+          <select id="aiPickModel"></select>
+        </label>
+        <p class="tool-hint">使用「AI 设置」中的 API Key / 模型 / 提示词模板生成总结，结果自动保存到 AI 历史。</p>
+        <div id="aiPickErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="aiPickGo">生成总结</button>
+        </div>
+      </div>
+
+      <!-- 设置 -->
+      <div id="hubSettingsPanel" class="more-panel modal-card-body" hidden>
+        <label>模型配置（可保存多个）
+          <span class="ai-tpl-row">
+            <select id="ai_model_sel"></select>
+            <button type="button" id="ai_model_new" class="btn btn-sm">新增</button>
+            <button type="button" id="ai_model_del" class="btn btn-sm">删除</button>
+          </span>
+        </label>
+        <label>配置名称 <input id="ai_cfg_name" placeholder="如 默认 / DeepSeek / 备用"></label>
+        <label>模型名称 <input id="ai_model" placeholder="deepseek-v4-pro"></label>
+        <label>API Key
+          <span class="ai-key-row">
+            <input id="ai_apikey" type="password" placeholder="sk-...">
+            <button type="button" id="ai_toggleKey" class="btn btn-sm">显示</button>
+          </span>
+        </label>
+        <label>模型地址 <input id="ai_baseurl" placeholder="https://api.deepseek.com"></label>
+        <label>提示词模板
+          <span class="ai-tpl-row">
+            <select id="ai_tpl_sel"></select>
+            <button type="button" id="ai_tpl_new" class="btn btn-sm">新增</button>
+            <button type="button" id="ai_tpl_del" class="btn btn-sm">删除</button>
+          </span>
+        </label>
+        <label>模板名称 <input id="ai_tpl_name" placeholder="模板名称"></label>
+        <label>模板内容（用 {{DATA}} 插入持仓统计）
+          <textarea id="ai_tpl_content" rows="11" placeholder="在此编写提示词，用 {{DATA}} 占位符插入实时持仓统计"></textarea>
+        </label>
+        <label class="switch-row">每日收盘后自动生成 AI 总结（复用 21:00 基金快照）
+          <label class="switch"><input type="checkbox" id="aiAutoDaily"><span class="switch-knob"></span></label>
+        </label>
+        <label class="switch-row">生成后随净值推送发送
+          <label class="switch"><input type="checkbox" id="aiAutoSend"><span class="switch-knob"></span></label>
+        </label>
+        <div id="aiErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="ai_save">保存设置</button>
+        </div>
+      </div>
+
+      <!-- 历史 -->
+      <div id="hubHistoryPanel" class="more-panel" hidden>
+        <p class="more-history-note">AI 总结历史（最近 5 条，点击可查看全文）</p>
+        <div id="aiHistoryList" class="ai-history-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 持仓总结结果（独立顶层弹框，避免被 aiHubModal 的 hidden 态影响） -->
+  <div id="aiResultModal" class="modal" hidden>
+    <div class="modal-card" style="width:700px; max-width:94vw;">
+      <h2>AI 持仓总结</h2>
+      <div id="aiResultBody" class="ai-result">生成中…</div>
+    </div>
+  </div>
+
+  <div id="histModal" class="modal" hidden>
+    <div class="modal-card" style="width:720px; max-width:94vw;">
+      <h2 id="histTitle">历史盈亏</h2>
+      <div class="ana-tabs ac-tabs">
+        <button id="histTabTable" class="ana-tab-btn active" type="button">每日盈亏</button>
+        <button id="histTabChart" class="ana-tab-btn" type="button">盈亏曲线</button>
+        <button id="histTabAudit" class="ana-tab-btn" type="button">审计记录</button>
+      </div>
+      <div id="histTableWrap"><div id="histTable" class="hist-table"></div></div>
+      <div id="histChartWrap" hidden><div id="histChartBody"></div></div>
+    </div>
+  </div>
+
+  <!-- ===== 现金资金变动历史弹框（独立，无盈亏 tab）===== -->
+  <div id="cashHistModal" class="modal" hidden>
+    <div class="modal-card" style="width:720px; max-width:94vw;">
+      <h2 id="cashHistTitle">资金变动历史</h2>
+      <div id="cashHistBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== 技术分析弹框 ===== -->
+  <div id="analysisModal" class="modal" hidden>
+    <div class="modal-card" style="width:680px; max-width:94vw;">
+      <h2 id="analysisTitle">技术分析</h2>
+      <div id="analysisTime" class="analysis-time"></div>
+      <div id="analysisBody" class="analysis-body"></div>
+    </div>
+  </div>
+
+  <!-- 补仓成本计算器已并入「加减仓」弹框（#adjustModal 内 .adj-calc） -->
+</div>
+  <!-- ===== 资产全景弹框 ===== -->
+  <div id="assetSourceModal" class="modal" hidden>
+    <div class="modal-card">
+      <h2 id="assetSourceTitle">添加账户</h2>
+      <form id="assetSourceForm">
+        <input type="hidden" id="as_id">
+        <label>名称 <input id="as_name" placeholder="如 招商银行 / 支付宝" required></label>
+        <label>类型
+          <select id="as_type"><option value="bank">银行</option><option value="securities">证券</option><option value="software">软件</option><option value="platform">平台</option></select>
+        </label>
+        <label>区域
+          <select id="as_region"><option value="domestic">境内</option><option value="overseas">境外</option></select>
+        </label>
+        <label>币种</label>
+        <div id="as_currencies" class="cur-checks">
+          <label class="cur-check"><input type="checkbox" value="rmb"> RMB（人民币）</label>
+          <label class="cur-check"><input type="checkbox" value="hkd"> HKD（港币）</label>
+          <label class="cur-check"><input type="checkbox" value="usd"> USD（美元）</label>
+        </div>
+        <label>备注 <input id="as_note"></label>
+        <div id="assetSourceErr" class="err"></div>
+        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="wealthModal" class="modal" hidden>
+    <div class="modal-card">
+      <h2 id="wealthTitle">添加理财</h2>
+      <form id="wealthForm">
+        <input type="hidden" id="w_id">
+        <label>名称 <input id="w_name" placeholder="如 安心天天成长3号163期A" required></label>
+        <label>产品代码/登记编码 <input id="w_code"></label>
+        <label>所属账户 <select id="w_source"></select></label>
+        <label>货币类型
+          <select id="w_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
+        </label>
+        <label>备注 <input id="w_note"></label>
+        <div id="wealthErr" class="err"></div>
+        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="consumeModal" class="modal" hidden>
+    <div class="modal-card">
+      <h2 id="consumeTitle">添加消费</h2>
+      <form id="consumeForm">
+        <input type="hidden" id="cs_id">
+        <label>日期 <input id="cs_date" type="date"></label>
+        <label>类别 <input id="cs_category" placeholder="餐饮/交通/购物..." required></label>
+        <label>金额 <input id="cs_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
+        <label>所属账户 <select id="cs_source"></select></label>
+        <label>备注 <input id="cs_note"></label>
+        <div id="consumeErr" class="err"></div>
+        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="cashModal" class="modal" hidden>
+    <div class="modal-card" style="width:480px; max-width:94vw;">
+      <h2 id="cashTitle">添加子账户</h2>
+      <!-- 小 tab：添加子账户 / 添加负债（样式同加减仓弹框的连体胶囊 tab） -->
+      <div class="adj-tabs" id="cashTabs">
+        <button type="button" class="adj-tab active" data-tab="cash">子账户</button>
+        <button type="button" class="adj-tab" data-tab="liability">负债</button>
+      </div>
+      <form id="cashForm">
+        <!-- 编辑子账户（操作按钮所在行）：可改名称 + 对该账户 ± 资金，无 tab、无账户下拉 -->
+        <div id="cashEditFields" hidden>
+          <div class="cash-edit-info" id="cashEditInfo"></div>
+          <label>子账户名称 <input id="c_name_edit" placeholder="修改后保存即生效"></label>
+          <label>货币类型
+            <select id="c_currency_edit"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
+          </label>
+          <label>类型 <input id="c_type_edit" placeholder="如 活期/定期/零钱/保证金（可选）"></label>
+          <label>备注 <input id="c_note_edit" placeholder="子账户备注（可选）"></label>
+          <label>改为新余额 <input id="c_amount_edit" type="number" step="0.0001" oninput="clampDecimals(this,4)" placeholder="与 ± 资金二选一"></label>
+          <label>± 资金（正=存入，负=取出） <input id="c_delta" type="number" step="0.0001" oninput="clampDecimals(this,4)" placeholder="如 500 存入 / -300 取出"></label>
+        </div>
+        <!-- 添加子账户：干净的新增表单 -->
+        <div id="cashNewFields" hidden>
+          <label>名称 <input id="c_name" placeholder="如 招行活期 / 微信零钱"></label>
+          <label>货币类型
+            <select id="c_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select>
+          </label>
+          <label>类型 <input id="c_type" placeholder="如 活期/定期/零钱/保证金（可选）"></label>
+          <label>当前余额 <input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
+          <!-- 所属账户：从账户行「添加子账户」进入时锁定父账户（只读，不可选）；空状态全局入口无父账户上下文时才显示下拉 -->
+          <label id="c_source_fix_row" hidden>所属账户 <input id="c_source_fix" readonly placeholder="—"></label>
+          <label id="c_source_sel_row" hidden>所属账户 <select id="c_source"></select></label>
+          <label class="c-default-row"><input type="checkbox" id="c_is_default"> 设为默认子账户<span class="ua-hint">（同币种唯一；加减仓资金默认走此账户）</span></label>
+          <label>备注 <input id="c_note"></label>
+        </div>
+        <!-- 负债面板：与子账户同弹框，tab 切换（原独立负债弹框并入此处） -->
+        <div id="liabFields" hidden>
+          <input type="hidden" id="lb_id">
+          <label>名称 <input id="lb_name" placeholder="如 房贷 / 招行信用卡"></label>
+          <label>类型 <input id="lb_type" placeholder="房贷/信用卡/消费贷/其他"></label>
+          <!-- 所属账户：新增态锁定为入口父账户（只读展示，不可选）；编辑负债时可切换账户下拉 -->
+          <label id="lb_source_fix_row">所属账户 <input id="lb_source_fix" readonly placeholder="—"></label>
+          <label id="lb_source_sel_row" hidden>所属账户 <select id="lb_source"></select></label>
+          <label>当前欠款余额 <input id="lb_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
+          <label>年利率(%) <input id="lb_rate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
+          <label>月供 <input id="lb_monthly" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
+          <label>备注 <input id="lb_note"></label>
+        </div>
+        <div id="cashErr" class="err"></div>
+        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="wealthRedeemModal" class="modal" hidden>
+    <div class="modal-card" style="width:480px; max-width:94vw;">
+      <h2 id="wrTitle">理财减仓</h2>
+      <div class="cash-edit-info" id="wrInfo"></div>
+      <form id="wrForm">
+        <label>转出金额 <input id="wr_amount" type="number" step="0.01" min="0" oninput="clampDecimals(this,2);wrSyncHint()"></label>
+        <label>转入子账户（同来源） <select id="wr_cash"></select></label>
+        <label>备注（可选） <input id="wr_note" placeholder="缺省记「减仓回款 / 清仓回款」"></label>
+        <div class="ua-hint" id="wrHint"></div>
+        <div id="wrErr" class="err"></div>
+        <div class="modal-actions"><button class="btn" type="submit">确认转出</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="cashTransferModal" class="modal" hidden>
+    <div class="modal-card">
+      <h2 id="cashTransferTitle">账户转账</h2>
+      <form id="cashTransferForm">
+        <input type="hidden" id="ct_from_id">
+        <label>转出账户
+          <input id="ct_from_name" type="text" readonly disabled>
+        </label>
+        <label>转入账户
+          <select id="ct_to_id" required></select>
+        </label>
+        <label>转账金额（仅同币种） <input id="ct_amount" type="number" step="0.0001" min="0.0001" oninput="clampDecimals(this,4)" required></label>
+        <label>说明 <input id="ct_note" placeholder="如 调拨 / 还款 / 入金"></label>
+        <div id="cashTransferErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="ctCancel">取消</button>
+          <button class="btn" type="submit" id="ctSubmit">确认转账</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="snapModal" class="modal" hidden>
+    <div class="modal-card" style="width:720px; max-width:94vw;">
+      <h2>更新理财持仓</h2>
+      <div id="snapBody" class="snap-body"></div>
+      <div class="modal-actions"><button type="button" id="snapSave" class="btn">保存</button></div>
+    </div>
+  </div>
+
+  <div id="snapConfirmModal" class="modal" hidden>
+    <div class="modal-card" style="width:680px; max-width:94vw;">
+      <h2>确认保存持仓</h2>
+      <div id="snapConfirmBody"></div>
+      <div class="modal-actions">
+        <button type="button" id="snapConfirmCancel" class="btn">取消</button>
+        <button type="button" id="snapConfirmOk" class="btn primary">确认保存</button>
+      </div>
+    </div>
+  </div>
+
+<!-- ===== 用户切换底部抽屉 ===== -->
+<div id="userSheet" class="bottom-sheet" hidden>
+  <div class="sheet-backdrop" id="userSheetBackdrop"></div>
+  <div class="sheet-panel">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <h2>用户管理</h2>
+      <button class="sheet-close btn" type="button" id="userSheetClose" aria-label="关闭">✕</button>
+    </div>
+    <div class="user-current">
+      <div>
+        <div class="uc-name">当前用户：<span id="ucName">—</span></div>
+        <div class="uc-meta" id="ucMeta">— 条数据</div>
+      </div>
+    </div>
+    <div class="user-list" id="userList"></div>
+    <div class="user-add">
+      <input id="userNameInput" type="text" placeholder="新用户名" maxlength="20" autocomplete="off" spellcheck="false">
+      <button class="btn" type="button" id="userAddBtn">新增</button>
+    </div>
+    <div class="user-accent">
+      <div class="ua-label">主题色<span class="ua-hint">（切换后立即生效，记在本机）</span></div>
+      <div class="accent-swatches" id="accentSwatches">
+        <button class="accent-swatch" type="button" data-accent="gold" title="土豪金（默认）" aria-label="土豪金"></button>
+        <button class="accent-swatch" type="button" data-accent="green" title="豆沙护眼绿" aria-label="豆沙绿"></button>
+        <button class="accent-swatch" type="button" data-accent="blue" title="经典蓝" aria-label="经典蓝"></button>
+        <button class="accent-swatch accent-custom" type="button" id="accentCustomBtn" title="自定义主题色（铅笔挑选任意颜色）" aria-label="自定义主题色">✏️</button>
+        <input type="color" id="accentCustom" value="#d9a52b" style="position:absolute;opacity:0;width:0;height:0;border:0;padding:0" tabindex="-1" aria-hidden="true">
+      </div>
+    </div>
+  <div class="user-data">
+    <button class="btn" type="button" id="ai_export_json">⬇️ 导出数据</button>
+    <button class="btn" type="button" id="ai_import_json">⬆️ 导入数据</button>
+  </div>
+  <div class="user-clear">
+    <button class="btn danger" type="button" id="userClearBtn">清空当前用户数据</button>
+  </div>
+</div>
+
+<!-- 删除用户：需输入「我已知晓」确认 -->
+<div id="userDeleteModal" class="modal" hidden>
+  <div class="modal-card confirm-card">
+    <h2>删除用户</h2>
+    <p class="confirm-msg" id="userDeleteMsg"></p>
+    <label class="ud-confirm-label">请输入「我已知晓」以确认删除：
+      <input id="userDeleteInput" type="text" autocomplete="off" spellcheck="false" placeholder="我已知晓" data-1p-ignore data-lpignore="true">
+    </label>
+    <div class="modal-actions">
+      <button class="btn" type="button" id="userDeleteCancel">取消</button>
+      <button class="btn danger" type="button" id="userDeleteOk" disabled>确认删除</button>
+    </div>
+  </div>
+</div>
+</div>
+
+  <!-- ===== 通用确认弹框（置于根级，z-index 高于底部抽屉，避免清空数据时被遮罩盖住；含「取消」以防误清空） ===== -->
+  <div id="confirmModal" class="modal" hidden>
+    <div class="modal-card confirm-card">
+      <h2 id="confirmTitle">确认删除</h2>
+      <p id="confirmMsg" class="confirm-msg"></p>
+      <div class="modal-actions">
+        <button type="button" id="confirmCancel" class="btn">取消</button>
+        <button type="button" id="confirmOk" class="btn danger">删除</button>
+      </div>
+    </div>
+  </div>
+
+<div id="toolTipHint" class="tool-tip-hint" hidden></div>
+<div id="calJumpModal" class="modal" hidden>
+  <div class="modal-card" style="width:360px; max-width:92vw;">
+    <h2>跳转到月份</h2>
+    <button class="card-close" type="button" id="calJumpClose" title="关闭" aria-label="关闭">✕</button>
+    <div class="cal-jump">
+      <div class="cal-jump-year">
+        <button class="btn cal-nav-btn" id="calJumpPrevY" type="button">‹</button>
+        <span id="calJumpYear" class="cal-jump-yearval"></span>
+        <button class="btn cal-nav-btn" id="calJumpNextY" type="button">›</button>
+      </div>
+      <div class="cal-jump-months" id="calJumpMonths"></div>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+<footer id="appFooter"><span id="versionInfo"></span></footer>
+<script src="/app.js"></script>
+</body>
+</html>

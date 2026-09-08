@@ -1,0 +1,14 @@
+services:
+  portfolio:
+    build:
+      context: .
+    container_name: portfolio
+    ports:
+      - "9989:9989"
+    environment:
+      - PORT=9989
+      - DATA_DIR=/data/portfolio.db
+      - TZ=Asia/Shanghai
+    volumes:
+      - /mnt/nvme0n1-4/portfolio/data:/data
+    restart: unless-stopped
