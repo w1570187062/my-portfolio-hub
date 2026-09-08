@@ -33,7 +33,6 @@
 | 后端 | Go 1.25 + Gin + SQLite（`modernc.org/sqlite`，**纯 Go 无 CGO**） |
 | 前端 | 原生 HTML / CSS / JS，通过 `//go:embed web` 内嵌二进制，构建后无需单独部署静态文件 |
 | 行情 | 腾讯 `qt.gtimg.cn`、新浪外汇、公开基金 API |
-| 自定义脚本 | [goja](https://github.com/dop251/goja)（内嵌 ECMAScript 引擎） |
 | 部署 | Docker / Docker Compose（默认端口 `9989`） |
 
 ## 快速开始
@@ -90,7 +89,7 @@ portfolio/
 ├── internal/
 │   ├── api/               # Gin 路由 + HTTP 处理（handler / analysis / asset / ai / notify / import）
 │   ├── db/                # SQLite 访问、表结构、迁移
-│   └── market/            # 行情抓取、技术指标、概率评估、补仓计划、goja 引擎
+│   └── market/            # 行情抓取、技术指标、概率评估、补仓计划
 ├── web/                   # 前端（//go:embed 打包）
 │   ├── index.html / app.js / style.css / favicon.svg
 ├── Dockerfile / docker-compose.yml

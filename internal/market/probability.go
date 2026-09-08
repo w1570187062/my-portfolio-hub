@@ -13,7 +13,7 @@ type ProbabilityResult struct {
 	Confidence int      `json:"confidence"` // 0-5，与总分同向的信号数，越高越可信
 	Signals    []Signal `json:"signals"`
 	Summary    string   `json:"summary"`
-	Engine     string   `json:"engine,omitempty"` // custom=自定义脚本 / default=内置 / default(fallback)=脚本失败降级
+	Engine     string   `json:"engine,omitempty"` // 历史兼容字段：旧数据可能存有 custom=自定义脚本（已下线）/ default=内置
 }
 
 // Signal is an individual indicator signal.
