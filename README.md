@@ -4,6 +4,11 @@
 >
 > **English**: A self-hosted, multi-user personal investment dashboard for tracking **A-share / US / HK stocks and funds**. Auto-refreshes quotes, computes P/L, records history, and offers a P/L calendar, trend charts, asset panorama, AI summaries, and technical analysis. Responsive on desktop and mobile.
 
+## 🌐 在线 Demo / Live Demo
+
+**<https://www.mrchenyifei.icu:19999>** · 预置了一套模拟数据（8 只持仓 / 多币种账户 / 理财 / 负债 / 近 30 日盈亏历史），行情定时自动刷新。
+A pre-seeded demo instance with mock data is live at the link above; quotes refresh automatically.
+
 ## 功能一览
 
 - 持仓增删改查、一键刷新行情、当日 / 总盈亏、持有天数
