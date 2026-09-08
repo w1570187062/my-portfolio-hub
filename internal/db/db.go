@@ -1274,7 +1274,29 @@ func ListSources(userID int64) ([]AssetSource, error) {
 	return out, rows.Err()
 }
 
+// MaxSources 每个用户最多可添加的账户（资产来源）数量，超过禁止新增。
+const MaxSources = 5
+
+// ErrSourceLimit 账户数量达到上限时返回。
+var ErrSourceLimit = fmt.Errorf("最多只能添加 %d 个账户", MaxSources)
+
+func CountSources(userID int64) (int, error) {
+	var n int
+	if err := DB.QueryRow(`SELECT COUNT(*) FROM asset_sources WHERE user_id=?`, userID).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func CreateSource(s *AssetSource) (int64, error) {
+	// 账户数量上限：新建入口（手工新增/导入）统一走 CreateSource，在此拦截。
+	n, err := CountSources(s.UserID)
+	if err != nil {
+		return 0, err
+	}
+	if n >= MaxSources {
+		return 0, ErrSourceLimit
+	}
 	s.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
 	res, err := DB.Exec(`INSERT INTO asset_sources(user_id,name,type,region,currencies,note,created_at) VALUES(?,?,?,?,?,?,?)`,
 		s.UserID, s.Name, s.Type, s.Region, s.Currencies, s.Note, s.CreatedAt)
