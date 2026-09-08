@@ -1,6 +1,8 @@
-# Portfolio · 观澜
+# Portfolio · 观澜 / My Folio Hub
 
-> 自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓。自动刷新行情、计算盈亏、记录历史，并提供盈亏日历、走势、资产全景、AI 总结与技术分析。桌面与移动端自适应。
+> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓。自动刷新行情、计算盈亏、记录历史，并提供盈亏日历、走势、资产全景、AI 总结与技术分析。桌面与移动端自适应。
+>
+> **English**: A self-hosted, multi-user personal investment dashboard for tracking **A-share / US / HK stocks and funds**. Auto-refreshes quotes, computes P/L, records history, and offers a P/L calendar, trend charts, asset panorama, AI summaries, and technical analysis. Responsive on desktop and mobile.
 
 ## 功能一览
 
