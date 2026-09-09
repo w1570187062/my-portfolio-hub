@@ -2250,6 +2250,55 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   margin-top: 10px;
   color: var(--text);
 }
+/* Markdown 渲染内容（AI 总结）：与主题色一致，避免裸样式 */
+.ai-result.md, .ai-history-preview.md {
+  white-space: normal;
+  word-break: break-word;
+}
+.ai-result.md > *:first-child, .ai-history-preview.md > *:first-child { margin-top: 0; }
+.ai-result.md > *:last-child, .ai-history-preview.md > *:last-child { margin-bottom: 0; }
+.ai-result.md h1, .ai-result.md h2, .ai-result.md h3, .ai-result.md h4,
+.ai-history-preview.md h1, .ai-history-preview.md h2, .ai-history-preview.md h3, .ai-history-preview.md h4 {
+  line-height: 1.35; font-weight: 700; margin: 14px 0 8px;
+}
+.ai-result.md h1, .ai-history-preview.md h1 { font-size: 19px; }
+.ai-result.md h2, .ai-history-preview.md h2 { font-size: 17px; }
+.ai-result.md h3, .ai-history-preview.md h3 { font-size: 15px; }
+.ai-result.md h4, .ai-history-preview.md h4 { font-size: 14px; }
+.ai-result.md ul, .ai-result.md ol, .ai-history-preview.md ul, .ai-history-preview.md ol { padding-left: 22px; margin: 8px 0; }
+.ai-result.md li, .ai-history-preview.md li { margin: 4px 0; }
+.ai-result.md code, .ai-history-preview.md code {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 5px;
+  padding: 1px 5px; font-size: 12.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.ai-result.md pre, .ai-history-preview.md pre {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; overflow: auto; margin: 8px 0;
+}
+.ai-result.md pre code, .ai-history-preview.md pre code { background: none; border: none; padding: 0; }
+.ai-result.md blockquote, .ai-history-preview.md blockquote {
+  margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--primary);
+  color: var(--text-muted); background: var(--bg-glass); border-radius: 0 8px 8px 0;
+}
+.ai-result.md a, .ai-history-preview.md a { color: var(--primary); text-decoration: underline; }
+.ai-result.md hr, .ai-history-preview.md hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.ai-result.md table, .ai-history-preview.md table {
+  border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px;
+  display: block; overflow-x: auto;
+}
+.ai-result.md th, .ai-result.md td,
+.ai-history-preview.md th, .ai-history-preview.md td {
+  border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top;
+}
+.ai-result.md th, .ai-history-preview.md th {
+  background: var(--bg-input); font-weight: 600; color: var(--text);
+}
+.ai-result.md tbody tr:nth-child(even), .ai-history-preview.md tbody tr:nth-child(even) {
+  background: rgba(var(--tint), 0.05);
+}
+/* 历史预览渲染 markdown 时改为按高度截断，避免与 -webkit-line-clamp 冲突 */
+.ai-history-preview.md { display: block; -webkit-line-clamp: unset; max-height: 6.5em; overflow: hidden; }
 
 /* ===== 移动端适配（iPhone 等窄屏，逻辑宽度 ≤ 640px） ===== */
 /* ===== 移动端适配（iPhone 17 等窄屏，逻辑宽度 ≤ 640px） ===== */

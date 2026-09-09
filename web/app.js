@@ -2601,6 +2601,103 @@ function openCalDay(date) {
 function escapeHtml(s) {
   return (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+// 轻量 Markdown → 安全 HTML（覆盖 AI 总结常见语法：标题/加粗/斜体/列表/代码块/行内代码/引用/链接/分隔线/段落）。
+// 先整体 HTML 转义再施加标记，杜绝 XSS；链接仅允许 http(s)。
+function renderMarkdown(md) {
+  if (md == null) return '';
+  const src = String(md).replace(/\r\n/g, '\n');
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inline = (t) => t
+    .replace(/`([^`]+)`/g, (_, c) => '<code>' + c + '</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const isTableSep = (s) => {
+    const t = s.trim();
+    if (!t.includes('|')) return false;
+    const cells = t.replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+    return cells.length >= 1 && cells.every((c) => /^:?-{1,}:?$/.test(c));
+  };
+  const splitRow = (s) => {
+    let t = s.trim();
+    if (t.startsWith('|')) t = t.slice(1);
+    if (t.endsWith('|') && t.length) t = t.slice(0, -1);
+    return t.split('|').map((c) => c.trim());
+  };
+  const renderTable = (header, aligns, rows) => {
+    let t = '<table><thead><tr>';
+    header.forEach((c, idx) => { t += '<th' + (aligns[idx] ? ' style="text-align:' + aligns[idx] + '"' : '') + '>' + inline(esc(c)) + '</th>'; });
+    t += '</tr></thead><tbody>';
+    rows.forEach((row) => {
+      t += '<tr>';
+      header.forEach((_, idx) => { t += '<td' + (aligns[idx] ? ' style="text-align:' + aligns[idx] + '"' : '') + '>' + inline(esc(row[idx] != null ? row[idx] : '')) + '</td>'; });
+      t += '</tr>';
+    });
+    return t + '</tbody></table>';
+  };
+  const lines = src.split('\n');
+  let html = '';
+  let i = 0;
+  let listType = null;
+  const listItems = [];
+  const flush = () => {
+    if (listType) {
+      html += '<' + listType + '>' + listItems.map((it) => '<li>' + inline(esc(it)) + '</li>').join('') + '</' + listType + '>';
+      listType = null; listItems.length = 0;
+    }
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flush();
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) { buf.push(lines[i]); i++; }
+      i++;
+      html += '<pre><code>' + esc(buf.join('\n')) + '</code></pre>';
+      continue;
+    }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flush(); html += '<hr>'; i++; continue; }
+    if (line.includes('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      flush();
+      const header = splitRow(line);
+      const aligns = splitRow(lines[i + 1]).map((c) => {
+        const l = c.startsWith(':'), r = c.endsWith(':');
+        return l && r ? 'center' : r ? 'right' : l ? 'left' : '';
+      });
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes('|') && !/^\s*$/.test(lines[i]) && !isTableSep(lines[i])) { rows.push(splitRow(lines[i])); i++; }
+      html += renderTable(header, aligns, rows);
+      continue;
+    }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { flush(); const lv = h[1].length; html += '<h' + lv + '>' + inline(esc(h[2])) + '</h' + lv + '>'; i++; continue; }
+    if (/^>\s?/.test(line)) {
+      flush();
+      const buf = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^>\s?/, '')); i++; }
+      html += '<blockquote>' + inline(esc(buf.join(' '))) + '</blockquote>';
+      continue;
+    }
+    const ul = line.match(/^\s*[-*+]\s+(.*)$/);
+    if (ul) { if (listType !== 'ul') { flush(); listType = 'ul'; } listItems.push(ul[1]); i++; continue; }
+    const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (ol) { if (listType !== 'ol') { flush(); listType = 'ol'; } listItems.push(ol[1]); i++; continue; }
+    if (/^\s*$/.test(line)) { flush(); i++; continue; }
+    flush();
+    const buf = [line];
+    i++;
+    while (i < lines.length && !/^\s*$/.test(lines[i]) &&
+      !/^(#{1,6}\s|>\s?|\s*[-*+]\s|\s*\d+\.\s|```)/.test(lines[i]) &&
+      !/^\s*([-*_])(\s*\1){2,}\s*$/.test(lines[i])) {
+      buf.push(lines[i]); i++;
+    }
+    html += '<p>' + inline(esc(buf.join(' '))) + '</p>';
+  }
+  flush();
+  return html;
+}
 async function loadAIHistory() {
   try {
     const r = await api('/api/ai/history');
@@ -2615,7 +2712,7 @@ async function loadAIHistory() {
     box.innerHTML = list.map((it) => `
       <div class="ai-history-item" data-id="${it.id}">
         <div class="ai-history-meta"><span>${it.created_at}</span><span>${it.model || ''}</span></div>
-        <div class="ai-history-preview">${escapeHtml(it.content)}</div>
+        <div class="ai-history-preview md">${renderMarkdown(it.content)}</div>
       </div>`).join('');
     box.querySelectorAll('.ai-history-item').forEach((el) => {
       el.onclick = () => {
@@ -2819,7 +2916,9 @@ function openAIResultModal(text, loading) {
     wrap.appendChild(tx);
     body.appendChild(wrap);
   } else {
-    body.textContent = text;
+    const t = (text != null) ? String(text) : '';
+    if (t.trim()) { body.innerHTML = renderMarkdown(t); body.classList.add('md'); }
+    else { body.textContent = '（模型返回为空）'; body.classList.remove('md'); }
   }
   $('#aiResultModal').hidden = false;
 }
@@ -2827,7 +2926,9 @@ function openAIResultModal(text, loading) {
 // 把模型返回的 content 安全地写入结果弹框；空/纯空白时显式占位，避免“看似没反显”
 function setAIResult(text) {
   const t = (text != null) ? String(text) : '';
-  $('#aiResultBody').textContent = t.trim() ? t : '（模型返回为空）';
+  const body = $('#aiResultBody');
+  if (t.trim()) { body.innerHTML = renderMarkdown(t); body.classList.add('md'); }
+  else { body.textContent = '（模型返回为空）'; body.classList.remove('md'); }
 }
 
 async function aiSaveSettings() {
@@ -2900,14 +3001,15 @@ async function aiSummarize(tplIdx) {
     if (!r.ok) {
       let m = '生成失败';
       try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
-      $('#aiResultBody').textContent = m;
+      const eb = $('#aiResultBody'); eb.textContent = m; eb.classList.remove('md');
       return;
     }
     const d = await r.json();
-    $('#aiResultBody').textContent = d.content || '（模型返回为空）';
+    setAIResult(d.content);
     toast('AI 总结已生成并保存到历史', 'ok');
   } catch (e) {
     $('#aiResultBody').textContent = '请求异常：' + e.message;
+    $('#aiResultBody').classList.remove('md');
   } finally {
     $('#aiPickGo').disabled = false;
   }
@@ -4226,7 +4328,7 @@ async function openLiabHistory(id) {
     const l = d.liability || {};
     const flows = d.flows || [];
     $('#cashHistTitle').textContent = (l.name || ('负债 #' + id)) + ' · 余额变动历史';
-    let html = `<div class="wh-actions"><span class="ua-hint">当前欠款余额 ${money(l.amount || 0)}${l.rate ? `　｜　年利率 ${l.rate}%` : ''}${l.monthly_payment ? `　｜　月供 ${money(l.monthly_payment)}` : ''}</span></div>`;
+    let html = `<div class="wh-actions"><span class="ua-hint">当前欠款余额 ${money(l.amount || 0)}${l.rate != null ? `　｜　年利率 ${l.rate}%` : ''}${l.monthly_payment ? `　｜　月供 ${money(l.monthly_payment)}` : ''}</span></div>`;
     if (!flows.length) html += '<p class="empty">暂无余额变动记录。新增负债或修改欠款余额后会自动记录（调高=增加贷款，调低=还款）。</p>';
     else {
       html += '<table class="asset-table"><thead><tr><th>日期</th><th>类型</th><th class="num">变动</th><th class="num">变动后余额</th><th>说明</th></tr></thead><tbody>';
@@ -4771,7 +4873,7 @@ async function openLiabilityModal(id, presetSourceId) {
   $('#lb_type').value = l ? (l.type || '') : '';
   $('#lb_source').value = l ? l.source_id : (presetSourceId || (assetSources[0] ? assetSources[0].id : ''));
   $('#lb_amount').value = l ? l.amount : '';
-  $('#lb_rate').value = l ? (l.rate || '') : '';
+  $('#lb_rate').value = l ? (l.rate != null ? l.rate : '') : '';
   $('#lb_monthly').value = l ? (l.monthly_payment || '') : '';
   $('#lb_note').value = l ? (l.note || '') : '';
   $('#cashTitle').textContent = l ? '编辑负债' : '添加负债';
@@ -5119,11 +5221,11 @@ async function assetAiSummarize(tplIdx) {
   $('#aiPickGo').disabled = true;
   try {
     const r = await api('/api/asset/summary', { method: 'POST', body: JSON.stringify({ model, base_url, api_key, template: content }) });
-    if (!r.ok) { let m = '生成失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#aiResultBody').textContent = m; return; }
+    if (!r.ok) { let m = '生成失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} const eb = $('#aiResultBody'); eb.textContent = m; eb.classList.remove('md'); return; }
     const d = await r.json();
     setAIResult(d.content);
   } catch (err) {
-    $('#aiResultBody').textContent = '异常：' + err.message;
+    const eb = $('#aiResultBody'); eb.textContent = '异常：' + err.message; eb.classList.remove('md');
   } finally {
     $('#aiPickGo').disabled = false;
   }
