@@ -39,8 +39,8 @@ function applyAccent(accent) {
   if (accent === 'custom' && localStorage.getItem('pf_accent_custom')) {
     applyCustomAccent(localStorage.getItem('pf_accent_custom'));
   } else {
-    if (accent === 'custom') accent = 'gold'; // 无自定义色历史时回退默认
-    const v = ACCENTS.indexOf(accent) >= 0 ? accent : 'gold';
+    if (accent === 'custom') accent = 'blue'; // 无自定义色历史时回退默认（iOS 蓝）
+    const v = ACCENTS.indexOf(accent) >= 0 ? accent : 'blue';
     const root = document.documentElement;
     root.dataset.accent = v;
     // 清除自定义内联覆盖，恢复预设色值
@@ -50,7 +50,7 @@ function applyAccent(accent) {
     b.classList.toggle('active', b.dataset.accent === document.documentElement.dataset.accent);
   });
 }
-applyAccent(localStorage.getItem('pf_accent') || 'gold');
+applyAccent(localStorage.getItem('pf_accent') || 'blue');
 document.addEventListener('DOMContentLoaded', () => {
   applyTheme(localStorage.getItem('pf_theme') || 'dark');
   const btn = document.getElementById('themeToggleBtn');
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTheme(next);
   };
 
-  applyAccent(localStorage.getItem('pf_accent') || 'gold');
+  applyAccent(localStorage.getItem('pf_accent') || 'blue');
   document.querySelectorAll('#accentSwatches .accent-swatch').forEach((b) => {
     b.onclick = () => {
       applyAccent(b.dataset.accent);

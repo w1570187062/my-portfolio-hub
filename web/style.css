@@ -9,19 +9,19 @@
   --bg-glass: rgba(20, 26, 36, .6);
   --bg-hover: rgba(var(--tint), .08);
   --bg-input: rgba(255, 255, 255, .05);
-  --border: rgba(var(--tint), .15);
-  --border-strong: rgba(var(--tint), .35);
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .16);
   --text: #e2e8f0;
   --text-muted: #94a3b8;
   --text-faint: #64748b;
 
-  /* 主色调：土豪金（后期可调 —— 改 --tint/--primary 即可全局生效，或用 [data-accent] 预设） */
-  --tint: 217, 165, 43;
-  --primary: #d9a52b;
-  --primary-hover: #e8b73f;
-  --primary-active: #bd8a12;
-  --primary-soft: rgba(var(--tint), .14);
-  --primary-glow: rgba(var(--tint), .26);
+  /* 主色调：iOS 蓝（改 --tint/--primary 即可全局生效，或用 [data-accent] 预设） */
+  --tint: 10, 132, 255;
+  --primary: #0a84ff;
+  --primary-hover: #409cff;
+  --primary-active: #0070e0;
+  --primary-soft: rgba(var(--tint), .12);
+  --primary-glow: rgba(var(--tint), .25);
 
   /* 功能色 */
   --danger: #f87171;
@@ -36,12 +36,12 @@
 
   /* 资产分类色（RGB 三元组，用 rgb(var(--cat-x)) / rgba(var(--cat-x),.a) 引用；
      圆环/堆叠条/饼图/图例/徽标全站统一，亮暗两套在 [data-theme="light"] 覆盖） */
-  --cat-fund: 99, 157, 255;     /* 基金：柔和蓝（夜间 #639DFF）—— 理性、资本市场 */
-  --cat-debt: 242, 119, 107;    /* 负债：珊瑚红（夜间 #F2776B）—— 风险警示，非正红 */
-  --cat-overseas: 176, 132, 240;/* 境外资产：紫（夜间 #B084F0）—— 异域、跨境 */
-  --cat-equity: 255, 171, 62;   /* 权益/股票：琥珀橙（夜间 #FFAB3E）—— 波动、活力 */
-  --cat-wealth: 54, 211, 89;    /* 理财：薄荷绿（夜间 #36D359）—— 稳健、固收 */
-  --cat-cash: 76, 210, 207;     /* 现金：青蓝（夜间 #4CD2CF）—— 流动性、清爽 */
+  --cat-fund: 94, 92, 230;  /* 基金：靛蓝 #5E5CE6 —— 理性、资本市场（iOS 系统靛） */
+  --cat-debt: 255, 69, 58;  /* 负债：红 #FF453A —— 风险警示（iOS 系统红） */
+  --cat-overseas: 191, 90, 242;  /* 境外资产：紫 #BF5AF2 —— 异域、跨境（iOS 系统紫） */
+  --cat-equity: 255, 159, 10;  /* 权益/股票：橙 #FF9F0A —— 波动、活力（iOS 系统橙） */
+  --cat-wealth: 48, 209, 88;  /* 理财：绿 #30D158 —— 稳健、固收（iOS 系统绿） */
+  --cat-cash: 100, 210, 255;  /* 现金：青 #64D2FF —— 流动性、清爽（iOS 系统青） */
 
   /* 按钮变量（沿用，但适配深色） */
   --btn-primary: var(--primary);
@@ -61,7 +61,7 @@
   --btn-radius: 10px;
   --btn-shadow: 0 1px 3px rgba(0, 0, 0, .3);
   --btn-shadow-hover: 0 4px 12px rgba(0, 0, 0, .4), 0 0 20px var(--primary-glow);
-  --btn-transition: all .2s ease;
+  --btn-transition: all .2s cubic-bezier(.32,.72,0,1);
 
   /* 形状与间距 token（设计系统收敛点） */
   --radius: 10px;                     /* 圆角统一 10px —— 与首页持仓分组卡片一致 */
@@ -96,21 +96,16 @@
   --border: rgba(15, 23, 42, .1);
   --row-divider: rgba(15, 23, 42, .06);
   --sub-divider: rgba(15, 23, 42, .1);
-  --border-strong: rgba(var(--tint), .35);
+  --border-strong: rgba(15, 23, 42, .2);
   --text: #1f2329;
   --text-muted: #5a6068;
   --text-faint: #8a8f99;
 
-  /* 日间模式金阶：浅底上金色必须压暗才够对比度。
-     实测对比度（白底 / 页面底 #f4f6f9，均需 ≥4.5:1 达 WCAG AA）：
-       primary #8a6608 → 5.27 / 4.87
-       hover   #755609 → 6.79 / 6.27   （浅底悬停取更深一档，越悬停越清晰）
-       active  #63490a → 8.44 / 7.80
-     改这几个值时请保持 AA 达标，不要调亮。 */
-  --tint: 138, 102, 8;
-  --primary: #8a6608;
-  --primary-hover: #755609;
-  --primary-active: #63490a;
+  /* 日间模式 iOS 蓝阶：浅底蓝色压暗保证 AA 对比度（>=4.5:1）。 */
+  --tint: 0, 102, 204;
+  --primary: #0066cc;
+  --primary-hover: #0057b3;
+  --primary-active: #004488;
   --primary-soft: rgba(var(--tint), .10);
   --primary-glow: rgba(var(--tint), .18);
 
@@ -123,12 +118,12 @@
   --warning-soft: rgba(217, 119, 6, .1);
 
   /* 资产分类色（日间主色，进度条/圆环/饼图在浅底下的色阶） */
-  --cat-fund: 64, 128, 255;     /* #4080FF 柔和蓝 */
-  --cat-debt: 230, 92, 79;      /* #E65C4F 珊瑚红 */
-  --cat-overseas: 146, 84, 222; /* #9254DE 紫 */
-  --cat-equity: 247, 144, 9;    /* #F79009 琥珀橙 */
-  --cat-wealth: 0, 180, 42;     /* #00B42A 薄荷绿 */
-  --cat-cash: 15, 198, 194;     /* #0FC6C2 青蓝 */
+  --cat-fund: 88, 86, 214;  /* #5856D6 iOS 靛 */
+  --cat-debt: 255, 59, 48;  /* #FF3B30 iOS 红 */
+  --cat-overseas: 175, 82, 222;  /* #AF52DE iOS 紫 */
+  --cat-equity: 255, 149, 0;  /* #FF9500 iOS 橙 */
+  --cat-wealth: 52, 199, 89;  /* #34C759 iOS 绿 */
+  --cat-cash: 50, 173, 230;  /* #32ADE6 iOS 青 */
 
   --btn-ghost: rgba(15, 23, 42, .05);
   --btn-ghost-hover: rgba(15, 23, 42, .09);
@@ -142,29 +137,27 @@
 }
 
 /* ===== 主题色预设（后期可调）=====
-   用法：<html data-accent="gold|green|blue">，默认 gold（土豪金，见 :root 默认值）；
+   用法：<html data-accent="gold|green|blue">，默认 blue（iOS 蓝，见 :root 默认值）；
    自定义主题（铅笔）由 JS 以内联变量覆盖 --primary/--tint，不依赖预设块。
    新增一种主题色：只需追加一对规则（暗色 + 日间），给出 --tint(RGB 三元组) 与
    --primary / --primary-hover / --primary-active 四个变量，其余派生色（边框、hover 背景、
    soft/glow、图标 currentColor）自动跟随。切换入口见「用户面板 → 主题色」。 */
+:root:not([data-theme="light"])[data-accent="gold"]   { --tint: 217, 165, 43; --primary: #d9a52b; --primary-hover: #e8b73f; --primary-active: #bd8a12; }
 :root:not([data-theme="light"])[data-accent="green"]  { --tint: 111, 158, 94;  --primary: #6f9e5e; --primary-hover: #84b373; --primary-active: #639253; }
-:root:not([data-theme="light"])[data-accent="blue"]   { --tint: 105, 155, 255; --primary: #699bff; --primary-hover: #85b0ff; --primary-active: #4f7ee6; }
+:root:not([data-theme="light"])[data-accent="blue"]   { --tint: 10, 132, 255; --primary: #0a84ff; --primary-hover: #409cff; --primary-active: #0070e0; }
 
+:root[data-theme="light"][data-accent="gold"]   { --tint: 138, 102, 8;   --primary: #8a6608; --primary-hover: #755609; --primary-active: #63490a; }
 :root[data-theme="light"][data-accent="green"]  { --tint: 74, 117, 60;   --primary: #4a753c; --primary-hover: #3f6433; --primary-active: #35552b; }
-:root[data-theme="light"][data-accent="blue"]   { --tint: 26, 86, 219;   --primary: #1a56db; --primary-hover: #1e63f5; --primary-active: #1648b8; }
+:root[data-theme="light"][data-accent="blue"]   { --tint: 0, 102, 204;   --primary: #0066cc; --primary-hover: #0057b3; --primary-active: #004488; }
 
 /* 金色高光（金元宝等插画元素的亮部/暗部）：跟随主题的两级派生色 */
 :root { --accent-hi: #f2d27a; --accent-lo: var(--primary); }
 
 /* 日间模式：通用/导航按钮改白底描边 + 悬停主色填充（暗色下主色底白字保留） */
-/* 日间模式：弱化背景网格纹理 */
+/* 日间模式：背景顶部光晕 */
 :root[data-theme="light"] body::before {
   background:
-    radial-gradient(ellipse at 20% 0%, rgba(var(--tint), .05) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 100%, rgba(59, 130, 246, .04) 0%, transparent 50%),
-    linear-gradient(rgba(var(--tint), .025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--tint), .025) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    radial-gradient(ellipse at 20% 0%, rgba(var(--tint), .05) 0%, transparent 60%);
 }
 /* 日间模式：涨跌色用更深的红绿保证对比度 */
 :root[data-theme="light"] { --up: #dc2626; --down: #16a34a; }
@@ -484,7 +477,7 @@
   flex-wrap: wrap;
   margin: 12px 20px 8px;
   padding: 0;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) saturate(160%);
   border: none;
   border-radius: 12px;
 }
@@ -588,7 +581,7 @@
   /* 平铺底色与普通卡片一致，避免圆环卡片因渐变下沿显得比无圆环卡片更深 */
   background: var(--bg-card);
   box-shadow: 0 6px 24px rgba(27, 40, 72, .08);
-  transition: transform .18s ease, box-shadow .18s ease;
+  transition: transform .18s cubic-bezier(.32,.72,0,1), box-shadow .18s cubic-bezier(.32,.72,0,1);
   /* 不带圆环卡片：除标题外内容整体上下居中。grid 双行：标题锁定顶部 0，
      其余子项（donut-wrap/ps-big/ps-rows/comp-legend）由 .pano-body 居中 */
   display: grid;
@@ -670,7 +663,7 @@
 .holdings-group .src-ico { color: var(--primary); margin-right: 2px; }
 .holdings-group .hat-side { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; justify-content: flex-start; }
 /* 悬停展开区：默认只显示「市值」，hover 时向右滑出当日/总盈亏/盈亏率；移出缩回。与点击折叠(chevron)互不冲突 */
-.holdings-group .hat-side-extra { display: inline-flex; align-items: center; gap: 18px; white-space: nowrap; overflow: hidden; max-width: 0; opacity: 0; transition: max-width .25s ease, opacity .18s ease; }
+.holdings-group .hat-side-extra { display: inline-flex; align-items: center; gap: 18px; white-space: nowrap; overflow: hidden; max-width: 0; opacity: 0; transition: max-width .25s cubic-bezier(.32,.72,0,1), opacity .18s cubic-bezier(.32,.72,0,1); }
 .holdings-group .collapse-hat.holdings-group-head:hover .hat-side-extra,
 .holdings-group .collapse-hat.holdings-group-head:focus-within .hat-side-extra { max-width: 600px; opacity: 1; }
 .holdings-group .hat-stat { font-size: 12px; color: var(--text-muted); display: inline-flex; align-items: baseline; gap: 3px; white-space: nowrap; }
@@ -1220,17 +1213,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 科技感背景纹理 */
+/* 背景顶部光晕 */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse at 20% 0%, rgba(var(--tint), .05) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 100%, rgba(59, 130, 246, .04) 0%, transparent 50%),
-    linear-gradient(rgba(var(--tint), .025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--tint), .025) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    radial-gradient(ellipse at 20% 0%, rgba(var(--tint), .07) 0%, transparent 60%);
   pointer-events: none;
   z-index: 0;
 }
@@ -1247,7 +1236,7 @@ header {
   align-items: center;
   padding: 12px 28px;
   background: var(--bg-glass);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px) saturate(160%);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -1305,7 +1294,7 @@ header h1 {
 }
 .card {
   background: var(--bg-card);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) saturate(160%);
   border: var(--card-border);
   border-radius: var(--card-radius);
   padding: var(--card-pad);
@@ -1314,7 +1303,7 @@ header h1 {
   align-items: center;
   gap: 14px;
   box-shadow: var(--card-shadow);
-  transition: all .25s ease;
+  transition: all .25s cubic-bezier(.32,.72,0,1);
 }
 .card:hover {
   transform: translateY(-2px);
@@ -1403,7 +1392,7 @@ header h1 {
 .collapsible .collapse-hat { background: rgba(255, 255, 255, .03); }
 :root[data-theme="light"] .collapsible .collapse-hat { background: #f1f3f6; }
 .collapsible .hat-title { font-size: 15px; font-weight: 700; letter-spacing: .4px; color: var(--text); }
-.collapsible .hat-chevron { font-size: 20px; line-height: 1; color: var(--text-muted); transition: transform .2s ease; }
+.collapsible .hat-chevron { font-size: 20px; line-height: 1; color: var(--text-muted); transition: transform .2s cubic-bezier(.32,.72,0,1); }
 .collapsible.collapsed .hat-chevron { transform: rotate(-90deg); }
 .collapsible .collapse-body { overflow: hidden; padding: 16px 18px; }
 .collapsible.collapsed .collapse-body { display: none; }
@@ -1416,7 +1405,7 @@ table {
   margin: 0 0 12px;
   border-collapse: collapse;
   background: var(--bg-card);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) saturate(160%);
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
   border: var(--card-border);
@@ -1448,7 +1437,7 @@ td { color: var(--text); }
 /* 名称文字过长时截断（与 .name-text 配合），防止撑宽整列 */
 #tbl td:nth-child(2) .name-text { max-width: 160px; }
 tbody tr {
-  transition: background .15s ease;
+  transition: background .15s cubic-bezier(.32,.72,0,1);
 }
 tbody tr:hover {
   background: var(--bg-hover);
@@ -1477,7 +1466,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 .name-arrow-down { color: #4ade80; font-size: 11px; margin-right: 3px; }
 
 /* 名称可点击（技术分析入口） */
-.name-clickable { cursor: pointer; transition: background .15s ease, color .15s ease; }
+.name-clickable { cursor: pointer; transition: background .15s cubic-bezier(.32,.72,0,1), color .15s cubic-bezier(.32,.72,0,1); }
 .name-clickable:hover { text-decoration: underline; opacity: .85; }
 .name-text { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 
@@ -1497,7 +1486,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   padding: 14px 16px;
   cursor: pointer;
   background: var(--bg-card);
-  transition: all .2s ease;
+  transition: all .2s cubic-bezier(.32,.72,0,1);
 }
 .ai-history-item:hover {
   border-color: var(--border-strong);
@@ -1531,7 +1520,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   padding: 6px 12px;
   border-radius: 8px;
   background: var(--primary-soft);
-  transition: all .2s ease;
+  transition: all .2s cubic-bezier(.32,.72,0,1);
 }
 .pie-back:hover { background: rgba(var(--tint), .16); }
 .pie-hint { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
@@ -1666,7 +1655,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   max-width: 360px;
   margin: 120px auto;
   background: var(--bg-card);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px) saturate(160%);
   padding: 40px;
   border-radius: 20px;
   box-shadow: var(--card-shadow);
@@ -1705,7 +1694,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, .6);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px) saturate(160%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1971,11 +1960,11 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   box-shadow: 0 8px 30px rgba(0, 0, 0, .4);
   opacity: 0;
   pointer-events: none;
-  transition: opacity .3s ease, transform .3s ease;
+  transition: opacity .3s cubic-bezier(.32,.72,0,1), transform .3s cubic-bezier(.32,.72,0,1);
   z-index: 200;
   white-space: pre-wrap;
   text-align: center;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) saturate(160%);
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.err { background: rgba(248, 113, 113, .9); }
@@ -2110,7 +2099,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   box-sizing: border-box;
   overflow: hidden;
   background: rgba(255, 255, 255, .03);
-  transition: all .15s ease;
+  transition: all .15s cubic-bezier(.32,.72,0,1);
 }
 .cal-cell.cal-today {
   outline: 2px solid var(--primary);
@@ -2132,14 +2121,14 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   opacity: 0;
   max-height: 0;
   overflow: hidden;
-  transition: opacity .15s ease, max-height .15s ease;
+  transition: opacity .15s cubic-bezier(.32,.72,0,1), max-height .15s cubic-bezier(.32,.72,0,1);
 }
 /* 盈亏日历：金额常驻居中，日期与 emoji 仅在 hover 时淡入 */
 .cal-cell.has-amt .cal-day {
   opacity: 0;
   max-height: 0;
   overflow: hidden;
-  transition: opacity .15s ease, max-height .15s ease;
+  transition: opacity .15s cubic-bezier(.32,.72,0,1), max-height .15s cubic-bezier(.32,.72,0,1);
 }
 .cal-cell.has-amt:hover { justify-content: space-between; }
 .cal-cell.has-amt:hover .cal-day,
@@ -2484,8 +2473,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border-radius: var(--card-radius);
   padding: 16px 18px;
   background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  transition: all .2s ease;
+  backdrop-filter: blur(12px) saturate(160%);
+  transition: all .2s cubic-bezier(.32,.72,0,1);
   overflow: hidden;
 }
 .asset-card:hover {
@@ -2677,7 +2666,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border: var(--card-border);
   border-radius: var(--card-radius);
   background: var(--bg-card);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) saturate(160%);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -2752,7 +2741,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border: var(--card-border);
   border-radius: var(--card-radius);
   padding: 20px 22px;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) saturate(160%);
 }
 /* 工具卡可折叠（复用折叠样式，默认折叠） */
 .tool-card.collapsible { padding: 0; overflow: hidden; }
@@ -2987,17 +2976,17 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .kl-label .kl-title { color: var(--text-muted); }
 /* 蜡烛图/折线图切换按钮 + 缩放工具条（图表上方独立一行右对齐，不再与蜡烛重叠） */
 .kl-zoombar { position: static; margin-left: auto; display: flex; align-items: center; gap: 4px; pointer-events: auto; }
-.kl-zoom { width: 20px; height: 20px; padding: 0; line-height: 18px; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: 14px; cursor: pointer; opacity: .85; transition: var(--btn-transition, all .15s ease); }
+.kl-zoom { width: 20px; height: 20px; padding: 0; line-height: 18px; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: 14px; cursor: pointer; opacity: .85; transition: var(--btn-transition, all .15s cubic-bezier(.32,.72,0,1)); }
 .kl-zoom:hover:not(:disabled) { opacity: 1; color: var(--btn-primary); border-color: var(--btn-primary); }
 .kl-zoom:disabled { opacity: .3; cursor: default; }
 .kl-zoom-lv { font-size: 10px; color: var(--text-muted); min-width: 16px; text-align: center; font-variant-numeric: tabular-nums; }
-.kl-toggle { position: static; z-index: 3; pointer-events: auto; font-size: 10px; line-height: 1; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); cursor: pointer; opacity: .95; transition: var(--btn-transition, all .15s ease); }
+.kl-toggle { position: static; z-index: 3; pointer-events: auto; font-size: 10px; line-height: 1; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); cursor: pointer; opacity: .95; transition: var(--btn-transition, all .15s cubic-bezier(.32,.72,0,1)); }
 .kl-toggle:hover { color: var(--btn-primary); border-color: var(--btn-primary); }
 .kl-close-line { display: none; }
 .kline-mini.mode-line .kl-wick, .kline-mini.mode-line .kl-body { display: none; }
 .kline-mini.mode-line .kl-close-line { display: block; }
 /* 左右翻页箭头（按日期区间循环切换60根窗口）+ 窗口日期范围；top 偏移 = 上方标签行高度的一半，保持对准蜡烛图中心 */
-.kl-arrow { position: absolute; top: calc(50% + 11px); transform: translateY(-50%); z-index: 3; pointer-events: auto; width: 22px; height: 22px; padding: 0; line-height: 20px; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: 13px; cursor: pointer; opacity: .85; transition: var(--btn-transition, all .15s ease); }
+.kl-arrow { position: absolute; top: calc(50% + 11px); transform: translateY(-50%); z-index: 3; pointer-events: auto; width: 22px; height: 22px; padding: 0; line-height: 20px; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: 13px; cursor: pointer; opacity: .85; transition: var(--btn-transition, all .15s cubic-bezier(.32,.72,0,1)); }
 .kl-arrow:hover { opacity: 1; color: var(--btn-primary); border-color: var(--btn-primary); }
 .kl-arrow.kl-prev { left: 5px; }
 .kl-arrow.kl-next { right: 5px; }
@@ -3088,7 +3077,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 /* ===== 技术分析弹框：标签切换（仿 Panwatch 个股详情 概览/建议/报告 按钮） ===== */
 /* 标签栏 sticky 置顶，随内容滚动但始终可见；横向留白与下方面板对齐 */
 .ana-tabs { position: sticky; top: 0; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 0 12px; margin: -4px 0 0; background: var(--bg-card-solid); border-bottom: 1px solid var(--border); }
-.ana-tab-btn { font-size: 11px; padding: 5px 12px; border: none; border-radius: 8px; cursor: pointer; background: var(--primary-soft); color: var(--text-muted); transition: all .15s ease; font-family: inherit; line-height: 1.4; }
+.ana-tab-btn { font-size: 11px; padding: 5px 12px; border: none; border-radius: 8px; cursor: pointer; background: var(--primary-soft); color: var(--text-muted); transition: all .15s cubic-bezier(.32,.72,0,1); font-family: inherit; line-height: 1.4; }
 .ana-tab-btn:hover { background: var(--bg-hover); color: var(--text); }
 .ana-tab-btn.active { background: var(--primary); color: #fff; }
 .ana-tab-btn.active:hover { background: var(--primary-hover); }
@@ -3296,7 +3285,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .bp-chevron {
   font-size: 16px;
   color: var(--text-muted);
-  transition: transform .15s ease;
+  transition: transform .15s cubic-bezier(.32,.72,0,1);
   flex: 0 0 auto;
 }
 .bp-card.collapsed .bp-chevron { transform: rotate(-90deg); }
@@ -3374,7 +3363,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   color: var(--text, #1f2329);
   font-family: inherit;
   cursor: pointer;
-  transition: border-color .15s ease, box-shadow .15s ease;
+  transition: border-color .15s cubic-bezier(.32,.72,0,1), box-shadow .15s cubic-bezier(.32,.72,0,1);
 }
 .notify-card label select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .notify-card label select option { background: var(--bg-card, #fff); color: var(--text, #1f2329); }
@@ -3557,7 +3546,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .view-toggle .vt-indicator { position: absolute; top: 2px; bottom: 2px; left: 0; width: 0; background: var(--bg-card-solid); border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.2); transform: translateX(0); z-index: 0; transition: transform .26s cubic-bezier(.4,0,.2,1), width .26s cubic-bezier(.4,0,.2,1); will-change: transform, width; }
 /* 暗黑主题下指示器用豆沙绿，亮色主题是白色(var(--bg-card-solid)=#fff) */
 :root:not([data-theme="light"]) .view-toggle .vt-indicator { background: var(--primary); }
-.view-toggle .vt-btn { position: relative; z-index: 1; border: none; background: transparent; color: var(--text-muted); padding: 5px 12px; font-size: 13px; border-radius: 6px; transition: color .2s ease; }
+.view-toggle .vt-btn { position: relative; z-index: 1; border: none; background: transparent; color: var(--text-muted); padding: 5px 12px; font-size: 13px; border-radius: 6px; transition: color .2s cubic-bezier(.32,.72,0,1); }
 .view-toggle .vt-btn.active { background: transparent; color: var(--text); box-shadow: none; }
 .cards-grid {
   display: grid;
@@ -3574,7 +3563,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
   border-radius: 12px;
   padding: 12px 14px;
   cursor: pointer;
-  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+  transition: transform .12s cubic-bezier(.32,.72,0,1), box-shadow .12s cubic-bezier(.32,.72,0,1), border-color .12s cubic-bezier(.32,.72,0,1);
 }
 .holding-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.28); border-color: rgba(var(--tint),.4); }
 .hc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
@@ -3722,7 +3711,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, .5);
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px) saturate(160%);
 }
 .sheet-panel {
   position: relative;
@@ -3737,7 +3726,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
   padding: 10px 18px calc(18px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  animation: sheetUp .22s ease;
+  animation: sheetUp .28s cubic-bezier(.32,.72,0,1);
 }
 @keyframes sheetUp {
   from { transform: translateY(24px); opacity: .35; }
@@ -3826,12 +3815,12 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
   width: 26px; height: 26px; padding: 0; cursor: pointer;
   border-radius: 50%; border: 2px solid transparent;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
-  transition: transform .15s ease, box-shadow .15s ease;
+  transition: transform .15s cubic-bezier(.32,.72,0,1), box-shadow .15s cubic-bezier(.32,.72,0,1);
 }
 .accent-swatch:hover { transform: scale(1.12); }
 .accent-swatch[data-accent="gold"]   { background: #d9a52b; }
 .accent-swatch[data-accent="green"]  { background: #6f9e5e; }
-.accent-swatch[data-accent="blue"]   { background: #3370ff; }
+.accent-swatch[data-accent="blue"]   { background: #0a84ff; }
 /* 铅笔按钮：自定义主题色入口（虚线框 + 铅笔图标，点击弹出系统取色器） */
 .accent-swatch.accent-custom {
   display: flex;
