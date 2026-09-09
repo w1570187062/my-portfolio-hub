@@ -140,9 +140,9 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 docker run -d --name portfolio -p 9989:9989 \
   -v portfolio-data:/data \
   -e TZ=Asia/Shanghai \
-  ghcr.io/w1570187062/my_folio_hub:latest
+  ghcr.io/w1570187062/my-portfolio-hub:latest
 
-# 或用 docker compose（compose.yml 里 image 填 ghcr.io/w1570187062/my_folio_hub:latest）
+# 或用 docker compose（compose.yml 里 image 填 ghcr.io/w1570187062/my-portfolio-hub:latest）
 docker compose up -d
 ```
 
