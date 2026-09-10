@@ -22,3 +22,6 @@ DEPLOY.md
 # 设计系统文档（仅本地参考，不入库）
 DESIGN_SYSTEM.md
 
+# 本地临时脚本与生成产物（payload 生成器、剪贴板工具等，不入库）
+/scripts/
+

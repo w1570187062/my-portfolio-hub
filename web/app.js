@@ -27,6 +27,23 @@ function shadeHex(hex, t) {
   const mix = (c) => Math.round(t >= 0 ? c + (255 - c) * t : c * (1 + t));
   return '#' + [mix((n >> 16) & 255), mix((n >> 8) & 255), mix(n & 255)].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
+// WCAG 相对亮度：用于判定主色实心底上该用深字还是浅字
+function relLuminance(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+// 主色实心底上的文字色（--on-primary）：浅色主色配深字，深色主色配柔白字。
+// 分界点 L≈0.179 —— 此时白字与黑字对比度相等。深字取同色系压暗版，保留色相。
+function onPrimaryFor(hex) {
+  const L = relLuminance(hex);
+  const withWhite = 1.05 / (L + 0.05);
+  const withDark = (L + 0.05) / 0.05;
+  return withWhite >= withDark ? '#fafafa' : shadeHex(hex, -0.86);
+}
 function applyCustomAccent(hex) {
   const root = document.documentElement;
   root.dataset.accent = 'custom';
@@ -34,6 +51,7 @@ function applyCustomAccent(hex) {
   root.style.setProperty('--tint', hexToTint(hex));
   root.style.setProperty('--primary-hover', shadeHex(hex, 0.18));
   root.style.setProperty('--primary-active', shadeHex(hex, -0.15));
+  root.style.setProperty('--on-primary', onPrimaryFor(hex));
 }
 function applyAccent(accent) {
   if (accent === 'custom' && localStorage.getItem('pf_accent_custom')) {
@@ -44,7 +62,7 @@ function applyAccent(accent) {
     const root = document.documentElement;
     root.dataset.accent = v;
     // 清除自定义内联覆盖，恢复预设色值
-    ['--primary', '--tint', '--primary-hover', '--primary-active'].forEach((p) => root.style.removeProperty(p));
+    ['--primary', '--tint', '--primary-hover', '--primary-active', '--on-primary'].forEach((p) => root.style.removeProperty(p));
   }
   document.querySelectorAll('#accentSwatches .accent-swatch').forEach((b) => {
     b.classList.toggle('active', b.dataset.accent === document.documentElement.dataset.accent);
@@ -138,7 +156,7 @@ const round2 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return 
 // 按类别保留小数：基金 4 位、股票 2 位（成本价/昨收/成交价口径）
 const roundByCat = (v, cat) => (cat === 'fund' ? round4(v) : round2(v));
 function fmtCat(n, cat) { return Number(n).toLocaleString('zh-CN', { maximumFractionDigits: cat === 'fund' ? 4 : 2 }); }
-// 调仓计算器上下文类别（决定价格输入框保留几位小数），由 prefillAdjCalc 写入
+// 试算 Tab 上下文类别（决定价格输入框保留几位小数），由 prefillAdjCalc 写入
 let calcCat = 'stock';
 function clampCalc(el) { clampDecimals(el, calcCat === 'fund' ? 4 : 2); }
 const pct = (n) => (n > 0 ? '+' : '') + (n == null ? '' : n.toFixed(2)) + '%';
@@ -488,17 +506,21 @@ function anaBadge(sig) {
 // 用最新分析结论刷新某持仓行右上角的买卖角标，使角标与弹框结论保持一致。
 // 例：弹框显示“中性”时，角标应清空（hold 不展示），而不是停留在旧的“买”。
 function syncAnalysisBadge(id, sig) {
-  const btn = document.querySelector('.act-analysis[data-ana="' + id + '"]');
+  // 用 data-ana 定位（.act-analysis 已随操作列图标化移除，别再依赖样式类）
+  const btn = document.querySelector('.row-act[data-ana="' + id + '"]');
   if (!btn) return;
-  const wrap = btn.closest('.ana-wrap');
-  if (!wrap) return;
-  const old = wrap.querySelector('.ana-badge');
+  // 角标已改挂到名称上（.name-cap），与分析按钮不再是同一容器 →
+  // 先回到单元格，再取名称容器。顺序不能颠倒，否则角标同步静默失效。
+  const cell = btn.closest('.name-cell');
+  const cap = cell ? cell.querySelector('.name-cap') : null;
+  if (!cap) return;
+  const old = cap.querySelector('.ana-badge');
   const neu = anaBadge(sig);
   if (old) {
     if (neu) old.outerHTML = neu;
     else old.remove();
   } else if (neu) {
-    wrap.insertAdjacentHTML('afterbegin', neu);
+    cap.insertAdjacentHTML('beforeend', neu);
   }
   // 同步全局持仓数据，避免后续整表重渲染把角标回退为旧值
   const h = allHoldings.find((x) => String(x.id) === String(id));
@@ -521,7 +543,7 @@ function prefillAdjCalc(h) {
   const qw = document.getElementById('addQtyWrap'); if (qw) qw.style.display = '';
   const aw = document.getElementById('addAmtWrap'); if (aw) aw.style.display = 'none';
   const res = document.getElementById('addResult');
-  if (res) res.innerHTML = '<span class="tool-empty">已带入该持仓的成本价 / 现价 / 数量，请填写补仓信息后点击「计算」</span>';
+  if (res) res.innerHTML = '';
   lastAdd = null;
   const ab = document.getElementById('addApply');
   if (ab) ab.disabled = true;
@@ -572,7 +594,7 @@ function renderHoldingsBySource(hs) {
       + `<thead><tr><th>名称</th><th>代码</th><th class="hide-col">市场</th><th class="hide-col">币种</th>`
       + `<th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th>`
       + `<th class="num">市值</th><th class="num">当日</th><th class="num">当日%</th>`
-      + `<th class="num">总盈亏</th><th class="num">盈亏%</th><th class="num">持仓</th><th>备注</th>`
+      + `<th class="num">总盈亏</th><th class="num">盈亏%</th><th class="num">持仓</th><th class="hide-col">备注</th>`
       + `<th class="num" title="近20个交易日收盘价走势">近20日</th><th>操作</th>`
       + `</tr></thead><tbody>${g.items.map((h, i) => renderGroupRow(h, i)).join('')}</tbody>`
       + `</table></div></div></div>`;
@@ -633,9 +655,9 @@ function renderGroupRow(h, i) {
     <td class="name-cell">
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">⚠</span>' : ''}
       <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : ''}">${dirArrow}</span>
-      ${holdTypeTag(h)}${watchTag(h)}<span class="name-clickable" data-copy="${esc(h.name)}" title="${esc(h.name)}">${esc(h.name)}</span>
-      <button class="btn btn-sm act-adjust-inline act-modify" data-adjust="${h.id}" title="修改">修改</button>
-      ${supportsAnalysis(h) ? '<span class="ana-wrap">' + anaBadge(h.analysis_signal) + '<button class="btn btn-sm act-adjust-inline act-analysis" data-ana="' + h.id + '" title="技术分析">分析</button></span>' : ''}
+      ${holdTypeTag(h)}${watchTag(h)}<span class="name-cap"><span class="name-clickable" data-copy="${esc(h.name)}" title="${esc(h.name)}">${esc(h.name)}</span>${supportsAnalysis(h) ? anaBadge(h.analysis_signal) : ''}</span>
+      ${actBtn('edit', `data-adjust="${h.id}"`, '修改', { cls: 'push-right' })}
+      ${supportsAnalysis(h) ? actBtn('analysis', 'data-ana="' + h.id + '"', '技术分析') : ''}
     </td>
     <td>${h.symbol}</td>
     <td class="hide-col">${h.market}</td>
@@ -649,12 +671,12 @@ function renderGroupRow(h, i) {
     <td class="num ${watch ? '' : cls(h.pnl)}">${watch ? '—' : fmt(toRmb(h, h.pnl))}</td>
     <td class="num ${watch ? '' : cls(h.pnl_pct)}" title="持有期总盈亏率">${watch ? '—' : pct(h.pnl_pct)}</td>
     <td class="num" style="font-size:12px;color:var(--text-muted)">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
-    <td style="font-size:12px;color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
+    <td class="hide-col" style="font-size:12px;color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
     <td class="num spark-td">${watch ? '—' : sparkCell(h.symbol, h.pnl)}</td>
     <td class="row-act-cell">
-      <button class="row-act" data-edit="${h.id}" title="编辑持仓">编辑</button>
-      <button class="row-act" data-hist="${h.id}" title="历史走势">历史</button>
-      <button class="row-act danger" data-del="${h.id}" title="删除持仓">删除</button>
+      ${actBtn('edit', `data-edit="${h.id}"`, '编辑持仓')}
+      ${actBtn('hist', `data-hist="${h.id}"`, '历史走势')}
+      ${actBtn('del', `data-del="${h.id}"`, '删除持仓', { danger: true })}
     </td>
   </tr>`;
 }
@@ -998,8 +1020,8 @@ function renderRows(hs) {
      <td class="num ${watch ? '' : cls(h.pnl)}">${watch ? '—' : fmt(toRmb(h, h.pnl))}</td>
      <td class="num ${watch ? '' : cls(h.pnl_pct)}">${watch ? '—' : pct(h.pnl_pct)}</td>
      <td class="num" style="font-size:12px;color:var(--text-muted)">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
-     <td style="font-size:12px;color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
-     <td class="row-actions"><button class="btn act-adjust" data-adjust="${h.id}" title="加减仓">📊</button><button class="btn act-edit" data-edit="${h.id}" title="编辑">✏️</button><button class="btn act-hist" data-hist="${h.id}" title="历史">📈</button><button class="btn act-del danger" data-del="${h.id}" title="删除">🗑️</button></td>`;
+     <td class="hide-col" style="font-size:12px;color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
+     <td class="row-actions">${actBtn('adjust', `data-adjust="${h.id}"`, '加减仓')}${actBtn('edit', `data-edit="${h.id}"`, '编辑')}${actBtn('hist', `data-hist="${h.id}"`, '历史')}${actBtn('del', `data-del="${h.id}"`, '删除', { danger: true })}</td>`;
     tb.appendChild(tr);
   });
   tb.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { console.log('[click] 编辑持仓', b.dataset.edit); editHolding(b.dataset.edit); }));
@@ -1102,7 +1124,7 @@ async function editHolding(id) {
 
 // ---------------- 加减仓 ----------------
 let adjType = 'BUY';
-let lastAdd = null;        // 调仓计算器最近一次有效方案 { q1, p1, fee, mode, side }
+let lastAdd = null;        // 试算 Tab 最近一次有效方案 { q1, p1, fee, mode, side }
 let pendingApplyAdd = false; // 确认弹框：计入持仓 pending 标记
 // 现金账户列表缓存（供加减仓「资金账户」下拉使用）
 let cashAccountsCache = [];
@@ -1297,7 +1319,7 @@ $('#adjTypeSeg').addEventListener('click', (e) => {
   }
   computeAdjPreview();
 });
-// 加减仓弹框 tab 切换（加减仓 / 调仓计算器）
+// 加减仓弹框 tab 切换（加减仓 / 调仓算 / 分红）
 document.querySelectorAll('#adjustModal .adj-tab').forEach((b) => {
   b.addEventListener('click', () => {
     const tab = b.dataset.tab;
@@ -1385,7 +1407,7 @@ $('#confirmOk').onclick = async () => {
     const a = lastAdd;
     const id = $('#adj_id').value;
     try {
-      const r = await api('/api/holdings/' + id + '/adjust', { method: 'POST', body: JSON.stringify({ type: a.side || 'buy', quantity: a.q1, price: a.p1, fee: a.fee, note: '调仓计算器计入' }) });
+      const r = await api('/api/holdings/' + id + '/adjust', { method: 'POST', body: JSON.stringify({ type: a.side || 'buy', quantity: a.q1, price: a.p1, fee: a.fee, note: '调仓算计入' }) });
       if (!r.ok) { let m = '计入失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m + ' (HTTP ' + r.status + ')', 'err'); return; }
       toast('已计入持仓（作为一笔' + (a.side === 'sell' ? '卖出' : '买入') + '交易）', 'ok');
       $('#adjustModal').hidden = true;
@@ -2137,13 +2159,47 @@ function shiftTrend(dir) {
   drawTrend(trendTargetSel || pieTargetSel); // 沿用当前渲染容器（嵌入/独立）
 }
 
+// 盈亏走势 / 持仓历史 的 SVG 渐变 id 序号：两个渲染容器可能同时在 DOM 中，id 必须唯一
+let trendUidSeq = 0;
+
+// 盈亏柱路径：只圆「远端」两角（正柱圆顶 / 负柱圆底），零线一侧保持平直 ——
+// 让柱子像从基线生长出来，而不是一根悬空的胶囊。两处图表共用。
+function trendBarPath(cx, bw, zeroY, hgt, isUp) {
+  const x0 = (cx - bw / 2).toFixed(2), x1 = (cx + bw / 2).toFixed(2);
+  const r = Math.min(3, hgt / 2);
+  if (isUp) {
+    const yt = (zeroY - hgt).toFixed(2), yb = zeroY.toFixed(2), yr = (zeroY - hgt + r).toFixed(2);
+    return `M ${x0} ${yb} L ${x0} ${yr} Q ${x0} ${yt} ${(cx - bw / 2 + r).toFixed(2)} ${yt}`
+      + ` L ${(cx + bw / 2 - r).toFixed(2)} ${yt} Q ${x1} ${yt} ${x1} ${yr} L ${x1} ${yb} Z`;
+  }
+  const yb2 = (zeroY + hgt).toFixed(2), yt2 = zeroY.toFixed(2), yr2 = (zeroY + hgt - r).toFixed(2);
+  return `M ${x0} ${yt2} L ${x0} ${yr2} Q ${x0} ${yb2} ${(cx - bw / 2 + r).toFixed(2)} ${yb2}`
+    + ` L ${(cx + bw / 2 - r).toFixed(2)} ${yb2} Q ${x1} ${yb2} ${x1} ${yr2} L ${x1} ${yt2} Z`;
+}
+
+// 三组共用渐变：柱涨、柱跌、折线面积。注意 SVG presentation attribute 不认 var()，
+// 必须写成内联 style，主题（暗/亮、五套强调色）切换才能跟随。
+function trendDefs(uid) {
+  return `<defs>`
+    + `<linearGradient id="${uid}Up" x1="0" y1="0" x2="0" y2="1">`
+    + `<stop offset="0%" style="stop-color:var(--up);stop-opacity:.96"/>`
+    + `<stop offset="100%" style="stop-color:var(--up);stop-opacity:.58"/></linearGradient>`
+    + `<linearGradient id="${uid}Down" x1="0" y1="0" x2="0" y2="1">`
+    + `<stop offset="0%" style="stop-color:var(--down);stop-opacity:.58"/>`
+    + `<stop offset="100%" style="stop-color:var(--down);stop-opacity:.96"/></linearGradient>`
+    + `<linearGradient id="${uid}Area" x1="0" y1="0" x2="0" y2="1">`
+    + `<stop offset="0%" style="stop-color:var(--cum-line);stop-opacity:.20"/>`
+    + `<stop offset="100%" style="stop-color:var(--cum-line);stop-opacity:0"/></linearGradient>`
+    + `</defs>`;
+}
+
 function drawTrend(targetSel) {
   const tgt = document.querySelector(targetSel || pieTargetSel);
   trendTargetSel = targetSel || pieTargetSel; // 翻页时沿用同一容器
   const standalone = !targetSel || targetSel === pieTargetSel; // 独立图表弹框模式
   const hist = trendHist || [];
   if (hist.length === 0) {
-    tgt.innerHTML = '<p style="color:#8a8f99;line-height:1.6">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；之后此处显示每日盈亏柱状图与累计折线。<br>从记录之日起，每个交易日会生成一个数据点。</p>';
+    tgt.innerHTML = '<p style="color:var(--text-muted);line-height:1.6">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；之后此处显示每日盈亏柱状图与累计折线。<br>从记录之日起，每个交易日会生成一个数据点。</p>';
     if (standalone) openChart();
     return;
   }
@@ -2164,7 +2220,7 @@ function drawTrend(targetSel) {
   }
   let cum = 0;
   const data = slots.map((s) => { if (s.hasData) cum += s.total_cny; return { ...s, cum }; });
-  const W = 720, H = 360, mL = 60, mR = 60, mT = 20, mB = 40;
+  const W = 720, H = 356, mL = 58, mR = 58, mT = 22, mB = 40;
   const plotW = W - mL - mR, plotH = H - mT - mB;
   const n = data.length;
   const maxBar = Math.max(1, ...data.map((x) => Math.abs(x.total_cny)));
@@ -2175,58 +2231,94 @@ function drawTrend(targetSel) {
   const yBar = (v) => zeroY - (v / maxBar) * (plotH / 2);
   const yLine = (v) => zeroY - (v / cMaxAbs) * (plotH / 2);
   const slot = plotW / n;
-  const bw = Math.max(2, slot * 0.6);
+  // 柱宽随列宽收敛并封顶：列少时不被拉成方块，列多时保住最小可见宽度
+  const bw = Math.max(3, Math.min(24, slot * 0.46));
+  // 渐变 id 需唯一：两个容器（独立图表弹框 / 盈亏分析 Tab）可能同时在 DOM 中
+  const uid = 'tg' + (++trendUidSeq);
+  let lastDataIdx = -1;
+  data.forEach((x, i) => { if (x.hasData) lastDataIdx = i; });
   const linePts = [];
-  let bars = '', line = '', area = '', dots = '', hotspots = '';
+  let bars = '', ghosts = '', line = '', area = '', dots = '', hotspots = '';
   data.forEach((x, i) => {
     const cx = mL + (i + 0.5) * slot;
-    // 交互热区：覆盖整列，hover 显示金额
-    hotspots += `<rect class="trend-hot" data-i="${i}" x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
     const ly = yLine(x.cum);
+    // 交互热区：覆盖整列，hover 显示金额；顺带把柱心与折线坐标带在 dataset 上，
+    // 供悬停指示线/指示点定位（无需把坐标函数暴露到闭包外）
+    hotspots += `<rect class="trend-hot" data-i="${i}" data-x="${cx.toFixed(2)}" data-y="${ly.toFixed(2)}"`
+      + ` x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
     linePts.push([cx, ly]);
     if (!x.hasData) {
-      // 占位：浅色细柱，表示当日无快照数据
-      bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${(zeroY - 1).toFixed(2)}" width="${bw.toFixed(2)}" height="2" fill="#e9ebf0"/>`;
+      // 占位：基线上一道极淡短横。原实现是亮色小方块，暗色主题下非常刺眼
+      ghosts += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${(zeroY - 1).toFixed(2)}"`
+        + ` width="${bw.toFixed(2)}" height="2" rx="1" style="fill:var(--row-divider)"/>`;
       line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
       return;
     }
-    const yv = yBar(x.total_cny);
-    const top = Math.min(zeroY, yv), hgt = Math.abs(yv - zeroY);
-    const color = x.total_cny > 0 ? '#f5222d' : x.total_cny < 0 ? '#00a854' : '#c9ced6';
-    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" rx="2" fill="${color}"/>`;
+    const isUp = x.total_cny > 0;
+    const hgt = Math.abs(yBar(x.total_cny) - zeroY);
+    if (hgt < 0.6) {
+      // 当日恰好为 0：一条中性细线，不参与红/绿语义
+      bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${(zeroY - 1).toFixed(2)}"`
+        + ` width="${bw.toFixed(2)}" height="2" rx="1" style="fill:var(--text-muted);opacity:.5"/>`;
+    } else {
+      bars += `<path d="${trendBarPath(cx, bw, zeroY, hgt, isUp)}" fill="url(#${uid}${isUp ? 'Up' : 'Down'})"/>`;
+    }
     line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
-    // 折线数据点圆点，对齐柱子中心，把柱与线焊在一起
-    dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3" fill="#722ed1" stroke="#fff" stroke-width="1.2"/>`;
+    // 只在最新一天画实心圆点：15 个点全画会让折线显得毛躁，逐点信息交给悬停指示点
+    if (i === lastDataIdx) {
+      dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3.4"`
+        + ` style="fill:var(--cum-line);stroke:var(--bg-card-solid);stroke-width:1.6"/>`;
+    }
   });
-  // 面积：折线到中央零线的闭合带，给折线体量感、与柱子共用零线呼应
+  // 面积：折线到中央零线的闭合带。用渐变（顶部 20% → 底部 0）代替平铺淡紫，
+  // 折线越靠上体量感越强，贴零线时自然消隐
   if (linePts.length) {
     let ap = `M ${linePts[0][0].toFixed(2)} ${zeroY.toFixed(2)} `;
     linePts.forEach((p) => { ap += `L ${p[0].toFixed(2)} ${p[1].toFixed(2)} `; });
     ap += `L ${linePts[linePts.length - 1][0].toFixed(2)} ${zeroY.toFixed(2)} Z`;
-    area = `<path d="${ap}" fill="rgba(114,46,209,0.10)" stroke="none"/>`;
+    area = `<path d="${ap}" fill="url(#${uid}Area)" stroke="none"/>`;
   }
+  // defs：三组渐变。SVG 的 presentation attribute 不认 var()，须走内联 style
+  const defs = trendDefs(uid);
+  // 折线双层：底层粗而极淡做柔光，上层细实线定形，替代原先的单根硬线
+  const lineEl = `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
+    + ` style="stroke:var(--cum-line);stroke-opacity:.22;stroke-width:4.5"/>`
+    + `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
+    + ` style="stroke:var(--cum-line);stroke-width:1.8"/>`;
+  // 悬停指示：竖虚线 + 折线上的指示点，默认隐藏
+  const cursor = `<line class="trend-cursor" x1="0" y1="${mT}" x2="0" y2="${(mT + plotH).toFixed(2)}" visibility="hidden"`
+    + ` style="stroke:var(--text-muted);stroke-opacity:.5;stroke-width:1;stroke-dasharray:3 3"/>`
+    + `<circle class="trend-cursor-dot" cx="0" cy="0" r="4" visibility="hidden"`
+    + ` style="fill:var(--cum-line);stroke:var(--bg-card-solid);stroke-width:1.6"/>`;
   // axes & grid
   const xLabelStep = Math.max(1, Math.ceil(n / 10));
+  // 末位标签只在与前一个标签拉开足够间距时才补，否则会出现「09-08 09-10」叠字
+  const lastTick = Math.floor((n - 1) / xLabelStep) * xLabelStep;
   let xlabels = '';
   data.forEach((x, i) => {
-    if (i % xLabelStep === 0 || i === n - 1) {
+    if (i % xLabelStep === 0 || (i === n - 1 && n - 1 - lastTick >= 2)) {
       const cx = mL + (i + 0.5) * slot;
-      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="10" fill="#8a8f99" text-anchor="middle">${x.date.slice(5)}</text>`;
+      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="11" text-anchor="middle"`
+        + ` style="fill:var(--text-muted);font-variant-numeric:tabular-nums">${x.date.slice(5)}</text>`;
     }
   });
   const yLabels = `
-    <text x="${mL - 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#f5222d" text-anchor="end">+${fmt(maxBar)}</text>
-    <text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="end">0</text>
-    <text x="${mL - 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#00a854" text-anchor="end">-${fmt(maxBar)}</text>
-    <text x="${W - mR + 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">+${fmt(cMaxAbs)}</text>
-    <text x="${W - mR + 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="start">0</text>
-    <text x="${W - mR + 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">-${fmt(cMaxAbs)}</text>`;
-  const grid = `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" stroke="#e5e6eb" stroke-width="1"/>`;
+    <text x="${mL - 8}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="end" style="fill:var(--up);font-variant-numeric:tabular-nums">+${fmt(maxBar)}</text>
+    <text x="${mL - 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="end" style="fill:var(--text-muted)">0</text>
+    <text x="${mL - 8}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="end" style="fill:var(--down);font-variant-numeric:tabular-nums">-${fmt(maxBar)}</text>
+    <text x="${W - mR + 8}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="start" style="fill:var(--cum-line);font-variant-numeric:tabular-nums">+${fmt(cMaxAbs)}</text>
+    <text x="${W - mR + 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="start" style="fill:var(--text-muted)">0</text>
+    <text x="${W - mR + 8}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="start" style="fill:var(--cum-line);font-variant-numeric:tabular-nums">-${fmt(cMaxAbs)}</text>`;
+  // 网格：上下四分位各一条极淡参考线（读图有刻度感），零线单独加重
+  const q1 = (mT + plotH * 0.25).toFixed(2), q3 = (mT + plotH * 0.75).toFixed(2);
+  const grid = `<line x1="${mL}" y1="${q1}" x2="${W - mR}" y2="${q1}" style="stroke:var(--row-divider);stroke-width:1"/>`
+    + `<line x1="${mL}" y1="${q3}" x2="${W - mR}" y2="${q3}" style="stroke:var(--row-divider);stroke-width:1"/>`
+    + `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" style="stroke:var(--border-strong);stroke-width:1"/>`;
   const legend = `
     <div style="display:flex;gap:18px;margin-top:10px;font-size:13px;flex-wrap:wrap">
-      <span><span style="display:inline-block;width:12px;height:12px;background:#f5222d;border-radius:2px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (红涨绿跌)</span>
-      <span><span style="display:inline-block;width:18px;height:3px;background:#722ed1;margin-right:6px;vertical-align:middle"></span>累计盈亏</span>
-      <span><span style="display:inline-block;width:12px;height:3px;background:#e9ebf0;margin-right:6px;vertical-align:middle"></span>无数据日 (占位)</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:var(--up);border-radius:3px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (红涨绿跌)</span>
+      <span><span style="display:inline-block;width:18px;height:3px;background:var(--cum-line);border-radius:2px;margin-right:6px;vertical-align:middle"></span>累计盈亏</span>
+      <span><span style="display:inline-block;width:12px;height:3px;background:var(--text-muted);opacity:.4;border-radius:2px;margin-right:6px;vertical-align:middle"></span>无数据日 (占位)</span>
     </div>`;
   // 翻页导航：‹ 前15天 | 日期范围 | 后15天 › | 回最新
   const startLabel = data[0].date, endLabel = data[n - 1].date;
@@ -2239,16 +2331,27 @@ function drawTrend(targetSel) {
   </div>`;
   tgt.innerHTML = `
     ${nav}<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      ${grid}${area}${bars}${hotspots}
-      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2" stroke-linejoin="round"/>
-      ${dots}${yLabels}${xlabels}
+      ${defs}${grid}${area}${ghosts}${bars}${cursor}
+      ${lineEl}
+      ${dots}${yLabels}${xlabels}${hotspots}
     </svg>${legend}`;
-  // 绑定柱子交互热区 tooltip
+  // 绑定柱子交互热区 tooltip + 悬停指示线/指示点
+  const curEl = tgt.querySelector('.trend-cursor');
+  const curDot = tgt.querySelector('.trend-cursor-dot');
   tgt.querySelectorAll('.trend-hot').forEach((r) => {
     const i = +r.dataset.i;
-    r.addEventListener('mouseenter', (e) => showTrendTip(e, data[i]));
+    r.addEventListener('mouseenter', (e) => {
+      const cx = r.dataset.x, cy = r.dataset.y;
+      if (curEl) { curEl.setAttribute('x1', cx); curEl.setAttribute('x2', cx); curEl.setAttribute('visibility', 'visible'); }
+      if (curDot) { curDot.setAttribute('cx', cx); curDot.setAttribute('cy', cy); curDot.setAttribute('visibility', 'visible'); }
+      showTrendTip(e, data[i]);
+    });
     r.addEventListener('mousemove', moveTrendTip);
-    r.addEventListener('mouseleave', hideTrendTip);
+    r.addEventListener('mouseleave', () => {
+      if (curEl) curEl.setAttribute('visibility', 'hidden');
+      if (curDot) curDot.setAttribute('visibility', 'hidden');
+      hideTrendTip();
+    });
   });
   // 绑定翻页按钮
   const p = document.getElementById('trendPrev'); if (p) p.onclick = () => shiftTrend(-1);
@@ -2586,7 +2689,7 @@ function openCalDay(date) {
         '</tbody></table>';
       wts.forEach((w) => { wealthCNY += (typeof w.pnl_cny === 'number') ? w.pnl_cny : 0; });
     }
-  } catch (e) { rows = '<p style="color:#f5222d">明细解析失败</p>'; }
+  } catch (e) { rows = '<p style="color:var(--danger)">明细解析失败</p>'; }
   $('#calModalBody').innerHTML = `
     <div id="calSumRow" style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px">
       <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${cls(v)}">${fmt(v)}</div></div>
@@ -3122,7 +3225,7 @@ async function openHoldingHistory(id) {
   $('#histTable').innerHTML = '<p style="color:#8a8f99;padding:8px 2px">加载中…</p>';
   $('#histChartBody').innerHTML = '';
   const r = await api('/api/holdings/' + id + '/pnl-history');
-  if (!r.ok) { $('#histTable').innerHTML = '<p style="color:#f5222d">加载失败 (HTTP ' + r.status + ')</p>'; return; }
+  if (!r.ok) { $('#histTable').innerHTML = '<p style="color:var(--danger)">加载失败 (HTTP ' + r.status + ')</p>'; return; }
   const d = await r.json();
   histData = d;
   const h = d.holding || {};
@@ -3175,10 +3278,13 @@ function renderHistTable(d, cur) {
 }
 
 // 复用全局盈亏走势的 SVG 双轴风格：当日盈亏柱状（左轴，红涨绿跌）+ 累计盈亏折线（右轴）
-function renderHistChart(d, cur) {
-  const s = d.series || [];
-  if (s.length === 0) { $('#histChartBody').innerHTML = '<p style="color:#8a8f99">暂无历史数据。</p>'; return; }
-  const W = 720, H = 360, mL = 60, mR = 60, mT = 20, mB = 40;
+// 持仓历史盈亏 / 理财每日盈亏 共用绘制器（数据结构统一为 { date, day_pnl, total_pnl }）。
+// 这两处此前各写一份近乎相同的 SVG 逻辑，改视觉时极易只改一半（曾导致柱子静默不渲染），
+// 合并后只需改这一处。视觉规格见 docs/ui-design-spec.md §3.11。
+function drawPnlCurve(s) {
+  const body = $('#histChartBody');
+  if (!s || s.length === 0) { body.innerHTML = '<p style="color:var(--text-muted)">暂无历史数据。</p>'; return; }
+  const W = 720, H = 356, mL = 58, mR = 58, mT = 22, mB = 40;
   const plotW = W - mL - mR, plotH = H - mT - mB;
   const n = s.length;
   const maxBar = Math.max(1, ...s.map((x) => Math.abs(x.day_pnl)));
@@ -3188,63 +3294,105 @@ function renderHistChart(d, cur) {
   const yBar = (v) => zeroY - (v / maxBar) * (plotH / 2);
   const yLine = (v) => zeroY - (v / cMaxAbs) * (plotH / 2);
   const slot = plotW / n;
-  const bw = Math.max(2, slot * 0.6);
+  // 柱宽随列宽收敛并封顶（与盈亏走势保持一致）
+  const bw = Math.max(3, Math.min(24, slot * 0.46));
+  const uid = 'th' + (++trendUidSeq);
   const linePts = [];
   let bars = '', line = '', area = '', dots = '', hotspots = '';
   s.forEach((x, i) => {
     const cx = mL + (i + 0.5) * slot;
-    // 交互热区：覆盖整列，hover 显示金额
-    hotspots += `<rect class="trend-hot" data-i="${i}" x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
     const ly = yLine(x.total_pnl);
+    // 交互热区：覆盖整列，hover 显示金额；坐标带上供悬停指示线定位
+    hotspots += `<rect class="trend-hot" data-i="${i}" data-x="${cx.toFixed(2)}" data-y="${ly.toFixed(2)}"`
+      + ` x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
     linePts.push([cx, ly]);
-    const yv = yBar(x.day_pnl);
-    const top = Math.min(zeroY, yv), hgt = Math.abs(yv - zeroY);
-    const color = x.day_pnl > 0 ? '#f5222d' : x.day_pnl < 0 ? '#00a854' : '#c9ced6';
-    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" rx="2" fill="${color}"/>`;
+    const hgt = Math.abs(yBar(x.day_pnl) - zeroY);
+    if (hgt < 0.6) {
+      bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${(zeroY - 1).toFixed(2)}"`
+        + ` width="${bw.toFixed(2)}" height="2" rx="1" style="fill:var(--text-muted);opacity:.5"/>`;
+    } else {
+      const isUp = x.day_pnl > 0;
+      bars += `<path d="${trendBarPath(cx, bw, zeroY, hgt, isUp)}" fill="url(#${uid}${isUp ? 'Up' : 'Down'})"/>`;
+    }
     line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
-    dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3" fill="#722ed1" stroke="#fff" stroke-width="1.2"/>`;
+    // 只在最新一天画实心圆点：逐点信息交给悬停指示点
+    if (i === n - 1) {
+      dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3.4"`
+        + ` style="fill:var(--cum-line);stroke:var(--bg-card-solid);stroke-width:1.6"/>`;
+    }
   });
+  // 面积：渐变填充（与盈亏走势一致）
   if (linePts.length) {
     let ap = `M ${linePts[0][0].toFixed(2)} ${zeroY.toFixed(2)} `;
     linePts.forEach((p) => { ap += `L ${p[0].toFixed(2)} ${p[1].toFixed(2)} `; });
     ap += `L ${linePts[linePts.length - 1][0].toFixed(2)} ${zeroY.toFixed(2)} Z`;
-    area = `<path d="${ap}" fill="rgba(114,46,209,0.10)" stroke="none"/>`;
+    area = `<path d="${ap}" fill="url(#${uid}Area)" stroke="none"/>`;
   }
+  const defs = trendDefs(uid);
+  // 折线双层：底层粗而极淡做柔光，上层细实线定形
+  const lineEl = `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
+    + ` style="stroke:var(--cum-line);stroke-opacity:.22;stroke-width:4.5"/>`
+    + `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
+    + ` style="stroke:var(--cum-line);stroke-width:1.8"/>`;
+  const cursor = `<line class="trend-cursor" x1="0" y1="${mT}" x2="0" y2="${(mT + plotH).toFixed(2)}" visibility="hidden"`
+    + ` style="stroke:var(--text-muted);stroke-opacity:.5;stroke-width:1;stroke-dasharray:3 3"/>`
+    + `<circle class="trend-cursor-dot" cx="0" cy="0" r="4" visibility="hidden"`
+    + ` style="fill:var(--cum-line);stroke:var(--bg-card-solid);stroke-width:1.6"/>`;
   const xLabelStep = Math.max(1, Math.ceil(n / 10));
+  // 末位标签只在与前一个标签拉开足够间距时才补，否则会出现「09-08 09-10」叠字
+  const lastTick = Math.floor((n - 1) / xLabelStep) * xLabelStep;
   let xlabels = '';
   s.forEach((x, i) => {
-    if (i % xLabelStep === 0 || i === n - 1) {
+    if (i % xLabelStep === 0 || (i === n - 1 && n - 1 - lastTick >= 2)) {
       const cx = mL + (i + 0.5) * slot;
-      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="10" fill="#8a8f99" text-anchor="middle">${x.date.slice(5)}</text>`;
+      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="11" text-anchor="middle"`
+        + ` style="fill:var(--text-muted);font-variant-numeric:tabular-nums">${x.date.slice(5)}</text>`;
     }
   });
   const yLabels = `
-    <text x="${mL - 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#f5222d" text-anchor="end">+${fmt(maxBar)}</text>
-    <text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="end">0</text>
-    <text x="${mL - 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#00a854" text-anchor="end">-${fmt(maxBar)}</text>
-    <text x="${W - mR + 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">+${fmt(cMaxAbs)}</text>
-    <text x="${W - mR + 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="start">0</text>
-    <text x="${W - mR + 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">-${fmt(cMaxAbs)}</text>`;
-  const grid = `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" stroke="#e5e6eb" stroke-width="1"/>`;
+    <text x="${mL - 8}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="end" style="fill:var(--up);font-variant-numeric:tabular-nums">+${fmt(maxBar)}</text>
+    <text x="${mL - 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="end" style="fill:var(--text-muted)">0</text>
+    <text x="${mL - 8}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="end" style="fill:var(--down);font-variant-numeric:tabular-nums">-${fmt(maxBar)}</text>
+    <text x="${W - mR + 8}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="start" style="fill:var(--cum-line);font-variant-numeric:tabular-nums">+${fmt(cMaxAbs)}</text>
+    <text x="${W - mR + 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="start" style="fill:var(--text-muted)">0</text>
+    <text x="${W - mR + 8}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="start" style="fill:var(--cum-line);font-variant-numeric:tabular-nums">-${fmt(cMaxAbs)}</text>`;
+  const q1 = (mT + plotH * 0.25).toFixed(2), q3 = (mT + plotH * 0.75).toFixed(2);
+  const grid = `<line x1="${mL}" y1="${q1}" x2="${W - mR}" y2="${q1}" style="stroke:var(--row-divider);stroke-width:1"/>`
+    + `<line x1="${mL}" y1="${q3}" x2="${W - mR}" y2="${q3}" style="stroke:var(--row-divider);stroke-width:1"/>`
+    + `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" style="stroke:var(--border-strong);stroke-width:1"/>`;
   const legend = `
     <div style="display:flex;gap:18px;margin-top:10px;font-size:13px;flex-wrap:wrap">
-      <span><span style="display:inline-block;width:12px;height:12px;background:#f5222d;border-radius:2px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (左轴, 红涨绿跌)</span>
-      <span><span style="display:inline-block;width:18px;height:3px;background:#722ed1;margin-right:6px;vertical-align:middle"></span>累计盈亏 (右轴)</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:var(--up);border-radius:3px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (左轴, 红涨绿跌)</span>
+      <span><span style="display:inline-block;width:18px;height:3px;background:var(--cum-line);border-radius:2px;margin-right:6px;vertical-align:middle"></span>累计盈亏 (右轴)</span>
     </div>`;
-  $('#histChartBody').innerHTML = `
+  body.innerHTML = `
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      ${grid}${area}${bars}${hotspots}
-      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2" stroke-linejoin="round"/>
-      ${dots}${yLabels}${xlabels}
+      ${defs}${grid}${area}${bars}${cursor}
+      ${lineEl}
+      ${dots}${yLabels}${xlabels}${hotspots}
     </svg>${legend}`;
-  // 绑定柱子交互热区 tooltip
-  document.querySelectorAll('#histChartBody .trend-hot').forEach((r) => {
+  // 绑定柱子交互热区 tooltip + 悬停指示线/指示点
+  const curEl = body.querySelector('.trend-cursor');
+  const curDot = body.querySelector('.trend-cursor-dot');
+  body.querySelectorAll('.trend-hot').forEach((r) => {
     const i = +r.dataset.i;
-    r.addEventListener('mouseenter', (e) => showHistTip(e, s[i]));
+    r.addEventListener('mouseenter', (e) => {
+      const cx = r.dataset.x, cy = r.dataset.y;
+      if (curEl) { curEl.setAttribute('x1', cx); curEl.setAttribute('x2', cx); curEl.setAttribute('visibility', 'visible'); }
+      if (curDot) { curDot.setAttribute('cx', cx); curDot.setAttribute('cy', cy); curDot.setAttribute('visibility', 'visible'); }
+      showHistTip(e, s[i]);
+    });
     r.addEventListener('mousemove', moveTrendTip);
-    r.addEventListener('mouseleave', hideTrendTip);
+    r.addEventListener('mouseleave', () => {
+      if (curEl) curEl.setAttribute('visibility', 'hidden');
+      if (curDot) curDot.setAttribute('visibility', 'hidden');
+      hideTrendTip();
+    });
   });
 }
+
+// 持仓历史盈亏：series 已含 day_pnl / total_pnl，直接交给共用绘制器
+function renderHistChart(d) { drawPnlCurve(d.series || []); }
 
 // 历史盈亏曲线 tooltip：hover 柱子显示当日/累计盈亏
 function showHistTip(e, x) {
@@ -3274,6 +3422,38 @@ let assetTab = 'wealth';     // 当前 tab: wealth/liability/consume/sources（�
 let pendingAssetDel = null;   // { type, id }
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ===== 行内操作图标字典 + 按钮工厂（规范见 docs/ui-design-spec.md §3.3.1）=====
+// 统一 16px 线性描边、一律 currentColor。新增操作先在此登记，不要在模板里现写 SVG。
+const ACT_ICONS = {
+  edit: '<path d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"/><path d="M14.5 6.5 17.5 9.5"/>',
+  hist: '<path d="M3.5 16.5 8.5 11l4 3 7.5-7.5"/><path d="M15 6.5h5.5V12"/>',
+  del: '<path d="M4.5 7h15"/><path d="M9.5 7V4.6h5V7"/><path d="M6.5 7l1 12.4h9l1-12.4"/><path d="M10.2 10.8v5.6M13.8 10.8v5.6"/>',
+  adjust: '<path d="M8 20.5v-17"/><path d="M4.5 8 8 3.5 11.5 8"/><path d="M16 3.5v17"/><path d="M12.5 16 16 20.5 19.5 16"/>',
+  analysis: '<circle cx="11" cy="11" r="6.2"/><path d="M15.6 15.6 20.5 20.5"/><path d="M8.4 12.4l2-2 1.6 1.6 2-2.6"/>',
+  transfer: '<path d="M4 8.5h12.5"/><path d="M13.5 5.5 16.5 8.5 13.5 11.5"/><path d="M20 15.5H7.5"/><path d="M10.5 12.5 7.5 15.5 10.5 18.5"/>',
+  redeem: '<path d="M12 4v12.5"/><path d="M7 11.5 12 16.5 17 11.5"/><path d="M4.5 20h15"/>',
+  addSub: '<circle cx="12" cy="12" r="8.4"/><path d="M12 8.4v7.2M8.4 12h7.2"/>',
+  toggle: '<path d="M9.5 6 15.5 12 9.5 18"/>',
+  plus: '<path d="M12 5.2v13.6M5.2 12h13.6"/>',
+  snapshot: '<path d="M12 3.8v10.4"/><path d="M8 10.2 12 14.2 16 10.2"/><path d="M4.6 16.6v2.2a1.6 1.6 0 0 0 1.6 1.6h11.6a1.6 1.6 0 0 0 1.6-1.6v-2.2"/>',
+  pnl: '<path d="M4.5 19.5V10M9.8 19.5V5M15.1 19.5v-6.5M20.4 19.5V8"/>',
+  undo: '<path d="M4.5 10.5A8 8 0 1 1 6.8 16.6"/><path d="M4.5 5.5v5h5"/>',
+};
+function actIcon(name) {
+  return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ACT_ICONS[name] || '') + '</svg>';
+}
+// 行内操作按钮：attrs 放事件委托钩子（data-*），label 同时作 title 与 aria-label 兜底。
+// opts.count 会在右上角挂计数徽标（如子账户数量），避免计数挤进按钮文字撑变列宽。
+function actBtn(icon, attrs, label, opts) {
+  opts = opts || {};
+  return '<button type="button" class="row-act' + (opts.danger ? ' danger' : '') + (opts.cls ? ' ' + opts.cls : '') + '"'
+    + (attrs ? ' ' + attrs : '')
+    + ' title="' + esc(label) + '" aria-label="' + esc(label) + '">'
+    + actIcon(icon)
+    + (opts.count ? '<span class="act-cnt">' + esc(String(opts.count)) + '</span>' : '')
+    + '</button>';
+}
 const money = (n) => '¥' + fmt(n == null ? 0 : n);
 const pnlCls = (n) => (n >= 0 ? 'up' : 'down');
 const pnlTxt = (n) => (n >= 0 ? '+' : '') + money(n);
@@ -3477,14 +3657,14 @@ function addEqRow(init) {
       <option value="fund">基金</option>
       <option value="wealth">理财</option>
     </select>
-    <input class="eq-amt" name="eq-amt" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="盈亏金额（正盈利/负亏损）">
+    <input class="eq-amt" name="eq-amt" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="盈亏金额（正盈负亏）">
     <select class="eq-cur" name="eq-cur">
       <option value="USD">USD 美元</option>
       <option value="HKD">HKD 港币</option>
       <option value="RMB" selected>RMB 人民币</option>
     </select>
     <input class="eq-note" name="eq-note" type="text" placeholder="备注（可选）">
-    <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
+    <button class="trow-del btn btn-sm danger" type="button" title="删除" aria-label="删除该行">${actIcon('del')}</button>`;
   if (init) {
     if (init.kind) row.querySelector('.eq-kind').value = init.kind;
     if (init.amt != null) row.querySelector('.eq-amt').value = init.amt;
@@ -3502,7 +3682,7 @@ function addUsdBuy(init) {
     <input class="usd-buy" name="usd-buy" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="买入 USD 金额">
     <input class="usd-brate" name="usd-brate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="买入汇率 RMB/USD">
     <span class="usd-cost" title="买入花费（RMB）">—</span>
-    <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
+    <button class="trow-del btn btn-sm danger" type="button" title="删除" aria-label="删除该行">${actIcon('del')}</button>`;
   const buyEl = row.querySelector('.usd-buy');
   const brateEl = row.querySelector('.usd-brate');
   const costEl = row.querySelector('.usd-cost');
@@ -3532,8 +3712,8 @@ function addUsdPnl(init) {
       <option value="wealth">理财</option>
       <option value="cash">现金</option>
     </select>
-    <input class="usd-pnl" name="usd-pnl" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="盈亏 USD 金额（正盈利/负亏损）">
-    <button class="trow-del btn btn-sm danger" type="button" title="删除">✕</button>`;
+    <input class="usd-pnl" name="usd-pnl" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="盈亏 USD（正盈负亏）">
+    <button class="trow-del btn btn-sm danger" type="button" title="删除" aria-label="删除该行">${actIcon('del')}</button>`;
   if (init) {
     if (init.kind) row.querySelector('.usd-kind').value = init.kind;
     if (init.pnl != null) row.querySelector('.usd-pnl').value = init.pnl;
@@ -3825,7 +4005,6 @@ function calcAdd() {
   if (applyBtn) applyBtn.disabled = true;
   const fee = Number.isFinite(f) ? f : 0;
   if (![P0, Q0, P1].every(Number.isFinite)) {
-    el.innerHTML = '<span class="tool-empty">请填写：原成交价、原持仓数量、补仓现价（手续费可填 0）</span>';
     return;
   }
   if (Q0 <= 0) {
@@ -4053,8 +4232,8 @@ function assetDel(type, id) {
 // ---- 资产来源 ----
 function renderSources(body) {
   const list = assetSources;
-  let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><button class="btn asset-add" id="addSourceBtn">＋ 添加账户</button></div>`;
-  if (!list.length) html += `<div class="empty-block"><p class="empty">还没有账户，先添加一个银行、证券或软件吧。</p><button class="btn asset-add-inline" data-empty-add="source" type="button">➕ 添加账户</button></div>`;
+  let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div>`;
+  if (!list.length) html += `<div class="empty-block"><p class="empty">还没有账户，先添加一个银行、证券或软件吧。</p><button class="btn icon-btn asset-add-inline" data-empty-add="source" type="button" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div>`;
   else {
     // 按类型分组：银行 / 证券 / 软件 / 平台（未知类型归银行）
     const typeOf = (s) => (s.type === 'securities' || s.type === 'software' || s.type === 'platform') ? s.type : 'bank';
@@ -4073,7 +4252,7 @@ function renderSources(body) {
         const subCnt = cashListOf(s.id).length + liabListOf(s.id).length;
         html += `<tr><td class="num">${i + 1}</td><td><span class="src-ico">${srcTypeIcon(typeOf(s))}</span> ${esc(s.name)}</td><td>${typeName[typeOf(s)]} <span class="src-region ${s.region === 'overseas' ? 'ovs' : 'dom'}">${s.region === 'overseas' ? '境外' : '境内'}</span></td>
           <td class="num" title="该账户下持仓市值+理财金额+现金余额（折算 CNY）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
-          <td class="row-actions"><button class="btn act-hist" data-act="sub-toggle" data-id="${s.id}" title="展开/收起该账户的子账户">子账户${subCnt ? '（' + subCnt + '）' : ''}</button><button class="btn act-edit" data-act="add-sub" data-id="${s.id}" title="添加该账户的子账户或负债">＋子账户</button><button class="btn act-edit" data-act="edit-source" data-id="${s.id}" title="编辑">编辑</button><button class="btn act-del danger" data-act="del-source" data-id="${s.id}" title="删除">删除</button></td></tr>`;
+          <td class="row-actions">${actBtn('toggle', `data-act="sub-toggle" data-id="${s.id}"`, '展开/收起子账户', { count: subCnt, cls: 'always-on' })}${actBtn('addSub', `data-act="add-sub" data-id="${s.id}"`, '添加子账户或负债')}${actBtn('edit', `data-act="edit-source" data-id="${s.id}"`, '编辑账户')}${actBtn('del', `data-act="del-source" data-id="${s.id}"`, '删除账户', { danger: true })}</td></tr>`;
         // 子账户折叠行：现金与负债作为该账户的子账户，下拉折叠显示（无留白/阴影/圆角，贴合主表）
         html += `<tr class="cash-sub-tr" data-sub="${s.id}" hidden><td colspan="6">${cashSubRowsHtml(s.id)}</td></tr>`;
       }
@@ -4162,8 +4341,8 @@ function renderWealth(body) {
       <button class="btn vt-btn ${wealthView === 'table' ? 'active' : ''}" data-wview="table" type="button">表格</button>
       <button class="btn vt-btn ${wealthView === 'card' ? 'active' : ''}" data-wview="card" type="button">卡片</button>
     </div>` : '';
-  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn asset-add" id="assetSnapBtn" title="更新理财持仓"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px"><path d="M12 3.5 V13.5 M8 10 L12 14 L16 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5 V19 A1.5 1.5 0 0 0 6 20.5 H18 A1.5 1.5 0 0 0 19.5 19 V16.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> 更新</button><button class="btn asset-add" id="addWealthBtn"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px"><path d="M12 5 V19 M5 12 H19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg> 添加</button>${toggleHtml}</div></div>`;
-  if (!w.length) html += `<div class="empty-block"><p class="empty">还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn asset-add-inline" data-empty-add="wealth" type="button">➕ 添加第一笔理财</button></div>`;
+  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="assetSnapBtn" title="更新理财持仓" aria-label="更新理财持仓">${actIcon('snapshot')}</button><button class="btn icon-btn asset-add" id="addWealthBtn" title="添加理财" aria-label="添加理财">${actIcon('plus')}</button>${toggleHtml}</div></div>`;
+  if (!w.length) html += `<div class="empty-block"><p class="empty">还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn icon-btn asset-add-inline" data-empty-add="wealth" type="button" title="添加第一笔理财" aria-label="添加第一笔理财">${actIcon('plus')}</button></div>`;
   else if (wealthView === 'table') html += renderWealthTable(w);
   else {
     html += `<div class="asset-list wealth-list">`;
@@ -4176,9 +4355,9 @@ function renderWealth(body) {
             <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
         <div class="ac-sub">总金额：<span class="ac-amount"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
         <div class="ac-actions">
-          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">📈 每日盈亏</button>
-          <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">✏️ 编辑</button>
-          <button class="btn btn-icon" data-act="redeem-wealth" data-id="${p.id}">⬇️ 减仓</button>
+          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('pnl')} 每日盈亏</button>
+          <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">${actIcon('edit')} 编辑</button>
+          <button class="btn btn-icon" data-act="redeem-wealth" data-id="${p.id}">${actIcon('redeem')} 减仓</button>
         </div></div>`;
     });
     html += `</div>`;
@@ -4217,9 +4396,9 @@ function renderWealthTable(w) {
       <td class="num" title="已录入快照的天数">${(p.snap_count || 0) > 0 ? p.snap_count + '天' : '—'}</td>
       <td class="wnote" title="${esc(p.note || '')}">${esc(p.note || '')}</td>
       <td class="row-actions">
-        <button class="btn act-hist" data-act="wealth-hist" data-id="${p.id}" title="每日盈亏">每日盈亏</button>
-        <button class="btn act-edit" data-act="edit-wealth" data-id="${p.id}" title="编辑">编辑</button>
-        <button class="btn act-edit" data-act="redeem-wealth" data-id="${p.id}" title="减仓/清仓（全部转出即删除条目）">减仓</button>
+        ${actBtn('pnl', `data-act="wealth-hist" data-id="${p.id}"`, '每日盈亏')}
+        ${actBtn('edit', `data-act="edit-wealth" data-id="${p.id}"`, '编辑')}
+        ${actBtn('redeem', `data-act="redeem-wealth" data-id="${p.id}"`, '减仓/清仓（全部转出即删除条目）')}
       </td>
     </tr>`;
   }).join('');
@@ -4295,12 +4474,12 @@ function cashSubRowsHtml(sourceId) {
     const nameHtml = ico + (c.is_default
       ? `<span class="cash-star" title="默认子账户（加减仓默认走这个账户）">★</span>${esc(c.name)}`
       : esc(c.name));
-    const delBtn = c.is_default ? '' : `<button class="btn act-del danger" data-act="del-cash" data-id="${c.id}" title="删除">删除</button>`;
+    const delBtn = c.is_default ? '' : actBtn('del', `data-act="del-cash" data-id="${c.id}"`, '删除', { danger: true });
     html += `<tr><td class="num">${no}</td><td>${nameHtml}</td><td>${esc(c.type || '—')}</td><td class="num">${moneyCur(c.amount || 0, c.currency)}</td><td>${esc(c.note || '')}</td>
       <td class="row-actions">
-        <button class="btn act-hist" data-act="cash-hist" data-id="${c.id}" title="资金变动历史">历史</button>
-        <button class="btn act-edit" data-act="edit-cash" data-id="${c.id}" title="编辑">编辑</button>
-        <button class="btn act-transfer" data-act="cash-transfer" data-id="${c.id}" title="转入其他子账户">转账</button>
+        ${actBtn('hist', `data-act="cash-hist" data-id="${c.id}"`, '资金变动历史')}
+        ${actBtn('edit', `data-act="edit-cash" data-id="${c.id}"`, '编辑')}
+        ${actBtn('transfer', `data-act="cash-transfer" data-id="${c.id}"`, '转入其他子账户')}
         ${delBtn}
       </td></tr>`;
   }
@@ -4309,9 +4488,9 @@ function cashSubRowsHtml(sourceId) {
     // 负债行：余额取负数展示（欠款），币种固定 ¥；操作复用负债编辑/删除，历史看余额变动
     html += `<tr><td class="num">${no}</td><td>${ico}${esc(l.name)}</td><td>贷款</td><td class="num down">-${money(l.amount || 0)}</td><td>${esc(l.note || '')}</td>
       <td class="row-actions">
-        <button class="btn act-hist" data-act="lb-hist" data-id="${l.id}" title="余额变动历史（增加贷款/还款）">历史</button>
-        <button class="btn act-edit" data-act="edit-lb" data-id="${l.id}" title="编辑（利率/月供等详情在此查看）">编辑</button>
-        <button class="btn act-del danger" data-act="del-lb" data-id="${l.id}" title="删除">删除</button>
+        ${actBtn('hist', `data-act="lb-hist" data-id="${l.id}"`, '余额变动历史（增加贷款/还款）')}
+        ${actBtn('edit', `data-act="edit-lb" data-id="${l.id}"`, '编辑（利率/月供等详情在此查看）')}
+        ${actBtn('del', `data-act="del-lb" data-id="${l.id}"`, '删除', { danger: true })}
       </td></tr>`;
   }
   return html + '</tbody></table>';
@@ -4720,75 +4899,10 @@ async function openWealthHistory(id) {
 }
 
 // 理财每日盈亏曲线：复用权益弹框的 dual-axis SVG（当日盈亏柱 + 累计盈亏折线）
+// 理财每日盈亏：字段名不同（rows[].pnl / cum_pnl），补齐为统一结构后交给共用绘制器
 function renderWealthHistChart(d) {
   const rows = (d.rows || []).slice().reverse(); // 旧→新，与曲线升序一致
-  const s = rows.map((r) => ({ date: r.date, day_pnl: r.pnl || 0, total_pnl: r.cum_pnl || 0 }));
-  const body = $('#histChartBody');
-  if (s.length === 0) { body.innerHTML = '<p style="color:#8a8f99">暂无历史数据。</p>'; return; }
-  const W = 720, H = 360, mL = 60, mR = 60, mT = 20, mB = 40;
-  const plotW = W - mL - mR, plotH = H - mT - mB;
-  const n = s.length;
-  const maxBar = Math.max(1, ...s.map((x) => Math.abs(x.day_pnl)));
-  const cVals = s.map((x) => x.total_pnl);
-  const cMaxAbs = Math.max(1, ...cVals.map((v) => Math.abs(v)));
-  const zeroY = mT + plotH / 2;
-  const yBar = (v) => zeroY - (v / maxBar) * (plotH / 2);
-  const yLine = (v) => zeroY - (v / cMaxAbs) * (plotH / 2);
-  const slot = plotW / n;
-  const bw = Math.max(2, slot * 0.6);
-  const linePts = [];
-  let bars = '', line = '', area = '', dots = '', hotspots = '';
-  s.forEach((x, i) => {
-    const cx = mL + (i + 0.5) * slot;
-    hotspots += `<rect class="trend-hot" data-i="${i}" x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
-    const ly = yLine(x.total_pnl);
-    linePts.push([cx, ly]);
-    const yv = yBar(x.day_pnl);
-    const top = Math.min(zeroY, yv), hgt = Math.abs(yv - zeroY);
-    const color = x.day_pnl > 0 ? '#f5222d' : x.day_pnl < 0 ? '#00a854' : '#c9ced6';
-    bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, hgt).toFixed(2)}" rx="2" fill="${color}"/>`;
-    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
-    dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3" fill="#722ed1" stroke="#fff" stroke-width="1.2"/>`;
-  });
-  if (linePts.length) {
-    let ap = `M ${linePts[0][0].toFixed(2)} ${zeroY.toFixed(2)} `;
-    linePts.forEach((p) => { ap += `L ${p[0].toFixed(2)} ${p[1].toFixed(2)} `; });
-    ap += `L ${linePts[linePts.length - 1][0].toFixed(2)} ${zeroY.toFixed(2)} Z`;
-    area = `<path d="${ap}" fill="rgba(114,46,209,0.10)" stroke="none"/>`;
-  }
-  const xLabelStep = Math.max(1, Math.ceil(n / 10));
-  let xlabels = '';
-  s.forEach((x, i) => {
-    if (i % xLabelStep === 0 || i === n - 1) {
-      const cx = mL + (i + 0.5) * slot;
-      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="10" fill="#8a8f99" text-anchor="middle">${x.date.slice(5)}</text>`;
-    }
-  });
-  const yLabels = `
-    <text x="${mL - 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#f5222d" text-anchor="end">+${fmt(maxBar)}</text>
-    <text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="end">0</text>
-    <text x="${mL - 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#00a854" text-anchor="end">-${fmt(maxBar)}</text>
-    <text x="${W - mR + 6}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">+${fmt(cMaxAbs)}</text>
-    <text x="${W - mR + 6}" y="${(zeroY + 4).toFixed(2)}" font-size="10" fill="#8a8f99" text-anchor="start">0</text>
-    <text x="${W - mR + 6}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="10" fill="#722ed1" text-anchor="start">-${fmt(cMaxAbs)}</text>`;
-  const grid = `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" stroke="#e5e6eb" stroke-width="1"/>`;
-  const legend = `
-    <div style="display:flex;gap:18px;margin-top:10px;font-size:13px;flex-wrap:wrap">
-      <span><span style="display:inline-block;width:12px;height:12px;background:#f5222d;border-radius:2px;margin-right:6px;vertical-align:middle"></span>当日盈亏 (左轴, 红涨绿跌)</span>
-      <span><span style="display:inline-block;width:18px;height:3px;background:#722ed1;margin-right:6px;vertical-align:middle"></span>累计盈亏 (右轴)</span>
-    </div>`;
-  body.innerHTML = `
-    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      ${grid}${area}${bars}${hotspots}
-      <path d="${line}" fill="none" stroke="#722ed1" stroke-width="2" stroke-linejoin="round"/>
-      ${dots}${yLabels}${xlabels}
-    </svg>${legend}`;
-  document.querySelectorAll('#histChartBody .trend-hot').forEach((r) => {
-    const i = +r.dataset.i;
-    r.addEventListener('mouseenter', (e) => showHistTip(e, s[i]));
-    r.addEventListener('mousemove', moveTrendTip);
-    r.addEventListener('mouseleave', hideTrendTip);
-  });
+  drawPnlCurve(rows.map((r) => ({ date: r.date, day_pnl: r.pnl || 0, total_pnl: r.cum_pnl || 0 })));
 }
 
 async function loadWealthAudit() {
@@ -4817,8 +4931,8 @@ async function loadWealthAudit() {
       // 每日盈亏表已去掉操作列，「删除」按钮移到这里：修改行可撤销+删除；删除行仅可撤销（快照已不存在）
       const ops = a.action === 'undo' ? ''
         : (a.action === 'upsert'
-          ? `<button class="btn act-edit" data-undo="${a.id}" title="撤销该操作并冲正子账户">撤销</button><button class="btn act-del danger" data-del-date="${a.date}" title="删除当日快照">删除</button>`
-          : `<button class="btn act-edit" data-undo="${a.id}" title="撤销该操作并冲正子账户">撤销</button>`);
+          ? `${actBtn('undo', `data-undo="${a.id}"`, '撤销该操作并冲正子账户')}${actBtn('del', `data-del-date="${a.date}"`, '删除当日快照', { danger: true })}`
+          : `${actBtn('undo', `data-undo="${a.id}"`, '撤销该操作并冲正子账户')}`);
       html += `<tr><td>${a.created_at}</td><td>${label[a.action] || a.action}</td><td>${a.date}</td>
         <td class="num">${oldV}</td><td class="num">${newV}</td>
         <td class="row-actions">${ops}</td></tr>`;
@@ -4911,14 +5025,14 @@ async function submitLiabilityForm() {
 // ---- 消费 ----
 function renderConsume(body) {
   const list = (assetData.consumption || {}).items || [];
-  let html = `<div class="asset-section-head"><h3>消费（最近 ${list.length}）</h3><button class="btn asset-add" id="addCsBtn">＋ 添加消费</button></div>`;
+  let html = `<div class="asset-section-head"><h3>消费（最近 ${list.length}）</h3><button class="btn icon-btn asset-add" id="addCsBtn" title="添加消费" aria-label="添加消费">${actIcon('plus')}</button></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">还没有消费记录。</p><button class="btn asset-add-inline" data-empty-add="consume" type="button">➕ 添加消费</button></div>`;
   else {
     html += `<table class="asset-table"><thead><tr><th>日期</th><th>类别</th><th>账户</th><th class="num">金额</th><th>备注</th><th></th></tr></thead><tbody>`;
     for (const c of list) {
       html += `<tr><td>${esc(c.date)}</td><td>${esc(c.category || '')}</td><td>${esc(c.source_name || '')}</td>
         <td class="num">${money(c.amount || 0)}</td><td>${esc(c.note || '')}</td>
-        <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-cs" data-id="${c.id}">✏️ 编辑</button><button class="btn btn-icon danger" data-act="del-cs" data-id="${c.id}">🗑️ 删除</button></td></tr>`;
+        <td class="num asset-row-actions"><button class="btn btn-icon" data-act="edit-cs" data-id="${c.id}">${actIcon('edit')} 编辑</button><button class="btn btn-icon danger" data-act="del-cs" data-id="${c.id}">${actIcon('del')} 删除</button></td></tr>`;
     }
     html += `</tbody></table>`;
   }
@@ -6221,8 +6335,8 @@ function renderGuideList() {
         </div>
       </div>
       <div class="guide-item-actions">
-        <button class="btn" data-guide-edit="${g.id}" title="编辑">✏️</button>
-        <button class="btn danger" data-guide-del="${g.id}" title="删除">🗑️</button>
+        ${actBtn('edit', `data-guide-edit="${g.id}"`, '编辑该条操作记录')}
+        ${actBtn('del', `data-guide-del="${g.id}"`, '删除该条操作记录', { danger: true })}
       </div>
     </div>`;
   });
@@ -6339,9 +6453,7 @@ let allUsersCache = [];
 
 function setUserText(name) {
   const t = document.getElementById('userNameText');
-  const uc = document.getElementById('ucName');
   if (t) t.textContent = name || '默认';
-  if (uc) uc.textContent = name || '默认';
 }
 
 async function fetchUsers() {
@@ -6392,8 +6504,6 @@ async function refreshUsers() {
   }));
   renderUserList(users, resolvedCur, statsMap);
   const cur = users.find((u) => String(u.id) === String(resolvedCur));
-  const ucMeta = document.getElementById('ucMeta');
-  if (ucMeta) ucMeta.textContent = (statsMap[resolvedCur] != null ? statsMap[resolvedCur] : 0) + ' 条数据';
   setUserText(cur ? cur.name : '默认');
 }
 

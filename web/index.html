@@ -184,7 +184,7 @@
 
   <div id="notifyModal" class="modal" hidden>
     <div class="modal-card" style="width:560px; max-width:94vw;">
-      <h2><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><path d="M18 8.5 A6 6 0 0 0 6 8.5 C6 15 4 16.5 4 16.5 H20 C20 16.5 18 15 18 8.5 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M13.7 20 A2 2 0 0 1 10.3 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>通知渠道</h2>
+      <h2 data-icon="bell">通知渠道</h2>
       <button class="card-close" type="button" id="notifyClose" title="关闭" aria-label="关闭">✕</button>
       <div class="ana-tabs ac-tabs">
         <button id="ntTabPolicy" class="ana-tab-btn active" type="button">推送策略</button>
@@ -228,15 +228,15 @@
 
       <div id="notifyErr" class="err"></div>
       <div class="modal-actions">
-        <button class="btn" type="button" id="notifyTestBtn"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px;margin-right:2px"><path d="M21.5 2.5 L2.5 10.5 L10 13.5 L13.5 21.5 L21.5 2.5 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M10 13.5 L21.5 2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg> 测试通知</button>
-        <button class="btn" type="button" id="notifySaveBtn"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2px;margin-right:2px"><path d="M19 21 H5 A2 2 0 0 1 3 19 V5 A2 2 0 0 1 5 3 H16 L21 8 V19 A2 2 0 0 1 19 21 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M17 21 V13 H7 V21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M7 3 V8 H14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg> 保存配置</button>
+        <button class="btn" type="button" id="notifyTestBtn">测试通知</button>
+        <button class="btn primary" type="button" id="notifySaveBtn">保存配置</button>
       </div>
     </div>
   </div>
 
   <div id="toolsModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
-      <h2>资产工具</h2>
+      <h2 data-icon="tools">资产工具</h2>
       <button class="card-close" type="button" id="toolsClose" title="关闭" aria-label="关闭">✕</button>
       <div class="ana-tabs ac-tabs">
         <button id="tlTabEq" class="ana-tab-btn active" type="button">权益盈亏</button>
@@ -335,7 +335,7 @@
   <!-- 盈亏分析弹框：日历 + 走势 双 Tab（原两个独立弹框合并） -->
   <div id="pnlModal" class="modal" hidden>
     <div class="modal-card" style="width:min(900px, 96vw); max-width:96vw;">
-      <h2 id="pnlModalTitle">盈亏日历</h2>
+      <h2 id="pnlModalTitle" data-icon="calendar">盈亏日历</h2>
       <button class="card-close" type="button" id="pnlClose" title="关闭" aria-label="关闭">✕</button>
       <div class="ana-tabs ac-tabs">
         <button id="pnlTabCalBtn" class="ana-tab-btn active" type="button" data-tab="cal">盈亏日历</button>
@@ -369,12 +369,12 @@
 
   <div id="modal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="modalTitle">添加持仓</h2>
+      <h2 id="modalTitle" data-icon="holding">添加持仓</h2>
         <form id="form">
           <input type="hidden" id="f_id">
           <label>名称 <input id="f_name" required></label>
           <div class="f-row">
-            <label>代码 <input id="f_symbol" placeholder="600519 / 110011 / AAPL" required></label>
+            <label>代码 <input id="f_symbol" placeholder="600519" required></label>
             <label>类别
               <select id="f_category"><option value="stock">股票</option><option value="fund">基金</option></select>
             </label>
@@ -385,7 +385,7 @@
           <div class="f-row">
             <label>份额 <input id="f_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
             <label>成本价 <input id="f_cost_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" required></label>
-            <label>现价 <input id="f_current_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="美股手动填；其余留空刷新自动更新"></label>
+            <label>现价 <input id="f_current_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
           </div>
           <div class="f-row">
             <label>账户
@@ -394,7 +394,7 @@
             <label>币种
               <select id="f_currency"><option value="CNY">RMB</option><option value="HKD">HKD</option><option value="USD">USD</option></select>
             </label>
-            <label>交易成本 <input id="f_cost" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="买入/卖出手续费等（可选）"></label>
+            <label>交易成本 <input id="f_cost" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="手续费"></label>
           </div>
           <div class="f-row">
             <label>描述 <input id="f_note" placeholder="可选，备忘用途"></label>
@@ -404,7 +404,7 @@
           <div id="formErr" class="err"></div>
           <div id="f_at_chips" class="at-chips-row" title="资产类型标签（可多选）"></div>
           <div class="modal-actions">
-            <button class="btn" type="submit">保存</button>
+            <button class="btn primary" type="submit">保存</button>
           </div>
         </form>
     </div>
@@ -412,10 +412,10 @@
 
   <div id="adjustModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 id="adjustTitle">加减仓</h2>
+      <h2 id="adjustTitle" data-icon="adjust">加减仓</h2>
       <div class="adj-tabs">
         <button type="button" class="adj-tab active" data-tab="adjust">加减仓</button>
-        <button type="button" class="adj-tab" data-tab="calc">调仓计算器</button>
+        <button type="button" class="adj-tab" data-tab="calc">调仓算</button>
         <button type="button" class="adj-tab" data-tab="dividend">分红</button>
       </div>
       <div class="adj-panel" data-panel="adjust">
@@ -441,7 +441,7 @@
           <label>备注<input id="adj_note" placeholder="可选，如 补仓/止盈"></label>
           <div id="adjErr" class="err"></div>
           <div class="modal-actions">
-            <button class="btn" type="submit">确认</button>
+            <button class="btn primary" type="submit">确认</button>
           </div>
         </form>
         <div class="adj-history">
@@ -463,17 +463,13 @@
           <label>备注<input id="div_note" placeholder="可选，如 2026Q3 分红（税前）"></label>
           <div id="divErr" class="err"></div>
           <div class="modal-actions">
-            <button class="btn" type="submit">确认分红</button>
+            <button class="btn primary" type="submit">确认分红</button>
           </div>
         </form>
         <p class="tool-hint">分红记录见「加减仓」tab 的交易记录（标记为「分红」），同时在现金账户流水中留痕。</p>
       </div>
       <div class="adj-panel" data-panel="calc" hidden>
         <div class="adj-calc">
-          <p class="tool-hint">• 填原有持仓 + 一笔调仓，自动算合并后的成本、数量与净盈亏<br>
-• 调仓方式：按数量 / 按金额（金额含买入费，从金额中扣除）<br>
-• 调仓现价同时作成交价与盈亏参考价，数量支持非整数（如基金份数）<br>
-• 手续费买卖各一笔：买入费进成本，卖出费从盈亏扣除</p>
           <div class="adj-row">
             <label class="adj-inline">调仓方式
               <select id="addMode">
@@ -511,7 +507,7 @@
 
   <div id="guideModal" class="modal" hidden>
     <div class="modal-card" style="width:560px; max-width:94vw;">
-      <h2>调仓计划</h2>
+      <h2 data-icon="target">调仓计划</h2>
       <div class="guide-plan">
         <div class="guide-plan-head">
           <span class="guide-plan-title">📊 动态调仓计划</span>
@@ -540,11 +536,11 @@
         <div id="guideErr" class="err"></div>
         <div class="modal-actions">
           <button class="btn" type="button" id="guideCancel">取消</button>
-          <button class="btn" type="submit">保存</button>
+          <button class="btn primary" type="submit">保存</button>
         </div>
       </form>
       <div class="modal-actions" id="guideActions">
-        <button class="btn" type="button" id="guideNew">新增记录</button>
+        <button class="btn primary" type="button" id="guideNew">新增记录</button>
       </div>
       </div><!-- /guide-manual -->
     </div>
@@ -552,7 +548,7 @@
 
   <div id="chartModal" class="modal" hidden>
     <div class="modal-card chart-card">
-      <h2 id="chartTitle">图表</h2>
+      <h2 id="chartTitle" data-icon="chart">图表</h2>
       <div id="chartBody"></div>
     </div>
   </div>
@@ -560,7 +556,7 @@
   <!-- ===== 资产全景：构成 / 再平衡 / 设置 三 Tab ===== -->
   <div id="assetCompModal" class="modal" hidden>
     <div class="modal-card" style="width:780px; max-width:96vw;">
-      <h2 id="acModalTitle">资产全景</h2>
+      <h2 id="acModalTitle" data-icon="pie">资产全景</h2>
       <button class="card-close" type="button" id="acCompClose" title="关闭" aria-label="关闭">✕</button>
       <div class="ana-tabs ac-tabs">
         <button id="acTabCompBtn" class="ana-tab-btn active" type="button" data-tab="comp">资产构成</button>
@@ -579,7 +575,7 @@
   <div id="calModal" class="modal" hidden>
     <div class="modal-card">
       <div class="cal-modal-head">
-        <h2 id="calModalDate">日期明细</h2>
+        <h2 id="calModalDate" data-icon="list">日期明细</h2>
       </div>
       <div id="calModalBody"></div>
       <!-- 前一天/后一天按钮：由 openCalDay 每次渲染时重建拼入统计行（静态元素 append 进 innerHTML 内容区会被销毁，故改重建+事件委托） -->
@@ -589,7 +585,7 @@
   <!-- AI 中枢：总结 / 功能 / 设置 / 历史（tab 切换） -->
   <div id="aiHubModal" class="modal" hidden>
     <div class="modal-card" style="width:800px; max-width:94vw; position: relative;">
-      <h2>AI 中枢</h2>
+      <h2 data-icon="spark">AI 中枢</h2>
       <button class="card-close" type="button" id="aiHubXClose" title="关闭" aria-label="关闭">✕</button>
       <div class="ana-tabs ac-tabs">
         <button id="hubTabSummary" class="ana-tab-btn active" type="button">AI 总结</button>
@@ -614,7 +610,7 @@
         <p class="tool-hint">使用「AI 设置」中的 API Key / 模型 / 提示词模板生成总结，结果自动保存到 AI 历史。</p>
         <div id="aiPickErr" class="err"></div>
         <div class="modal-actions">
-          <button class="btn" type="button" id="aiPickGo">生成总结</button>
+          <button class="btn primary" type="button" id="aiPickGo">生成总结</button>
         </div>
       </div>
 
@@ -655,7 +651,7 @@
         </label>
         <div id="aiErr" class="err"></div>
         <div class="modal-actions">
-          <button class="btn" type="button" id="ai_save">保存设置</button>
+          <button class="btn primary" type="button" id="ai_save">保存设置</button>
         </div>
       </div>
 
@@ -670,14 +666,14 @@
   <!-- AI 持仓总结结果（独立顶层弹框，避免被 aiHubModal 的 hidden 态影响） -->
   <div id="aiResultModal" class="modal" hidden>
     <div class="modal-card" style="width:700px; max-width:94vw;">
-      <h2>AI 持仓总结</h2>
+      <h2 data-icon="doc">AI 持仓总结</h2>
       <div id="aiResultBody" class="ai-result">生成中…</div>
     </div>
   </div>
 
   <div id="histModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
-      <h2 id="histTitle">历史盈亏</h2>
+      <h2 id="histTitle" data-icon="hist">历史盈亏</h2>
       <div class="ana-tabs ac-tabs">
         <button id="histTabTable" class="ana-tab-btn active" type="button">每日盈亏</button>
         <button id="histTabChart" class="ana-tab-btn" type="button">盈亏曲线</button>
@@ -691,7 +687,7 @@
   <!-- ===== 现金资金变动历史弹框（独立，无盈亏 tab）===== -->
   <div id="cashHistModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
-      <h2 id="cashHistTitle">资金变动历史</h2>
+      <h2 id="cashHistTitle" data-icon="clock">资金变动历史</h2>
       <div id="cashHistBody"></div>
     </div>
   </div>
@@ -699,7 +695,7 @@
   <!-- ===== 技术分析弹框 ===== -->
   <div id="analysisModal" class="modal" hidden>
     <div class="modal-card" style="width:680px; max-width:94vw;">
-      <h2 id="analysisTitle">技术分析</h2>
+      <h2 id="analysisTitle" data-icon="analysis">技术分析</h2>
       <div id="analysisTime" class="analysis-time"></div>
       <div id="analysisBody" class="analysis-body"></div>
     </div>
@@ -710,7 +706,7 @@
   <!-- ===== 资产全景弹框 ===== -->
   <div id="assetSourceModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="assetSourceTitle">添加账户</h2>
+      <h2 id="assetSourceTitle" data-icon="wallet">添加账户</h2>
       <form id="assetSourceForm">
         <input type="hidden" id="as_id">
         <label>名称 <input id="as_name" placeholder="如 招商银行 / 支付宝" required></label>
@@ -728,14 +724,14 @@
         </div>
         <label>备注 <input id="as_note"></label>
         <div id="assetSourceErr" class="err"></div>
-        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
+        <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
       </form>
     </div>
   </div>
 
   <div id="wealthModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="wealthTitle">添加理财</h2>
+      <h2 id="wealthTitle" data-icon="coin">添加理财</h2>
       <form id="wealthForm">
         <input type="hidden" id="w_id">
         <label>名称 <input id="w_name" placeholder="如 安心天天成长3号163期A" required></label>
@@ -746,14 +742,14 @@
         </label>
         <label>备注 <input id="w_note"></label>
         <div id="wealthErr" class="err"></div>
-        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
+        <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
       </form>
     </div>
   </div>
 
   <div id="consumeModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="consumeTitle">添加消费</h2>
+      <h2 id="consumeTitle" data-icon="bag">添加消费</h2>
       <form id="consumeForm">
         <input type="hidden" id="cs_id">
         <label>日期 <input id="cs_date" type="date"></label>
@@ -762,14 +758,14 @@
         <label>所属账户 <select id="cs_source"></select></label>
         <label>备注 <input id="cs_note"></label>
         <div id="consumeErr" class="err"></div>
-        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
+        <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
       </form>
     </div>
   </div>
 
   <div id="cashModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 id="cashTitle">添加子账户</h2>
+      <h2 id="cashTitle" data-icon="layers">添加子账户</h2>
       <!-- 小 tab：添加子账户 / 添加负债（样式同加减仓弹框的连体胶囊 tab） -->
       <div class="adj-tabs" id="cashTabs">
         <button type="button" class="adj-tab active" data-tab="cash">子账户</button>
@@ -816,14 +812,14 @@
           <label>备注 <input id="lb_note"></label>
         </div>
         <div id="cashErr" class="err"></div>
-        <div class="modal-actions"><button class="btn" type="submit" class="btn">保存</button></div>
+        <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
       </form>
     </div>
   </div>
 
   <div id="wealthRedeemModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 id="wrTitle">理财减仓</h2>
+      <h2 id="wrTitle" data-icon="arrowDown">理财减仓</h2>
       <div class="cash-edit-info" id="wrInfo"></div>
       <form id="wrForm">
         <label>转出金额 <input id="wr_amount" type="number" step="0.01" min="0" oninput="clampDecimals(this,2);wrSyncHint()"></label>
@@ -831,14 +827,14 @@
         <label>备注（可选） <input id="wr_note" placeholder="缺省记「减仓回款 / 清仓回款」"></label>
         <div class="ua-hint" id="wrHint"></div>
         <div id="wrErr" class="err"></div>
-        <div class="modal-actions"><button class="btn" type="submit">确认转出</button></div>
+        <div class="modal-actions"><button class="btn primary" type="submit">确认转出</button></div>
       </form>
     </div>
   </div>
 
   <div id="cashTransferModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="cashTransferTitle">账户转账</h2>
+      <h2 id="cashTransferTitle" data-icon="transfer">账户转账</h2>
       <form id="cashTransferForm">
         <input type="hidden" id="ct_from_id">
         <label>转出账户
@@ -852,7 +848,7 @@
         <div id="cashTransferErr" class="err"></div>
         <div class="modal-actions">
           <button class="btn" type="button" id="ctCancel">取消</button>
-          <button class="btn" type="submit" id="ctSubmit">确认转账</button>
+          <button class="btn primary" type="submit" id="ctSubmit">确认转账</button>
         </div>
       </form>
     </div>
@@ -860,15 +856,15 @@
 
   <div id="snapModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
-      <h2>更新理财持仓</h2>
+      <h2 data-icon="refresh">更新理财持仓</h2>
       <div id="snapBody" class="snap-body"></div>
-      <div class="modal-actions"><button type="button" id="snapSave" class="btn">保存</button></div>
+      <div class="modal-actions"><button type="button" id="snapSave" class="btn primary">保存</button></div>
     </div>
   </div>
 
   <div id="snapConfirmModal" class="modal" hidden>
     <div class="modal-card" style="width:680px; max-width:94vw;">
-      <h2>确认保存持仓</h2>
+      <h2 data-icon="check">确认保存持仓</h2>
       <div id="snapConfirmBody"></div>
       <div class="modal-actions">
         <button type="button" id="snapConfirmCancel" class="btn">取消</button>
@@ -883,15 +879,10 @@
   <div class="sheet-panel">
     <div class="sheet-handle"></div>
     <div class="sheet-head">
-      <h2>用户管理</h2>
+      <h2 data-icon="user">用户管理</h2>
       <button class="sheet-close btn" type="button" id="userSheetClose" aria-label="关闭">✕</button>
     </div>
-    <div class="user-current">
-      <div>
-        <div class="uc-name">当前用户：<span id="ucName">—</span></div>
-        <div class="uc-meta" id="ucMeta">— 条数据</div>
-      </div>
-    </div>
+
     <div class="user-list" id="userList"></div>
     <div class="user-add">
       <input id="userNameInput" type="text" placeholder="新用户名" maxlength="20" autocomplete="off" spellcheck="false">
@@ -919,7 +910,7 @@
 <!-- 删除用户：需输入「我已知晓」确认 -->
 <div id="userDeleteModal" class="modal" hidden>
   <div class="modal-card confirm-card">
-    <h2>删除用户</h2>
+    <h2 data-icon="userMinus">删除用户</h2>
     <p class="confirm-msg" id="userDeleteMsg"></p>
     <label class="ud-confirm-label">请输入「我已知晓」以确认删除：
       <input id="userDeleteInput" type="text" autocomplete="off" spellcheck="false" placeholder="我已知晓" data-1p-ignore data-lpignore="true">
@@ -935,7 +926,7 @@
   <!-- ===== 通用确认弹框（置于根级，z-index 高于底部抽屉，避免清空数据时被遮罩盖住；含「取消」以防误清空） ===== -->
   <div id="confirmModal" class="modal" hidden>
     <div class="modal-card confirm-card">
-      <h2 id="confirmTitle">确认删除</h2>
+      <h2 id="confirmTitle" data-icon="warn">确认删除</h2>
       <p id="confirmMsg" class="confirm-msg"></p>
       <div class="modal-actions">
         <button type="button" id="confirmCancel" class="btn">取消</button>
@@ -947,7 +938,7 @@
 <div id="toolTipHint" class="tool-tip-hint" hidden></div>
 <div id="calJumpModal" class="modal" hidden>
   <div class="modal-card" style="width:360px; max-width:92vw;">
-    <h2>跳转到月份</h2>
+    <h2 data-icon="calendar">跳转到月份</h2>
     <button class="card-close" type="button" id="calJumpClose" title="关闭" aria-label="关闭">✕</button>
     <div class="cal-jump">
       <div class="cal-jump-year">
