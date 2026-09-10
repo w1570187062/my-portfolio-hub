@@ -4485,8 +4485,8 @@ function cashSubRowsHtml(sourceId) {
   }
   for (const l of libs) {
     no++;
-    // 负债行：余额取负数展示（欠款），币种固定 ¥；操作复用负债编辑/删除，历史看余额变动
-    html += `<tr><td class="num">${no}</td><td>${ico}${esc(l.name)}</td><td>贷款</td><td class="num down">-${money(l.amount || 0)}</td><td>${esc(l.note || '')}</td>
+    // 负债行：余额取负数展示（欠款），按币种显示符号；操作复用负债编辑/删除，历史看余额变动
+    html += `<tr><td class="num">${no}</td><td>${ico}${esc(l.name)}</td><td>贷款</td><td class="num down">-${moneyCur(l.amount || 0, l.currency)}</td><td>${esc(l.note || '')}</td>
       <td class="row-actions">
         ${actBtn('hist', `data-act="lb-hist" data-id="${l.id}"`, '余额变动历史（增加贷款/还款）')}
         ${actBtn('edit', `data-act="edit-lb" data-id="${l.id}"`, '编辑（利率/月供等详情在此查看）')}
@@ -4512,7 +4512,7 @@ async function openLiabHistory(id) {
     const l = d.liability || {};
     const flows = d.flows || [];
     $('#cashHistTitle').textContent = (l.name || ('负债 #' + id)) + ' · 余额变动历史';
-    let html = `<div class="wh-actions"><span class="ua-hint">当前欠款余额 ${money(l.amount || 0)}${l.rate != null ? `　｜　年利率 ${l.rate}%` : ''}${l.monthly_payment ? `　｜　月供 ${money(l.monthly_payment)}` : ''}</span></div>`;
+    let html = `<div class="wh-actions"><span class="ua-hint">当前欠款余额 ${moneyCur(l.amount || 0, l.currency)}${l.rate != null ? `　｜　年利率 ${l.rate}%` : ''}${l.monthly_payment ? `　｜　月供 ${money(l.monthly_payment)}` : ''}</span></div>`;
     if (!flows.length) html += '<p class="empty">暂无余额变动记录。新增负债或修改欠款余额后会自动记录（调高=增加贷款，调低=还款）。</p>';
     else {
       html += '<table class="asset-table"><thead><tr><th>日期</th><th>类型</th><th class="num">变动</th><th class="num">变动后余额</th><th>说明</th></tr></thead><tbody>';
@@ -4657,6 +4657,7 @@ function resetLiabPanel() {
   $('#lb_name').value = '';
   $('#lb_type').value = '';
   $('#lb_amount').value = '';
+  $('#lb_currency').value = 'rmb';
   $('#lb_rate').value = '';
   $('#lb_monthly').value = '';
   $('#lb_note').value = '';
@@ -4968,15 +4969,18 @@ async function openLiabilityModal(id, presetSourceId) {
   await loadSourcesCache();
   let l = null;
   if (id) {
-    // 编辑负债：所属账户下拉可选（可挪到其他账户下）
-    const sel = $('#lb_source');
-    sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加账户）</option>';
-    $('#lb_source_sel_row').hidden = false;
-    $('#lb_source_fix_row').hidden = true;
+    // 编辑负债：先取数据，再锁定所属账户（禁止改所属账户，与子账户编辑一致）
     const r = await api('/api/asset/liabilities');
     if (r.ok) { const d = await r.json(); l = (d.liabilities || []).find((x) => x.id === id); }
+    const sel = $('#lb_source');
+    sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加账户）</option>';
+    sel.value = l ? String(l.source_id) : (assetSources[0] ? String(assetSources[0].id) : '');
+    sel.disabled = true;
+    $('#lb_source_sel_row').hidden = false;
+    $('#lb_source_fix_row').hidden = true;
   } else {
     // 新增负债：锁定入口父账户（与子账户面板一致，只读展示）
+    $('#lb_source').disabled = false;
     $('#lb_source_sel_row').hidden = true;
     $('#lb_source_fix_row').hidden = false;
     const cur = presetSourceId || $('#c_source').value;
@@ -4992,6 +4996,7 @@ async function openLiabilityModal(id, presetSourceId) {
   $('#lb_type').value = l ? (l.type || '') : '';
   $('#lb_source').value = l ? l.source_id : (presetSourceId || (assetSources[0] ? assetSources[0].id : ''));
   $('#lb_amount').value = l ? l.amount : '';
+  $('#lb_currency').value = l ? (l.currency || 'rmb') : 'rmb';
   $('#lb_rate').value = l ? (l.rate != null ? l.rate : '') : '';
   $('#lb_monthly').value = l ? (l.monthly_payment || '') : '';
   $('#lb_note').value = l ? (l.note || '') : '';
@@ -5008,6 +5013,7 @@ async function submitLiabilityForm() {
   const payload = {
     name: $('#lb_name').value.trim(), type: $('#lb_type').value.trim(), source_id: srcId,
     amount: Number($('#lb_amount').value || 0), rate: Number($('#lb_rate').value || 0),
+    currency: $('#lb_currency').value || 'rmb',
     monthly_payment: Number($('#lb_monthly').value || 0), note: $('#lb_note').value.trim(),
   };
   if (!payload.name) { $('#cashErr').textContent = '名称不能为空'; return; }

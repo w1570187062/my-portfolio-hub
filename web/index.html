@@ -807,6 +807,7 @@
           <label id="lb_source_fix_row">所属账户 <input id="lb_source_fix" readonly placeholder="—"></label>
           <label id="lb_source_sel_row" hidden>所属账户 <select id="lb_source"></select></label>
           <label>当前欠款余额 <input id="lb_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
+          <label>币种 <select id="lb_currency"><option value="rmb">RMB（人民币）</option><option value="hkd">HKD（港币）</option><option value="usd">USD（美元）</option></select></label>
           <label>年利率(%) <input id="lb_rate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
           <label>月供 <input id="lb_monthly" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></label>
           <label>备注 <input id="lb_note"></label>

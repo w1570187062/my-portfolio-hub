@@ -1160,6 +1160,7 @@ func initAssetTables() error {
 			amount REAL NOT NULL DEFAULT 0,
 			rate REAL NOT NULL DEFAULT 0,
 			monthly_payment REAL NOT NULL DEFAULT 0,
+			currency TEXT NOT NULL DEFAULT 'rmb',
 			note TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT ''
 		)`,
@@ -1226,6 +1227,8 @@ func initAssetTables() error {
 	// is_default：该账户是否为其所属来源的默认现金账户（每个来源唯一，前端名称前加 ★ 标记）。
 	addColumnIfMissing("cash_accounts", "is_default", "INTEGER NOT NULL DEFAULT 0")
 	addColumnIfMissing("cash_accounts", "type", "TEXT NOT NULL DEFAULT ''")
+	// currency：负债支持多币种（与现金/持仓一致），默认 rmb
+	addColumnIfMissing("liabilities", "currency", "TEXT NOT NULL DEFAULT 'rmb'")
 	// 存量更名：「现金账户」统一改称「子账户」，自动创建的默认账户名一并更新。
 	_, _ = DB.Exec(`UPDATE cash_accounts SET name='默认子账户' WHERE name='默认现金账户'`)
 	// 清理冗余审计记录（一次性）：旧版整批保存会把未编辑的产品也 upsert 并写审计，两类冗余：
@@ -2053,12 +2056,13 @@ type Liability struct {
 	Amount        float64 `json:"amount"`
 	Rate          float64 `json:"rate"`
 	MonthlyPayment float64 `json:"monthly_payment"`
+	Currency      string  `json:"currency"` // rmb | usd | hkd，负债支持多币种（默认 rmb）
 	Note          string  `json:"note"`
 	CreatedAt     string  `json:"created_at"`
 }
 
 func ListLiabilities(userID int64) ([]Liability, error) {
-	rows, err := DB.Query(`SELECT id,user_id,source_id,name,type,amount,rate,monthly_payment,note,created_at FROM liabilities WHERE user_id=? ORDER BY id DESC`, userID)
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,type,amount,rate,monthly_payment,currency,note,created_at FROM liabilities WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2066,7 +2070,7 @@ func ListLiabilities(userID int64) ([]Liability, error) {
 	var out []Liability
 	for rows.Next() {
 		var l Liability
-		if err := rows.Scan(&l.ID, &l.UserID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Rate, &l.MonthlyPayment, &l.Note, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.UserID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Rate, &l.MonthlyPayment, &l.Currency, &l.Note, &l.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -2079,8 +2083,8 @@ func CreateLiability(l *Liability) (int64, error) {
 		return 0, err
 	}
 	l.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO liabilities(user_id,source_id,name,type,amount,rate,monthly_payment,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Note, l.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO liabilities(user_id,source_id,name,type,amount,rate,monthly_payment,currency,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Currency, l.Note, l.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -2088,8 +2092,8 @@ func CreateLiability(l *Liability) (int64, error) {
 }
 
 func UpdateLiability(l *Liability) error {
-	_, err := DB.Exec(`UPDATE liabilities SET user_id=?,source_id=?,name=?,type=?,amount=?,rate=?,monthly_payment=?,note=? WHERE id=?`,
-		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Note, l.ID)
+	_, err := DB.Exec(`UPDATE liabilities SET user_id=?,source_id=?,name=?,type=?,amount=?,rate=?,monthly_payment=?,currency=?,note=? WHERE id=?`,
+		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Currency, l.Note, l.ID)
 	return err
 }
 
@@ -2117,8 +2121,8 @@ type LiabilityFlow struct {
 
 func GetLiability(id int64) (*Liability, error) {
 	var l Liability
-	err := DB.QueryRow(`SELECT id,user_id,source_id,name,type,amount,rate,monthly_payment,note,created_at FROM liabilities WHERE id=?`, id).
-		Scan(&l.ID, &l.UserID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Rate, &l.MonthlyPayment, &l.Note, &l.CreatedAt)
+	err := DB.QueryRow(`SELECT id,user_id,source_id,name,type,amount,rate,monthly_payment,currency,note,created_at FROM liabilities WHERE id=?`, id).
+		Scan(&l.ID, &l.UserID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Rate, &l.MonthlyPayment, &l.Currency, &l.Note, &l.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

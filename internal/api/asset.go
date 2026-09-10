@@ -172,12 +172,13 @@ func assetOverview(c *gin.Context) {
 	var lTotal, lMonthly, domLiab, ovsLiab float64
 	lItems := make([]gin.H, 0, len(libs))
 	for _, l := range libs {
-		lTotal += l.Amount
+		lCNY := fxToCNY(l.Amount, l.Currency, cnyRate, hkdRate)
+		lTotal += lCNY
 		lMonthly += l.MonthlyPayment
 		if regionOf(l.SourceID) == "overseas" {
-			ovsLiab += l.Amount
+			ovsLiab += lCNY
 		} else {
-			domLiab += l.Amount
+			domLiab += lCNY
 		}
 		lItems = append(lItems, gin.H{
 			"id":              l.ID,
@@ -185,6 +186,7 @@ func assetOverview(c *gin.Context) {
 			"type":            l.Type,
 			"source_id":       l.SourceID,
 			"source_name":     srcName[l.SourceID],
+			"currency":        l.Currency,
 			"amount":          round2(l.Amount),
 			"rate":            l.Rate,
 			"monthly_payment": round2(l.MonthlyPayment),
@@ -363,11 +365,11 @@ func sourceFundsCNY(uid, sourceID int64) float64 {
 			}
 		}
 	}
-	// 负债：挂在来源下的欠款即该账户的资金占用，作为关联资金扣减（负债为「负资产」）
+	// 负债：挂在来源下的欠款即该账户的资金占用，作为关联资金扣减（负债为「负资产」），按币种折算 CNY
 	if ls, e := db.ListLiabilities(uid); e == nil {
 		for _, l := range ls {
 			if l.SourceID == sourceID {
-				total -= l.Amount
+				total -= conv(l.Currency, l.Amount)
 			}
 		}
 	}
@@ -1498,7 +1500,7 @@ func buildAssetStats(uid int64) (string, error) {
 		b.WriteString("（暂无负债）\n")
 	}
 	for i, l := range libs {
-		lTotal += l.Amount
+		lTotal += fxToCNY(l.Amount, l.Currency, cnyRate, hkdRate)
 		lMonthly += l.MonthlyPayment
 		rateStr := ""
 		if l.Rate > 0 {
@@ -1508,8 +1510,15 @@ func buildAssetStats(uid int64) (string, error) {
 		if l.MonthlyPayment > 0 {
 			mpStr = " 月供" + nf(l.MonthlyPayment)
 		}
-		line := fmt.Sprintf("%d. %s（%s/%s）欠款(CNY)%s%s%s",
-			i+1, l.Name, srcName[l.SourceID], l.Type, nf(l.Amount), rateStr, mpStr)
+		cur := strings.ToLower(strings.TrimSpace(l.Currency))
+		var owe string
+		if cur == "usd" || cur == "hkd" {
+			owe = fmt.Sprintf("%s%s（≈¥%s CNY）", curSymbol(l.Currency), nf(l.Amount), nf(fxToCNY(l.Amount, l.Currency, cnyRate, hkdRate)))
+		} else {
+			owe = "欠款(CNY)" + nf(l.Amount)
+		}
+		line := fmt.Sprintf("%d. %s（%s/%s）%s%s%s",
+			i+1, l.Name, srcName[l.SourceID], l.Type, owe, rateStr, mpStr)
 		b.WriteString(line + "\n")
 	}
 	b.WriteString("负债合计(CNY)：" + nf(lTotal) + "  月供合计(CNY)：" + nf(lMonthly) + "\n")
