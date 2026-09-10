@@ -633,6 +633,8 @@
 .comp-legend .cl.sub { padding-left: 12px; font-size: 11px; opacity: .92; }
 .comp-legend .cl.sub .dot { width: 7px; height: 7px; border-radius: 2px; }
 .comp-legend .cl.sub b { font-weight: 500; }
+/* 图例负值行（资不抵债时净资产为负）：红色警示，与负债同色系 */
+.comp-legend .cl.sub.neg b { color: rgb(var(--cat-debt)); font-weight: 600; }
 /* 来源列表行内区域标记（境内/境外） */
 .src-region { font-size: 10px; padding: 1px 5px; border-radius: 6px; margin-left: 4px; vertical-align: middle; white-space: nowrap; }
 .src-region.dom { background: rgba(var(--tint), .18); color: var(--primary); }

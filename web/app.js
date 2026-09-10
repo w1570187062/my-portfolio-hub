@@ -3910,10 +3910,13 @@ function renderAssetSummary() {
   const base = Math.max(total, 1);
   const pct = (v) => (v / base * 100);
   // 渲染图例（金额/占比），配合圆环使用；sub 行缩进展示二级子项（与首页总市值卡二级图例同款）
+  // 注：图例取 legendSubs（存在时）而非 subs——资不抵债时圆环不切子弧，但图例仍须展示负债
   const legend = (segs) => segs.map((s) => {
     let rows = `<div class="cl"><span class="dot" style="background:${s.c}"></span>${esc(s.name)}<b>${money(s.v)}</b><span class="cpct">${pct(s.v).toFixed(1)}%</span></div>`;
-    (s.subs || []).forEach((ss) => {
-      rows += `<div class="cl sub"><span class="dot" style="background:${ss.c}"></span>${esc(ss.name)}<b>${money(ss.v)}</b><span class="cpct">${pct(ss.v).toFixed(1)}%</span></div>`;
+    (s.legendSubs || s.subs || []).forEach((ss) => {
+      // 金额为负（净资产为负 = 资不抵债）时加 neg 类，红色警示
+      const neg = (ss.v || 0) < 0;
+      rows += `<div class="cl sub${neg ? ' neg' : ''}"><span class="dot" style="background:${ss.c}"></span>${esc(ss.name)}<b>${neg ? '-¥' + fmt(Math.abs(ss.v)) : money(ss.v)}</b><span class="cpct">${pct(ss.v).toFixed(1)}%</span></div>`;
     });
     return rows;
   }).join('');
@@ -3933,20 +3936,22 @@ function renderAssetSummary() {
   // 圆环：境内/境外两段（和=总资产），父弧原地切割出 净资产/负债 子弧（同首页总市值卡二级切割机制）；
   // 中心金额 = 净资产总额；图例：主行境内/境外 + 缩进二级 净资产/负债（仅 >0 展示）
   const regionSegs = [];
-  if (dom > 0) regionSegs.push({
-    name: '境内', v: dom, c: 'var(--primary)',
-    subs: domNet >= 0 ? [
-      { name: '净资产', v: domNet, c: 'var(--primary)' },
-      { name: '负债', v: domL, c: 'rgb(var(--cat-debt))' },
-    ].filter((s) => s.v > 0) : [],   // 资不抵债（净资产<0）时不切割父弧，负债仅在图例体现
-  });
-  if (ovs > 0) regionSegs.push({
-    name: '境外', v: ovs, c: 'rgb(var(--cat-overseas))',
-    subs: ovsNet >= 0 ? [
-      { name: '净资产', v: ovsNet, c: 'rgb(var(--cat-overseas))' },
-      { name: '负债', v: ovsL, c: 'rgb(var(--cat-debt))' },
-    ].filter((s) => s.v > 0) : [],
-  });
+  // 资不抵债（净资产<0）时不能切割父弧（负债弧 > 父弧会画溢出），父弧整段改用负债色，
+  // 但图例仍要展示「负债 / 净资产(负)」——旧实现 subs 直接置空导致负债从图例彻底消失。
+  const regionSeg = (name, assets, liab, net, c) => {
+    const insolvent = net < 0;
+    const subs = [
+      { name: '净资产', v: net, c: c },
+      { name: '负债', v: liab, c: 'rgb(var(--cat-debt))' },
+    ];
+    return {
+      name: name, v: assets, c: insolvent ? 'rgb(var(--cat-debt))' : c,
+      subs: insolvent ? [] : subs.filter((s) => s.v > 0),   // 圆环子弧（仅净资产 >= 0 时切割）
+      legendSubs: subs.filter((s) => Math.abs(s.v) > 0),    // 图例：负债恒展示，净资产为负也展示
+    };
+  };
+  if (dom > 0 || domL > 0) regionSegs.push(regionSeg('境内', dom, domL, domNet, 'var(--primary)'));
+  if (ovs > 0 || ovsL > 0) regionSegs.push(regionSeg('境外', ovs, ovsL, ovsNet, 'rgb(var(--cat-overseas))'));
   const regTop = regionSegs.slice().sort((a, b) => b.v - a.v)[0];
   const cardNetRegion =
     `<div class="pano-sum has-donut">` +
