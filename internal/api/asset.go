@@ -317,9 +317,9 @@ func listSources(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sources": items})
 }
 
-// sourceFundsCNY 统计该来源下所有产品的资产总值（CNY）：
-// 持仓市值 + 理财最新快照金额 + 现金余额，USD/HKD 按当前汇率折算。
-// 负债与消费不计入（负债非资产、消费为流水）。
+// sourceFundsCNY 统计该来源下的关联资金净值（CNY）：
+// 持仓市值 + 理财最新快照金额 + 现金余额 − 该来源下负债，USD/HKD 按当前汇率折算。
+// 负债作为资金扣减（负债挂在来源下即属该账户的资金占用），消费为流水不计入。
 func sourceFundsCNY(uid, sourceID int64) float64 {
 	cnyRate, hkdRate, _ := market.GetFXRates()
 	hkdToCny := 1.0
@@ -360,6 +360,14 @@ func sourceFundsCNY(uid, sourceID int64) float64 {
 		for _, c := range cs {
 			if c.SourceID == sourceID {
 				total += conv(c.Currency, c.Amount)
+			}
+		}
+	}
+	// 负债：挂在来源下的欠款即该账户的资金占用，作为关联资金扣减（负债为「负资产」）
+	if ls, e := db.ListLiabilities(uid); e == nil {
+		for _, l := range ls {
+			if l.SourceID == sourceID {
+				total -= l.Amount
 			}
 		}
 	}

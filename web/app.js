@@ -4251,7 +4251,7 @@ function renderSources(body) {
         const s = g.items[i];
         const subCnt = cashListOf(s.id).length + liabListOf(s.id).length;
         html += `<tr><td class="num">${i + 1}</td><td><span class="src-ico">${srcTypeIcon(typeOf(s))}</span> ${esc(s.name)}</td><td>${typeName[typeOf(s)]} <span class="src-region ${s.region === 'overseas' ? 'ovs' : 'dom'}">${s.region === 'overseas' ? '境外' : '境内'}</span></td>
-          <td class="num" title="该账户下持仓市值+理财金额+现金余额（折算 CNY）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
+          <td class="num" title="该账户下持仓市值+理财金额+现金余额−负债（折算 CNY，负债为资金占用）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
           <td class="row-actions">${actBtn('toggle', `data-act="sub-toggle" data-id="${s.id}"`, '展开/收起子账户', { count: subCnt, cls: 'always-on' })}${actBtn('addSub', `data-act="add-sub" data-id="${s.id}"`, '添加子账户或负债')}${actBtn('edit', `data-act="edit-source" data-id="${s.id}"`, '编辑账户')}${actBtn('del', `data-act="del-source" data-id="${s.id}"`, '删除账户', { danger: true })}</td></tr>`;
         // 子账户折叠行：现金与负债作为该账户的子账户，下拉折叠显示（无留白/阴影/圆角，贴合主表）
         html += `<tr class="cash-sub-tr" data-sub="${s.id}" hidden><td colspan="6">${cashSubRowsHtml(s.id)}</td></tr>`;

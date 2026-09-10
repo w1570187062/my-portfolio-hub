@@ -468,8 +468,10 @@ tbody tr .row-act:focus-visible { opacity: 1; }
 @media (hover: none) {
   tbody tr .row-act { opacity: 1; }
 }
+/* 减少动画：只关过渡，不破坏悬停展示（主流做法：reduced-motion 不碰可见性）。
+   触屏常显交给 (hover: none)，键盘聚焦常显交给 :focus-visible。 */
 @media (prefers-reduced-motion: reduce) {
-  tbody tr .row-act { opacity: 1; }
+  tbody tr .row-act { transition: none; }
 }
 
 /* 首页持仓按来源分组的折叠卡片 */
