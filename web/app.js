@@ -2397,6 +2397,16 @@ if (cashSignToggle) {
     setCashSign(btn.dataset.sign);
   });
 }
+// 添加流水：方向切换 + 点击遮罩关闭
+const flowSignToggle = document.getElementById('flow_sign_toggle');
+if (flowSignToggle) {
+  flowSignToggle.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sign-opt');
+    if (!btn) return;
+    flowSetSign(btn.dataset.sign);
+  });
+}
+$('#flowModal').addEventListener('click', (e) => { if (e.target === $('#flowModal')) hideFlow(); });
 
 // ---- P&L Calendar ----
 const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -4270,6 +4280,7 @@ function renderSources(body) {
   }
   body.innerHTML = html;
   $('#addSourceBtn').onclick = () => openAssetSourceModal(null);
+  $('#addFlowBtn').onclick = () => openFlowModal();
   body.querySelectorAll('[data-act="edit-source"]').forEach((b) => b.onclick = () => openAssetSourceModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="del-source"]').forEach((b) => b.onclick = () => assetDel('source', Number(b.dataset.id)));
   // 子账户折叠开关
@@ -4830,6 +4841,59 @@ $('#cashForm').onsubmit = async (e) => {
     await loadAsset();
     toast('已添加子账户', 'ok');
   } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
+};
+
+// ---------------- 添加流水（选任意子账户，下拉按父账户二级分组） ----------------
+// 子账户下拉选项：按来源（父账户）分组，optgroup 显示父账户名，便于定位
+function flowCashOptions() {
+  const accs = cashAccountsCache || [];
+  const bySrc = {};
+  accs.forEach((c) => { (bySrc[c.source_id] = bySrc[c.source_id] || []).push(c); });
+  let html = '<option value="0">（请选择子账户）</option>';
+  (assetSources || []).forEach((s) => {
+    const list = bySrc[s.id];
+    if (!list || !list.length) return;
+    html += `<optgroup label="${esc(s.name)}">` + list.map((c) => {
+      const cur = c.currency === 'usd' ? '＄' : (c.currency === 'hkd' ? 'HK＄' : '¥');
+      const star = c.is_default ? '★ ' : '';
+      return `<option value="${c.id}">${star}${esc(c.name)}（${cur}${fmt(c.amount || 0)}）</option>`;
+    }).join('') + '</optgroup>';
+  });
+  return html;
+}
+function flowSetSign(sign) {
+  document.querySelectorAll('#flow_sign_toggle .sign-opt').forEach((b) => b.classList.toggle('active', b.dataset.sign === sign));
+}
+function hideFlow() { const m = document.getElementById('flowModal'); if (m) m.hidden = true; }
+async function openFlowModal() {
+  await loadSourcesCache();
+  await loadCashAccounts();
+  $('#flow_cash').innerHTML = flowCashOptions();
+  // 默认选中第一个真实子账户（跳过占位项）
+  const first = $('#flow_cash').querySelector('option[value]:not([value="0"])');
+  $('#flow_cash').value = first ? first.value : '0';
+  $('#flow_delta').value = '';
+  $('#flow_note').value = '';
+  $('#flowErr').textContent = '';
+  flowSetSign('in');
+  $('#flowModal').hidden = false;
+}
+$('#flowForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const cashId = Number($('#flow_cash').value || 0);
+  if (!cashId) { $('#flowErr').textContent = '请选择子账户'; return; }
+  const amt = Math.abs(Number($('#flow_delta').value || 0));
+  if (!amt) { $('#flowErr').textContent = '金额不能为空'; return; }
+  const sign = (document.querySelector('#flow_sign_toggle .sign-opt.active') || {}).dataset?.sign || 'in';
+  const delta = Math.round((sign === 'out' ? -amt : amt) * 100) / 100;
+  const note = $('#flow_note').value.trim();
+  try {
+    const r = await api('/api/asset/cash/adjust', { method: 'POST', body: JSON.stringify({ cash_id: cashId, delta, note }) });
+    if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#flowErr').textContent = m; return; }
+    hideFlow();
+    await loadAsset();
+    toast(delta > 0 ? '已存入流水' : '已取出流水', 'ok');
+  } catch (err) { $('#flowErr').textContent = '异常：' + err.message; }
 };
 
 let currentWealthHistId = 0;

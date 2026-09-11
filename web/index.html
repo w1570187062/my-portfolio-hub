@@ -11,12 +11,11 @@
   /* 加仓=红(涨) / 减仓=绿(跌)：圆形切换按钮，与上方绿色 tab 形成颜色区分 */
   .adj-toprow { display:flex; align-items:flex-end; gap:10px; margin-bottom:10px; }
   #adjustModal .adj-toprow .adj-inline { margin-bottom:0; }
-  .seg-circ { display:flex; align-items:center; gap:6px; flex:none; }
-  .circ-sep { color:var(--text-muted,#9aa0a6); font-size:15px; line-height:1; user-select:none; }
-  .circ-btn { width:34px; height:34px; border-radius:50%; padding:0; line-height:1; display:flex; align-items:center; justify-content:center; border:1px solid var(--border,#d0d5dd); background:var(--bg-soft,#f4f5f7); color:var(--text-muted,#6b7280); font-size:14px; cursor:pointer; transition:var(--btn-transition, all .15s ease); }
-  .circ-btn:not(.active):hover { border-color:#9aa0a6; color:#4b5563; }
-  .circ-btn.active[data-type="BUY"] { background:#e5484d; border-color:#e5484d; color:#fff; font-weight:600; }
-  .circ-btn.active[data-type="SELL"] { background:#16a34a; border-color:#16a34a; color:#fff; font-weight:600; }
+  .seg-flat { display:inline-flex; align-items:center; gap:12px; flex:none; }
+  .seg-flat .seg-sep { color:var(--text-muted,#9aa0a6); font-size:17px; line-height:1; user-select:none; }
+  .seg-flat > button { border:0; background:transparent; padding:2px 5px; cursor:pointer; font-size:19px; line-height:1; font-weight:600; color:var(--text-muted,#6b7280); transition:color .15s var(--e, ease); }
+  .seg-flat > button:hover { color:var(--text,#374151); }
+  .seg-flat > button.active { color:var(--primary,#d9a52b); font-weight:700; }
   .adj-inline { flex:1; display:flex; flex-direction:column; gap:4px; margin:0; font-size:12px; color:var(--text-muted,#6b7280); }
   .adj-inline input,
   .adj-inline select { width:100%; margin-top:4px; }
@@ -423,10 +422,10 @@
           <input type="hidden" id="adj_id">
           <div class="adj-toprow">
             <label class="adj-inline" style="flex:none">操作
-              <div class="seg-circ" id="adjTypeSeg">
-                <button type="button" class="circ-btn active" data-type="BUY">加</button>
-                <span class="circ-sep">/</span>
-                <button type="button" class="circ-btn" data-type="SELL">减</button>
+              <div class="seg-flat" id="adjTypeSeg">
+                <button type="button" class="circ-btn active" data-type="BUY">＋</button>
+                <span class="seg-sep">/</span>
+                <button type="button" class="circ-btn" data-type="SELL">－</button>
               </div>
             </label>
             <label class="adj-inline">数量<input id="adj_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="份额" required></label>
@@ -784,9 +783,10 @@
           <label>改为新余额 <input id="c_amount_edit" type="number" step="0.0001" oninput="clampDecimals(this,4)" placeholder="与 ± 资金二选一"></label>
           <div class="sign-edit">
             <div class="field-label">资金变动</div>
-            <span class="sign-toggle" id="c_sign_toggle" role="group" aria-label="存入或取出">
-              <button type="button" class="sign-opt active" data-sign="in">＋ 存入</button>
-              <button type="button" class="sign-opt" data-sign="out">－ 取出</button>
+            <span class="seg-flat" id="c_sign_toggle" role="group" aria-label="存入或取出">
+              <button type="button" class="sign-opt active" data-sign="in">＋</button>
+              <span class="seg-sep">/</span>
+              <button type="button" class="sign-opt" data-sign="out">－</button>
             </span>
             <input id="c_delta" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="金额（正数）">
           </div>
@@ -821,6 +821,27 @@
           <label>备注 <input id="lb_note"></label>
         </div>
         <div id="cashErr" class="err"></div>
+        <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="flowModal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head"><h2 data-icon="plus">添加流水</h2><button type="button" class="modal-close" aria-label="关闭" onclick="hideFlow()">×</button></div>
+      <form id="flowForm">
+        <label>子账户（按父账户分组）<select id="flow_cash"></select></label>
+        <div class="sign-edit">
+          <div class="field-label">资金变动</div>
+          <span class="seg-flat" id="flow_sign_toggle" role="group" aria-label="存入或取出">
+            <button type="button" class="sign-opt active" data-sign="in">＋</button>
+            <span class="seg-sep">/</span>
+            <button type="button" class="sign-opt" data-sign="out">－</button>
+          </span>
+          <input id="flow_delta" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="金额（正数）">
+        </div>
+        <label>说明（可选）<input id="flow_note" placeholder="如 发工资 / 还信用卡"></label>
+        <div id="flowErr" class="err"></div>
         <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
       </form>
     </div>
