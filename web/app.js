@@ -4726,6 +4726,7 @@ async function openCashModal(id, presetSourceId) {
     $('#c_note_edit').value = cashEdit ? (cashEdit.note || '') : '';
     $('#c_amount_edit').value = cashEdit ? String(cashEdit.amount) : '';  // 带入已有余额，改货币/名称时无需重填
     $('#c_delta').value = '';
+    $('#c_adj_note').value = '';  // 资金变动说明是逐笔交易的备注，每次打开编辑清空，不残留上一轮脏数据
     setCashSign('in');
   } else {
     // 添加子账户：干净的新增表单（每次打开都清空，不带旧数据）
@@ -5234,16 +5235,17 @@ async function openSnapModal() {
   if (!w.length) { toast('请先在「理财」里添加一个产品', 'err'); return; }
   const today = ymd(new Date());
   const cashList = cashAccountsCache || [];
-  // 资金账户下拉选项（净存入为正时选择扣款账户）：只能选该理财同来源的子账户
-  // （后端 resolveCashAccount 也会拒绝跨来源账户，前后端口径一致）；默认选中 ★ 默认账户
-  const cashOpts = (srcId) => {
-    const list = cashList.filter((c) => Number(c.source_id) === Number(srcId));
+  // 资金账户下拉选项（净存入为正时选扣款账户）：只能选该理财「同来源 + 同币种」的子账户
+  // （后端 resolveCashAccount 同样强校验货币一致，前后端口径一致）；默认选中 ★ 默认账户
+  const cashOpts = (srcId, currency) => {
+    const cur = currency || 'rmb';
+    const list = cashList.filter((c) => Number(c.source_id) === Number(srcId) && (c.currency || 'rmb') === cur);
     const def = list.find((c) => c.is_default) || list[0];
     const opts = list.map((c) => {
       const star = c.is_default ? '★ ' : '';
-      const cur = c.currency === 'usd' ? '＄' : (c.currency === 'hkd' ? 'HK＄' : '¥');
+      const ccur = c.currency === 'usd' ? '＄' : (c.currency === 'hkd' ? 'HK＄' : '¥');
       const sel = def && String(c.id) === String(def.id) ? ' selected' : '';
-      return `<option value="${c.id}"${sel}>${star}${esc(c.name)}（${cur}${fmt(c.amount || 0)}）</option>`;
+      return `<option value="${c.id}"${sel}>${star}${esc(c.name)}（${ccur}${fmt(c.amount || 0)}）</option>`;
     }).join('');
     return `<option value="0">（自动：默认子账户 ★）</option>` + opts;
   };
@@ -5256,12 +5258,13 @@ async function openSnapModal() {
           <label class="sr-label" for="amt-${p.id}">① 今日持仓金额 ${curSymbolJS(p.currency)}</label>
           <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2);this.dataset.touched=1" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" data-base="${round2(p.amount || 0)}" value="${round2(p.amount || 0)}" placeholder="今天收盘后的总市值">
         </div>
-        <div class="sr-field">
-          <label class="sr-label" for="cf-${p.id}">② 当日净存入 ${curSymbolJS(p.currency)}</label>
-          <input type="number" step="0.01" oninput="clampDecimals(this,2);snapCfSync(this)" class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0" placeholder="转入为正，取出为负" title="持仓金额未手动改过时，会自动把净存入加到今日持仓上">
-        </div>
         <div class="sr-cash-slot">
-          <select class="sr-cash" data-id="${p.id}" title="资金账户：转入时从此账户扣款，取出时回款转入此账户">${cashOpts(p.source_id)}</select>
+          <label class="sr-label" for="cash-${p.id}">② 资金账户 ${curSymbolJS(p.currency)}</label>
+          <select class="sr-cash" id="cash-${p.id}" data-id="${p.id}" title="资金账户（须与理财同币种）：转入时从此账户扣款，取出时回款转入此账户">${cashOpts(p.source_id, p.currency)}</select>
+        </div>
+        <div class="sr-field">
+          <label class="sr-label" for="cf-${p.id}">③ 当日净存入 ${curSymbolJS(p.currency)}</label>
+          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2);snapCfSync(this)" class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0" placeholder="当日转入金额（正数；取出请改用减仓）" title="当日新转入的资金（正数）；取出 / 赎回请使用理财表格中的「减仓」">
         </div>
       </div>
     </div>`).join('');

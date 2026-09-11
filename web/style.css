@@ -2490,7 +2490,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 [data-theme="light"] .snap-row { background: rgba(15, 23, 42, .02); }
 .snap-row .sr-name { font-size: 13px; margin-bottom: 8px; color: var(--text); }
 .snap-row .sr-name small { color: var(--text-muted); display: block; }
-.sr-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(210px, 280px); gap: 14px; align-items: end; }
+.sr-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(210px, 280px) minmax(0,1fr); gap: 14px; align-items: end; }
 .sr-field { display: flex; flex-direction: column; min-width: 0; }
 .sr-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
 .sr-field input,
@@ -2510,7 +2510,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 /* 净存入资金账户下拉独立列：持仓/净存入输入框等宽，多余宽度给下拉（正=扣款账户/负=入账账户） */
-.sr-cash-slot { display: flex; min-width: 0; }
+.sr-cash-slot { display: flex; flex-direction: column; min-width: 0; }
 .sr-cash-slot .sr-cash {
   width: 100%;
   padding: 8px 10px;
