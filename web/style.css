@@ -2558,9 +2558,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 /* 理财区块标题右侧操作区：添加按钮 + 视图切换（表格/卡片），切换器紧贴添加按钮右侧 */
 .asset-section-head .sec-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 .asset-section-head .sec-actions .asset-add { margin-left: 0; }
-/* 添加流水按钮：与 添加账户 图标按钮同组 ghost 风格 */
-.asset-section-head .sec-actions .asset-flow { border-color: var(--border); background: var(--btn-ghost); color: var(--primary); }
-.asset-section-head .sec-actions .asset-flow:hover { border-color: var(--btn-border); background: var(--btn-ghost-hover); }
 /* 资产全景理财表格视图，复用全局 table 样式，仅约束内边距 */
 .asset-table { width: 100%; }
 .cur-badge {
@@ -3690,7 +3687,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .ac-picker { position: relative; }
 .ac-picker-btn { width: 100%; text-align: left; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--btn-radius, 8px); background: var(--bg-input, #fff); color: var(--text); cursor: pointer; font-size: 13px; }
 .ac-picker-btn:empty::before { content: '请选择子账户'; color: var(--text-muted); }
-.ac-picker-panel { position: absolute; z-index: 50; left: 0; right: 0; margin-top: 4px; max-height: 320px; overflow-y: auto; background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: var(--btn-radius, 8px); box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; }
+.ac-picker-panel { position: absolute; z-index: 50; left: 0; right: 0; margin-top: 4px; max-height: 320px; overflow-y: auto; background: var(--bg-card-solid); border: 1px solid var(--border); border-radius: var(--btn-radius, 8px); box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; }
 :root[data-theme="light"] .ac-picker-panel { box-shadow: 0 8px 24px rgba(0,0,0,.12); }
 .ac-pick-group + .ac-pick-group { border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px; }
 .ac-pick-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px; background: transparent; border: 0; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--primary); text-align: left; }

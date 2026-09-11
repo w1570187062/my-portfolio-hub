@@ -4275,7 +4275,7 @@ function assetDel(type, id) {
 // ---- 资产来源 ----
 function renderSources(body) {
   const list = assetSources;
-  let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><div class="sec-actions"><button class="btn asset-flow" id="addFlowBtn" type="button" title="添加流水" aria-label="添加流水">＋ 流水</button><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div></div>`;
+  let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="addFlowBtn" type="button" title="添加流水" aria-label="添加流水">${actIcon('receipt')}</button><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">还没有账户，先添加一个银行、证券或软件吧。</p><button class="btn icon-btn asset-add-inline" data-empty-add="source" type="button" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div>`;
   else {
     // 按类型分组：银行 / 证券 / 软件 / 平台（未知类型归银行）
