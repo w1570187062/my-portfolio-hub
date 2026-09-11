@@ -782,7 +782,14 @@
           <label>类型 <input id="c_type_edit" placeholder="如 活期/定期/零钱/保证金（可选）"></label>
           <label>备注 <input id="c_note_edit" placeholder="子账户备注（可选）"></label>
           <label>改为新余额 <input id="c_amount_edit" type="number" step="0.0001" oninput="clampDecimals(this,4)" placeholder="与 ± 资金二选一"></label>
-          <label>± 资金（正=存入，负=取出） <input id="c_delta" type="number" step="0.0001" oninput="clampDecimals(this,4)" placeholder="如 500 存入 / -300 取出"></label>
+          <div class="sign-edit">
+            <div class="field-label">资金变动</div>
+            <span class="sign-toggle" id="c_sign_toggle" role="group" aria-label="存入或取出">
+              <button type="button" class="sign-opt active" data-sign="in">＋ 存入</button>
+              <button type="button" class="sign-opt" data-sign="out">－ 取出</button>
+            </span>
+            <input id="c_delta" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="金额（正数）">
+          </div>
           <label>说明（资金变动备注，可选） <input id="c_adj_note" placeholder="如 发工资 / 还信用卡"></label>
         </div>
         <!-- 添加子账户：干净的新增表单 -->

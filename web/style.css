@@ -1007,6 +1007,18 @@ h2 > svg,
   background: var(--primary-soft); font-size: 13px;
 }
 .cash-edit-info .ce-bal { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+/* 资金变动方向切换（存入/取出）：主题色分段控件，避免手动输入负数 */
+.sign-edit { display: flex; flex-direction: column; gap: 6px; }
+.sign-edit .field-label { font-size: 12px; color: var(--text-muted); }
+.sign-toggle { display: inline-flex; width: fit-content; border: 1px solid var(--border); border-radius: var(--btn-radius); overflow: hidden; }
+.sign-toggle .sign-opt {
+  border: 0; background: transparent; color: var(--text-muted);
+  padding: 7px 18px; cursor: pointer; font: inherit; font-size: 13px;
+  transition: background .15s var(--e), color .15s var(--e);
+}
+.sign-toggle .sign-opt + .sign-opt { border-left: 1px solid var(--border); }
+/* 选中段用主题色；未选中与描述文本同色（灰） */
+.sign-toggle .sign-opt.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
 /* 加减仓「交易记录」标签：加仓取主题色、减仓中性灰。
    注意：唯一定义放在这里 —— index.html 的 <style> 内联块加载在 style.css 之后，
    同优先级规则会反向覆盖，因此不要把 .adj-tag 再写进 index.html。 */

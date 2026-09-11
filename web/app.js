@@ -2388,6 +2388,15 @@ function hideTrendTip() { const tip = document.getElementById('trendTip'); if (t
 // 关闭按钮已移除：右上角 ✕ 与点击遮罩均可关闭
 $('#chartModal').addEventListener('click', (e) => { if (e.target === $('#chartModal')) $('#chartModal').hidden = true; });
 $('#histModal').addEventListener('click', (e) => { if (e.target === $('#histModal')) $('#histModal').hidden = true; });
+// 资金变动方向切换：选中段置 active（CSS 负责主题色/灰色），方向由 data-sign 决定
+const cashSignToggle = document.getElementById('c_sign_toggle');
+if (cashSignToggle) {
+  cashSignToggle.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sign-opt');
+    if (!btn) return;
+    setCashSign(btn.dataset.sign);
+  });
+}
 
 // ---- P&L Calendar ----
 const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -4655,6 +4664,11 @@ function resetCashPanel() {
   $('#c_name_edit').value = '';
   $('#c_delta').value = '';
   $('#c_adj_note').value = '';
+  setCashSign('in');
+}
+// 资金变动方向切换（存入/取出）：选中段主题色、未选中灰色，由 CSS 控制
+function setCashSign(sign) {
+  document.querySelectorAll('#c_sign_toggle .sign-opt').forEach((b) => b.classList.toggle('active', b.dataset.sign === sign));
 }
 function resetLiabPanel() {
   liabModalId = 0;
@@ -4712,6 +4726,7 @@ async function openCashModal(id, presetSourceId) {
     $('#c_note_edit').value = cashEdit ? (cashEdit.note || '') : '';
     $('#c_amount_edit').value = cashEdit ? String(cashEdit.amount) : '';  // 带入已有余额，改货币/名称时无需重填
     $('#c_delta').value = '';
+    setCashSign('in');
   } else {
     // 添加子账户：干净的新增表单（每次打开都清空，不带旧数据）
     $('#cashEditFields').hidden = true;
@@ -4753,7 +4768,13 @@ $('#cashForm').onsubmit = async (e) => {
     const deltaRaw = $('#c_delta').value.trim();
     const amtIsSet = amtEditRaw !== '' && !(cashEdit && Number(amtEditRaw) === cashEdit.amount);
     if (amtIsSet && deltaRaw !== '') { $('#cashErr').textContent = '「改为新余额」与「± 资金」只能填一个'; return; }
-    let delta = Number(deltaRaw || 0);
+    let delta = 0;
+    if (deltaRaw !== '') {
+      const amt = Math.abs(Number(deltaRaw));
+      const sign = (document.querySelector('#c_sign_toggle .sign-opt.active') || {}).dataset?.sign || 'in';
+      delta = (sign === 'out' ? -amt : amt);
+      delta = Math.round(delta * 100) / 100;
+    }
     let deltaVia = 'delta'; // 记录用哪种方式改的余额（提示文案用）
     if (amtIsSet) {
       if (amtEditRaw === '-' || isNaN(Number(amtEditRaw))) { $('#cashErr').textContent = '新余额格式不正确'; return; }
