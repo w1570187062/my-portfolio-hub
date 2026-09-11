@@ -4544,7 +4544,7 @@ async function openCashHistory(id) {
       html += '<table class="asset-table"><thead><tr><th>日期</th><th>类型</th><th class="num">变动</th><th class="num">变动后余额</th><th>关联标的</th><th>说明</th></tr></thead><tbody>';
       for (const f of flows) {
         const amt = f.amount || 0;
-        html += `<tr><td>${esc(f.date)}</td><td>${cashFlowTypeTag(f.type)}</td>
+        html += `<tr><td>${esc(f.date)}</td><td>${cashFlowTypeTag(f)}</td>
           <td class="num ${amt >= 0 ? 'up' : 'down'}">${(amt >= 0 ? '+' : '')}${money(amt)}</td>
           <td class="num">${money(f.balance || 0)}</td>
           <td>${esc(f.ref_name || '')}</td><td>${esc(f.note || '')}</td></tr>`;
@@ -4556,11 +4556,17 @@ async function openCashHistory(id) {
   } catch (err) { toast('异常：' + err.message, 'err'); }
 }
 
-function cashFlowTypeTag(t) {
+function cashFlowTypeTag(f) {
+  const t = typeof f === 'object' ? f.type : f;
+  const amt = typeof f === 'object' ? (f.amount || 0) : 0;
+  if (t === 'manual') {
+    if (amt > 0) return '<span class="flow-tag in">手工存入</span>';
+    if (amt < 0) return '<span class="flow-tag out">手工取出</span>';
+    return '<span class="flow-tag manual">手工调整</span>';
+  }
   switch (t) {
     case 'adjust_buy': return '<span class="flow-tag out">加仓付款</span>';
     case 'adjust_sell': return '<span class="flow-tag in">减仓回款</span>';
-    case 'manual': return '<span class="flow-tag manual">手工调整</span>';
     case 'transfer_out': return '<span class="flow-tag out">转出</span>';
     case 'transfer_in': return '<span class="flow-tag in">转入</span>';
     case 'transfer_rollback': return '<span class="flow-tag manual">回滚</span>';
@@ -4648,6 +4654,7 @@ function resetCashPanel() {
   $('#c_note').value = '';
   $('#c_name_edit').value = '';
   $('#c_delta').value = '';
+  $('#c_adj_note').value = '';
 }
 function resetLiabPanel() {
   liabModalId = 0;
@@ -4771,9 +4778,10 @@ $('#cashForm').onsubmit = async (e) => {
         if (!rp.ok) { let m = '保存失败'; try { const d = await rp.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
       }
       if (delta) {
-        // 流水备注：缺省由后端记「手工存入/手工取出」；「改为新余额」方式单独标注
-        let note = '';
-        if (deltaVia === 'set') note = '改为新余额';
+        // 流水备注：用户填写优先；「改为新余额」方式未填时标注；都为空则后端兜底「手工存入/手工取出」
+        const adjNote = $('#c_adj_note').value.trim();
+        let note = adjNote;
+        if (!note && deltaVia === 'set') note = '改为新余额';
         const r = await api('/api/asset/cash/adjust', { method: 'POST', body: JSON.stringify({ cash_id: cashModalId, delta, note }) });
         if (!r.ok) { let m = '资金调整失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
       }
