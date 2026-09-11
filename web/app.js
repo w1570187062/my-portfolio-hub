@@ -3482,6 +3482,7 @@ const ACT_ICONS = {
   snapshot: '<path d="M12 3.8v10.4"/><path d="M8 10.2 12 14.2 16 10.2"/><path d="M4.6 16.6v2.2a1.6 1.6 0 0 0 1.6 1.6h11.6a1.6 1.6 0 0 0 1.6-1.6v-2.2"/>',
   pnl: '<path d="M4.5 19.5V10M9.8 19.5V5M15.1 19.5v-6.5M20.4 19.5V8"/>',
   undo: '<path d="M4.5 10.5A8 8 0 1 1 6.8 16.6"/><path d="M4.5 5.5v5h5"/>',
+  receipt: '<path d="M6 2.5h12l-3 2 3 2v15l-3-2-3 2-3-2-3 2V6.5l3-2-3-2Z"/><path d="M9 7.5h6M9 11.5h6"/>',
 };
 function actIcon(name) {
   return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ACT_ICONS[name] || '') + '</svg>';

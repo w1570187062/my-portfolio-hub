@@ -7,18 +7,7 @@
 <title>观澜</title>
 <link rel="stylesheet" href="/style.css" data-page-node-id="b5mR41UapyQYKGlXNRWu5c">
 <style>
-  /* 加减仓弹窗 */
-  /* 加仓=红(涨) / 减仓=绿(跌)：圆形切换按钮，与上方绿色 tab 形成颜色区分 */
-  .adj-toprow { display:flex; align-items:flex-end; gap:10px; margin-bottom:10px; }
-  #adjustModal .adj-toprow .adj-inline { margin-bottom:0; }
-  .seg-flat { display:inline-flex; align-items:center; gap:12px; flex:none; }
-  .seg-flat .seg-sep { color:var(--text-muted,#9aa0a6); font-size:17px; line-height:1; user-select:none; }
-  .seg-flat > button { border:0; background:transparent; padding:2px 5px; cursor:pointer; font-size:19px; line-height:1; font-weight:600; color:var(--text-muted,#6b7280); transition:color .15s var(--e, ease); }
-  .seg-flat > button:hover { color:var(--text,#374151); }
-  .seg-flat > button.active { color:var(--primary,#d9a52b); font-weight:700; }
-  .adj-inline { flex:1; display:flex; flex-direction:column; gap:4px; margin:0; font-size:12px; color:var(--text-muted,#6b7280); }
-  .adj-inline input,
-  .adj-inline select { width:100%; margin-top:4px; }
+  /* 加减仓弹窗样式统一在 style.css 管理，避免内联覆盖导致 ± 高度/对齐不生效 */
   .adj-row { display:flex; gap:10px; margin-bottom:10px; align-items:flex-start; }
   .adj-preview { display:none; margin:6px 0 10px; padding:10px 12px; border-radius:8px; font-size:13px; line-height:1.6; color:var(--text,#1f2329); }
   .adj-preview .warn { color:#e5484d; }
@@ -829,7 +818,7 @@
 
   <div id="flowModal" class="modal" hidden data-page-node-id="vaGfShzxxOKjnQQwAu0S3A">
     <div class="modal-card" data-page-node-id="PAzMVGMQ0FSpq10gvPH8Wd">
-      <div class="modal-head" data-page-node-id="QJNebDSeUg89AEAoFuMrk4"><h2 data-icon="plus" data-page-node-id="woVGAiJaeNFQECdcT073Cg">添加流水</h2><button type="button" class="modal-close" aria-label="关闭" onclick="hideFlow()" data-page-node-id="VANbFPDsGPrBpXgZWgGALh">×</button></div>
+      <div class="modal-head" data-page-node-id="QJNebDSeUg89AEAoFuMrk4"><h2 data-icon="plus" data-page-node-id="woVGAiJaeNFQECdcT073Cg">添加流水</h2></div>
       <form id="flowForm" data-page-node-id="zQQDtrBQM1eCgtAzyc6yYR">
         <label data-page-node-id="yIUDrqc1u3pKshoZc4qcqm">子账户</label>
         <div class="ac-picker" id="flowCashPicker" data-page-node-id="z7KeOdPjDNxWCE6NgcyWIt">

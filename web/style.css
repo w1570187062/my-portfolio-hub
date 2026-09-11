@@ -1008,9 +1008,10 @@ h2 > svg,
 }
 .cash-edit-info .ce-bal { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
 /* 资金变动方向切换（存入/取出）：主题色分段控件，避免手动输入负数 */
-.sign-edit { display: flex; flex-direction: column; gap: 6px; }
-.sign-edit .field-label { font-size: 12px; color: var(--text-muted); }
-/* 存入/取出切换已统一为 .seg-flat（纯文本 + / -，见上方通用规则）；下方 .sign-edit 保持布局 */
+.sign-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.sign-edit .field-label { flex-basis: 100%; font-size: 13px; color: var(--text-muted); margin-bottom: 0; }
+.sign-edit .seg-flat { flex: none; }
+.sign-edit input { flex: 1; min-width: 140px; width: auto; }
 /* 选中段用主题色；未选中与描述文本同色（灰） */
 /* 加减仓「交易记录」标签：加仓取主题色、减仓中性灰。
    注意：唯一定义放在这里 —— index.html 的 <style> 内联块加载在 style.css 之后，
@@ -3670,7 +3671,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .adj-toprow { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 10px; }
 #adjustModal .adj-toprow .adj-inline { margin-bottom: 0; }
 /* ---------- +/- 纯文本切换：无边框/圆形，选中主题色，字号放大 ---------- */
-.seg-flat { display: inline-flex; align-items: center; gap: 12px; flex: none; }
+.seg-flat { display: inline-flex; align-items: center; gap: 12px; flex: none; height: 40px; box-sizing: border-box; }
 .seg-flat .seg-sep { color: var(--text-muted); font-size: 17px; line-height: 1; user-select: none; }
 .seg-flat > button {
   border: 0; background: transparent; padding: 2px 5px; cursor: pointer;
@@ -3681,7 +3682,7 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .seg-flat > button.active { color: var(--primary); font-weight: 700; }
 
 /* 通用字段标题（位于控件上方，如加减仓「操作」、资金变动「资金变动」） */
-.field-label { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+.field-label { font-size: 13px; line-height: 1.3; color: var(--text-muted); margin-bottom: 0; }
 
 /* 添加流水：按父账户折叠的子账户选择器 */
 .ac-picker { position: relative; }
