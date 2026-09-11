@@ -1245,7 +1245,7 @@ $('#dividendForm').onsubmit = async (e) => {
   if (el) el.addEventListener('input', computeDivPreview);
 });
 function syncAdjSeg() {
-  document.querySelectorAll('#adjTypeSeg .circ-btn').forEach((b) => {
+  document.querySelectorAll('#adjTypeSeg .sign-opt').forEach((b) => {
     b.classList.toggle('active', b.dataset.type === adjType);
   });
 }
@@ -1308,7 +1308,7 @@ async function renderAdjHistory(id) {
   }
 }
 $('#adjTypeSeg').addEventListener('click', (e) => {
-  const b = e.target.closest('.circ-btn');
+  const b = e.target.closest('.sign-opt');
   if (!b) return;
   adjType = b.dataset.type;
   syncAdjSeg();
@@ -2407,6 +2407,30 @@ if (flowSignToggle) {
   });
 }
 $('#flowModal').addEventListener('click', (e) => { if (e.target === $('#flowModal')) hideFlow(); });
+// 添加流水：折叠选择器交互（展开/收起账户、选择子账户、点击外部关闭）
+const flowCashBtn = document.getElementById('flowCashBtn');
+const flowCashPanel = document.getElementById('flowCashPanel');
+if (flowCashBtn) flowCashBtn.addEventListener('click', () => { if (flowCashPanel) flowCashPanel.hidden = !flowCashPanel.hidden; });
+if (flowCashPanel) {
+  flowCashPanel.addEventListener('click', (e) => {
+    const head = e.target.closest('.ac-pick-head');
+    if (head) {
+      const body = head.nextElementSibling;
+      if (body && body.classList.contains('ac-pick-body')) { body.hidden = !body.hidden; head.classList.toggle('open', !body.hidden); }
+      return;
+    }
+    const row = e.target.closest('.ac-pick-row');
+    if (row) {
+      const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
+      selectFlowCash(row.dataset.id, c ? flowCashLabel(c) : row.textContent.trim());
+    }
+  });
+}
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('flowCashPicker');
+  if (!picker) return;
+  if (!picker.contains(e.target)) { const p = document.getElementById('flowCashPanel'); if (p) p.hidden = true; }
+});
 
 // ---- P&L Calendar ----
 const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -4251,7 +4275,7 @@ function assetDel(type, id) {
 // ---- 资产来源 ----
 function renderSources(body) {
   const list = assetSources;
-  let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div>`;
+  let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><div class="sec-actions"><button class="btn asset-flow" id="addFlowBtn" type="button" title="添加流水" aria-label="添加流水">＋ 流水</button><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div></div>`;
   if (!list.length) html += `<div class="empty-block"><p class="empty">还没有账户，先添加一个银行、证券或软件吧。</p><button class="btn icon-btn asset-add-inline" data-empty-add="source" type="button" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div>`;
   else {
     // 按类型分组：银行 / 证券 / 软件 / 平台（未知类型归银行）
@@ -4843,23 +4867,35 @@ $('#cashForm').onsubmit = async (e) => {
   } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
 };
 
-// ---------------- 添加流水（选任意子账户，下拉按父账户二级分组） ----------------
-// 子账户下拉选项：按来源（父账户）分组，optgroup 显示父账户名，便于定位
-function flowCashOptions() {
+// ---------------- 添加流水（选任意子账户，按父账户折叠分组） ----------------
+// 子账户显示标签：父账户·子账户（币种余额），★ 标记默认子账户
+function flowCashLabel(c) {
+  const cur = c.currency === 'usd' ? '＄' : (c.currency === 'hkd' ? 'HK＄' : '¥');
+  const star = c.is_default ? '★ ' : '';
+  const src = (assetSources || []).find((s) => Number(s.id) === Number(c.source_id));
+  const prefix = src ? src.name + ' · ' : '';
+  return `${star}${prefix}${c.name}（${cur}${fmt(c.amount || 0)}）`;
+}
+// 折叠面板：每个父账户一组，点击表头展开/收起其子账户
+function buildFlowPicker() {
   const accs = cashAccountsCache || [];
   const bySrc = {};
   accs.forEach((c) => { (bySrc[c.source_id] = bySrc[c.source_id] || []).push(c); });
-  let html = '<option value="0">（请选择子账户）</option>';
-  (assetSources || []).forEach((s) => {
-    const list = bySrc[s.id];
-    if (!list || !list.length) return;
-    html += `<optgroup label="${esc(s.name)}">` + list.map((c) => {
+  const sources = (assetSources || []).filter((s) => bySrc[s.id] && bySrc[s.id].length);
+  if (!sources.length) return '<div class="ac-picker-empty">暂无子账户，请先在「账户」中添加</div>';
+  return sources.map((s) => {
+    const rows = bySrc[s.id].map((c) => {
       const cur = c.currency === 'usd' ? '＄' : (c.currency === 'hkd' ? 'HK＄' : '¥');
       const star = c.is_default ? '★ ' : '';
-      return `<option value="${c.id}">${star}${esc(c.name)}（${cur}${fmt(c.amount || 0)}）</option>`;
-    }).join('') + '</optgroup>';
-  });
-  return html;
+      return `<button type="button" class="ac-pick-row" data-id="${c.id}">${star}${esc(c.name)}<span class="ac-pick-bal">${cur}${fmt(c.amount || 0)}</span></button>`;
+    }).join('');
+    return `<div class="ac-pick-group"><button type="button" class="ac-pick-head" data-src="${s.id}">${esc(s.name)}<span class="ac-pick-cnt">${bySrc[s.id].length}</span><span class="ac-pick-chev">▾</span></button><div class="ac-pick-body" hidden>${rows}</div></div>`;
+  }).join('');
+}
+function selectFlowCash(id, label) {
+  $('#flow_cash').value = id;
+  $('#flowCashBtn').textContent = label || '请选择子账户';
+  $('#flowCashPanel').hidden = true;
 }
 function flowSetSign(sign) {
   document.querySelectorAll('#flow_sign_toggle .sign-opt').forEach((b) => b.classList.toggle('active', b.dataset.sign === sign));
@@ -4868,10 +4904,11 @@ function hideFlow() { const m = document.getElementById('flowModal'); if (m) m.h
 async function openFlowModal() {
   await loadSourcesCache();
   await loadCashAccounts();
-  $('#flow_cash').innerHTML = flowCashOptions();
-  // 默认选中第一个真实子账户（跳过占位项）
-  const first = $('#flow_cash').querySelector('option[value]:not([value="0"])');
-  $('#flow_cash').value = first ? first.value : '0';
+  $('#flowCashPanel').innerHTML = buildFlowPicker();
+  // 默认选中第一个真实子账户
+  const acc = (cashAccountsCache || [])[0];
+  $('#flow_cash').value = acc ? acc.id : '0';
+  $('#flowCashBtn').textContent = acc ? flowCashLabel(acc) : '请选择子账户';
   $('#flow_delta').value = '';
   $('#flow_note').value = '';
   $('#flowErr').textContent = '';

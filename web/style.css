@@ -3683,6 +3683,27 @@ tr.row-failed:hover { background: rgba(245, 166, 35, .24); }
 .seg-flat > button:hover { color: var(--text); }
 .seg-flat > button.active { color: var(--primary); font-weight: 700; }
 
+/* 通用字段标题（位于控件上方，如加减仓「操作」、资金变动「资金变动」） */
+.field-label { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+
+/* 添加流水：按父账户折叠的子账户选择器 */
+.ac-picker { position: relative; }
+.ac-picker-btn { width: 100%; text-align: left; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--btn-radius, 8px); background: var(--bg-input, #fff); color: var(--text); cursor: pointer; font-size: 13px; }
+.ac-picker-btn:empty::before { content: '请选择子账户'; color: var(--text-muted); }
+.ac-picker-panel { position: absolute; z-index: 50; left: 0; right: 0; margin-top: 4px; max-height: 320px; overflow-y: auto; background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: var(--btn-radius, 8px); box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; }
+:root[data-theme="light"] .ac-picker-panel { box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.ac-pick-group + .ac-pick-group { border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px; }
+.ac-pick-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px; background: transparent; border: 0; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--primary); text-align: left; }
+.ac-pick-head:hover { background: var(--bg-soft, rgba(217,165,43,.06)); }
+.ac-pick-cnt { color: var(--text-muted); font-weight: 400; font-size: 11px; }
+.ac-pick-chev { margin-left: auto; transition: transform .2s; color: var(--text-muted); }
+.ac-pick-head.open .ac-pick-chev { transform: rotate(180deg); }
+.ac-pick-body { display: flex; flex-direction: column; }
+.ac-pick-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px 7px 18px; background: transparent; border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--text); text-align: left; }
+.ac-pick-row:hover { background: var(--bg-soft, rgba(217,165,43,.06)); }
+.ac-pick-bal { color: var(--text-muted); font-size: 12px; }
+.ac-picker-empty { padding: 10px 12px; color: var(--text-muted); font-size: 12px; }
+
 .adj-inline { flex: 1; display: flex; flex-direction: column; gap: 4px; margin: 0; font-size: 12px; color: var(--text-muted); }
 .adj-inline input,
 .adj-inline select { width: 100%; margin-top: 4px; }

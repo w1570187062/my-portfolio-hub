@@ -421,13 +421,14 @@
         <form id="adjustForm">
           <input type="hidden" id="adj_id">
           <div class="adj-toprow">
-            <label class="adj-inline" style="flex:none">操作
+            <div class="adj-inline" style="flex:none">
+              <div class="field-label">操作</div>
               <div class="seg-flat" id="adjTypeSeg">
-                <button type="button" class="circ-btn active" data-type="BUY">＋</button>
+                <button type="button" class="sign-opt active" data-type="BUY">＋</button>
                 <span class="seg-sep">/</span>
-                <button type="button" class="circ-btn" data-type="SELL">－</button>
+                <button type="button" class="sign-opt" data-type="SELL">－</button>
               </div>
-            </label>
+            </div>
             <label class="adj-inline">数量<input id="adj_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="份额" required></label>
             <label class="adj-inline">价格<input id="adj_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="留空用现价"></label>
             <label class="adj-inline">成本<input id="adj_fee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" value="0"></label>
@@ -830,7 +831,12 @@
     <div class="modal-card">
       <div class="modal-head"><h2 data-icon="plus">添加流水</h2><button type="button" class="modal-close" aria-label="关闭" onclick="hideFlow()">×</button></div>
       <form id="flowForm">
-        <label>子账户（按父账户分组）<select id="flow_cash"></select></label>
+        <label>子账户（按账户折叠选择）</label>
+        <div class="ac-picker" id="flowCashPicker">
+          <button type="button" class="ac-picker-btn" id="flowCashBtn">请选择子账户</button>
+          <div class="ac-picker-panel" id="flowCashPanel" hidden></div>
+        </div>
+        <input type="hidden" id="flow_cash" value="0">
         <div class="sign-edit">
           <div class="field-label">资金变动</div>
           <span class="seg-flat" id="flow_sign_toggle" role="group" aria-label="存入或取出">
