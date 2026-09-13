@@ -542,17 +542,41 @@ w {
   border: 1px solid var(--border);
   border-radius: var(--card-radius);
   padding: 14px 16px 14px;
-  /* 底色与普通卡片一致（避免圆环卡下沿更深）；装饰层只是叠加在底色之上的角光，
-     在 58% 高度处即淡出，下沿仍是纯底色 */
+  /* 底色与普通卡片一致（避免圆环卡下沿更深） */
   background-color: var(--bg-card);
-  background-image: var(--card-glow);
-  box-shadow: 0 6px 24px rgba(27, 40, 72, .08);
+  /* 中心圆形泛光：颜色取 --accent-rgb（最长段/盈红亏绿），未设置回退主题色 --tint；circle 居中、fade-out 留上下间距；半径/不透明度均减半 */
+  background-image: radial-gradient(circle at 50% 50%, rgba(var(--accent-rgb, var(--tint)), .08) 0%, transparent 27%);
+  box-shadow: 0 6px 24px rgba(27, 40, 72, .08), inset 0 1px 0 rgba(255, 255, 255, .05);
   transition: transform .18s cubic-bezier(.32,.72,0,1), box-shadow .18s cubic-bezier(.32,.72,0,1);
   /* 不带圆环卡片：除标题外内容整体上下居中。grid 双行：标题锁定顶部 0，
      其余子项（donut-wrap/ps-big/ps-rows/comp-legend）由 .pano-body 居中 */
   display: grid;
   grid-template-rows: auto 1fr;
 }
+/* 驾驶舱风格：左侧实体指示条——纯 CSS「自带圆角裁剪」方案，条沿卡片左弧走（一半圆弧）。
+   技巧：伪元素宽=卡片圆角、左上/左下圆角=卡片圆角（即一个半径=圆角的四分之一圆角盒），
+   仅左 5px 用渐变上色，曲线由元素自身 border-radius 烘焙，无需 overflow:hidden、不影响圆环穿透；
+   泛光仍是卡片背景中心圆形 radial-gradient（见 .pano-sum background-image） */
+.pano-sum::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  /* 宽须 ≥ 2×圆角：左右两角各需 card-radius 半径，总和 2×card-radius；若按 1×圆角宽度会被浏览器
+     压成椭圆角（rx 折半），导致条顶/底曲线比卡片真圆弧更陡、戳出卡片角外。宽到 2×圆角即可还原真圆弧。 */
+  width: calc(var(--card-radius) * 2);
+  border-radius: var(--card-radius) 0 0 var(--card-radius);
+  background: linear-gradient(to right, rgb(var(--accent-rgb, var(--tint))) 0 5px, transparent 5px);
+  pointer-events: none;
+  z-index: 2;
+}
+/* 驾驶舱 caption：标题前导纯色图标，跟随颜色条取色（currentColor = --accent-rgb，与实体条/泛光同色；未设置回退主题色 --tint） */
+.pano-sum .ps-head .ps-ico {
+  width: 19px; height: 19px;
+  flex: 0 0 auto;
+  color: rgb(var(--accent-rgb, var(--tint)));
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pano-sum .ps-head .ps-ico svg { width: 100%; height: 100%; display: block; }
 /* 圆环居中布局（has-donut）：桌面端圆环居左、图例居右，整体水平+垂直居中；
    手机端（见 @media max-width:640px）回退为上下排列；
    pano-body 绝对铺满标题以下区域，内容整体在剩余空间居中；z-index:1 保证圆环绘制在相邻区块之上 */
@@ -569,7 +593,7 @@ w {
 .pano-sum.has-donut .comp-legend { flex: 1 1 auto; min-width: 130px; max-width: none; }
 .pano-sum > .ps-head { align-self: start; }
 .pano-sum > .pano-body { display: flex; flex-direction: column; align-items: stretch; gap: 10px; justify-content: center; min-height: 0; }
-:root[data-theme="dark"] .pano-sum { box-shadow: 0 8px 28px rgba(0, 0, 0, .38); }
+:root[data-theme="dark"] .pano-sum { box-shadow: 0 8px 28px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .06); }
 /* 取消右上角光晕，改为悬停放大（轻微抬起+缩放）效果 */
 .pano-sum:hover { transform: translateY(-4px) scale(1.012); box-shadow: 0 12px 30px rgba(27, 40, 72, .16); }
 :root[data-theme="dark"] .pano-sum:hover { box-shadow: 0 14px 36px rgba(0, 0, 0, .5); }
@@ -1691,6 +1715,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 /* display:block 会压过 [hidden] 的 UA 默认样式，须显式声明（弹框内按 hidden 切换的 label 行） */
 .modal-card label[hidden] { display: none; }
+/* 编辑子账户弹框：底部「说明（资金变动备注，可选）」与上方资金变动区拉开间距 */
+#c_adj_note_row { margin-top: 12px; }
 .modal-card input, .modal-card select, .modal-card textarea {
   width: 100%;
   padding: 10px 14px;
@@ -2109,7 +2135,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   text-align: left;
 }
 .cal-detail-tbl th { background: rgba(255, 255, 255, .03); color: var(--text-muted); }
-.cal-detail-tbl .num { text-align: right; }
+.cal-detail-tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ===== AI 设置弹窗 ===== */
 .ai-key-row, .ai-tpl-row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
@@ -2296,6 +2322,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   /* 表格：与首页 .table-wrap + th/td 一致，可横向滚动 */
   .asset-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .asset-table th, .asset-table td { padding: 9px 10px; }
+  /* 理财：窄屏强制卡片视图（同首页持仓），隐藏表格/卡片切换器避免误切宽表撑宽 */
+  #wealthViewToggle { display: none; }
   /* 理财卡片：手机端一行一个，撑满容器宽度 */
   .asset-list.wealth-list { flex-direction: column; }
   .asset-card.wealth-card { flex: 0 0 auto; width: 100%; min-width: 0; max-width: none; }
@@ -2464,7 +2492,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   border-bottom: 1px solid var(--row-divider);
 }
 .asset-table td { text-align: left; }
-.asset-table td.num, .asset-table th.num { text-align: right; }
+.asset-table td.num, .asset-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .asset-table .up { color: #f87171; }
 .asset-table .down { color: #4ade80; }
 /* 理财表备注列：给足宽度（超长省略号截断，悬停看全文），避免挤压操作列 */
@@ -2522,16 +2550,30 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 #whAuditPanel { margin-top: 14px; border-top: var(--card-border); padding-top: 12px; }
 #whAuditPanel h3 { font-size: 14px; margin: 0 0 8px; }
 .asset-summary .card {
+  position: relative;
   padding: 16px 18px;
   border: var(--card-border);
   border-radius: var(--card-radius);
   background: var(--bg-card);
+  /* 中心圆形泛光（无圆环的 KPI 卡回退主题色 --tint） */
+  background-image: radial-gradient(circle at 50% 50%, rgba(var(--accent-rgb, var(--tint)), .07) 0%, transparent 27%);
   backdrop-filter: blur(var(--blur)) saturate(var(--sat));
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0;
   overflow: hidden;
+  box-shadow: var(--card-shadow), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+/* 驾驶舱风格：左侧实体指示条——满高 + 卡片 overflow:hidden 按圆角裁掉两角，沿左弧走（一半圆弧）；
+   泛光由卡片背景中心圆形 radial-gradient 提供 */
+.asset-summary .card::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 5px;
+  background: rgb(var(--accent-rgb, var(--tint)));
+  pointer-events: none;
 }
 
 .asset-summary .c-br { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }

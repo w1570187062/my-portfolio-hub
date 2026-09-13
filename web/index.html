@@ -780,7 +780,7 @@
             </span>
             <input id="c_delta" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="金额（正数）" data-page-node-id="PrCfPGC2j0Rw7Qb2mV405S">
           </div>
-          <label data-page-node-id="ON79LX5VHIHh4RaYAbaxTW">说明（资金变动备注，可选） <input id="c_adj_note" placeholder="如 发工资 / 还信用卡" data-page-node-id="LT3j056swAgG9AZUcUVDBj"></label>
+          <label id="c_adj_note_row" data-page-node-id="ON79LX5VHIHh4RaYAbaxTW">说明（资金变动备注，可选） <input id="c_adj_note" placeholder="如 发工资 / 还信用卡" data-page-node-id="LT3j056swAgG9AZUcUVDBj"></label>
         </div>
         <!-- 添加子账户：干净的新增表单 -->
         <div id="cashNewFields" hidden data-page-node-id="ZWCbH9vjLxovycLjHJsfFn">
@@ -801,9 +801,8 @@
           <input type="hidden" id="lb_id" data-page-node-id="WrCFAXsJqXd2X2Jla83SQ1">
           <label data-page-node-id="0xwFcELnjsV6CEfiQdvMNb">名称 <input id="lb_name" placeholder="如 房贷 / 招行信用卡" data-page-node-id="XEWeLRH4d5XdwBmIzjGBPC"></label>
           <label data-page-node-id="w27dBZwDnF18NyhNWBfAPE">类型 <input id="lb_type" placeholder="房贷/信用卡/消费贷/其他" data-page-node-id="ikWMe7b0N0Fc67UqYIHdCt"></label>
-          <!-- 所属账户：新增态锁定为入口父账户（只读展示，不可选）；编辑负债时可切换账户下拉 -->
-          <label id="lb_source_fix_row" data-page-node-id="2ihNGTl452jDMOb7v3fwkA">所属账户 <input id="lb_source_fix" readonly placeholder="—" data-page-node-id="ZBFJRdrhay9SSe89Ync69q"></label>
-          <label id="lb_source_sel_row" hidden data-page-node-id="0z6CKyf5qto4Of40ZNLvFF">所属账户 <select id="lb_source" data-page-node-id="89yg1r3WYjwHDzZOgAYfxD"></select></label>
+          <!-- 所属账户：编辑/新增负债时账户由入口父账户或负债自身决定，弹框不展示（与编辑子账户一致） -->
+          <input type="hidden" id="lb_source" data-page-node-id="89yg1r3WYjwHDzZOgAYfxD">
           <label data-page-node-id="3s4RZZZhVVkHLjDDB95Wmf">当前欠款余额 <input id="lb_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="e2khC3Tzqu9oqiCAq6H8al"></label>
           <label data-page-node-id="tq0HDxll6oZLpIJGVGYdPu">币种 <select id="lb_currency" data-page-node-id="uCbK0shBLOo3n4BU9bUAIi"><option value="rmb" data-page-node-id="jSuqnJ6WRfqQYRrSd05JCa">RMB（人民币）</option><option value="hkd" data-page-node-id="csbuUKTaGNtZTA2iuLltSF">HKD（港币）</option><option value="usd" data-page-node-id="rt1DeCxfsVAP9nrE3ISfcY">USD（美元）</option></select></label>
           <label data-page-node-id="JwGhRczsNVl4zHb1hzacbS">年利率(%) <input id="lb_rate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="uGCG3DEzZHQC8Qxd48GVqH"></label>

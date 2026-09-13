@@ -150,6 +150,18 @@ const api = (path, opts = {}) => {
 };
 
 const fmt = (n) => (n == null ? '' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }));
+// 盈亏专用格式：强制 2 位小数 + 显式正负号（如 +432.00 / -18.34 / 0.00）。
+// 整数与小数统一成同一「形状」，配合 tabular-nums 按小数点对齐，避免整数(432)比小数(72.42)视觉更窄被看岔。
+const fmtPnl = (n) => (n == null ? '' : (n > 0 ? '+' : '') + Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+
+// 驾驶舱卡片标题图标：按卡片语义映射纯色主题色 icon（currentColor = --primary，自动跟随 accent）
+const PS_ICONS = {
+  mv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.3" fill="currentColor" stroke="none"/></svg>',
+  pnl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 16 9 10 13 14 21 6"/><polyline points="14 6 21 6 21 13"/></svg>',
+  net: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.6 4 5.7 4 9s-1.4 6.4-4 9c-2.6-2.6-4-5.7-4-9s1.4-6.4 4-9z"/></svg>',
+  dist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v9h9"/></svg>',
+};
+const psHeadIcon = (k) => (PS_ICONS[k] ? `<span class="ps-ico">${PS_ICONS[k]}</span>` : '');
 // 价格类字段统一截断到 4 位小数，避免 float64 全精度（如 12.34738291）污染输入框与落库。
 const round4 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return Math.round(v * 1e4) / 1e4; };
 const round2 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return Math.round(v * 1e2) / 1e2; };
@@ -666,7 +678,7 @@ function renderGroupRow(h, i) {
     <td class="num">${watch ? '—' : fmtNav(h.cost_price, h.category)}</td>
     <td class="num">${fmtNav(h.current_price, h.category)}</td>
     <td class="num"${watch ? '' : mvOrigTitle(h)}>${watch ? '—' : fmt(toRmb(h, h.market_value))}</td>
-    <td class="num ${watch ? '' : cls(h.day_pnl)}">${watch ? '—' : fmt(toRmb(h, h.day_pnl))}</td>
+    <td class="num ${watch ? '' : cls(h.day_pnl)}">${watch ? '—' : fmtPnl(toRmb(h, h.day_pnl))}</td>
     <td class="num" title="${watch ? '观察仓涨跌幅（按现价/昨收现算）' : '当日盈亏率'}">${wPctHtml}</td>
     <td class="num ${watch ? '' : cls(h.pnl)}">${watch ? '—' : fmt(toRmb(h, h.pnl))}</td>
     <td class="num ${watch ? '' : cls(h.pnl_pct)}" title="持有期总盈亏率">${watch ? '—' : pct(h.pnl_pct)}</td>
@@ -810,10 +822,10 @@ function renderSummary(hs) {
     return subs.map((s, i) => ({ name: s.name, v: s.v, c: `rgba(${rgbVar}, ${SUB_SHADES[Math.min(i, SUB_SHADES.length - 1)]})` }));
   };
   const mvSegs = [
-    { name: '股票', v: stockMV, c: 'rgb(var(--cat-equity))', subs: buildSubs('stock', 'var(--cat-equity)') },
-    { name: '基金', v: fundMV, c: 'rgb(var(--cat-fund))', subs: buildSubs('fund', 'var(--cat-fund)') },
+    { name: '股票', v: stockMV, c: 'rgb(var(--cat-equity))', rgb: 'var(--cat-equity)', subs: buildSubs('stock', 'var(--cat-equity)') },
+    { name: '基金', v: fundMV, c: 'rgb(var(--cat-fund))', rgb: 'var(--cat-fund)', subs: buildSubs('fund', 'var(--cat-fund)') },
   ];
-  if (otherMV > 0) mvSegs.push({ name: '其他', v: otherMV, c: '#94a3b8' });
+  if (otherMV > 0) mvSegs.push({ name: '其他', v: otherMV, c: '#94a3b8', rgb: '148,163,184' });
   const mvBar = mvSegs.map((s) => `<span class="seg" style="width:${pctMV(s.v).toFixed(2)}%;background:${s.c}" title="${esc(s.name)} ${money(s.v)}"></span>`).join('');
   // 图例：主分类行 + 缩进二级子项行（金额/占比，占比与内环弧段同口径：占总市值百分比）
   const mvLeg = mvSegs.map((s) => {
@@ -826,8 +838,8 @@ function renderSummary(hs) {
   // 卡片一：总市值（含股票/基金分类彩色组合圆环；金额置于圆环中心，减少留白并增加文字描述）
   const topSeg = mvSegs.slice().sort((a, b) => b.v - a.v)[0];
   const cardMV =
-    `<div class="pano-sum has-donut">` +
-      `<div class="ps-head">总市值</div>` +
+    `<div class="pano-sum has-donut" style="--accent-rgb:${topSeg ? topSeg.rgb : 'var(--tint)'}">` +
+      `<div class="ps-head">${psHeadIcon('mv')}总市值</div>` +
       `<div class="pano-body">` +
         `<div class="donut-wrap">${donutSVG(mvSegs, { size: 150, center: '¥' + fmtShort(totalCNY), sub: (topSeg ? topSeg.name + ' ' + (topSeg.v / Math.max(totalCNY, 1) * 100).toFixed(0) + '%' : '') })}</div>` +
         `<div class="comp-legend">${mvLeg}</div>` +
@@ -835,8 +847,8 @@ function renderSummary(hs) {
     `</div>`;
   // 卡片二：盈亏 + 涨跌 合并（总盈亏带箭头色 / 当日 / 本月 / 涨跌家数）；mini 走势与大数字同行、贴卡片最右
   const cardPnl =
-    `<div class="pano-sum">` +
-      `<div class="ps-head">收益率</div>` +
+    `<div class="pano-sum" style="--accent-rgb:${totalPnl >= 0 ? 'var(--up-rgb)' : 'var(--down-rgb)'}">` +
+      `<div class="ps-head">${psHeadIcon('pnl')}收益率</div>` +
       `<div class="pano-body">` +
         `<div class="ps-big-row">` +
           `<div class="ps-big ${pCls}">¥${fmt(totalPnl)} <small>(${pct(totalPct)})</small></div>` +
@@ -1015,7 +1027,7 @@ function renderRows(hs) {
      <td class="num">${fmtNav(h.current_price, h.category)}</td>
      <td class="num spark-td">${watch ? '—' : sparkCell(h.symbol, h.pnl)}</td>
      <td class="num"${watch ? '' : mvOrigTitle(h)}>${watch ? '—' : fmt(toRmb(h, h.market_value))}</td>
-     <td class="num ${watch ? '' : cls(h.day_pnl)}">${watch ? '—' : fmt(toRmb(h, h.day_pnl))}</td>
+     <td class="num ${watch ? '' : cls(h.day_pnl)}">${watch ? '—' : fmtPnl(toRmb(h, h.day_pnl))}</td>
      <td class="num" title="${watch ? '观察仓涨跌幅（按现价/昨收现算）' : '当日盈亏率'}">${wPctHtml}</td>
      <td class="num ${watch ? '' : cls(h.pnl)}">${watch ? '—' : fmt(toRmb(h, h.pnl))}</td>
      <td class="num ${watch ? '' : cls(h.pnl_pct)}">${watch ? '—' : pct(h.pnl_pct)}</td>
@@ -1826,7 +1838,7 @@ function showItemDetail(key, label) {
     rows.push(['数量', fmt(h.quantity || 0)]);
     rows.push(['成本价', fmtNav(h.cost_price, h.category)]);
     rows.push(['现价 / 净值', fmtNav(h.current_price, h.category)]);
-    rows.push(['当日盈亏', `${fmt(toRmb(h, h.day_pnl || 0))}（${pct(h.day_pnl_pct || 0)}）`, cls(h.day_pnl || 0)]);
+    rows.push(['当日盈亏', `${fmtPnl(toRmb(h, h.day_pnl || 0))}（${pct(h.day_pnl_pct || 0)}）`, cls(h.day_pnl || 0)]);
   } else if (cat === 'cash') {
     rows.push(['分类', '现金']);
     if (raw.currency) rows.push(['币种', raw.currency]);
@@ -2719,7 +2731,7 @@ function openCalDay(date) {
         syms.map((s) => {
           // 优先用快照时折算的 CNY 值；旧快照无该字段则用当前汇率回退折算
           const cny = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl);
-          return '<tr><td>' + s.symbol + '</td><td>' + (s.name || '') + '</td><td>' + (s.currency || '') + '</td><td class="num ' + cls(cny) + '">' + fmt(cny) + '</td></tr>';
+          return '<tr><td>' + s.symbol + '</td><td>' + (s.name || '') + '</td><td>' + (s.currency || '') + '</td><td class="num ' + cls(cny) + '">' + fmtPnl(cny) + '</td></tr>';
         }).join('') +
         '</tbody></table>';
       syms.forEach((s) => { const c = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl); equityCNY += c; });
@@ -2728,16 +2740,16 @@ function openCalDay(date) {
     const wts = det.by_wealth || [];
     if (wts.length) {
       wRows = '<table class="cal-detail-tbl" style="margin-top:10px"><thead><tr><th>理财</th><th>币种</th><th class="num">当日盈亏 (CNY)</th></tr></thead><tbody>' +
-        wts.map((w) => '<tr><td>' + (w.name || '') + '</td><td>' + (w.currency || '') + '</td><td class="num ' + cls(w.pnl_cny) + '">' + fmt(w.pnl_cny) + '</td></tr>').join('') +
+        wts.map((w) => '<tr><td>' + (w.name || '') + '</td><td>' + (w.currency || '') + '</td><td class="num ' + cls(w.pnl_cny) + '">' + fmtPnl(w.pnl_cny) + '</td></tr>').join('') +
         '</tbody></table>';
       wts.forEach((w) => { wealthCNY += (typeof w.pnl_cny === 'number') ? w.pnl_cny : 0; });
     }
   } catch (e) { rows = '<p style="color:var(--danger)">明细解析失败</p>'; }
   $('#calModalBody').innerHTML = `
     <div id="calSumRow" style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px">
-      <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${cls(v)}">${fmt(v)}</div></div>
-      <div><div class="cal-sub">权益盈亏 (CNY)</div><div class="value ${cls(equityCNY)}">${fmt(equityCNY)}</div></div>
-      <div><div class="cal-sub">理财盈亏 (CNY)</div><div class="value ${cls(wealthCNY)}">${fmt(wealthCNY)}</div></div>
+      <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${cls(v)}">${fmtPnl(v)}</div></div>
+      <div><div class="cal-sub">权益盈亏 (CNY)</div><div class="value ${cls(equityCNY)}">${fmtPnl(equityCNY)}</div></div>
+      <div><div class="cal-sub">理财盈亏 (CNY)</div><div class="value ${cls(wealthCNY)}">${fmtPnl(wealthCNY)}</div></div>
       ${CAL_NAV_HTML}
     </div>${rows}${wRows}`;
   $('#calModal').hidden = false;
@@ -4144,11 +4156,11 @@ function renderAssetSummary() {
     return rows;
   }).join('');
   // 圆环卡：布局/尺寸与首页总市值卡一致（donut size 150，金额居中，图例在右）
-  const donutCard = (title, segs) => {
+  const donutCard = (title, segs, ico) => {
     const sum = segs.reduce((a, s) => a + s.v, 0);
     const top = segs.slice().sort((a, b) => b.v - a.v)[0];
-    return `<div class="pano-sum has-donut">` +
-      `<div class="ps-head">${title}</div>` +
+    return `<div class="pano-sum has-donut" style="--accent-rgb:${top ? top.rgb : 'var(--tint)'}">` +
+      `<div class="ps-head">${psHeadIcon(ico)}${title}</div>` +
       `<div class="pano-body">` +
         `<div class="donut-wrap">${donutSVG(segs, { size: 150, center: '¥' + fmtShort(sum), sub: top && sum > 0 ? top.name + ' ' + (top.v / sum * 100).toFixed(0) + '%' : '' })}</div>` +
         `<div class="comp-legend">${legend(segs)}</div>` +
@@ -4161,7 +4173,7 @@ function renderAssetSummary() {
   const regionSegs = [];
   // 资不抵债（净资产<0）时不能切割父弧（负债弧 > 父弧会画溢出），父弧整段改用负债色，
   // 但图例仍要展示「负债 / 净资产(负)」——旧实现 subs 直接置空导致负债从图例彻底消失。
-  const regionSeg = (name, assets, liab, net, c) => {
+  const regionSeg = (name, assets, liab, net, c, rgb) => {
     const insolvent = net < 0;
     const subs = [
       { name: '净资产', v: net, c: c },
@@ -4169,16 +4181,17 @@ function renderAssetSummary() {
     ];
     return {
       name: name, v: assets, c: insolvent ? 'rgb(var(--cat-debt))' : c,
+      rgb: insolvent ? 'var(--cat-debt)' : rgb,
       subs: insolvent ? [] : subs.filter((s) => s.v > 0),   // 圆环子弧（仅净资产 >= 0 时切割）
       legendSubs: subs.filter((s) => Math.abs(s.v) > 0),    // 图例：负债恒展示，净资产为负也展示
     };
   };
-  if (dom > 0 || domL > 0) regionSegs.push(regionSeg('境内', dom, domL, domNet, 'var(--primary)'));
-  if (ovs > 0 || ovsL > 0) regionSegs.push(regionSeg('境外', ovs, ovsL, ovsNet, 'rgb(var(--cat-overseas))'));
+  if (dom > 0 || domL > 0) regionSegs.push(regionSeg('境内', dom, domL, domNet, 'var(--primary)', 'var(--tint)'));
+  if (ovs > 0 || ovsL > 0) regionSegs.push(regionSeg('境外', ovs, ovsL, ovsNet, 'rgb(var(--cat-overseas))', 'var(--cat-overseas)'));
   const regTop = regionSegs.slice().sort((a, b) => b.v - a.v)[0];
   const cardNetRegion =
-    `<div class="pano-sum has-donut">` +
-      `<div class="ps-head">净资产 · 境内/境外</div>` +
+    `<div class="pano-sum has-donut" style="--accent-rgb:${regTop ? regTop.rgb : 'var(--tint)'}">` +
+      `<div class="ps-head">${psHeadIcon('net')}净资产 · 境内/境外</div>` +
       `<div class="pano-body">` +
         `<div class="donut-wrap">${donutSVG(regionSegs, { size: 150, center: '¥' + fmtShort(net), sub: regTop && total > 0 ? regTop.name + ' ' + (regTop.v / base * 100).toFixed(0) + '%' : '' })}</div>` +
         `<div class="comp-legend">${legend(regionSegs)}</div>` +
@@ -4186,10 +4199,10 @@ function renderAssetSummary() {
     `</div>`;
   // 卡片二：资产分布（权益+理财+现金=总资产；圆环同总市值卡样式）
   const cardDist = donutCard('资产分布', [
-    { name: '权益', v: eqMV, c: 'rgb(var(--cat-equity))' },
-    { name: '理财', v: wTotal, c: 'rgb(var(--cat-wealth))' },
-    { name: '现金', v: cTotal, c: 'rgb(var(--cat-cash))' },
-  ]);
+    { name: '权益', v: eqMV, c: 'rgb(var(--cat-equity))', rgb: 'var(--cat-equity)' },
+    { name: '理财', v: wTotal, c: 'rgb(var(--cat-wealth))', rgb: 'var(--cat-wealth)' },
+    { name: '现金', v: cTotal, c: 'rgb(var(--cat-cash))', rgb: 'var(--cat-cash)' },
+  ], 'dist');
   $('#assetSummaryBody').innerHTML = `<div class="pano-summary">${cardNetRegion}${cardDist}</div>`;
 }
 
@@ -4388,7 +4401,7 @@ function renderWealth(body) {
     </div>` : '';
   let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="assetSnapBtn" title="更新理财持仓" aria-label="更新理财持仓">${actIcon('snapshot')}</button><button class="btn icon-btn asset-add" id="addWealthBtn" title="添加理财" aria-label="添加理财">${actIcon('plus')}</button>${toggleHtml}</div></div>`;
   if (!w.length) html += `<div class="empty-block"><p class="empty">还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn icon-btn asset-add-inline" data-empty-add="wealth" type="button" title="添加第一笔理财" aria-label="添加第一笔理财">${actIcon('plus')}</button></div>`;
-  else if (wealthView === 'table') html += renderWealthTable(w);
+  else if (wealthView === 'table' && window.innerWidth >= 640) html += renderWealthTable(w);
   else {
     html += `<div class="asset-list wealth-list">`;
     w.forEach((p, i) => {
@@ -4724,13 +4737,9 @@ document.querySelectorAll('#cashTabs .adj-tab').forEach((x) => x.onclick = async
   const t = x.dataset.tab;
   if (t === cashModalTab) return;
   if (t === 'liability') {
-    // 新增负债：所属账户不再提供下拉，锁定为子账户面板当前选中的父账户（只读展示）
-    $('#lb_source_fix_row').hidden = false;
-    $('#lb_source_sel_row').hidden = true;
-    const cur = $('#c_source').value;
-    const src = assetSources.find((s) => String(s.id) === String(cur));
-    $('#lb_source_fix').value = src ? src.name : '—';
+    // 新增负债：所属账户锁定为子账户面板当前选中的父账户（隐藏字段，不在弹框展示）
     resetLiabPanel();
+    $('#lb_source').value = $('#c_source').value || (assetSources[0] ? assetSources[0].id : 0);
   } else {
     resetCashPanel();
   }
@@ -5100,24 +5109,15 @@ async function loadWealthAudit() {
 async function openLiabilityModal(id, presetSourceId) {
   await loadSourcesCache();
   let l = null;
+  let srcId = 0;
   if (id) {
-    // 编辑负债：先取数据，再锁定所属账户（禁止改所属账户，与子账户编辑一致）
+    // 编辑负债：账户由负债自身 source_id 决定，弹框不展示、不可改（与编辑子账户一致）
     const r = await api('/api/asset/liabilities');
     if (r.ok) { const d = await r.json(); l = (d.liabilities || []).find((x) => x.id === id); }
-    const sel = $('#lb_source');
-    sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加账户）</option>';
-    sel.value = l ? String(l.source_id) : (assetSources[0] ? String(assetSources[0].id) : '');
-    sel.disabled = true;
-    $('#lb_source_sel_row').hidden = false;
-    $('#lb_source_fix_row').hidden = true;
+    srcId = l ? l.source_id : (assetSources[0] ? assetSources[0].id : 0);
   } else {
-    // 新增负债：锁定入口父账户（与子账户面板一致，只读展示）
-    $('#lb_source').disabled = false;
-    $('#lb_source_sel_row').hidden = true;
-    $('#lb_source_fix_row').hidden = false;
-    const cur = presetSourceId || $('#c_source').value;
-    const src = assetSources.find((s) => String(s.id) === String(cur));
-    $('#lb_source_fix').value = src ? src.name : '—';
+    // 新增负债：账户锁定为入口父账户（与子账户面板一致，无下拉）
+    srcId = presetSourceId || $('#c_source').value || (assetSources[0] ? assetSources[0].id : 0);
   }
   cashModalId = 0; // 负债模式不走现金编辑分支
   liabModalId = id || 0;
@@ -5126,7 +5126,7 @@ async function openLiabilityModal(id, presetSourceId) {
   $('#lb_id').value = l ? l.id : '';
   $('#lb_name').value = l ? l.name : '';
   $('#lb_type').value = l ? (l.type || '') : '';
-  $('#lb_source').value = l ? l.source_id : (presetSourceId || (assetSources[0] ? assetSources[0].id : ''));
+  $('#lb_source').value = srcId;
   $('#lb_amount').value = l ? l.amount : '';
   $('#lb_currency').value = l ? (l.currency || 'rmb') : 'rmb';
   $('#lb_rate').value = l ? (l.rate != null ? l.rate : '') : '';
@@ -5140,8 +5140,8 @@ async function openLiabilityModal(id, presetSourceId) {
 // 负债表单提交（原独立负债弹框逻辑，并入 cashForm）
 async function submitLiabilityForm() {
   const id = liabModalId;
-  // 新增：所属账户锁定为子账户面板当前选中的父账户；编辑：读下拉选择
-  const srcId = id ? (Number($('#lb_source').value) || 0) : (Number($('#c_source').value) || 0);
+  // 所属账户由弹框隐藏字段 lb_source 提供（新增=入口父账户，编辑=负债自身 source_id）
+  const srcId = Number($('#lb_source').value) || 0;
   const payload = {
     name: $('#lb_name').value.trim(), type: $('#lb_type').value.trim(), source_id: srcId,
     amount: Number($('#lb_amount').value || 0), rate: Number($('#lb_rate').value || 0),
