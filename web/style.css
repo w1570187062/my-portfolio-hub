@@ -1447,7 +1447,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   padding: 14px 16px;
   cursor: pointer;
   background: var(--bg-card);
-  transition: all .2s cubic-bezier(.32,.72,0,1);
+  transition: border-color .2s, background-color .2s cubic-bezier(.32,.72,0,1);
 }
 .ai-history-item:hover {
   border-color: var(--border-strong);
@@ -1481,7 +1481,7 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
   padding: 6px 12px;
   border-radius: var(--r-sm);
   background: var(--primary-soft);
-  transition: all .2s cubic-bezier(.32,.72,0,1);
+  transition: background-color .2s cubic-bezier(.32,.72,0,1);
 }
 .pie-back:hover { background: rgba(var(--tint), .16); }
 .pie-hint { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
@@ -2033,7 +2033,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   box-sizing: border-box;
   overflow: hidden;
   background: rgba(255, 255, 255, .03);
-  transition: all .15s cubic-bezier(.32,.72,0,1);
+  transition: background-color .15s, border-color .15s, box-shadow .15s cubic-bezier(.32,.72,0,1);
 }
 .cal-cell.cal-today {
   outline: 2px solid var(--primary);
@@ -2371,7 +2371,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   padding: 16px 18px;
   background: var(--bg-card);
   backdrop-filter: blur(var(--blur)) saturate(var(--sat));
-  transition: all .2s cubic-bezier(.32,.72,0,1);
+  transition: border-color .2s, box-shadow .2s cubic-bezier(.32,.72,0,1);
   overflow: hidden;
 }
 .asset-card:hover {
@@ -2839,17 +2839,17 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .kl-label .kl-title { color: var(--text-muted); }
 /* 蜡烛图/折线图切换按钮 + 缩放工具条（图表上方独立一行右对齐，不再与蜡烛重叠） */
 .kl-zoombar { position: static; margin-left: auto; display: flex; align-items: center; gap: 4px; pointer-events: auto; }
-.kl-zoom { width: 20px; height: 20px; padding: 0; line-height: 18px; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: 14px; cursor: pointer; opacity: .85; transition: var(--btn-transition, all .15s cubic-bezier(.32,.72,0,1)); }
+.kl-zoom { width: 20px; height: 20px; padding: 0; line-height: 18px; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: 14px; cursor: pointer; opacity: .85; transition: var(--btn-transition, background-color .15s, color .15s, border-color .15s, box-shadow .15s cubic-bezier(.32,.72,0,1)); }
 .kl-zoom:hover:not(:disabled) { opacity: 1; color: var(--btn-primary); border-color: var(--btn-primary); }
 .kl-zoom:disabled { opacity: .3; cursor: default; }
 .kl-zoom-lv { font-size: 10px; color: var(--text-muted); min-width: 16px; text-align: center; font-variant-numeric: tabular-nums; }
-.kl-toggle { position: static; z-index: 3; pointer-events: auto; font-size: 10px; line-height: 1; padding: 3px 9px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); cursor: pointer; opacity: .95; transition: var(--btn-transition, all .15s cubic-bezier(.32,.72,0,1)); }
+.kl-toggle { position: static; z-index: 3; pointer-events: auto; font-size: 10px; line-height: 1; padding: 3px 9px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); cursor: pointer; opacity: .95; transition: var(--btn-transition, background-color .15s, color .15s, border-color .15s, box-shadow .15s cubic-bezier(.32,.72,0,1)); }
 .kl-toggle:hover { color: var(--btn-primary); border-color: var(--btn-primary); }
 .kl-close-line { display: none; }
 .kline-mini.mode-line .kl-wick, .kline-mini.mode-line .kl-body { display: none; }
 .kline-mini.mode-line .kl-close-line { display: block; }
 /* 左右翻页箭头（按日期区间循环切换60根窗口）+ 窗口日期范围；top 偏移 = 上方标签行高度的一半，保持对准蜡烛图中心 */
-.kl-arrow { position: absolute; top: calc(50% + 11px); transform: translateY(-50%); z-index: 3; pointer-events: auto; width: 22px; height: 22px; padding: 0; line-height: 20px; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: 13px; cursor: pointer; opacity: .85; transition: var(--btn-transition, all .15s cubic-bezier(.32,.72,0,1)); }
+.kl-arrow { position: absolute; top: calc(50% + 11px); transform: translateY(-50%); z-index: 3; pointer-events: auto; width: 22px; height: 22px; padding: 0; line-height: 20px; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: 13px; cursor: pointer; opacity: .85; transition: var(--btn-transition, background-color .15s, color .15s, border-color .15s, box-shadow .15s cubic-bezier(.32,.72,0,1)); }
 .kl-arrow:hover { opacity: 1; color: var(--btn-primary); border-color: var(--btn-primary); }
 .kl-arrow.kl-prev { left: 5px; }
 .kl-arrow.kl-next { right: 5px; }
@@ -2864,6 +2864,11 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .klwrap .kc.sel .kl-body { stroke: #fff; stroke-width: 1; }
 /* 迷你K线：神奇九转数字标号（按方向着色，第9根放大加粗；不干扰悬停/点击） */
 .klwrap .kl-tdmark { pointer-events: none; }
+/* 蜡烛/九转涨跌色跟随全局 token（红涨绿跌，随主题切换）；SVG presentation attribute 不解析 var()，改用 class 着色 */
+.kl-up { stroke: var(--up); fill: var(--up); }
+.kl-down { stroke: var(--down); fill: var(--down); }
+.kl-td-up { fill: var(--up); }
+.kl-td-down { fill: var(--down); }
 .kline-mini-tip {
   position: absolute; z-index: 30; pointer-events: none;
   transform: translate(-50%, -130%);
@@ -2940,7 +2945,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 /* ===== 技术分析弹框：标签切换（仿 Panwatch 个股详情 概览/建议/报告 按钮） ===== */
 /* 标签栏 sticky 置顶，随内容滚动但始终可见；横向留白与下方面板对齐 */
 .ana-tabs { position: sticky; top: 0; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 0 12px; margin: -4px 0 0; background: var(--bg-card-solid); border-bottom: 1px solid var(--border); }
-.ana-tab-btn { font-size: 11px; padding: 5px 12px; border: none; border-radius: var(--r-xs); cursor: pointer; background: var(--primary-soft); color: var(--text-muted); transition: all .15s cubic-bezier(.32,.72,0,1); font-family: inherit; line-height: 1.4; }
+.ana-tab-btn { font-size: 11px; padding: 5px 12px; border: none; border-radius: var(--r-xs); cursor: pointer; background: var(--primary-soft); color: var(--text-muted); transition: background-color .15s, color .15s cubic-bezier(.32,.72,0,1); font-family: inherit; line-height: 1.4; }
 .ana-tab-btn:hover { background: var(--bg-hover); color: var(--text); }
 .ana-tab-btn.active { background: var(--primary); color: var(--on-primary); }
 .ana-tab-btn.active:hover { background: var(--primary-hover); }

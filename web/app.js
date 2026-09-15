@@ -614,12 +614,12 @@ function renderHoldingsBySource(hs) {
   box.innerHTML = html;
   // 绑定每组内行事件
   box.querySelectorAll('.holdings-group').forEach((gEl) => {
-    gEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 编辑持仓', b.dataset.edit); editHolding(b.dataset.edit); });
-    gEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 删除持仓', b.dataset.del); delHolding(b.dataset.del); });
-    gEl.querySelectorAll('[data-adjust]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 加减仓', b.dataset.adjust); openAdjust(b.dataset.adjust); });
-    gEl.querySelectorAll('[data-hist]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 历史持仓', b.dataset.hist); openHoldingHistory(b.dataset.hist); });
+    gEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); editHolding(b.dataset.edit); });
+    gEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); delHolding(b.dataset.del); });
+    gEl.querySelectorAll('[data-adjust]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openAdjust(b.dataset.adjust); });
+    gEl.querySelectorAll('[data-hist]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openHoldingHistory(b.dataset.hist); });
     gEl.querySelectorAll('[data-fail]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); });
-    gEl.querySelectorAll('[data-ana]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); console.log('[click] 技术分析', b.dataset.ana); openAnalysis(b.dataset.ana); });
+    gEl.querySelectorAll('[data-ana]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openAnalysis(b.dataset.ana); });
     gEl.querySelectorAll('[data-copy]').forEach((el) => el.onclick = (e) => {
       e.stopPropagation();
       const txt = el.dataset.copy;
@@ -1036,10 +1036,10 @@ function renderRows(hs) {
      <td class="row-actions">${actBtn('adjust', `data-adjust="${h.id}"`, '加减仓')}${actBtn('edit', `data-edit="${h.id}"`, '编辑')}${actBtn('hist', `data-hist="${h.id}"`, '历史')}${actBtn('del', `data-del="${h.id}"`, '删除', { danger: true })}</td>`;
     tb.appendChild(tr);
   });
-  tb.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { console.log('[click] 编辑持仓', b.dataset.edit); editHolding(b.dataset.edit); }));
-  tb.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => { console.log('[click] 删除持仓', b.dataset.del); delHolding(b.dataset.del); }));
-  tb.querySelectorAll('[data-adjust]').forEach((b) => (b.onclick = () => { console.log('[click] 加减仓', b.dataset.adjust); openAdjust(b.dataset.adjust); }));
-  tb.querySelectorAll('[data-hist]').forEach((b) => (b.onclick = () => { console.log('[click] 历史持仓', b.dataset.hist); openHoldingHistory(b.dataset.hist); }));
+  tb.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { editHolding(b.dataset.edit); }));
+  tb.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => { delHolding(b.dataset.del); }));
+  tb.querySelectorAll('[data-adjust]').forEach((b) => (b.onclick = () => { openAdjust(b.dataset.adjust); }));
+  tb.querySelectorAll('[data-hist]').forEach((b) => (b.onclick = () => { openHoldingHistory(b.dataset.hist); }));
   tb.querySelectorAll('[data-fail]').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); }));
   renderPager(total, totalPages);
 }
@@ -1742,7 +1742,7 @@ let pieTargetSel = '#chartBody';
 function drawPie(segs, total, title, opts) {
   opts = opts || {};
   $('#chartTitle').textContent = title;
-  if (total <= 0 || segs.length === 0) { document.querySelector(pieTargetSel).innerHTML = '<p style="color:#8a8f99">暂无数据</p>'; if (pieTargetSel === '#chartBody') openChart(); return; }
+  if (total <= 0 || segs.length === 0) { document.querySelector(pieTargetSel).innerHTML = '<p style="color:var(--text-muted)">暂无数据</p>'; if (pieTargetSel === '#chartBody') openChart(); return; }
   const cx = 110, cy = 110, r = 90;
   let paths;
   if (segs.length === 1) {
@@ -1849,7 +1849,7 @@ function showItemDetail(key, label) {
     rows.push(['金额 (CNY)', '¥' + fmt(it.value)]);
   }
   const back = `<div class="pie-back" data-back="1">← 返回${key}明细</div>`;
-  const body = rows.map(([k, v, c]) => `<div style="display:flex;justify-content:space-between;gap:16px;padding:9px 4px;border-bottom:1px solid rgba(0,0,0,.06)"><span style="color:#8a8f99">${k}</span><span style="font-weight:600${c ? ' class="' + c + '"' : ''}">${v}</span></div>`).join('');
+  const body = rows.map(([k, v, c]) => `<div style="display:flex;justify-content:space-between;gap:16px;padding:9px 4px;border-bottom:1px solid rgba(0,0,0,.06)"><span style="color:var(--text-muted)">${k}</span><span style="font-weight:600${c ? ' class="' + c + '"' : ''}">${v}</span></div>`).join('');
   document.querySelector(pieTargetSel).innerHTML = back + `<div style="max-width:440px;margin:14px auto 0">${body}</div>`;
   const b = document.querySelector(pieTargetSel).querySelector('[data-back]');
   if (b) b.onclick = () => showPieDrill(key);
@@ -2715,7 +2715,7 @@ function openCalDay(date) {
   const rec = calData[date];
   $('#calModalDate').textContent = date + ' 盈亏明细';
   if (!rec) {
-    $('#calModalBody').innerHTML = '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px"><p style="color:#8a8f99;margin:0">当日无快照数据。</p>' + CAL_NAV_HTML + '</div>';
+    $('#calModalBody').innerHTML = '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px"><p style="color:var(--text-muted);margin:0">当日无快照数据。</p>' + CAL_NAV_HTML + '</div>';
     $('#calModal').hidden = false;
     return;
   }
@@ -2735,7 +2735,7 @@ function openCalDay(date) {
         }).join('') +
         '</tbody></table>';
       syms.forEach((s) => { const c = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl); equityCNY += c; });
-    } else rows = '<p style="color:#8a8f99">无个股明细。</p>';
+    } else rows = '<p style="color:var(--text-muted)">无个股明细。</p>';
     // 理财当日收益（已合并进 total_cny）
     const wts = det.by_wealth || [];
     if (wts.length) {
@@ -2864,7 +2864,7 @@ async function loadAIHistory() {
     const list = d.history || [];
     const box = $('#aiHistoryList');
     if (!list.length) {
-      box.innerHTML = '<p style="color:#8a8f99">暂无历史记录。生成 AI 总结后会自动保存。</p>';
+      box.innerHTML = '<p style="color:var(--text-muted)">暂无历史记录。生成 AI 总结后会自动保存。</p>';
       return;
     }
     box.innerHTML = list.map((it) => `
@@ -3277,7 +3277,7 @@ async function openHoldingHistory(id) {
   $('#histModal').hidden = false;
   switchHistTab('table');
   $('#histTabAudit').hidden = true; // 审计记录仅理财快照有，持仓历史隐藏该 tab
-  $('#histTable').innerHTML = '<p style="color:#8a8f99;padding:8px 2px">加载中…</p>';
+  $('#histTable').innerHTML = '<p style="color:var(--text-muted);padding:8px 2px">加载中…</p>';
   $('#histChartBody').innerHTML = '';
   const r = await api('/api/holdings/' + id + '/pnl-history');
   if (!r.ok) { $('#histTable').innerHTML = '<p style="color:var(--danger)">加载失败 (HTTP ' + r.status + ')</p>'; return; }
@@ -3306,7 +3306,7 @@ function switchHistTab(which) {
 function renderHistTable(d, cur) {
   const s = (d.series || []).slice().reverse(); // 从新到旧展示（曲线仍用原升序）
   if (s.length === 0) {
-    $('#histTable').innerHTML = '<p style="color:#8a8f99;line-height:1.6;padding:8px 2px">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；从记录之日起每个交易日生成一个数据点。</p>';
+    $('#histTable').innerHTML = '<p style="color:var(--text-muted);line-height:1.6;padding:8px 2px">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；从记录之日起每个交易日生成一个数据点。</p>';
     return;
   }
   const rows = s.map((x, i) => {
@@ -3329,7 +3329,7 @@ function renderHistTable(d, cur) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div style="color:#8a8f99;font-size:12px;margin-top:6px">金额单位 ${cur}（USD 持仓已按汇率折算人民币口径，红涨绿跌）</div>`;
+    <div style="color:var(--text-muted);font-size:12px;margin-top:6px">金额单位 ${cur}（USD 持仓已按汇率折算人民币口径，红涨绿跌）</div>`;
 }
 
 // 复用全局盈亏走势的 SVG 双轴风格：当日盈亏柱状（左轴，红涨绿跌）+ 累计盈亏折线（右轴）
@@ -5567,7 +5567,7 @@ function klRenderWindow() {
   const pad = (hi - lo) * 0.08; hi += pad; lo -= pad;
   const W = 600, H = 168, step = W / n, cw = Math.max(1.5, step * 0.62);
   const y = (v) => H - ((v - lo) / (hi - lo)) * H;
-  const up = '#ff4757', down = '#2ed573';
+  const up = 'kl-up', down = 'kl-down';
   // 压力位 / 支撑位：可视区间内极值（根据已有日K线数据组装，不新增条目）
   let res = -Infinity, sup = Infinity;
   data.forEach((b) => { if (b.High > res) res = b.High; if (b.Low < sup) sup = b.Low; });
@@ -5589,17 +5589,17 @@ function klRenderWindow() {
     let mark = '';
     if (td.length) {
       const t = td[0]; // 每根K线最多一个九转标号
-      const numColor = t.type === 'downside' ? '#ff4757' : '#2ed573'; // 下跌九转红，上涨九转绿
+      const numColor = t.type === 'downside' ? 'kl-td-down' : 'kl-td-up'; // 下跌九转红，上涨九转绿
       const gap = 6;
       const numY = Math.max(12, y(b.High) - gap);
       const fontSize = t.seq === 9 ? 12 : 10; // 第9根放大
       const fontWeight = t.seq === 9 ? 'bold' : 'bold';
-      mark = '<text class="kl-tdmark" x="' + x.toFixed(2) + '" y="' + numY.toFixed(2) + '" fill="' + numColor + '" font-size="' + fontSize + '" font-weight="' + fontWeight + '" text-anchor="middle" dominant-baseline="bottom">' + t.seq + '</text>';
+      mark = '<text class="kl-tdmark ' + numColor + '" x="' + x.toFixed(2) + '" y="' + numY.toFixed(2) + '" font-size="' + fontSize + '" font-weight="' + fontWeight + '" text-anchor="middle" dominant-baseline="bottom">' + t.seq + '</text>';
     }
     const sigAttr = sigMap[b.Date] ? ' data-sig="' + sigMap[b.Date] + '"' : '';
     body += '<g class="kc" data-d="' + esc(b.Date) + '" data-c="' + b.Close.toFixed(2) + '" data-pc="' + (i > 0 ? data[i - 1].Close.toFixed(2) : '') + '" data-dir="' + (isUp ? 'up' : 'down') + '" data-px="' + px + '" data-py="' + py + '"' + tdAttr + sigAttr + '>';
-    body += '<line class="kl-wick" x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke="' + col + '" stroke-width="1"/>';
-    body += '<rect class="kl-body" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '" fill="' + col + '"/>';
+    body += '<line class="kl-wick ' + col + '" x1="' + x.toFixed(2) + '" y1="' + y(b.High).toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + y(b.Low).toFixed(2) + '" stroke-width="1"/>';
+    body += '<rect class="kl-body ' + col + '" x="' + (x - cw / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + hgt.toFixed(2) + '"/>';
     body += '<rect class="kl-hit" x="' + (i * step).toFixed(2) + '" y="0" width="' + step.toFixed(2) + '" height="' + H + '" fill="rgba(0,0,0,0)"/>';
     body += mark;
     body += '</g>';

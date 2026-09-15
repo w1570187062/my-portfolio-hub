@@ -10,7 +10,7 @@
   /* 加减仓弹窗样式统一在 style.css 管理，避免内联覆盖导致 ± 高度/对齐不生效 */
   .adj-row { display:flex; gap:10px; margin-bottom:10px; align-items:flex-start; }
   .adj-preview { display:none; margin:6px 0 10px; padding:10px 12px; border-radius:8px; font-size:13px; line-height:1.6; color:var(--text,#1f2329); }
-  .adj-preview .warn { color:#e5484d; }
+  .adj-preview .warn { color:var(--danger); }
   .adj-preview b { color:var(--primary,#d9a52b); }
   .adj-history { margin-top:14px; border-top:1px solid var(--border,#e5e7eb); padding-top:10px; }
   .adj-history h3 { font-size:13px; color:var(--text-muted,#6b7280); margin:0 0 8px; font-weight:600; }
@@ -22,8 +22,8 @@
   /* .adj-tag / .flow-tag 已统一收拢到 style.css（此处内联块加载晚于 style.css，重复定义会反向覆盖） */
   .adj-meta { color:var(--text-muted,#9aa0a6); font-size:11px; }
   .adj-rl { float:right; font-weight:600; }
-  .adj-rl.up { color:#e5484d; }
-  .adj-rl.down { color:#16a34a; }
+  .adj-rl.up { color:var(--up); }
+  .adj-rl.down { color:var(--down); }
   .adj-detail { margin-top:4px; color:var(--text-muted,#6b7280); word-break:break-all; }
   .adj-calc { padding-top:4px; }
   /* 弹框内密度收紧：空错误不占空间、标签间距减小、确认按钮上下更紧凑 */
@@ -35,7 +35,7 @@
   .adj-tab { flex:1; padding:7px 0; border:none; background:transparent; cursor:pointer; font-size:12px; text-align:center; color:var(--text-muted,#6b7280); transition:var(--btn-transition, all .15s ease); }
   .adj-tab + .adj-tab { border-left:1px solid var(--border,#e5e7eb); }
   .adj-tab:not(.active):hover { background:var(--bg-soft,#f4f5f7); color:var(--text,#1f2329); }
-  .adj-tab.active { background:var(--btn-primary); color:#fff; font-weight:600; }
+  .adj-tab.active { background:var(--btn-primary); color:var(--on-primary); font-weight:600; }
   /* 调整弹框底部「确定」按钮上下间距收紧 */
   #adjustModal .modal-actions { margin-top:4px; padding-top:8px; padding-bottom:12px; }
   /* 面板：自身滚动；内部 form 不另起滚动，避免双重内边距 */
