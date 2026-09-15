@@ -30,6 +30,7 @@ type AnalysisResponse struct {
 	Error        string                   `json:"error,omitempty"`
 	GeneratedAt  string                   `json:"generated_at"` // 分析生成时间（本地时区）
 	Series       []market.KlineBar        `json:"series,omitempty"` // 已拉取的日K线(OHLC)，用于前端迷你K线展示
+	Valuation    *market.ValuationResult  `json:"valuation,omitempty"` // 股票 PE/PB 历史百分位（仅股票，基金/ETF 不填）
 }
 
 // signalFromUpPct maps the bullish probability to a normalized signal used by
@@ -101,6 +102,13 @@ func getAnalysis(c *gin.Context) {
 				resp.DailySignals = dailySigs
 				resp.Symbol = symForFetch
 				resp.GeneratedAt = row.GeneratedAt
+				// 估值（仅股票）：命中缓存则反序列化估值 JSON，避免重复外部取数
+				if h.Category == "stock" && row.ValuationJSON != "" && row.ValuationJSON != "{}" {
+					var v market.ValuationResult
+					if e2 := json.Unmarshal([]byte(row.ValuationJSON), &v); e2 == nil && (v.PE > 0 || len(v.Points) > 0) {
+						resp.Valuation = &v
+					}
+				}
 				// 缓存命中也回写持仓信号，使首页角标与弹框结论保持一致
 				if prob.UpPct > 0 {
 					resp.Signal = signalFromUpPct(prob.UpPct)
@@ -135,6 +143,15 @@ func getAnalysis(c *gin.Context) {
 		return
 	}
 
+	// 估值（仅股票）：A股用东财真实历史 PE_TTM/PB_MRQ；美股/港股用腾讯 PE + K线估算
+	if h.Category == "stock" {
+		if v, ve := market.GetValuationHistory(symbol, h.Market, bars); ve == nil {
+			resp.Valuation = v
+		} else {
+			log.Printf("[analysis] valuation for %s (%s) failed: %v", h.Name, symbol, ve)
+		}
+	}
+
 	ind := market.CalculateIndicators(bars)
 	resp.Indicators = ind
 	resp.Price = ind.Price
@@ -160,7 +177,13 @@ func getAnalysis(c *gin.Context) {
 		indJSON, _ := json.Marshal(ind)
 		probJSON, _ := json.Marshal(prob)
 		dailySigsJSON, _ := json.Marshal(resp.DailySignals)
-		if e := db.SaveAnalysisCache(symbol, today, string(barsJSON), string(indJSON), string(probJSON), string(dailySigsJSON), genAt); e != nil {
+		valJSON := "{}"
+		if resp.Valuation != nil {
+			if b, e := json.Marshal(resp.Valuation); e == nil {
+				valJSON = string(b)
+			}
+		}
+		if e := db.SaveAnalysisCache(symbol, today, string(barsJSON), string(indJSON), string(probJSON), string(dailySigsJSON), valJSON, genAt); e != nil {
 			log.Printf("[analysis] save cache %s %s failed: %v", symbol, today, e)
 		}
 	}()

@@ -994,12 +994,12 @@ function sparkline(data, opts) {
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="${w}" height="${h}" style="vertical-align:middle;display:block" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="2.2" fill="${stroke}"/></svg>`;
 }
 
-// 表格迷你走势单元格：线条为近20日收盘价走势，颜色跟随该持仓「总盈亏」正负（盈红/亏绿，
-// 与总盈亏列同色，不再按 20 日线首尾涨跌定色），无数据时显示占位符。
+// 表格迷你走势单元格：线条为近20日收盘价走势，颜色按首尾收盘价对比（尾>首=涨红，否则=跌绿，
+// 中国惯例涨红跌绿），无数据时显示占位符。
 function sparkCell(sym, pnl) {
   const arr = sparkCache[sym];
   if (!arr || arr.length < 2) return '<span class="spark-empty">—</span>';
-  const color = (pnl || 0) >= 0 ? 'var(--up)' : 'var(--down)';
+  const color = arr[arr.length - 1] > arr[0] ? 'var(--up)' : 'var(--down)';
   return sparkline(arr, { w: 110, h: 26, stroke: color, fill: color });
 }
 
@@ -4194,7 +4194,7 @@ function renderAssetSummary() {
       `<div class="ps-head">${psHeadIcon('net')}净资产 · 境内/境外</div>` +
       `<div class="pano-body">` +
         `<div class="donut-wrap">${donutSVG(regionSegs, { size: 150, center: '¥' + fmtShort(net), sub: regTop && total > 0 ? regTop.name + ' ' + (regTop.v / base * 100).toFixed(0) + '%' : '' })}</div>` +
-        `<div class="comp-legend">${legend(regionSegs)}</div>` +
+        `<div class="comp-legend">${legend(regionSegs) || '<div class="cl"><span class="dot" style="background:var(--tint)"></span>暂无数据<b>¥0.00</b></div>'}</div>` +
       `</div>` +
     `</div>`;
   // 卡片二：资产分布（权益+理财+现金=总资产；圆环同总市值卡样式）
@@ -4290,7 +4290,7 @@ function assetDel(type, id) {
 function renderSources(body) {
   const list = assetSources;
   let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="addFlowBtn" type="button" title="添加流水" aria-label="添加流水">${actIcon('receipt')}</button><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div></div>`;
-  if (!list.length) html += `<div class="empty-block"><p class="empty">还没有账户，先添加一个银行、证券或软件吧。</p><button class="btn icon-btn asset-add-inline" data-empty-add="source" type="button" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div>`;
+  if (!list.length) html += `<div class="empty-state"><p>还没有账户，先添加一个银行、证券或软件吧。</p><button class="btn" data-empty-add="source" type="button">➕ 添加账户</button></div>`;
   else {
     // 按类型分组：银行 / 证券 / 软件 / 平台（未知类型归银行）
     const typeOf = (s) => (s.type === 'securities' || s.type === 'software' || s.type === 'platform') ? s.type : 'bank';
@@ -4400,7 +4400,7 @@ function renderWealth(body) {
       <button class="btn vt-btn ${wealthView === 'card' ? 'active' : ''}" data-wview="card" type="button">卡片</button>
     </div>` : '';
   let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="assetSnapBtn" title="更新理财持仓" aria-label="更新理财持仓">${actIcon('snapshot')}</button><button class="btn icon-btn asset-add" id="addWealthBtn" title="添加理财" aria-label="添加理财">${actIcon('plus')}</button>${toggleHtml}</div></div>`;
-  if (!w.length) html += `<div class="empty-block"><p class="empty">还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn icon-btn asset-add-inline" data-empty-add="wealth" type="button" title="添加第一笔理财" aria-label="添加第一笔理财">${actIcon('plus')}</button></div>`;
+  if (!w.length) html += `<div class="empty-state"><p>还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn" data-empty-add="wealth" type="button">➕ 添加第一笔理财</button></div>`;
   else if (wealthView === 'table' && window.innerWidth >= 640) html += renderWealthTable(w);
   else {
     html += `<div class="asset-list wealth-list">`;
@@ -6218,8 +6218,89 @@ function bindAnalysisTabs() {
   });
 }
 
+// 估值页签（仅股票）：PE/PB 历史百分位折线 + 当前分位判定
+// 百分位折线：每个历史点相对全样本的百分位（0-100），末点≈当前分位，直观反映"贵/便宜"。
+function pepbChartSVG(pePct, pbPct, peColor, pbColor, hasPB) {
+  const w = 560, h = 200, padL = 34, padR = 10, padT = 10, padB = 18;
+  const innerW = w - padL - padR, innerH = h - padT - padB;
+  const hasPE = pePct && pePct.length >= 2, hasPBB = hasPB && pbPct && pbPct.length >= 2;
+  if (!hasPE && !hasPBB) return '<div class="analysis-err">估值历史数据不足</div>';
+  const n = hasPE ? pePct.length : pbPct.length;
+  const xAt = i => padL + (innerW * i) / (n - 1);
+  const yAt = t => padT + innerH - innerH * (t / 100); // t∈[0,100]
+  function poly(vals, color) {
+    if (!vals || vals.length < 2) return '';
+    const ptsArr = vals.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(' ');
+    const lx = xAt(vals.length - 1), ly = yAt(vals[vals.length - 1]);
+    return `<polyline points="${ptsArr}" style="stroke:${color};fill:none" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` +
+      `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.6" style="fill:${color}"/>`;
+  }
+  // 百分位参考线 0/25/50/75/100
+  let grid = '';
+  [0, 25, 50, 75, 100].forEach(g => {
+    const yy = yAt(g);
+    grid += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${w - padR}" y2="${yy.toFixed(1)}" style="stroke:var(--bg-input)" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    grid += `<text x="${padL - 4}" y="${(yy + 3).toFixed(1)}" font-size="9" text-anchor="end" style="fill:var(--muted)">${g}%</text>`;
+  });
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="PE PB 百分位历史">${grid}${hasPBB ? poly(pbPct, pbColor) : ''}${hasPE ? poly(pePct, peColor) : ''}</svg>`;
+}
+
+function pepbPanelHTML(a) {
+  const v = a.valuation;
+  if (!v) return '<div class="analysis-err">暂无估值数据</div>';
+  const peColor = 'rgb(var(--tint))';
+  const pbColor = '#0ea5e9';
+  // 每个历史点相对全样本的百分位（0-100）
+  function pctSeries(vals) {
+    const arr = vals.filter(x => Number.isFinite(x) && x > 0);
+    if (!arr.length) return [];
+    return arr.map(x => {
+      let n = 0;
+      for (const y of arr) if (y <= x) n++;
+      return n / arr.length * 100;
+    });
+  }
+  const pePct = pctSeries(v.points.map(p => p.pe));
+  const pbPct = v.pb_hist ? pctSeries(v.points.map(p => p.pb)) : [];
+  const chart = pepbChartSVG(pePct, pbPct, peColor, pbColor, v.pb_hist);
+  // 分位判定：低估(≤30)=绿、合理(30~70)=中性、高估(≥70)=红
+  function band(rank) {
+    if (rank == null) return { t: '—', c: 'neu' };
+    if (rank <= 30) return { t: '低估', c: 'down' };
+    if (rank >= 70) return { t: '高估', c: 'up' };
+    return { t: '合理', c: 'neu' };
+  }
+  const peB = band(v.pe_rank);
+  const pbB = v.pb_hist ? band(v.pb_rank) : { t: '暂缺', c: 'neu' };
+  const note = v.note ? `<div class="pepb-note">⚠ ${esc(v.note)}</div>` : '';
+  const src = v.source ? `<div class="pepb-source"><span class="pepb-source-label">数据来源</span><span class="pepb-source-text">${esc(v.source)}</span></div>` : '';
+  const rangeStr = v.points && v.points.length ? `${esc(v.points[0].date)} ~ ${esc(v.points[v.points.length - 1].date)}` : '';
+  return `<div class="pepb-wrap">
+    <div class="pepb-cards">
+      <div class="pepb-card">
+        <div class="pepb-label">市盈率 PE</div>
+        <div class="pepb-val">${v.pe ? v.pe.toFixed(2) : '—'}</div>
+        <div class="pepb-rank ${peB.c}">分位 ${v.pe_rank != null ? v.pe_rank.toFixed(0) : '—'}% · ${peB.t}</div>
+      </div>
+      <div class="pepb-card">
+        <div class="pepb-label">市净率 PB</div>
+        <div class="pepb-val">${v.pb_hist && v.pb ? v.pb.toFixed(2) : '—'}</div>
+        <div class="pepb-rank ${pbB.c}">${v.pb_hist ? ('分位 ' + (v.pb_rank != null ? v.pb_rank.toFixed(0) : '—') + '% · ' + pbB.t) : '历史数据暂缺'}</div>
+      </div>
+    </div>
+    ${note}
+    <div class="pepb-chart-title">PE / PB 历史百分位走势 <span class="pepb-range">${rangeStr}</span></div>
+    ${chart}
+    <div class="pepb-legend">
+      <span class="pl"><i style="background:${peColor}"></i>PE 百分位</span>
+      ${v.pb_hist ? `<span class="pl"><i style="background:${pbColor}"></i>PB 百分位</span>` : '<span class="pl muted">PB 暂缺（港股/美股无稳定源）</span>'}
+    </div>
+    ${src}
+  </div>`;
+}
+
 // 技术分析弹框：概览（评分+评级+K线）+ 其它选项 ana-tabs 小 tab 切换
-// 新结构：概览 / 神奇九转 / 策略信号 / 指标 / 回测
+// 新结构：概览 / 神奇九转 / 策略信号 / 指标 / 估值 / 回测
 function renderAnalysis(a) {
   const ind = a.indicators, prob = a.probability;
   let tdVisible = [], tdScore = 0, tdAllMap = {};
@@ -6237,6 +6318,7 @@ function renderAnalysis(a) {
   const tabs = [{ id: 'overview', label: '概览' }];
   if (prob) tabs.push({ id: 'strategy', label: '策略信号' });
   if (ind) tabs.push({ id: 'indicators', label: '指标' });
+  if (a.valuation) tabs.push({ id: 'pepb', label: '估值' });
   if (a.daily_signals) tabs.push({ id: 'backtest', label: '回测' });
   const active = tabs[0].id;
 
@@ -6263,6 +6345,11 @@ function renderAnalysis(a) {
   // ── 指标 ──
   if (ind) {
     html += '<div class="ana-panel" data-tab="indicators" hidden>' + indicatorsTableHTML(ind, volSig) + '</div>';
+  }
+
+  // ── 估值：PE/PB 历史百分位（仅股票，基金/ETF 不展示） ──
+  if (a.valuation) {
+    html += '<div class="ana-panel" data-tab="pepb" hidden>' + pepbPanelHTML(a) + '</div>';
   }
 
   // ── 回测：逐日信号明细（独立标签页，避免在信号面板底部过长不便浏览） ──

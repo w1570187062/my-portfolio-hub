@@ -84,15 +84,36 @@ func tencentPrefix(symbol string) string {
 	}
 }
 
+// tencentCode normalizes a symbol into the exact Tencent qt.gtimg.cn query code,
+// handling symbols that already carry a market prefix (e.g. "hk00700", "usAAPL",
+// "sh600519") as well as bare symbols (e.g. "00700" -> hk00700, "AAPL" -> usAAPL).
+// This avoids double-prefixing inputs that already start with a market code, which
+// previously broke HK valuation ("hk00700" fell through to default "sz" and produced
+// an invalid "szhk00700", so the PE fetch failed and no 估值 tab appeared).
+func tencentCode(symbol string) string {
+	if len(symbol) > 2 {
+		switch symbol[:2] {
+		case "hk":
+			return symbol // already "hk00700"
+		case "us":
+			return "us" + strings.ToUpper(symbol[2:]) // "usAAPL"
+		case "sh", "sz", "bj":
+			return symbol // already prefixed
+		}
+	}
+	prefix := tencentPrefix(symbol)
+	code := prefix + symbol
+	if prefix == "us" {
+		code = "us" + strings.ToUpper(symbol)
+	}
+	return code
+}
+
 // GetStockQuote fetches A-share / ETF / HK quotes from Tencent (qt.gtimg.cn).
 // The market prefix is derived from the symbol, so no external market code is needed.
 // Returns prices in normal units (no scaling needed).
 func GetStockQuote(symbol string) (*Quote, error) {
-	prefix := tencentPrefix(symbol)
-	code := prefix + symbol
-	if prefix == "us" {
-		code = "us" + strings.ToUpper(symbol) // Tencent US tickers are upper-case, e.g. usQQQ
-	}
+	code := tencentCode(symbol)
 	url := "https://qt.gtimg.cn/q=" + code
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0")

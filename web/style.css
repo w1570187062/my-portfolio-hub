@@ -2947,6 +2947,27 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .ana-panel { margin-top: 14px; }
 .ana-panel[hidden] { display: none; }
 
+/* 估值页签：PE/PB 历史百分位 */
+.pepb-wrap { display: flex; flex-direction: column; gap: 12px; }
+.pepb-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pepb-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; text-align: center; }
+.pepb-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.pepb-val { font-size: 24px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.pepb-rank { margin-top: 6px; font-size: 12px; font-weight: 600; }
+.pepb-rank.up { color: var(--up); }
+.pepb-rank.down { color: var(--down); }
+.pepb-rank.neu { color: var(--text-muted); }
+.pepb-note { font-size: 12px; color: var(--text-muted); background: var(--bg-card); border: 1px dashed var(--border); border-radius: var(--r-xs); padding: 7px 10px; }
+.pepb-chart-title { font-size: 13px; color: var(--text); font-weight: 600; }
+.pepb-range { font-size: 11px; color: var(--text-muted); font-weight: 400; margin-left: 6px; }
+.pepb-legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-muted); }
+.pepb-legend .pl { display: inline-flex; align-items: center; gap: 6px; }
+.pepb-legend .pl i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.pepb-legend .pl.muted { color: var(--text-muted); opacity: .8; }
+.pepb-source { display: flex; gap: 8px; align-items: baseline; margin-top: 10px; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.pepb-source-label { flex: none; font-weight: 600; color: var(--tint); background: rgba(var(--tint), .12); padding: 1px 7px; border-radius: 6px; white-space: nowrap; }
+.pepb-source-text { flex: 1; }
+
 /* 概览：评分 + 买入评级 */
 /* 概览统一框：买入评级 / 形态净评分 / 回测胜率 / 期望收益 */
 .ana-score-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 16px; margin-bottom: 16px; }

@@ -206,14 +206,47 @@ func initAnalysisCache() error {
 		indicators_json   TEXT NOT NULL DEFAULT '{}',
 		probability_json  TEXT NOT NULL DEFAULT '{}',
 		daily_signals_json TEXT NOT NULL DEFAULT '[]',
+		valuation_json    TEXT NOT NULL DEFAULT '{}',
 		generated_at      TEXT NOT NULL DEFAULT '',
 		PRIMARY KEY (symbol, date)
 	)`)
 	if err != nil {
 		return err
 	}
+	// 存量库补列（SQLite 无 ADD COLUMN IF NOT EXISTS）：查 PRAGMA 判断是否存在
+	if err := addAnalysisCacheColumn("valuation_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return err
+	}
 	// 索引：按 symbol 查最新缓存行
 	_, err = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_analysis_cache_symbol ON analysis_cache(symbol)`)
+	return err
+}
+
+// addAnalysisCacheColumn adds a column to analysis_cache if it does not already exist.
+func addAnalysisCacheColumn(col, def string) error {
+	rows, err := DB.Query(`PRAGMA table_info(analysis_cache)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	has := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dflt, pk interface{}
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == col {
+			has = true
+			break
+		}
+	}
+	if has {
+		return nil
+	}
+	_, err = DB.Exec(`ALTER TABLE analysis_cache ADD COLUMN ` + col + ` ` + def)
 	return err
 }
 
@@ -225,15 +258,16 @@ type AnalysisCacheRow struct {
 	IndicatorsJSON     string
 	ProbabilityJSON   string
 	DailySignalsJSON   string
+	ValuationJSON      string
 	GeneratedAt        string
 }
 
 // GetAnalysisCache returns the cached row for a symbol on a date, if any.
 func GetAnalysisCache(symbol, date string) (*AnalysisCacheRow, error) {
 	var r AnalysisCacheRow
-	err := DB.QueryRow(`SELECT symbol,date,bars_json,indicators_json,probability_json,daily_signals_json,generated_at
+	err := DB.QueryRow(`SELECT symbol,date,bars_json,indicators_json,probability_json,daily_signals_json,valuation_json,generated_at
 		FROM analysis_cache WHERE symbol=? AND date=?`, symbol, date).
-		Scan(&r.Symbol, &r.Date, &r.BarsJSON, &r.IndicatorsJSON, &r.ProbabilityJSON, &r.DailySignalsJSON, &r.GeneratedAt)
+		Scan(&r.Symbol, &r.Date, &r.BarsJSON, &r.IndicatorsJSON, &r.ProbabilityJSON, &r.DailySignalsJSON, &r.ValuationJSON, &r.GeneratedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -244,16 +278,17 @@ func GetAnalysisCache(symbol, date string) (*AnalysisCacheRow, error) {
 }
 
 // SaveAnalysisCache upserts a cache row. JSON strings are stored as-is.
-func SaveAnalysisCache(symbol, date, barsJSON, indicatorsJSON, probabilityJSON, dailySignalsJSON, generatedAt string) error {
-	_, err := DB.Exec(`INSERT INTO analysis_cache(symbol,date,bars_json,indicators_json,probability_json,daily_signals_json,generated_at)
-		VALUES(?,?,?,?,?,?,?)
+func SaveAnalysisCache(symbol, date, barsJSON, indicatorsJSON, probabilityJSON, dailySignalsJSON, valuationJSON, generatedAt string) error {
+	_, err := DB.Exec(`INSERT INTO analysis_cache(symbol,date,bars_json,indicators_json,probability_json,daily_signals_json,valuation_json,generated_at)
+		VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(symbol,date) DO UPDATE SET
 			bars_json=excluded.bars_json,
 			indicators_json=excluded.indicators_json,
 			probability_json=excluded.probability_json,
 			daily_signals_json=excluded.daily_signals_json,
+			valuation_json=excluded.valuation_json,
 			generated_at=excluded.generated_at`,
-		symbol, date, barsJSON, indicatorsJSON, probabilityJSON, dailySignalsJSON, generatedAt)
+		symbol, date, barsJSON, indicatorsJSON, probabilityJSON, dailySignalsJSON, valuationJSON, generatedAt)
 	return err
 }
 
