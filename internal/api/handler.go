@@ -1028,6 +1028,17 @@ func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
 		symbol = h.LinkedSymbol // 基金用关联股票做技术分析
 	}
 	sym := resolveSymbol(symbol, h.Market)
+	today := time.Now().Format("2006-01-02")
+
+	// 优先命中当日缓存：避免每次整页刷新都对每个持仓实时抓 K线（多持仓时显著拖慢）
+	if row, e := db.GetAnalysisCache(sym, today); e == nil && row != nil {
+		var prob market.ProbabilityResult
+		if e2 := json.Unmarshal([]byte(row.ProbabilityJSON), &prob); e2 == nil && prob.UpPct > 0 {
+			upPct = prob.UpPct
+			return signalFromUpPct(upPct), upPct
+		}
+	}
+
 	bars, err := market.FetchKline(sym)
 	if err != nil || len(bars) < 30 {
 		log.Printf("[autoAnalysis] %s(%s) 跳过：K线获取失败或不足30根", h.Name, symbol)
@@ -1039,6 +1050,14 @@ func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
 		return "", 0
 	}
 	upPct = prob.UpPct
+	// 回写缓存：供弹框与后续刷新复用（daily_signals 顺带计算；估值为弹框按需补齐）
+	go func() {
+		barsJSON, _ := json.Marshal(bars)
+		indJSON, _ := json.Marshal(ind)
+		probJSON, _ := json.Marshal(prob)
+		dailySigsJSON, _ := json.Marshal(market.ComputeDailySignals(bars))
+		_ = db.SaveAnalysisCache(sym, today, string(barsJSON), string(indJSON), string(probJSON), string(dailySigsJSON), "{}", time.Now().Format("2006-01-02 15:04:05"))
+	}()
 	return signalFromUpPct(upPct), upPct
 }
 

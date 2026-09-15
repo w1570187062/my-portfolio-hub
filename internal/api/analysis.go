@@ -102,11 +102,15 @@ func getAnalysis(c *gin.Context) {
 				resp.DailySignals = dailySigs
 				resp.Symbol = symForFetch
 				resp.GeneratedAt = row.GeneratedAt
-				// 估值（仅股票）：命中缓存则反序列化估值 JSON，避免重复外部取数
-				if h.Category == "stock" && row.ValuationJSON != "" && row.ValuationJSON != "{}" {
-					var v market.ValuationResult
-					if e2 := json.Unmarshal([]byte(row.ValuationJSON), &v); e2 == nil && (v.PE > 0 || len(v.Points) > 0) {
-						resp.Valuation = &v
+				// 估值（仅股票）：命中缓存则反序列化估值 JSON；若由概览预热的缓存未带估值，按需补抓一次避免页签退化
+				if h.Category == "stock" {
+					if row.ValuationJSON != "" && row.ValuationJSON != "{}" {
+						var v market.ValuationResult
+						if e2 := json.Unmarshal([]byte(row.ValuationJSON), &v); e2 == nil && (v.PE > 0 || len(v.Points) > 0) {
+							resp.Valuation = &v
+						}
+					} else if v, ve := market.GetValuationHistory(symForFetch, h.Market, bars); ve == nil {
+						resp.Valuation = v
 					}
 				}
 				// 缓存命中也回写持仓信号，使首页角标与弹框结论保持一致

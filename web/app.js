@@ -5568,6 +5568,7 @@ function klRenderWindow() {
   const W = 600, H = 168, step = W / n, cw = Math.max(1.5, step * 0.62);
   const y = (v) => H - ((v - lo) / (hi - lo)) * H;
   const up = 'kl-up', down = 'kl-down';
+  const upFill = 'var(--up)', downFill = 'var(--down)';
   // 压力位 / 支撑位：可视区间内极值（根据已有日K线数据组装，不新增条目）
   let res = -Infinity, sup = Infinity;
   data.forEach((b) => { if (b.High > res) res = b.High; if (b.Low < sup) sup = b.Low; });
@@ -5644,7 +5645,7 @@ function klRenderWindow() {
   hist.forEach((v, i) => {
     const h = Math.max(0.8, Math.abs(v) / mAbs * (Hm / 2 - 2));
     const x = i * step + step / 2;
-    mBody += '<rect x="' + (x - cw / 2).toFixed(2) + '" y="' + (zeroY - h).toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + h.toFixed(2) + '" fill="' + (v >= 0 ? up : down) + '" opacity="0.85"/>';
+    mBody += '<rect x="' + (x - cw / 2).toFixed(2) + '" y="' + (zeroY - h).toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + h.toFixed(2) + '" style="fill:' + (v >= 0 ? upFill : downFill) + '" opacity="0.85"/>';
   });
 
   // 成交量(VOL)：与 MACD 共享同 x 轴的独立小SVG，柱色随当日涨跌（红涨绿跌），附5日均量线
@@ -5656,9 +5657,9 @@ function klRenderWindow() {
   let vBody = '';
   vols.forEach((v, i) => {
     const x = i * step + step / 2;
-    const col = data[i].Close >= data[i].Open ? up : down;
+    const col = data[i].Close >= data[i].Open ? upFill : downFill;
     const y0 = vy(v);
-    vBody += '<rect x="' + (x - cw / 2).toFixed(2) + '" y="' + y0.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + (Hv - y0).toFixed(2) + '" fill="' + col + '" opacity="0.7"/>';
+    vBody += '<rect x="' + (x - cw / 2).toFixed(2) + '" y="' + y0.toFixed(2) + '" width="' + cw.toFixed(2) + '" height="' + (Hv - y0).toFixed(2) + '" style="fill:' + col + '" opacity="0.7"/>';
   });
   let vPts = '';
   vols.forEach((_, i) => {
