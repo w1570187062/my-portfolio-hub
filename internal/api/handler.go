@@ -189,6 +189,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/asset/liabilities/:id", updateLiability)
 		g.DELETE("/asset/liabilities/:id", deleteLiability)
 		g.GET("/asset/liabilities/:id/flows", liabilityFlows)
+		g.GET("/asset/flows", listFlows)
 		g.GET("/asset/consumptions", listConsumptionsH)
 		g.POST("/asset/consumptions", createConsumption)
 		g.PUT("/asset/consumptions/:id", updateConsumption)
@@ -1267,7 +1268,68 @@ func doSnapshot(uid int64) error {
 	}
 	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
-	return db.SavePnlDaily(today, round2(totalCNY), round2(totalUSD), cnyRate, detail, uid)
+	// 真实日收益率分母：当日净资产基数 = 持仓市值 + 理财市值 + 现金 − 负债（折算 CNY）。
+	// 盈亏日历/走势切换"盈亏率"时用 当日盈亏 / base_cny 计算，而非对金额做归一化。
+	baseCNY := computeEquityBaseCNY(uid, hs, cnyRate, hkdRate, hkdToCny)
+	return db.SavePnlDaily(today, round2(totalCNY), round2(totalUSD), cnyRate, round2(baseCNY), detail, uid)
+}
+
+// computeEquityBaseCNY 计算该用户当日净资产基数（CNY），用于真实日收益率：
+// 当日收益率 = 当日盈亏(含理财) / 净资产基数。基数 = 持仓市值 + 理财市值 + 现金 − 负债（均折算 CNY）。
+func computeEquityBaseCNY(uid int64, hs []db.Holding, cnyRate, hkdRate, hkdToCny float64) float64 {
+	var base float64
+	for _, h := range hs {
+		mv := h.CurrentPrice * h.Quantity
+		switch strings.ToUpper(h.Currency) {
+		case "USD":
+			mv *= cnyRate
+		case "HKD":
+			mv *= hkdToCny
+		}
+		base += mv
+	}
+	if wps, e := db.ListWealth(uid); e == nil {
+		for _, w := range wps {
+			if _, amt, found, _ := db.GetWealthLatest(w.ID); found {
+				base += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
+			}
+		}
+	}
+	if cashs, e := db.ListCash(uid); e == nil {
+		for _, cc := range cashs {
+			base += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
+		}
+	}
+	if libs, e := db.ListLiabilities(uid); e == nil {
+		for _, l := range libs {
+			base -= fxToCNY(l.Amount, l.Currency, cnyRate, hkdRate)
+		}
+	}
+	return base
+}
+
+// BackfillPnlBaseCNY 为历史 pnl_daily 行补齐 base_cny（新增列前产生的历史行默认 0，
+// 导致"盈亏率"视图全 0）。用"当前净资产基数"近似补全：真实日收益率 = 当日盈亏 / 净资产基数；
+// 历史行无当时净值，以当前基数代填即可展示，后续每日快照会写入当时真实基数。幂等：仅更新 0 值行。
+func BackfillPnlBaseCNY() {
+	for _, u := range allUsers() {
+		hs, err := db.List(u.ID)
+		if err != nil {
+			continue
+		}
+		cnyRate, hkdRate, _ := market.GetFXRates()
+		hkdToCny := 1.0
+		if hkdRate > 0 {
+			hkdToCny = cnyRate / hkdRate
+		}
+		base := computeEquityBaseCNY(u.ID, hs, cnyRate, hkdRate, hkdToCny)
+		if base <= 0 {
+			continue
+		}
+		if err := db.BackfillPnlBase(u.ID, round2(base)); err != nil {
+			log.Printf("[backfill] base_cny 补齐失败(uid=%d): %v", u.ID, err)
+		}
+	}
 }
 
 // DoSnapshot is the exported entry for the daily ticker / startup backfill.
@@ -1507,7 +1569,9 @@ func finalizePnlFromPrices(date string, uid int64) error {
 	}
 	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
-	return db.SavePnlDaily(date, totalCNY, totalUSD, cnyRate, detail, uid)
+	// 同 doSnapshot：补齐当日净资产基数，保证"真实日收益率"口径一致
+	baseCNY := computeEquityBaseCNY(uid, hs, cnyRate, hkdRate, hkdToCny)
+	return db.SavePnlDaily(date, totalCNY, totalUSD, cnyRate, round2(baseCNY), detail, uid)
 }
 
 // holdingBySymbol returns a pointer to the holding with the given symbol, or nil.

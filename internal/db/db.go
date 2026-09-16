@@ -6,6 +6,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -993,10 +995,10 @@ func GetPriceSeries(symbol string, userID int64) ([]PriceDay, error) {
 }
 
 // SavePnlDaily upserts the daily P&L summary for a date and user.
-func SavePnlDaily(date string, totalCNY, totalUSD, rate float64, detail string, userID int64) error {
-	_, err := DB.Exec(`INSERT INTO pnl_daily(date,user_id,total_cny,total_usd,rate,detail) VALUES(?,?,?,?,?,?)
-		ON CONFLICT(date,user_id) DO UPDATE SET total_cny=excluded.total_cny, total_usd=excluded.total_usd, rate=excluded.rate, detail=excluded.detail`,
-		date, userID, totalCNY, totalUSD, rate, detail)
+func SavePnlDaily(date string, totalCNY, totalUSD, rate, baseCNY float64, detail string, userID int64) error {
+	_, err := DB.Exec(`INSERT INTO pnl_daily(date,user_id,total_cny,total_usd,rate,base_cny,detail) VALUES(?,?,?,?,?,?,?)
+		ON CONFLICT(date,user_id) DO UPDATE SET total_cny=excluded.total_cny, total_usd=excluded.total_usd, rate=excluded.rate, base_cny=excluded.base_cny, detail=excluded.detail`,
+		date, userID, totalCNY, totalUSD, rate, baseCNY, detail)
 	return err
 }
 
@@ -1006,13 +1008,20 @@ type PnlDay struct {
 	UserID   int64   `json:"user_id"`
 	TotalCNY float64 `json:"total_cny"`
 	TotalUSD float64 `json:"total_usd"`
-	Rate     float64 `json:"rate"`
+	Rate     float64 `json:"rate"`     // 汇率快照（CNY→USD），非收益率
+	BaseCNY  float64 `json:"base_cny"` // 当日净资产基数（CNY），用于真实日收益率 = 当日盈亏 / base_cny
 	Detail   string  `json:"detail"`
+}
+
+// BackfillPnlBase 将历史 pnl_daily 中 base_cny 仍为 0/空 的行补齐为指定基数（幂等：仅更新 0 值行）。
+func BackfillPnlBase(userID int64, baseCNY float64) error {
+	_, err := DB.Exec(`UPDATE pnl_daily SET base_cny=? WHERE user_id=? AND (base_cny IS NULL OR base_cny=0)`, baseCNY, userID)
+	return err
 }
 
 // GetPnlHistory returns a user's daily P&L records ordered by date ascending.
 func GetPnlHistory(userID int64) ([]PnlDay, error) {
-	rows, err := DB.Query(`SELECT date,user_id,total_cny,total_usd,rate,detail FROM pnl_daily WHERE user_id=? ORDER BY date ASC`, userID)
+	rows, err := DB.Query(`SELECT date,user_id,total_cny,total_usd,rate,base_cny,detail FROM pnl_daily WHERE user_id=? ORDER BY date ASC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1020,7 +1029,7 @@ func GetPnlHistory(userID int64) ([]PnlDay, error) {
 	var out []PnlDay
 	for rows.Next() {
 		var p PnlDay
-		if err := rows.Scan(&p.Date, &p.UserID, &p.TotalCNY, &p.TotalUSD, &p.Rate, &p.Detail); err != nil {
+		if err := rows.Scan(&p.Date, &p.UserID, &p.TotalCNY, &p.TotalUSD, &p.Rate, &p.BaseCNY, &p.Detail); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -1788,6 +1797,105 @@ func ListCashFlows(cashID int64, limit int) ([]CashFlow, error) {
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// AggFlow 是资金流水聚合记录：合并现金流水(cash_flow)与负债流水(liability_flows)，
+// 统一带出账户/负债名称与币种，供资产全景「流水」tab 展示。
+type AggFlow struct {
+	ID        int64   `json:"id"`
+	Date      string  `json:"date"`
+	Kind      string  `json:"kind"`     // "cash" | "liability"
+	Type      string  `json:"type"`     // 流水类型
+	Name      string  `json:"name"`     // 账户/负债名称
+	RefName   string  `json:"ref_name"` // 关联标的（持仓/理财）
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency"`
+	Balance   float64 `json:"balance"`
+	Direction string  `json:"direction"` // "in" | "out"
+	Note      string  `json:"note"`
+}
+
+// ListFlows 返回某用户在 [start,end] 日期区间内的全部资金流水（现金+负债），按日期倒序。
+func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
+	out := []AggFlow{}
+	// 现金流水：持仓调仓/理财调仓/转账/手工调整，关联 cash_accounts 取币种与名称
+	q1 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.ref_name, f.note, COALESCE(c.name,''), COALESCE(c.currency,'rmb')
+	       FROM cash_flow f LEFT JOIN cash_accounts c ON c.id=f.cash_id
+	       WHERE f.user_id=? AND f.date>=? AND f.date<=?`
+	rows, err := DB.Query(q1, userID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var f AggFlow
+		var amt float64
+		if e := rows.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.RefName, &f.Note, &f.Name, &f.Currency); e != nil {
+			rows.Close()
+			return nil, e
+		}
+		f.Kind = "cash"
+		f.Amount = amt
+		f.Direction = dirOf(amt)
+		out = append(out, f)
+	}
+	rows.Close()
+	// 负债流水：贷款/还款，关联 liabilities 取币种与名称
+	q2 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.note, COALESCE(l.name,''), COALESCE(l.currency,'rmb')
+	       FROM liability_flows f LEFT JOIN liabilities l ON l.id=f.liability_id
+	       WHERE f.user_id=? AND f.date>=? AND f.date<=?`
+	rows2, err := DB.Query(q2, userID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var f AggFlow
+		var amt float64
+		if e := rows2.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.Note, &f.Name, &f.Currency); e != nil {
+			return nil, e
+		}
+		f.Kind = "liability"
+		f.Amount = amt
+		f.Direction = dirOf(amt)
+		out = append(out, f)
+	}
+	// 按日期倒序，日期相同按 id 倒序
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Date != out[j].Date {
+			return out[i].Date > out[j].Date
+		}
+		return out[i].ID > out[j].ID
+	})
+	return out, nil
+}
+
+func dirOf(amt float64) string {
+	if amt >= 0 {
+		return "in"
+	}
+	return "out"
+}
+
+// FlowYears 返回有流水数据的年份（去重，降序），供年份下拉使用。
+func FlowYears(userID int64) ([]int, error) {
+	rows, err := DB.Query(`SELECT DISTINCT substr(date,1,4) FROM cash_flow WHERE user_id=? AND date<>''
+	                       UNION SELECT DISTINCT substr(date,1,4) FROM liability_flows WHERE user_id=? AND date<>''
+	                       ORDER BY 1 DESC`, userID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int
+	for rows.Next() {
+		var y string
+		if e := rows.Scan(&y); e != nil {
+			return nil, e
+		}
+		if n, e := strconv.Atoi(y); e == nil {
+			out = append(out, n)
+		}
+	}
+	return out, nil
 }
 
 // AddCashAmount 调整现金账户余额（delta 正=入账 / 负=出账）并写入一条流水，

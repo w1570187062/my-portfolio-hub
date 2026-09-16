@@ -772,6 +772,29 @@ func listCashFlows(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"flows": flows, "account": acc})
 }
 
+// listFlows 返回资产全景「流水」tab 的资金流水：合并现金流水与负债流水，
+// 按年份/日期区间筛选；无 start/end 时仅返回可选年份列表（前端默认取近 2 个月）。
+func listFlows(c *gin.Context) {
+	uid := currentUserID(c)
+	years, err := db.FlowYears(uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	start := strings.TrimSpace(c.Query("start"))
+	end := strings.TrimSpace(c.Query("end"))
+	out := []db.AggFlow{}
+	if start != "" && end != "" {
+		flows, e := db.ListFlows(uid, start, end)
+		if e != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
+			return
+		}
+		out = flows
+	}
+	c.JSON(http.StatusOK, gin.H{"flows": out, "years": years})
+}
+
 func deleteCash(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

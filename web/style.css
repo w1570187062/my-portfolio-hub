@@ -1471,20 +1471,35 @@ th .sort-ind { font-size: 11px; margin-left: 2px; }
 }
 
 /* ===== 饼图 ===== */
-.pie-back {
-  display: inline-block;
+.pie-back-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   cursor: pointer;
   color: var(--primary);
   font-size: 14px;
+  line-height: 1.2;
   font-weight: 600;
-  margin-bottom: 10px;
-  padding: 6px 12px;
-  border-radius: var(--r-sm);
-  background: var(--primary-soft);
-  transition: background-color .2s cubic-bezier(.32,.72,0,1);
+  margin-right: 6px;
+  transition: opacity .15s;
 }
-.pie-back:hover { background: rgba(var(--tint), .16); }
+.pie-back-inline:hover { opacity: .7; }
+/* 资产构成弹框标题行：不显示「当前资产构成」标题，仅承载下钻「← 返回总览」按钮。
+   顶层视图无按钮时整行收起（:empty），彻底取消上下留白。 */
+#acCompTitle { margin: 0; padding: 0; font-size: 14px; font-weight: 600; line-height: 1.2; color: var(--text); }
+#acCompTitle:empty { display: none; }
+#acCompTitle:not(:empty) { margin-bottom: 8px; }
 .pie-hint { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
+/* 二级饼图（最底层）：环形 + 紧凑图例，hover 图例 → 对应扇区高亮、其余淡化、中心显示信息 */
+.pie-seg { transition: opacity .15s ease; cursor: default; }
+.pie-seg.dim { opacity: .28; }
+.pie-seg.active { stroke: #fff; stroke-width: 3; }
+.legend-item { cursor: default; transition: background-color .15s; padding: 3px 6px; border-radius: 6px; }
+.legend-item:hover { background: rgba(var(--tint), .10); }
+.legend-item.active { background: rgba(var(--tint), .16); }
+.pie-legend-scroll { scrollbar-width: thin; }
+.pie-legend-scroll::-webkit-scrollbar { width: 8px; }
+.pie-legend-scroll::-webkit-scrollbar-thumb { background: rgba(128,128,128,.35); border-radius: 4px; }
 #chartBody [data-label]:hover { opacity: .82; }
 
 /* ===== 表格行操作（视觉由 .btn 幽灵样式统一提供，此处仅保留间距） ===== */
@@ -2005,7 +2020,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 #pnlModal .modal-card { width: min(900px, 96vw); max-width: 96vw; }
 .cal-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 8px 0 0; }
 .cal-head > * { margin: 0; }
-.cal-legend { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
+/* 盈亏日历：金额/收益率 切换标签（右侧 ⇄，可一直切换） */
+.cal-metric-toggle { margin-left: auto; background: var(--bg-input); border: 1px solid var(--border, rgba(255,255,255,.12)); color: var(--text); font-size: 13px; padding: 5px 12px; border-radius: var(--r-xs); cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, color .15s; }
+.cal-metric-toggle:hover { background: var(--bg-hover); border-color: var(--primary, #d9a52b); }
 .lg { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
 .lg-text { margin: 0 2px; }
 .lg-none { background: #2a3441; }
@@ -2015,6 +2032,36 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 /* 日历格必须覆盖 .cal-cell 的默认背景 */
 .cal-cell.lg-up1 { background: #ef4444; } .cal-cell.lg-up2 { background: #dc2626; } .cal-cell.lg-up3 { background: #b91c1c; } .cal-cell.lg-up4 { background: #7f1d1d; }
 .cal-cell.lg-down1 { background: #4ade80; } .cal-cell.lg-down2 { background: #22c55e; } .cal-cell.lg-down3 { background: #16a34a; } .cal-cell.lg-down4 { background: #14532d; }
+
+/* 盈亏日历：月/年 视图切换胶囊（复用 .view-toggle 滑块样式） */
+.cal-view-toggle { flex: 0 0 auto; }
+.cal-year-cell { aspect-ratio: auto; min-height: 72px; padding: 8px 6px; } /* 年视图方格不撑成正方形，更紧凑 */
+.cal-year-cell .cal-day { font-weight: 600; }
+.cal-year-cell .cal-emoji { font-size: 18px; }
+.cal-weekdays.is-hidden { display: none; } /* 年视图隐藏星期表头 */
+
+/* 资产全景「流水」tab：搜索时间工具栏 + 表格 */
+.flows-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.flow-lbl { font-size: 13px; color: var(--text-muted); }
+.flow-sel, .flow-date {
+  background: var(--bg-input);
+  border: 1px solid var(--border, rgba(255,255,255,.12));
+  color: var(--text);
+  border-radius: var(--r-xs);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color .15s, background .15s;
+}
+.flow-sel:hover, .flow-date:hover { border-color: var(--primary, #d9a52b); }
+.flow-sel:focus, .flow-date:focus { outline: none; border-color: var(--primary, #d9a52b); }
+.flow-date, .flow-sel { color-scheme: dark; }
+:root[data-theme="light"] .flow-date,
+:root[data-theme="light"] .flow-sel { color-scheme: light; }
+.flow-ref { color: var(--text-muted); font-size: 12px; }
+/* flows-toolbar 置于 asset-section-head 同行末尾时，去掉独立块的下边距 */
+.asset-section-head .flows-toolbar { margin-bottom: 0; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.flow-note { color: var(--text-muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 #calModal .modal-card { width: 660px; }
 .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 16px 0 4px; }
@@ -2080,7 +2127,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   .cal-title { font-size: 13px; min-width: 84px; }
   .cal-weekdays span { font-size: 11px; }
 
-  .cal-legend { font-size: 11px; }
   /* 手机无 hover：强制只显示居中金额，点按/长按也不淡出日期与 emoji */
   .cal-cell.has-amt:hover { justify-content: center; }
   .cal-cell.has-amt:hover .cal-day,

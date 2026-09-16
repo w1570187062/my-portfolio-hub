@@ -164,6 +164,7 @@
         <button class="btn atab active" data-tab="wealth" type="button" data-page-node-id="VJw3KSa2xIWsLwN3Xjt8ps">理财</button>
         <button class="btn atab" data-tab="consume" type="button" style="display:none" data-page-node-id="uOh4dMCBHCRufvoinIlSXC">消费</button>
         <button class="btn atab" data-tab="sources" type="button" data-page-node-id="MjujBXXjtDXusU2sF5rSFF">账户</button>
+        <button class="btn atab" data-tab="flows" type="button">流水</button>
       </div>
       <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar" data-page-node-id="Rd6qyVt3c3yQo477sDWAQc"></div>
     </div>
@@ -337,14 +338,13 @@
               <span id="calTitle" class="cal-title" data-page-node-id="9Dz8LX04WOojbhwdtagzjH"></span>
               <button id="calNext" class="btn cal-nav-btn" type="button" data-page-node-id="B3TRGVY1WBjQ8gzPYpmrV8">›</button>
             </div>
-            <div id="calMonthSummary" class="cal-month-summary" data-page-node-id="hO7bi9TARBubVd33ZxL8Mo"></div>
-            <div class="cal-legend" data-page-node-id="hgjgn13QopnRPqgAYhyjxW">
-              <span class="lg-text" data-page-node-id="QcvNIQU0TkiLUT1TnOya2s">跌</span>
-              <span class="lg lg-down4" data-page-node-id="XiyaCot33g8pWudFVir3tP"></span><span class="lg lg-down3" data-page-node-id="3Xdrz5HkcUgGkPKuaUIAQ1"></span><span class="lg lg-down2" data-page-node-id="GRPC0ck0iUIFwh7l2Z7T2o"></span><span class="lg lg-down1" data-page-node-id="4dX3ctxgQVRA4Tot3I2Grz"></span>
-              <span class="lg lg-zero" data-page-node-id="NDpNB9LsWUcYpgFlyaT8IZ"></span>
-              <span class="lg lg-up1" data-page-node-id="YiIItTBfzVyuDmfzbbNOO6"></span><span class="lg lg-up2" data-page-node-id="7bVF0ddHQDytORt7MFMLmN"></span><span class="lg lg-up3" data-page-node-id="6GY45f6shG3y35CQ49DeFE"></span><span class="lg lg-up4" data-page-node-id="tKtLlDlLqe8s1YpnQVdx34"></span>
-              <span class="lg lg-none" data-page-node-id="3CF37ZMPLVWSTsfcBNI5Di"></span><span class="lg-text" data-page-node-id="Og0ceH2puXM4oU0VsUdwZc">无数据</span>
+            <div class="view-toggle cal-view-toggle" id="calViewToggle" title="月 / 年 视图切换">
+              <span class="vt-indicator" id="calViewIndicator"></span>
+              <button class="btn vt-btn active" data-cview="month" type="button">月</button>
+              <button class="btn vt-btn" data-cview="year" type="button">年</button>
             </div>
+            <div id="calMonthSummary" class="cal-month-summary" data-page-node-id="hO7bi9TARBubVd33ZxL8Mo"></div>
+            <button id="calMetricToggle" class="cal-metric-toggle" type="button" title="切换 盈亏率 / 盈亏金额">⇄ 盈亏金额</button>
           </div>
           <div id="calWeekdays" class="cal-weekdays" data-page-node-id="bpwkLzqwRM4mSmi2nGwDZ8"><span data-page-node-id="2KNkI9pGkvwCazJeVxZ9bg">日</span><span data-page-node-id="tdmNLYsSfWhtzXWatIfpVe">一</span><span data-page-node-id="f5EJUDJD2GrCvTtD5XwDhV">二</span><span data-page-node-id="osA1DBtwrwgHtKSZrVoKML">三</span><span data-page-node-id="ClLJl0VBSvzRkdGywZsw6t">四</span><span data-page-node-id="ID1WjeiwfugiMqITJfBl68">五</span><span data-page-node-id="X5GYteZQrJgOXN8Iokt3wz">六</span></div>
           <div id="calGrid" class="cal-grid" data-page-node-id="eXinUBtVnyeBOmR4CadwrU"></div>

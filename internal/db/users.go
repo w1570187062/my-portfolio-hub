@@ -44,6 +44,8 @@ func EnsureUsers() error {
 	if err := rebuildPnlDaily(); err != nil {
 		return err
 	}
+	// 2.1) pnl_daily 兼容旧库：新增 base_cny（当日净资产基数，用于真实日收益率）
+	addColumnIfMissing("pnl_daily", "base_cny", "REAL NOT NULL DEFAULT 0")
 	if err := rebuildPriceDaily(); err != nil {
 		return err
 	}

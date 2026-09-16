@@ -1741,6 +1741,7 @@ let pieTargetSel = '#chartBody';
 // Draw a pie (single-level) + legend into #chartBody.
 function drawPie(segs, total, title, opts) {
   opts = opts || {};
+  setPieBackArrow(null); // 顶层视图不显示返回箭头
   $('#chartTitle').textContent = title;
   if (total <= 0 || segs.length === 0) { document.querySelector(pieTargetSel).innerHTML = '<p style="color:var(--text-muted)">暂无数据</p>'; if (pieTargetSel === '#chartBody') openChart(); return; }
   const cx = 110, cy = 110, r = 90;
@@ -1766,19 +1767,12 @@ function drawPie(segs, total, title, opts) {
       <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${s.color}"></span>
       <span>${esc(s.label)}</span><span style="font-weight:600">¥${fmt(s.value)} (${p}%)</span></div>`;
   }).join('');
-  const back = opts.onBack
-    ? `<div class="pie-back" data-back="1">← 返回总览</div>`
-    : '';
   const hint = opts.onSeg ? `<div class="pie-hint">${opts.hint || '点击区块可查看二级细分'}</div>` : '';
-  document.querySelector(pieTargetSel).innerHTML = `${back}${hint}<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center">
+  document.querySelector(pieTargetSel).innerHTML = `${hint}<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center">
     <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center"><svg width="220" height="220" viewBox="0 0 220 220">${paths}</svg></div>
     <div style="display:flex;flex-direction:column;gap:10px">${legend}</div></div>`;
   if (opts.onSeg) {
     document.querySelector(pieTargetSel).querySelectorAll('[data-label]').forEach((el) => (el.onclick = () => opts.onSeg(el.dataset.label)));
-  }
-  if (opts.onBack) {
-    const b = document.querySelector(pieTargetSel).querySelector('[data-back]');
-    if (b) b.onclick = opts.onBack;
   }
   if (pieTargetSel === '#chartBody') openChart();
 }
@@ -1804,15 +1798,109 @@ async function renderPie(opts) {
   });
 }
 
-// Drill into a top-level category: show each sub-item's share of that category.
+// 下钻「← 返回总览」按钮：注入到弹框标题内、文本之前（资产构成弹框用 #acCompTitle，独立图表弹框用 #chartTitle）。
+// 顶层视图（onBack 为空）时整体移除，空行由 CSS :empty 收起，不留空白。
+function setPieBackArrow(onBack) {
+  const titleSel = (pieTargetSel === '#acCompBody') ? '#acCompTitle' : '#chartTitle';
+  const titleEl = document.querySelector(titleSel);
+  if (!titleEl) return;
+  let arrow = titleEl.querySelector('.pie-back-inline');
+  if (!onBack) { if (arrow) arrow.remove(); return; }
+  if (!arrow) {
+    arrow = document.createElement('span');
+    arrow.className = 'pie-back-inline';
+    titleEl.insertBefore(arrow, titleEl.firstChild);
+  }
+  arrow.textContent = '← 返回总览';
+  arrow.title = '返回总览';
+  arrow.onclick = onBack;
+}
+
+// 二级饼图（最底层，不再下钻）：环形 donut + 紧凑图例，hover 图例项 → 对应扇区高亮、其余淡化、中心显示该项信息。
+function drawPieHover(segs, total, title, opts) {
+  opts = opts || {};
+  $('#chartTitle').textContent = title;
+  const host = document.querySelector(pieTargetSel);
+  if (total <= 0 || segs.length === 0) { host.innerHTML = '<p style="color:var(--text-muted)">暂无数据</p>'; if (pieTargetSel === '#chartBody') openChart(); return; }
+
+  const cx = 110, cy = 110, rOut = 96, rIn = 56;
+  let angle = -Math.PI / 2;
+  const arcs = segs.map((s, i) => {
+    const frac = s.value / total;
+    const a1 = angle, a2 = angle + frac * 2 * Math.PI;
+    angle = a2;
+    return { s, a1, a2, frac, i };
+  });
+
+  const segPath = (o) => {
+    if (o.frac >= 0.9999) {
+      return `<path class="pie-seg" data-idx="${o.i}" fill-rule="evenodd" style="fill:${o.s.color}" d="M ${cx - rOut} ${cy} A ${rOut} ${rOut} 0 1 0 ${cx + rOut} ${cy} A ${rOut} ${rOut} 0 1 0 ${cx - rOut} ${cy} Z M ${cx - rIn} ${cy} A ${rIn} ${rIn} 0 1 1 ${cx + rIn} ${cy} A ${rIn} ${rIn} 0 1 1 ${cx - rIn} ${cy} Z"/>`;
+    }
+    const large = o.frac > 0.5 ? 1 : 0;
+    const x1 = cx + rOut * Math.cos(o.a1), y1 = cy + rOut * Math.sin(o.a1);
+    const x2 = cx + rOut * Math.cos(o.a2), y2 = cy + rOut * Math.sin(o.a2);
+    const x3 = cx + rIn * Math.cos(o.a2), y3 = cy + rIn * Math.sin(o.a2);
+    const x4 = cx + rIn * Math.cos(o.a1), y4 = cy + rIn * Math.sin(o.a1);
+    return `<path class="pie-seg" data-idx="${o.i}" style="fill:${o.s.color}" d="M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${rOut} ${rOut} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} L ${x3.toFixed(2)} ${y3.toFixed(2)} A ${rIn} ${rIn} 0 ${large} 0 ${x4.toFixed(2)} ${y4.toFixed(2)} Z"/>`;
+  };
+  const paths = arcs.map(segPath).join('');
+
+  const legend = segs.map((s, i) => {
+    const p = (s.value / total * 100).toFixed(1);
+    return `<div class="legend-item" data-idx="${i}" style="display:flex;align-items:center;gap:8px;font-size:13px">
+      <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${s.color};flex:0 0 auto"></span>
+      <span style="flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.label)}</span>
+      <span style="font-weight:600;flex:0 0 auto">¥${fmt(s.value)}</span>
+      <span style="color:var(--text-muted);flex:0 0 auto;width:46px;text-align:right">${p}%</span>
+    </div>`;
+  }).join('');
+
+  // 返回总览箭头：注入弹框标题前（资产构成文本前），紧凑不占额外高度
+  setPieBackArrow(opts.onBack ? opts.onBack : null);
+  const centerDef = opts.center || '二级占比';
+  host.innerHTML = `<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center">
+    <svg width="220" height="220" viewBox="0 0 220 220">
+      ${paths}
+      <text id="pieCenter1" x="${cx}" y="${cy - 6}" text-anchor="middle" font-size="13" style="fill:var(--text)">${esc(centerDef)}</text>
+      <text id="pieCenter2" x="${cx}" y="${cy + 13}" text-anchor="middle" font-size="12" style="fill:var(--text-muted)">¥${fmt(total)}</text>
+    </svg>
+    <div class="pie-legend-scroll" style="display:flex;flex-direction:column;gap:2px;max-height:240px;overflow-y:auto;min-width:250px">${legend}</div>
+  </div>`;
+
+  const segsEls = host.querySelectorAll('.pie-seg');
+  const c1 = host.querySelector('#pieCenter1'), c2 = host.querySelector('#pieCenter2');
+  host.querySelectorAll('.legend-item').forEach((el) => {
+    const idx = +el.dataset.idx;
+    el.addEventListener('mouseenter', () => {
+      segsEls.forEach((p) => { const di = +p.dataset.idx; p.classList.toggle('dim', di !== idx); p.classList.toggle('active', di === idx); });
+      el.classList.add('active');
+      const s = segs[idx];
+      c1.textContent = esc(s.label);
+      c2.textContent = (s.value / total * 100).toFixed(1) + '%';
+    });
+    el.addEventListener('mouseleave', () => {
+      segsEls.forEach((p) => p.classList.remove('dim', 'active'));
+      el.classList.remove('active');
+      c1.textContent = centerDef;
+      c2.textContent = '¥' + fmt(total);
+    });
+  });
+
+  if (opts.onBack) {
+    const b = host.querySelector('[data-back]');
+    if (b) b.onclick = opts.onBack;
+  }
+  if (pieTargetSel === '#chartBody') openChart();
+}
+
+// Drill into a top-level category: show each sub-item's share (二级细分占比). 二级为最底层，不再下钻。
 function showPieDrill(key) {
   const d = pieData || assetData || {};
   const sub = getSubSegs(d, key);
   const total = sub.reduce((a, s) => a + s.value, 0);
-  drawPie(sub, total, `资产构成 › ${key}（二级细分占比）`, {
+  drawPieHover(sub, total, `资产构成 › ${key}（二级细分占比）`, {
     onBack: () => renderPie({ target: pieTargetSel }),
-    onSeg: (label) => showItemDetail(key, label),
-    hint: '点击区块查看该标的明细',
+    center: key,
   });
 }
 
@@ -1848,11 +1936,9 @@ function showItemDetail(key, label) {
     if (raw.code) rows.push(['代码', raw.code]);
     rows.push(['金额 (CNY)', '¥' + fmt(it.value)]);
   }
-  const back = `<div class="pie-back" data-back="1">← 返回${key}明细</div>`;
   const body = rows.map(([k, v, c]) => `<div style="display:flex;justify-content:space-between;gap:16px;padding:9px 4px;border-bottom:1px solid rgba(0,0,0,.06)"><span style="color:var(--text-muted)">${k}</span><span style="font-weight:600${c ? ' class="' + c + '"' : ''}">${v}</span></div>`).join('');
-  document.querySelector(pieTargetSel).innerHTML = back + `<div style="max-width:440px;margin:14px auto 0">${body}</div>`;
-  const b = document.querySelector(pieTargetSel).querySelector('[data-back]');
-  if (b) b.onclick = () => showPieDrill(key);
+  document.querySelector(pieTargetSel).innerHTML = `<div style="max-width:440px;margin:14px auto 0">${body}</div>`;
+  setPieBackArrow(() => showPieDrill(key));
   if (pieTargetSel === '#chartBody') openChart();
 }
 
@@ -1980,7 +2066,7 @@ function showAcTab(tab) {
 }
 async function renderCompTab() {
   const t = document.getElementById('acCompTitle');
-  if (t) t.textContent = '当前资产构成（现金 / 股票 / 基金 / 理财）';
+  if (t) t.textContent = ''; // 不再显示「当前资产构成」标题，该行仅承载下钻「← 返回总览」按钮
   await renderPie({ target: '#acCompBody' });
 }
 
@@ -2489,7 +2575,7 @@ async function showPnlTab(tab) {
   const title = document.getElementById('pnlModalTitle');
   if (title) title.textContent = meta.title;
   if (tab === 'trend') await renderTrendInto('#pnlTabTrend');
-  else { calViewDate = new Date(); await renderCalendar(); } // 打开时回到当月
+  else { calViewDate = new Date(); await renderCalendar(); syncCalViewToggle(); } // 打开时回到当月
 }
 
 function showHoldingsView() {
@@ -2529,8 +2615,40 @@ document.addEventListener('keydown', (e) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 });
-$('#calPrev').onclick = () => { calViewDate = new Date(calViewDate.getFullYear(), calViewDate.getMonth() - 1, 1); drawCalMonth(); };
-$('#calNext').onclick = () => { calViewDate = new Date(calViewDate.getFullYear(), calViewDate.getMonth() + 1, 1); drawCalMonth(); };
+$('#calPrev').onclick = () => {
+  if (calView === 'year') { calViewYear--; drawCalYear(); }
+  else { calViewDate = new Date(calViewDate.getFullYear(), calViewDate.getMonth() - 1, 1); drawCalMonth(); }
+};
+$('#calNext').onclick = () => {
+  if (calView === 'year') { calViewYear++; drawCalYear(); }
+  else { calViewDate = new Date(calViewDate.getFullYear(), calViewDate.getMonth() + 1, 1); drawCalMonth(); }
+};
+// 盈亏日历：月 / 年 视图切换胶囊（样式同修改弹框补仓计算）
+document.querySelectorAll('#calViewToggle .vt-btn').forEach((b) => {
+  b.onclick = () => {
+    calView = b.dataset.cview;
+    syncCalViewToggle();
+    if (calView === 'year') drawCalYear();
+    else drawCalMonth();
+  };
+});
+function syncCalViewToggle() {
+  document.querySelectorAll('#calViewToggle .vt-btn').forEach((x) => x.classList.toggle('active', x.dataset.cview === calView));
+  positionIndicatorFor('calViewToggle', 'calViewIndicator');
+  setTimeout(() => positionIndicatorFor('calViewToggle', 'calViewIndicator'), 0);
+}
+// 盈亏日历：金额 / 收益率 口径切换（右侧 ⇄ 文本标签，可一直切换）
+$('#calMetricToggle').onclick = () => {
+  calMetric = calMetric === 'amount' ? 'rate' : 'amount';
+  const btn = $('#calMetricToggle');
+  if (btn) btn.textContent = calMetric === 'rate' ? '⇄ 盈亏率' : '⇄ 盈亏金额';
+  drawCal();
+};
+// 按当前视图（月/年）重绘
+function drawCal() {
+  if (calView === 'year') drawCalYear();
+  else drawCalMonth();
+}
 
 // 盈亏日历：点击月份标题弹出年/月快速跳转
 let calJumpYear = new Date().getFullYear();
@@ -2556,7 +2674,9 @@ function renderCalJump() {
   box.innerHTML = html;
   box.querySelectorAll('[data-m]').forEach((b) => {
     b.onclick = () => {
+      calView = 'month';
       calViewDate = new Date(calJumpYear, parseInt(b.dataset.m, 10) - 1, 1);
+      syncCalViewToggle();
       drawCalMonth();
       $('#calJumpModal').hidden = true;
     };
@@ -2602,6 +2722,8 @@ function shiftCalDay(dir) {
 
 // 盈亏日历：仅显示当前查看月份，支持上/下月切换
 let calViewDate = new Date();   // 当前查看的月份
+let calView = 'month';          // 日历视图：'month' 月盈亏 / 'year' 年各月盈亏
+let calViewYear = new Date().getFullYear(); // 年视图当前查看的年份
 // 日历月份记忆（设计系统：二级页记忆日历月份）
 function saveCalMonth() {
   try { localStorage.setItem('pf_cal_month', calViewDate.getFullYear() + '-' + (calViewDate.getMonth() + 1)); } catch (_) {}
@@ -2616,7 +2738,33 @@ function restoreCalMonth() {
   calViewDate = new Date();
 }
 restoreCalMonth();
-let calMaxAbs = 1;              // 盈亏着色归一化最大值
+let calMaxAbs = 1;              // 盈亏着色归一化最大值（金额口径，供走势图使用）
+let calMetric = 'amount';       // 日历展示口径：'amount' 盈亏金额 / 'rate' 真实日收益率
+
+// 日历某日「当前口径」下的数值：金额=total_cny；收益率=total_cny / base_cny * 100
+function calActiveVal(rec) {
+  if (!rec) return 0;
+  if (calMetric === 'rate') {
+    const base = rec.base_cny || 0;
+    if (base <= 0) return 0;
+    return (rec.total_cny / base) * 100;
+  }
+  return rec.total_cny || 0;
+}
+// 当前口径下数值的展示文本
+function calActiveFmt(v) {
+  if (calMetric === 'rate') return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  return fmt(v);
+}
+// 当前口径下着色归一化最大值（仅遍历当月以外的全量，保证切月时色阶稳定）
+function calCellMax() {
+  let mx = 1;
+  for (const ds in calData) {
+    const a = Math.abs(calActiveVal(calData[ds]));
+    if (a > mx) mx = a;
+  }
+  return mx;
+}
 
 async function renderCalendar() {
   const r = await api('/api/pnl/history');
@@ -2627,7 +2775,7 @@ async function renderCalendar() {
   hist.forEach((h) => { calData[h.date] = h; });
   calMaxAbs = 1;
   hist.forEach((h) => { const a = Math.abs(h.total_cny); if (a > calMaxAbs) calMaxAbs = a; });
-  drawCalMonth();
+  drawCal();
 }
 
 // 绘制 calViewDate 所在月份的网格（7 列：日 一 二 三 四 五 六）
@@ -2636,13 +2784,15 @@ function drawCalMonth() {
   const m = calViewDate.getMonth();
   $('#calTitle').textContent = y + '年' + (m + 1) + '月';
 
-  // 当月总盈亏：所查看月份所有有数据日期的 total_cny 求和（切换月份自动更新）
+  // 当月汇总：金额口径=total_cny 求和；收益率口径=月总盈亏 / 月均净资产基数
   const monthPrefix = y + '-' + String(m + 1).padStart(2, '0');
-  let monthPnl = 0, monthDays = 0;
+  let monthPnl = 0, monthDays = 0, monthBaseSum = 0, monthBaseDays = 0;
   for (const ds in calData) {
     if (ds.startsWith(monthPrefix)) {
       monthPnl += calData[ds].total_cny || 0;
       monthDays++;
+      const b = calData[ds].base_cny || 0;
+      if (b > 0) { monthBaseSum += b; monthBaseDays++; }
     }
   }
   const ms = $('#calMonthSummary');
@@ -2650,13 +2800,22 @@ function drawCalMonth() {
     if (!monthDays) {
       ms.innerHTML = '<span class="cal-ms-label">本月暂无盈亏数据</span>';
     } else {
-      const msCls = monthPnl > 0 ? 'up' : monthPnl < 0 ? 'down' : 'flat';
-      const sign = monthPnl >= 0 ? '+' : '';
-      let emoji = '😐';
-      if (monthPnl > 0) emoji = '📈';
-      else if (monthPnl < 0) emoji = '📉';
-      ms.innerHTML = '<span class="cal-ms-label">本月总盈亏</span>'
-        + `<span class="cal-ms-val ${msCls}">${emoji}¥${sign}${fmt(monthPnl)}</span>`;
+      let msCls, msVal, emoji;
+      if (calMetric === 'rate') {
+        const avgBase = monthBaseDays ? monthBaseSum / monthBaseDays : 0;
+        const rate = avgBase > 0 ? (monthPnl / avgBase) * 100 : 0;
+        msCls = rate > 0 ? 'up' : rate < 0 ? 'down' : 'flat';
+        msVal = (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
+        emoji = rate > 0 ? '📈' : rate < 0 ? '📉' : '😐';
+      } else {
+        msCls = monthPnl > 0 ? 'up' : monthPnl < 0 ? 'down' : 'flat';
+        const sign = monthPnl >= 0 ? '+' : '';
+        msVal = '¥' + sign + fmt(monthPnl);
+        emoji = monthPnl > 0 ? '📈' : monthPnl < 0 ? '📉' : '😐';
+      }
+      const msLabel = calMetric === 'rate' ? '本月收益率' : '本月总盈亏';
+      ms.innerHTML = '<span class="cal-ms-label">' + msLabel + '</span>'
+        + `<span class="cal-ms-val ${msCls}">${emoji}${msVal}</span>`;
     }
   }
 
@@ -2667,6 +2826,7 @@ function drawCalMonth() {
   const end = saturdayOf(last);                        // 该月最后一天所在周的周六
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cellMax = calCellMax();                         // 当前口径下着色归一化最大值
 
   const cur = new Date(start);
   let cells = '';
@@ -2681,13 +2841,13 @@ function drawCalMonth() {
         cells += '<div class="cal-cell cal-future" data-date="' + ds + '"><span class="cal-day">' + cur.getDate() + '</span></div>';
       } else {
         const rec = calData[ds];
+        const v = calActiveVal(rec);
         let color, emoji = '';
         if (!rec) color = 'lg-none';
         else {
-          const v = rec.total_cny;
           if (Math.abs(v) < 1e-9) { color = 'lg-zero'; emoji = '😐'; }
           else {
-            const t = Math.min(1, Math.abs(v) / calMaxAbs);
+            const t = Math.min(1, Math.abs(v) / cellMax);
             const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
             color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
             // 情绪脸方案：盈/亏各 4 档，从微笑😊到狂喜😍、从皱眉🙁到惊恐😱，风格统一且直觉
@@ -2695,8 +2855,9 @@ function drawCalMonth() {
           }
         }
         const isToday = cur.getTime() === today.getTime();
-        const pnlTxt = rec ? fmt(rec.total_cny) : '—';
-        const title = ds + (rec ? ('：当日盈亏 ' + pnlTxt + ' CNY') : '：无快照数据');
+        const pnlTxt = rec ? calActiveFmt(v) : '—';
+        const unit = calMetric === 'rate' ? '收益率' : '盈亏';
+        const title = ds + (rec ? (': 当日' + unit + ' ' + pnlTxt) : '：无快照数据');
         const dayNum = cur.getDate();
         const valHtml = '<span class="cal-val">' + pnlTxt + '</span>';
         cells += '<div class="cal-cell ' + color + ' has-amt' + (isToday ? ' cal-today' : '') + '" data-date="' + ds + '" title="' + title + '"><span class="cal-day">' + dayNum + '</span><span class="cal-emoji">' + emoji + '</span>' + valHtml + '</div>';
@@ -2707,7 +2868,88 @@ function drawCalMonth() {
   const grid = $('#calGrid');
   grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
   grid.innerHTML = cells;
+  $('#calWeekdays').classList.remove('is-hidden'); // 月视图显示星期表头
   saveCalMonth();
+}
+
+// 年视图：展示 calViewYear 的 12 个月，每格 = 当月汇总（金额口径=total_cny 求和；收益率口径=月总盈亏/月均净资产基数）
+function drawCalYear() {
+  const y = calViewYear;
+  $('#calTitle').textContent = y + '年';
+  // 各月汇总（与月视图口径一致）
+  const monthAgg = [];
+  for (let m = 1; m <= 12; m++) {
+    const prefix = y + '-' + String(m).padStart(2, '0');
+    let pnl = 0, days = 0, baseSum = 0, baseDays = 0;
+    for (const ds in calData) {
+      if (ds.startsWith(prefix)) {
+        pnl += calData[ds].total_cny || 0;
+        days++;
+        const b = calData[ds].base_cny || 0;
+        if (b > 0) { baseSum += b; baseDays++; }
+      }
+    }
+    monthAgg.push({ m, pnl, days, avgBase: baseDays ? baseSum / baseDays : 0 });
+  }
+  // 着色归一化：取各月汇总绝对值最大
+  let mx = 1;
+  monthAgg.forEach((a) => {
+    const v = calMetric === 'rate' ? (a.avgBase > 0 ? Math.abs(a.pnl / a.avgBase * 100) : 0) : Math.abs(a.pnl);
+    if (v > mx) mx = v;
+  });
+  let cells = '';
+  for (let m = 1; m <= 12; m++) {
+    const a = monthAgg[m - 1];
+    const v = calMetric === 'rate' ? (a.avgBase > 0 ? a.pnl / a.avgBase * 100 : 0) : a.pnl;
+    let color, txt;
+    if (a.days === 0) { color = 'lg-none'; txt = '—'; }
+    else if (Math.abs(v) < 1e-9) { color = 'lg-zero'; txt = '😐'; }
+    else {
+      const t = Math.min(1, Math.abs(v) / mx);
+      const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
+      color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
+      txt = v > 0 ? ['😊', '😄', '😁', '😍'][lvl - 1] : ['🙁', '😟', '😣', '😱'][lvl - 1];
+    }
+    const valTxt = a.days === 0 ? '—' : calActiveFmt(v);
+    cells += `<div class="cal-cell cal-year-cell ${color} has-amt" data-month="${m}">
+      <span class="cal-day">${m}月</span>
+      <span class="cal-emoji">${txt}</span>
+      <span class="cal-val">${valTxt}</span>
+    </div>`;
+  }
+  const grid = $('#calGrid');
+  grid.style.gridTemplateColumns = 'repeat(4, 1fr)'; // 4 列 × 3 行，方格更紧凑
+  grid.innerHTML = cells;
+  $('#calWeekdays').classList.add('is-hidden'); // 年视图隐藏星期表头
+  grid.querySelectorAll('[data-month]').forEach((c) => {
+    c.onclick = () => {
+      calView = 'month';
+      calViewDate = new Date(calViewYear, parseInt(c.dataset.month, 10) - 1, 1);
+      syncCalViewToggle();
+      drawCalMonth();
+    };
+  });
+  // 年汇总写进 calMonthSummary
+  const ms = $('#calMonthSummary');
+  if (ms) {
+    let yearPnl = 0, yearBaseSum = 0, yearBaseDays = 0;
+    monthAgg.forEach((a) => { yearPnl += a.pnl; if (a.avgBase > 0) { yearBaseSum += a.avgBase; yearBaseDays++; } });
+    let msCls, msVal, emoji, label;
+    if (calMetric === 'rate') {
+      const avgBase = yearBaseDays ? yearBaseSum / yearBaseDays : 0;
+      const rate = avgBase > 0 ? yearPnl / avgBase * 100 : 0;
+      msCls = rate > 0 ? 'up' : rate < 0 ? 'down' : 'flat';
+      msVal = (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
+      emoji = rate > 0 ? '📈' : '📉';
+      label = '本年收益率';
+    } else {
+      msCls = yearPnl > 0 ? 'up' : yearPnl < 0 ? 'down' : 'flat';
+      msVal = '¥' + (yearPnl >= 0 ? '+' : '') + fmt(yearPnl);
+      emoji = yearPnl > 0 ? '📈' : '📉';
+      label = '本年总盈亏';
+    }
+    ms.innerHTML = '<span class="cal-ms-label">' + label + '</span><span class="cal-ms-val ' + msCls + '">' + emoji + msVal + '</span>';
+  }
 }
 
 function openCalDay(date) {
@@ -2745,9 +2987,11 @@ function openCalDay(date) {
       wts.forEach((w) => { wealthCNY += (typeof w.pnl_cny === 'number') ? w.pnl_cny : 0; });
     }
   } catch (e) { rows = '<p style="color:var(--danger)">明细解析失败</p>'; }
+  const dayRate = (rec.base_cny && rec.base_cny > 0) ? (rec.total_cny / rec.base_cny * 100) : null;
   $('#calModalBody').innerHTML = `
     <div id="calSumRow" style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px">
       <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${cls(v)}">${fmtPnl(v)}</div></div>
+      <div><div class="cal-sub">当日收益率</div><div class="value ${dayRate == null ? '' : cls(dayRate)}">${dayRate == null ? '—' : (dayRate >= 0 ? '+' : '') + dayRate.toFixed(2) + '%'}</div></div>
       <div><div class="cal-sub">权益盈亏 (CNY)</div><div class="value ${cls(equityCNY)}">${fmtPnl(equityCNY)}</div></div>
       <div><div class="cal-sub">理财盈亏 (CNY)</div><div class="value ${cls(wealthCNY)}">${fmtPnl(wealthCNY)}</div></div>
       ${CAL_NAV_HTML}
@@ -2933,7 +3177,8 @@ async function exportHoldingsJSON() {
 // ---- AI 持仓总结 ----
 let aiCfg = { api_key: '', model: 'deepseek-v4-pro', base_url: 'https://api.deepseek.com', templates: [] };
 let aiSelIdx = 0;
-let aiModelIdx = 0; // 当前选中的模型配置下标（models 数组）
+let aiModelIdx = 0; // 当前选中的模型配置下标（settings 面板，models 数组）
+let aiPickModelIdx = 0; // 总结面板独立的模型选择下标（不与 settings 共享）
 
 function defaultAITemplates() {
   return [
@@ -2960,6 +3205,7 @@ async function loadAISettings() {
       aiCfg.models = [{ name: '默认', model: aiCfg.model || 'deepseek-v4-pro', api_key: aiCfg.api_key || '', base_url: aiCfg.base_url || 'https://api.deepseek.com' }];
     }
     if (aiModelIdx >= aiCfg.models.length) aiModelIdx = 0;
+    aiPickModelIdx = aiModelIdx; // 总结面板默认沿用当前激活模型，但之后可独立选择
   } catch (e) { /* 忽略，使用默认值 */ }
   $('#aiAutoDaily').checked = !!aiCfg.auto_daily;
   $('#aiAutoSend').checked = !!aiCfg.auto_send;
@@ -3046,7 +3292,7 @@ function renderPickModelSelect() {
     o.textContent = (m.name || ('模型' + (i + 1))) + (m.model ? '（' + m.model + '）' : '');
     sel.appendChild(o);
   });
-  sel.value = String(aiModelIdx < aiCfg.models.length ? aiModelIdx : 0);
+  sel.value = String(aiPickModelIdx < aiCfg.models.length ? aiPickModelIdx : 0);
 }
 
 // 取总结面板当前选中的模型配置（无选择或非法的回退 null，沿用设置面板的值）
@@ -3190,6 +3436,7 @@ $('#ai_tpl_del').onclick = () => {
 };
 // 多模型配置：切换 / 新增 / 删除
 $('#ai_model_sel').onchange = (e) => selectModel(parseInt(e.target.value, 10));
+$('#aiPickModel').onchange = (e) => { aiPickModelIdx = parseInt(e.target.value, 10); };
 $('#ai_model_new').onclick = () => {
   syncModelFromInputs();
   aiCfg.models.push({ name: '新模型' + (aiCfg.models.length + 1), model: 'deepseek-v4-pro', api_key: '', base_url: 'https://api.deepseek.com' });
@@ -4210,6 +4457,7 @@ function renderAssetTab() {
   const body = $('#assetTabBody');
   renderAssetToolbar(assetTab);
   if (assetTab === 'sources') return renderSources(body);
+  if (assetTab === 'flows') return renderFlows(body);
   if (assetTab === 'wealth') return renderWealth(body);
   // 负债 tab 已移除：负债只在「账户」tab 的子账户折叠行展示（含编辑/删除/历史）
   if (assetTab === 'liability') { assetTab = 'wealth'; return renderWealth(body); }
@@ -4466,6 +4714,90 @@ function renderWealthTable(w) {
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+// ---- 资金流水（资产全景「流水」tab）----
+// 聚合现金流水(cash_flow)与负债流水(liability_flows)：持仓主动调仓 / 理财调仓 / 转账 / 贷款还款。
+// 标题行(asset-section-head)：左侧「流水（条目数）」，右侧同行放年份下拉 + 起止日期（默认近 2 个月）。
+async function renderFlows(body) {
+  body.innerHTML = `<div class="asset-section-head">
+      <h3 id="flowsTitle">流水（…）</h3>
+      <div class="sec-actions flows-toolbar">
+        <label class="flow-lbl" for="flowYear">年份</label>
+        <select id="flowYear" class="f-input flow-sel"></select>
+        <label class="flow-lbl" for="flowStart">起</label>
+        <input id="flowStart" type="date" class="f-input flow-date">
+        <label class="flow-lbl" for="flowEnd">止</label>
+        <input id="flowEnd" type="date" class="f-input flow-date">
+      </div>
+    </div>
+    <div id="flowsTableWrap"><p class="empty">加载中…</p></div>`;
+  const r = await api('/api/asset/flows');
+  if (!r.ok) { $('#flowsTableWrap').innerHTML = '<p class="empty">加载失败 (HTTP ' + r.status + ')</p>'; return; }
+  const d = await r.json();
+  const years = d.years || [];
+  const sel = $('#flowYear');
+  sel.innerHTML = years.length
+    ? years.map((y) => `<option value="${y}">${y} 年</option>`).join('')
+    : '<option value="">无数据</option>';
+  const now = new Date();
+  const endStr = ymd(now);
+  const start2 = new Date(now); start2.setMonth(start2.getMonth() - 2);
+  const startStr = ymd(start2);
+  $('#flowStart').value = startStr;
+  $('#flowEnd').value = endStr;
+  if (years.includes(now.getFullYear())) sel.value = String(now.getFullYear());
+  sel.onchange = () => {
+    const y = sel.value;
+    if (y) { $('#flowStart').value = y + '-01-01'; $('#flowEnd').value = y + '-12-31'; }
+    loadFlows();
+  };
+  $('#flowStart').onchange = loadFlows;
+  $('#flowEnd').onchange = loadFlows;
+  loadFlows();
+}
+
+async function loadFlows() {
+  const wrap = $('#flowsTableWrap');
+  if (!wrap) return;
+  const s = $('#flowStart').value, e = $('#flowEnd').value;
+  if (!s || !e) { wrap.innerHTML = '<p class="empty">请选择起止日期。</p>'; return; }
+  wrap.innerHTML = '<p class="empty">加载中…</p>';
+  const r = await api('/api/asset/flows?start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e));
+  if (!r.ok) { wrap.innerHTML = '<p class="empty">加载失败 (HTTP ' + r.status + ')</p>'; return; }
+  const d = await r.json();
+  renderFlowsTable(d.flows || []);
+}
+
+function renderFlowsTable(flows) {
+  const wrap = $('#flowsTableWrap');
+  if (!wrap) return;
+  const t = document.getElementById('flowsTitle');
+  if (t) t.textContent = '流水（' + (flows ? flows.length : 0) + '）';
+  if (!flows.length) { wrap.innerHTML = '<p class="empty">该区间内暂无资金流水。</p>'; return; }
+  const dirText = (f) => {
+    if (f.kind === 'liability') return f.type === 'loan' ? '借入' : '还款';
+    return f.direction === 'in' ? '入' : '出';
+  };
+  const rows = flows.map((f) => {
+    const amt = f.amount || 0;
+    const dir = f.direction === 'in' ? 'in' : 'out';
+    const cur = (f.currency || 'rmb').toLowerCase();
+    const nameCol = esc(f.name || (f.kind === 'liability' ? '负债' : '账户'));
+    const refCol = f.ref_name ? '<span class="flow-ref">· ' + esc(f.ref_name) + '</span>' : '';
+    return `<tr>
+      <td class="num">${f.id}</td>
+      <td>${nameCol}${refCol}</td>
+      <td>${cashFlowTypeTag(f)}</td>
+      <td class="${dir}">${dir === 'in' ? '↓ ' : '↑ '}${dirText(f)}</td>
+      <td class="num ${dir}">${(amt >= 0 ? '+' : '')}${moneyCur(Math.abs(amt), cur)}</td>
+      <td>${esc(f.date)}</td>
+      <td class="flow-note">${esc(f.note || '')}</td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table class="asset-table"><colgroup><col style="width:5%"><col style="width:26%"><col style="width:14%"><col style="width:9%"><col style="width:18%"><col style="width:13%"><col style="width:15%"></colgroup><thead>    <tr>
+      <th class="num">#</th><th>名称</th><th>类型</th><th>方向</th><th class="num">金额</th><th>时间</th><th>相关</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 let wealthCum0 = 0; // 编辑理财打开时的累计收益原值（输入框已移除，PUT 时回传防清零）
 async function openWealthModal(id) {
   await loadSourcesCache();
@@ -4629,8 +4961,14 @@ function cashFlowTypeTag(f) {
     case 'transfer_in': return '<span class="flow-tag in">转入</span>';
     case 'transfer_rollback': return '<span class="flow-tag manual">回滚</span>';
     case 'wealth_deposit': return '<span class="flow-tag out">理财存入</span>';
+    case 'deposit': return amt >= 0 ? '<span class="flow-tag in">存入</span>' : '<span class="flow-tag out">取出</span>';
     case 'wealth_redeem': return '<span class="flow-tag in">理财回款</span>';
+    case 'wealth_clear': return '<span class="flow-tag in">清仓回款</span>';
     case 'wealth_reverse': return '<span class="flow-tag manual">理财冲正</span>';
+    case 'dividend': return '<span class="flow-tag in">分红入账</span>';
+    case 'fee': return '<span class="flow-tag manual">费用</span>';
+    case 'loan': return '<span class="flow-tag in">借入</span>';
+    case 'repay': return '<span class="flow-tag out">还款</span>';
     default: return esc(t || '-');
   }
 }

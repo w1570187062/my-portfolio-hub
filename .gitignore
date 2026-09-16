@@ -25,3 +25,6 @@ DESIGN_SYSTEM.md
 # 本地临时脚本与生成产物（payload 生成器、剪贴板工具等，不入库）
 /scripts/
 
+# 本地部署流程说明（仅本地参考，不入库）
+docs/deploy.md
+

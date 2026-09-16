@@ -36,6 +36,8 @@ func main() {
 
 	// Daily P&L snapshot: backfill today on startup, then record every day at 15:15.
 	api.EnsureSnapshot()
+	// 补齐历史 pnl_daily 的 base_cny（盈亏率视图依赖），再启动定时快照。
+	api.BackfillPnlBaseCNY()
 	go api.ScheduleDailySnapshot()
 	go api.ScheduleDailyAISummary()
 
