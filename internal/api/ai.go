@@ -370,10 +370,6 @@ func buildPortfolioStats(uid int64) (string, error) {
 	rate, hkdRate, _ := market.FetchFXRates()
 	today := time.Now().Format("2006-01-02")
 
-	hkdToCny := 1.0
-	if hkdRate > 0 {
-		hkdToCny = rate / hkdRate
-	}
 	var (
 		cnyMV, cnyPnl         float64
 		usdMV, usdPnl         float64
@@ -394,23 +390,19 @@ func buildPortfolioStats(uid int64) (string, error) {
 		case "USD":
 			usdMV += mv
 			usdPnl += pnl
-			totalCNY += mv * rate
-			totalCostCNY += cv * rate
 		case "HKD":
 			hkdMV += mv
 			hkdPnl += pnl
-			totalCNY += mv * hkdToCny
-			totalCostCNY += cv * hkdToCny
 		default:
 			cnyMV += mv
 			cnyPnl += pnl
-			totalCNY += mv
-			totalCostCNY += cv
 		}
-		cmv := mv * rateChoice(h.Currency, rate, hkdRate)
+		totalCNY += fxToCNY(mv, h.Currency, rate, hkdRate)
+		totalCostCNY += fxToCNY(cv, h.Currency, rate, hkdRate)
+		cmv := fxToCNY(mv, h.Currency, rate, hkdRate)
 		catMV[h.Category] += cmv
 		mktMV[h.Market] += cmv
-		totalDayCNY += v.DayPnl * rateChoice(h.Currency, rate, hkdRate)
+		totalDayCNY += fxToCNY(v.DayPnl, h.Currency, rate, hkdRate)
 	}
 	totalPnl := totalCNY - totalCostCNY
 	totalPct := 0.0
@@ -430,8 +422,8 @@ func buildPortfolioStats(uid int64) (string, error) {
 	b.WriteString("总盈亏(CNY)：" + sf(totalPnl) + "（总收益率 " + pf(totalPct) + "）\n")
 	b.WriteString("当日盈亏(CNY)：" + sf(totalDayCNY) + "\n")
 	b.WriteString("RMB 市值(CNY)：" + nf(cnyMV) + "（盈亏 " + sf(cnyPnl) + "）\n")
-	b.WriteString("USD 市值折合(CNY)：" + nf(usdMV*rate) + "（盈亏 " + sf(usdPnl*rate) + "）\n")
-	b.WriteString("HKD 市值折合(CNY)：" + nf(hkdMV*hkdToCny) + "（盈亏 " + sf(hkdPnl*hkdToCny) + "）\n")
+	b.WriteString("USD 市值折合(CNY)：" + nf(fxToCNY(usdMV, "USD", rate, hkdRate)) + "（盈亏 " + sf(fxToCNY(usdPnl, "USD", rate, hkdRate)) + "）\n")
+	b.WriteString("HKD 市值折合(CNY)：" + nf(fxToCNY(hkdMV, "HKD", rate, hkdRate)) + "（盈亏 " + sf(fxToCNY(hkdPnl, "HKD", rate, hkdRate)) + "）\n")
 
 	b.WriteString("\n【资产结构（按 CNY 折算市值）】\n")
 	for _, k := range []string{"stock", "fund"} {
@@ -453,32 +445,12 @@ func buildPortfolioStats(uid int64) (string, error) {
 		h := v.Holding
 		line := fmt.Sprintf("%d. %s(%s) %s/%s/%s 份额%s 成本价%s 现价%s 市值(CNY)%s",
 			i+1, h.Name, h.Symbol, catLabel(h.Category), h.Market, h.Currency,
-			nf(h.Quantity), nf(h.CostPrice), nf(h.CurrentPrice), nf(v.MarketValue*(rateChoice(h.Currency, rate, hkdRate))))
-		line += " 当日盈亏" + sf(v.DayPnl*(rateChoice(h.Currency, rate, hkdRate))) + "(" + pf(v.DayPnlPct) + ")"
-		line += " 总盈亏" + sf(v.Pnl*(rateChoice(h.Currency, rate, hkdRate))) + "(" + pf(v.PnlPct) + ")"
+			nf(h.Quantity), nf(h.CostPrice), nf(h.CurrentPrice), nf(fxToCNY(v.MarketValue, h.Currency, rate, hkdRate)))
+		line += " 当日盈亏" + sf(fxToCNY(v.DayPnl, h.Currency, rate, hkdRate)) + "(" + pf(v.DayPnlPct) + ")"
+		line += " 总盈亏" + sf(fxToCNY(v.Pnl, h.Currency, rate, hkdRate)) + "(" + pf(v.PnlPct) + ")"
 		b.WriteString(line + "\n")
 	}
 	return b.String(), nil
-}
-
-// rateChoice returns the multiplier to convert a holding's value into CNY.
-// USD->CNY uses cnyRate; HKD->CNY uses cnyRate/hkdRate (both USD-based rates
-// from FetchFXRates). Other currencies are treated as CNY (multiplier 1).
-func rateChoice(cur string, cnyRate, hkdRate float64) float64 {
-	switch cur {
-	case "USD":
-		if cnyRate <= 0 {
-			return 1
-		}
-		return cnyRate
-	case "HKD":
-		if hkdRate > 0 {
-			return cnyRate / hkdRate
-		}
-		return 1
-	default:
-		return 1
-	}
 }
 
 func catLabel(c string) string {

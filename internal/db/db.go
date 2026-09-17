@@ -29,7 +29,7 @@ type Holding struct {
 	CurrentPrice float64 `json:"current_price"`
 	PrevClose    float64 `json:"prev_close"`
 	Note         string  `json:"note"`
-	LinkedSymbol string  `json:"linked_symbol"` // 基金关��的股票代码，非空时点击基金可做技术分析
+	LinkedSymbol string  `json:"linked_symbol"` // 基金关联的股票代码，非空时点击基金可做技术分析
 	BuyDate      string  `json:"buy_date"`       // 买入日期（交易日期），YYYY-MM-DD，为空则不计持有天数
 	AssetType    string  `json:"asset_type"`     // 资产类型标签（红利价值/成长科技/消费/医药等，来自设置）
 	TransactionCost float64 `json:"transaction_cost"` // 交易成本/手续费，按持仓币种计，可选
@@ -291,13 +291,6 @@ func SaveAnalysisCache(symbol, date, barsJSON, indicatorsJSON, probabilityJSON, 
 			valuation_json=excluded.valuation_json,
 			generated_at=excluded.generated_at`,
 		symbol, date, barsJSON, indicatorsJSON, probabilityJSON, dailySignalsJSON, valuationJSON, generatedAt)
-	return err
-}
-
-// ClearAnalysisCacheByDate drops all cached analysis rows for a date. Called
-// when the custom script changes so stale engine results are not served.
-func ClearAnalysisCacheByDate(date string) error {
-	_, err := DB.Exec(`DELETE FROM analysis_cache WHERE date=?`, date)
 	return err
 }
 

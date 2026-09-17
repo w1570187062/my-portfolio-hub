@@ -557,19 +557,6 @@ func listTransactions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"transactions": txs, "realized_total": total})
 }
 
-// mapCashCurrency maps a holding's currency (CNY/USD/HKD) to the cash_accounts
-// currency code (rmb/usd/hkd) used by the cash ledger.
-func mapCashCurrency(cur string) string {
-	switch strings.ToUpper(strings.TrimSpace(cur)) {
-	case "USD":
-		return "usd"
-	case "HKD":
-		return "hkd"
-	default:
-		return "rmb"
-	}
-}
-
 // applyCashForAdjust 把一次加仓/减仓的资金变动落到现金账户（并写一条流水）：
 //   加仓 BUY ：从账户扣款  数量×价格 + 费用
 //   减仓 SELL：回款入账    数量×价格 − 费用
@@ -814,10 +801,6 @@ func summary(c *gin.Context) {
 		return
 	}
 	cnyRate, hkdRate, degraded := market.GetFXRates()
-	hkdToCny := 1.0
-	if hkdRate > 0 {
-		hkdToCny = cnyRate / hkdRate
-	}
 	var (
 		cnyMV, cnyCV, cnyPnl     float64
 		usdMV, usdCV, usdPnl     float64
@@ -834,30 +817,24 @@ func summary(c *gin.Context) {
 			cnyMV += mv
 			cnyCV += cv
 			cnyPnl += pnl
-			totalCNY += mv
-			totalCostCNY += cv
 		case "USD":
 			usdMV += mv
 			usdCV += cv
 			usdPnl += pnl
-			totalCNY += mv * cnyRate
-			totalCostCNY += cv * cnyRate
 		case "HKD":
 			hkdMV += mv
 			hkdCV += cv
 			hkdPnl += pnl
-			totalCNY += mv * hkdToCny
-			totalCostCNY += cv * hkdToCny
 		default:
 			// 未知币种仍按 CNY 计入总额，避免被丢弃；但收集起来返回给
 			// 调用方，便于排查，而不是静默错算成 CNY。
 			cnyMV += mv
 			cnyCV += cv
 			cnyPnl += pnl
-			totalCNY += mv
-			totalCostCNY += cv
 			unsupported = append(unsupported, fmt.Sprintf("%s(%s)", h.Symbol, h.Currency))
 		}
+		totalCNY += fxToCNY(mv, h.Currency, cnyRate, hkdRate)
+		totalCostCNY += fxToCNY(cv, h.Currency, cnyRate, hkdRate)
 	}
 	totalPnl := totalCNY - totalCostCNY
 	var totalPct float64
@@ -908,14 +885,7 @@ func summary(c *gin.Context) {
 	todayStr := time.Now().Format("2006-01-02")
 	if rrows, e := db.ListRealizedPnl(uid, todayStr); e == nil {
 		for _, rp := range rrows {
-			switch strings.ToUpper(rp.Currency) {
-			case "USD":
-				todayRealizedCNY += rp.Amount * cnyRate
-			case "HKD":
-				todayRealizedCNY += rp.Amount * hkdToCny
-			default:
-				todayRealizedCNY += rp.Amount
-			}
+			todayRealizedCNY += fxToCNY(rp.Amount, rp.Currency, cnyRate, hkdRate)
 			realizedToday = append(realizedToday, realizedItem{
 				Symbol: rp.Symbol, Name: rp.Name, Currency: rp.Currency, Amount: rp.Amount, Date: rp.Date,
 			})
@@ -930,7 +900,7 @@ func summary(c *gin.Context) {
 		"month_pnl_cny":       round2(monthPNL),
 		"month_pnl_cny_ccy":   round2(monthPNLCny),
 		"month_pnl_usd":       round2(monthPNLUsd),
-		"hkd_rate":            hkdToCny,
+		"hkd_rate":            fxToCNY(1, "HKD", cnyRate, hkdRate),
 		"cny_market_value":    round2(cnyMV),
 		"cny_cost_value":      round2(cnyCV),
 		"cny_pnl":             round2(cnyPnl),
@@ -939,12 +909,12 @@ func summary(c *gin.Context) {
 		"usd_cost_value":      round2(usdCV),
 		"usd_pnl":             round2(usdPnl),
 		"usd_pnl_pct":         round2(usdPct),
-		"usd_market_value_cny": round2(usdMV * cnyRate),
+		"usd_market_value_cny": round2(fxToCNY(usdMV, "USD", cnyRate, hkdRate)),
 		"hkd_market_value":    round2(hkdMV),
 		"hkd_cost_value":      round2(hkdCV),
 		"hkd_pnl":             round2(hkdPnl),
 		"hkd_pnl_pct":         round2(hkdPct),
-		"hkd_market_value_cny": round2(hkdMV * hkdToCny),
+		"hkd_market_value_cny": round2(fxToCNY(hkdMV, "HKD", cnyRate, hkdRate)),
 		"total_cny":           round2(totalCNY),
 		"total_cost_cny":      round2(totalCostCNY),
 		"total_pnl":           round2(totalPnl),
@@ -1143,10 +1113,6 @@ func doSnapshot(uid int64) error {
 	if fxDegraded {
 		log.Printf("[snapshot] 汇率源降级，使用上次成功汇率 CNY=%.4f HKD=%.4f", cnyRate, hkdRate)
 	}
-	hkdToCny := 1.0
-	if hkdRate > 0 {
-		hkdToCny = cnyRate / hkdRate
-	}
 	today := now.Format("2006-01-02")
 	var totalCNY, totalUSD float64
 	byCat := map[string]float64{"stock": 0, "fund": 0}
@@ -1214,19 +1180,11 @@ func doSnapshot(uid int64) error {
 		}
 		byCat[h.Category] += dp
 		byCur[h.Currency] += dp
-		var dpCNY float64
-		switch h.Currency {
-		case "USD":
+		if strings.EqualFold(h.Currency, "USD") {
 			totalUSD += dp
-			dpCNY = dp * cnyRate
-			totalCNY += dpCNY
-		case "HKD":
-			dpCNY = dp * hkdToCny
-			totalCNY += dpCNY
-		default:
-			dpCNY = dp
-			totalCNY += dp
 		}
+		dpCNY := fxToCNY(dp, h.Currency, cnyRate, hkdRate)
+		totalCNY += dpCNY
 		// 涨跌幅：现价相对昨收，昨收优先持仓字段，兜底查历史
 		chgPct := 0.0
 		prevClose := h.PrevClose
@@ -1249,19 +1207,11 @@ func doSnapshot(uid int64) error {
 	// 由于 doSnapshot 每次整体重算价格盈亏并重新取该表，这里天然幂等、不会被覆盖。
 	if rrows, e := db.ListRealizedPnl(uid, today); e == nil {
 		for _, rp := range rrows {
-			var dpCNY float64
-			switch strings.ToUpper(rp.Currency) {
-			case "USD":
+			if strings.EqualFold(rp.Currency, "USD") {
 				totalUSD += rp.Amount
-				dpCNY = rp.Amount * cnyRate
-				totalCNY += dpCNY
-			case "HKD":
-				dpCNY = rp.Amount * hkdToCny
-				totalCNY += dpCNY
-			default:
-				dpCNY = rp.Amount
-				totalCNY += dpCNY
 			}
+			dpCNY := fxToCNY(rp.Amount, rp.Currency, cnyRate, hkdRate)
+			totalCNY += dpCNY
 			byCur[rp.Currency] += rp.Amount
 			bySym = append(bySym, symPnl{Symbol: rp.Symbol, Name: rp.Name + "·已实现", Pnl: round2(rp.Amount), PnlCNY: round2(dpCNY), Currency: rp.Currency, ChangePct: 0})
 		}
@@ -1270,23 +1220,16 @@ func doSnapshot(uid int64) error {
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
 	// 真实日收益率分母：当日净资产基数 = 持仓市值 + 理财市值 + 现金 − 负债（折算 CNY）。
 	// 盈亏日历/走势切换"盈亏率"时用 当日盈亏 / base_cny 计算，而非对金额做归一化。
-	baseCNY := computeEquityBaseCNY(uid, hs, cnyRate, hkdRate, hkdToCny)
+	baseCNY := computeEquityBaseCNY(uid, hs, cnyRate, hkdRate)
 	return db.SavePnlDaily(today, round2(totalCNY), round2(totalUSD), cnyRate, round2(baseCNY), detail, uid)
 }
 
 // computeEquityBaseCNY 计算该用户当日净资产基数（CNY），用于真实日收益率：
 // 当日收益率 = 当日盈亏(含理财) / 净资产基数。基数 = 持仓市值 + 理财市值 + 现金 − 负债（均折算 CNY）。
-func computeEquityBaseCNY(uid int64, hs []db.Holding, cnyRate, hkdRate, hkdToCny float64) float64 {
+func computeEquityBaseCNY(uid int64, hs []db.Holding, cnyRate, hkdRate float64) float64 {
 	var base float64
 	for _, h := range hs {
-		mv := h.CurrentPrice * h.Quantity
-		switch strings.ToUpper(h.Currency) {
-		case "USD":
-			mv *= cnyRate
-		case "HKD":
-			mv *= hkdToCny
-		}
-		base += mv
+		base += fxToCNY(h.CurrentPrice*h.Quantity, h.Currency, cnyRate, hkdRate)
 	}
 	if wps, e := db.ListWealth(uid); e == nil {
 		for _, w := range wps {
@@ -1318,11 +1261,7 @@ func BackfillPnlBaseCNY() {
 			continue
 		}
 		cnyRate, hkdRate, _ := market.GetFXRates()
-		hkdToCny := 1.0
-		if hkdRate > 0 {
-			hkdToCny = cnyRate / hkdRate
-		}
-		base := computeEquityBaseCNY(u.ID, hs, cnyRate, hkdRate, hkdToCny)
+		base := computeEquityBaseCNY(u.ID, hs, cnyRate, hkdRate)
 		if base <= 0 {
 			continue
 		}
@@ -1499,10 +1438,6 @@ func finalizePnlFromPrices(date string, uid int64) error {
 		qtyBySym[h.Symbol] = h.Quantity
 	}
 	cnyRate, hkdRate, _ := market.GetFXRates()
-	hkdToCny := 1.0
-	if hkdRate > 0 {
-		hkdToCny = cnyRate / hkdRate
-	}
 	var totalCNY, totalUSD float64
 	byCat := map[string]float64{"stock": 0, "fund": 0}
 	byCur := map[string]float64{"CNY": 0, "USD": 0, "HKD": 0}
@@ -1531,38 +1466,22 @@ func finalizePnlFromPrices(date string, uid int64) error {
 		}
 		byCat[cat] += dp
 		byCur[cur] += dp
-		var dpCNY float64
-		switch cur {
-		case "USD":
+		if strings.EqualFold(cur, "USD") {
 			totalUSD += dp
-			dpCNY = dp * cnyRate
-			totalCNY += dpCNY
-		case "HKD":
-			dpCNY = dp * hkdToCny
-			totalCNY += dpCNY
-		default:
-			dpCNY = dp
-			totalCNY += dp
 		}
+		dpCNY := fxToCNY(dp, cur, cnyRate, hkdRate)
+		totalCNY += dpCNY
 		bySym = append(bySym, symPnl{Symbol: sym, Name: name, Pnl: dp, PnlCNY: dpCNY, Currency: cur})
 	}
 	// 合并当日已实现盈亏（减仓落库）：与 doSnapshot 保持一致。否则白天快照漏跑时，
 	// 午夜回填只会按价格重算、把已实现盈亏（如清仓落袋）丢掉。
 	if rrows, e := db.ListRealizedPnl(uid, date); e == nil {
 		for _, rp := range rrows {
-			var rCNY float64
-			switch strings.ToUpper(rp.Currency) {
-			case "USD":
+			if strings.EqualFold(rp.Currency, "USD") {
 				totalUSD += rp.Amount
-				rCNY = rp.Amount * cnyRate
-				totalCNY += rCNY
-			case "HKD":
-				rCNY = rp.Amount * hkdToCny
-				totalCNY += rCNY
-			default:
-				rCNY = rp.Amount
-				totalCNY += rCNY
 			}
+			rCNY := fxToCNY(rp.Amount, rp.Currency, cnyRate, hkdRate)
+			totalCNY += rCNY
 			byCur[rp.Currency] += rp.Amount
 			bySym = append(bySym, symPnl{Symbol: rp.Symbol, Name: rp.Name + "·已实现", Pnl: round2(rp.Amount), PnlCNY: round2(rCNY), Currency: rp.Currency, ChangePct: 0})
 		}
@@ -1570,7 +1489,7 @@ func finalizePnlFromPrices(date string, uid int64) error {
 	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
 		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
 	// 同 doSnapshot：补齐当日净资产基数，保证"真实日收益率"口径一致
-	baseCNY := computeEquityBaseCNY(uid, hs, cnyRate, hkdRate, hkdToCny)
+	baseCNY := computeEquityBaseCNY(uid, hs, cnyRate, hkdRate)
 	return db.SavePnlDaily(date, totalCNY, totalUSD, cnyRate, round2(baseCNY), detail, uid)
 }
 
@@ -1649,10 +1568,6 @@ func wealthDailyPnlByDate(uid int64) map[string]*wealthDayPnl {
 		return nil
 	}
 	cnyRate, hkdRate, _ := market.GetFXRates()
-	hkdToCny := 1.0
-	if hkdRate > 0 {
-		hkdToCny = cnyRate / hkdRate
-	}
 	out := map[string]*wealthDayPnl{}
 	for _, w := range products {
 		snaps, err := db.ListWealthSnapshots(w.ID)
@@ -1666,15 +1581,7 @@ func wealthDailyPnlByDate(uid int64) map[string]*wealthDayPnl {
 			if hasPrev {
 				pnl = s.Amount - prevAmt - s.Cashflow
 			}
-			var pnlCNY float64
-			switch strings.ToLower(w.Currency) {
-			case "usd":
-				pnlCNY = pnl * cnyRate
-			case "hkd":
-				pnlCNY = pnl * hkdToCny
-			default:
-				pnlCNY = pnl
-			}
+			pnlCNY := fxToCNY(pnl, w.Currency, cnyRate, hkdRate)
 			d := out[s.Date]
 			if d == nil {
 				d = &wealthDayPnl{}

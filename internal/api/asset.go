@@ -72,11 +72,11 @@ func assetOverview(c *gin.Context) {
 	eqItems := make([]gin.H, 0, len(hs))
 	for _, h := range hs {
 		v := enrich(h, uid)
-		cmv := round2(v.MarketValue * rateChoice(h.Currency, cnyRate, hkdRate))
+		cmv := round2(fxToCNY(v.MarketValue, h.Currency, cnyRate, hkdRate))
 		eqMV += cmv
-		eqCV += v.CostValue * rateChoice(h.Currency, cnyRate, hkdRate)
-		eqPnl += v.Pnl * rateChoice(h.Currency, cnyRate, hkdRate)
-		eqDay += v.DayPnl * rateChoice(h.Currency, cnyRate, hkdRate)
+		eqCV += fxToCNY(v.CostValue, h.Currency, cnyRate, hkdRate)
+		eqPnl += fxToCNY(v.Pnl, h.Currency, cnyRate, hkdRate)
+		eqDay += fxToCNY(v.DayPnl, h.Currency, cnyRate, hkdRate)
 		if regionOf(h.SourceID) == "overseas" {
 			ovsAssets += cmv
 		} else {
@@ -89,8 +89,8 @@ func assetOverview(c *gin.Context) {
 			"category":     h.Category,
 			"market":       h.Market,
 			"market_value": cmv,
-			"day_pnl":      round2(v.DayPnl * rateChoice(h.Currency, cnyRate, hkdRate)),
-			"pnl":          round2(v.Pnl * rateChoice(h.Currency, cnyRate, hkdRate)),
+			"day_pnl":      round2(fxToCNY(v.DayPnl, h.Currency, cnyRate, hkdRate)),
+			"pnl":          round2(fxToCNY(v.Pnl, h.Currency, cnyRate, hkdRate)),
 		})
 	}
 
@@ -324,19 +324,8 @@ func listSources(c *gin.Context) {
 // 负债作为资金扣减（负债挂在来源下即属该账户的资金占用），消费为流水不计入。
 func sourceFundsCNY(uid, sourceID int64) float64 {
 	cnyRate, hkdRate, _ := market.GetFXRates()
-	hkdToCny := 1.0
-	if hkdRate > 0 {
-		hkdToCny = cnyRate / hkdRate
-	}
 	conv := func(cur string, v float64) float64 {
-		switch strings.ToLower(cur) {
-		case "usd":
-			return v * cnyRate
-		case "hkd":
-			return v * hkdToCny
-		default:
-			return v
-		}
+		return fxToCNY(v, cur, cnyRate, hkdRate)
 	}
 	var total float64
 	// 持仓（市值 = 数量 × 现价）
@@ -1466,10 +1455,10 @@ func buildAssetStats(uid int64) (string, error) {
 	for _, h := range hs {
 		v := enrich(h, uid)
 		eqViews = append(eqViews, v)
-		eqMV += v.MarketValue * rateChoice(h.Currency, cnyRate, hkdRate)
-		eqCV += v.CostValue * rateChoice(h.Currency, cnyRate, hkdRate)
-		eqPnl += v.Pnl * rateChoice(h.Currency, cnyRate, hkdRate)
-		eqDay += v.DayPnl * rateChoice(h.Currency, cnyRate, hkdRate)
+		eqMV += fxToCNY(v.MarketValue, h.Currency, cnyRate, hkdRate)
+		eqCV += fxToCNY(v.CostValue, h.Currency, cnyRate, hkdRate)
+		eqPnl += fxToCNY(v.Pnl, h.Currency, cnyRate, hkdRate)
+		eqDay += fxToCNY(v.DayPnl, h.Currency, cnyRate, hkdRate)
 	}
 	eqTotalPct := 0.0
 	if eqCV > 0 {
@@ -1483,9 +1472,9 @@ func buildAssetStats(uid int64) (string, error) {
 		h := v.Holding
 		line := fmt.Sprintf("%d. %s(%s) %s/%s 市值(CNY)%s 当日盈亏%s(%s) 总盈亏%s(%s)",
 			i+1, h.Name, h.Symbol, catLabel(h.Category), h.Market,
-			nf(v.MarketValue*rateChoice(h.Currency, cnyRate, hkdRate)),
-			sf(v.DayPnl*rateChoice(h.Currency, cnyRate, hkdRate)), pf(v.DayPnlPct),
-			sf(v.Pnl*rateChoice(h.Currency, cnyRate, hkdRate)), pf(v.PnlPct))
+			nf(fxToCNY(v.MarketValue, h.Currency, cnyRate, hkdRate)),
+			sf(fxToCNY(v.DayPnl, h.Currency, cnyRate, hkdRate)), pf(v.DayPnlPct),
+			sf(fxToCNY(v.Pnl, h.Currency, cnyRate, hkdRate)), pf(v.PnlPct))
 		b.WriteString(line + "\n")
 	}
 

@@ -186,7 +186,7 @@ func assetRebalance(c *gin.Context) {
 	var total float64
 	for _, h := range hs {
 		v := enrich(h, uid)
-		mv := round2(v.MarketValue * rateChoice(h.Currency, cnyRate, hkdRate))
+		mv := round2(fxToCNY(v.MarketValue, h.Currency, cnyRate, hkdRate))
 		total += mv
 		parts := strings.Split(h.AssetType, ",")
 		tags := make([]string, 0, len(parts))
