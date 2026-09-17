@@ -12,10 +12,11 @@ import (
 	"portfolio/internal/db"
 	"portfolio/internal/market"
 
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 )
 
-//go:embed web
+//go:embed web/dist
 var webFS embed.FS
 
 func main() {
@@ -45,7 +46,7 @@ func main() {
 	api.EnsureMidnightReset()
 	go api.ScheduleMidnightReset()
 
-	sub, err := fs.Sub(webFS, "web")
+	sub, err := fs.Sub(webFS, "web/dist")
 	if err != nil {
 		log.Fatalf("embed fs: %v", err)
 	}
@@ -54,7 +55,7 @@ func main() {
 	// 这样每次部署（VERSION 变化）都会让浏览器拉取全新的前端，彻底规避"改了前端却不生效"的缓存问题。
 	noCache := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
-			if data, err := fs.ReadFile(webFS, "web/index.html"); err == nil {
+			if data, err := fs.ReadFile(webFS, "web/dist/index.html"); err == nil {
 				// 用含时间戳的完整 VERSION 作为缓存戳：每次部署（时间戳变化）都会
 				// 让浏览器重新拉取 app.js / style.css，彻底规避“改了前端却不生效”。
 				v := api.BuildInfo
@@ -82,6 +83,8 @@ func main() {
 	})
 
 	r := gin.Default()
+	// 启用 HTTP 响应 gzip 压缩（JS/CSS/HTML/JSON 均受益；客户端未带 Accept-Encoding: gzip 时自动透传）。
+	r.Use(gzip.Gzip(gzip.DefaultCompression))
 	api.RegisterRoutes(r)
 	r.NoRoute(gin.WrapH(noCache))
 

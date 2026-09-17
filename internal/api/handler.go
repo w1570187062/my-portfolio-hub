@@ -140,13 +140,13 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/guides/:id", getGuide)
 		g.PUT("/guides/:id", updateGuide)
 		g.DELETE("/guides/:id", deleteGuide)
-		g.GET("/summary", summary)
+
+		g.GET("/home", home)
 		g.GET("/rate", rate)
 		g.GET("/fx", fxInfo)
 		g.POST("/pnl/snapshot", snapshotHandler)
 		g.GET("/pnl/history", pnlHistory)
 		g.GET("/holdings/:id/pnl-history", holdingPnlHistory)
-		g.GET("/price/spark", priceSparkHandler)
 		g.GET("/ai/settings", aiSettingsGet)
 		g.POST("/ai/settings", aiSettingsPost)
 		g.POST("/ai/summary", aiSummary)
@@ -305,12 +305,13 @@ func clearUserHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func listHoldings(c *gin.Context) {
-	uid := currentUserID(c)
+// computeHoldings builds the enriched holdings list plus the helper fields the
+// client needs for the first screen. Split out of listHoldings so the merged
+// /api/home endpoint can reuse it without duplicating the logic.
+func computeHoldings(uid int64) ([]HoldingView, string, string, string, error) {
 	hs, err := db.List(uid)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return nil, "", "", "", err
 	}
 	out := make([]HoldingView, 0, len(hs))
 	srcName := map[int64]string{}
@@ -324,11 +325,25 @@ func listHoldings(c *gin.Context) {
 		v.SourceName = srcName[h.SourceID]
 		out = append(out, v)
 	}
+	return out,
+		time.Now().Format("2006-01-02"),
+		latestSnapshotDate(uid),
+		maxUpdatedAt(hs),
+		nil
+}
+
+func listHoldings(c *gin.Context) {
+	uid := currentUserID(c)
+	out, day, snap, upd, err := computeHoldings(uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"holdings":      out,
-		"day_date":      time.Now().Format("2006-01-02"),
-		"snapshot_date": latestSnapshotDate(uid),
-		"updated_at_max": maxUpdatedAt(hs),
+		"holdings":       out,
+		"day_date":       day,
+		"snapshot_date":  snap,
+		"updated_at_max": upd,
 	})
 }
 
@@ -793,12 +808,10 @@ func fxInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, market.GetFXInfo())
 }
 
-func summary(c *gin.Context) {
-	uid := currentUserID(c)
+func computeSummary(uid int64) (gin.H, error) {
 	hs, err := db.List(uid)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return nil, err
 	}
 	cnyRate, hkdRate, degraded := market.GetFXRates()
 	var (
@@ -891,7 +904,7 @@ func summary(c *gin.Context) {
 			})
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{
+	return gin.H{
 		"today_realized_cny":  round2(todayRealizedCNY),
 		"realized_today":      realizedToday,
 		"rate":                cnyRate,
@@ -919,7 +932,7 @@ func summary(c *gin.Context) {
 		"total_cost_cny":      round2(totalCostCNY),
 		"total_pnl":           round2(totalPnl),
 		"total_pnl_pct":       round2(totalPct),
-	})
+	}, nil
 }
 
 // ---- Daily P&L snapshot ----
@@ -1610,17 +1623,11 @@ func mergeWealthDetail(orig string, items []wealthPnlItem) string {
 	return string(b)
 }
 
-// priceSparkHandler 返回每只标的近 N 个交易日的收盘价序列（时间正序），
-// 供前端表格行内迷你走势线使用。symbols 用逗号分隔，一次批量返回。
-func priceSparkHandler(c *gin.Context) {
+// computeSpark returns each symbol's last N trading-day close prices (ascending),
+// for the in-table mini sparklines. Shared by the merged
+// /api/home endpoint so the logic lives in exactly one place.
+func computeSpark(uid int64, syms []string) map[string][]float64 {
 	const days = 20
-	uid := currentUserID(c)
-	var syms []string
-	for _, s := range strings.Split(c.Query("symbols"), ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			syms = append(syms, s)
-		}
-	}
 	out := make(map[string][]float64, len(syms))
 	for _, s := range syms {
 		series, err := db.GetPriceSeries(s, uid)
@@ -1636,7 +1643,50 @@ func priceSparkHandler(c *gin.Context) {
 		}
 		out[s] = closes
 	}
-	c.JSON(http.StatusOK, gin.H{"spark": out})
+	return out
+}
+
+
+// home is the merged first-screen endpoint. It runs the same computations the client
+// previously fetched via /api/holdings + /api/summary + /api/fx + /api/asset/sources
+// + /api/price/spark and returns them in ONE response, removing the request waterfall
+// that delayed visual completion (the Speed Index bottleneck).
+func home(c *gin.Context) {
+	uid := currentUserID(c)
+	out, day, snap, upd, herr := computeHoldings(uid)
+	if herr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": herr.Error()})
+		return
+	}
+	sd, serr := computeSummary(uid)
+	if serr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": serr.Error()})
+		return
+	}
+	fx := market.GetFXInfo()
+	srcs, _ := db.ListSources(uid)
+	seen := map[string]bool{}
+	syms := make([]string, 0, len(out))
+	for _, h := range out {
+		if !seen[h.Symbol] {
+			seen[h.Symbol] = true
+			syms = append(syms, h.Symbol)
+		}
+	}
+	spark := computeSpark(uid, syms)
+	resp := gin.H{
+		"holdings":       out,
+		"day_date":       day,
+		"snapshot_date":  snap,
+		"updated_at_max": upd,
+		"fx":             fx,
+		"sources":        srcs,
+		"spark":          spark,
+	}
+	for k, v := range sd {
+		resp[k] = v
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // holdingPnlHistory returns the daily P&L history for a single holding, derived from

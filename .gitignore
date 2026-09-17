@@ -28,3 +28,7 @@ DESIGN_SYSTEM.md
 # 本地部署流程说明（仅本地参考，不入库）
 docs/deploy.md
 
+# 前端构建产物（由 web/build.mjs 生成，供 //go:embed web/dist 使用）
+web/dist/
+node_modules/
+

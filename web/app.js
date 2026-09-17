@@ -248,48 +248,34 @@ function toast(msg, type = 'info') {
 
 async function load() {
   try {
-    const [h, s, f] = await Promise.all([api('/api/holdings'), api('/api/summary'), api('/api/fx')]);
-    if (!h.ok) { toast('加载持仓失败 (HTTP ' + h.status + ')', 'err'); return; }
-    if (!s.ok) { toast('加载汇总失败 (HTTP ' + s.status + ')', 'err'); return; }
-    const hd = await h.json();
-    const sd = await s.json();
-    usdRate = sd.rate || 1;
-    hkdRate = sd.hkd_rate || 1;
-    // 汇率条：解析 /api/fx 结果并渲染（漏调用会导致汇率条一直 hidden）
-    const fd = await f.json().catch(() => null);
-    renderFx(fd);
+    // 首屏数据合并为单次请求：/api/home 聚合 holdings/summary/fx/sources/spark，
+    // 消除原先 4~5 个请求的瀑布，缩短首屏视觉完成时间（Speed Index 瓶颈）。
+    const r = await api('/api/home');
+    if (!r.ok) { toast('加载失败 (HTTP ' + r.status + ')', 'err'); return; }
+    const hd = await r.json();
+    usdRate = hd.rate || 1;
+    hkdRate = hd.hkd_rate || 1;
+    // 汇率条：解析 /api/home 内 fx 字段并渲染（漏调用会导致汇率条一直 hidden）
+    renderFx(hd.fx);
     allHoldings = hd.holdings || [];
+    assetSources = hd.sources || [];
+    sparkCache = hd.spark || {};
     updateGuideBadge(); // 刷新「调仓计划」按钮徽标（已触发的动态调仓档位数）
     dayDate = hd.day_date || '';
     snapshotDate = hd.snapshot_date || '';
     updatedAtMax = hd.updated_at_max || '';
-    monthPnlCNY = sd.month_pnl_cny || 0;
-    monthPnlCny = sd.month_pnl_cny_ccy || 0;
-    monthPnlUsd = sd.month_pnl_usd || 0;
-    todayRealizedCny = sd.today_realized_cny || 0;
+    monthPnlCNY = hd.month_pnl_cny || 0;
+    monthPnlCny = hd.month_pnl_cny_ccy || 0;
+    monthPnlUsd = hd.month_pnl_usd || 0;
+    todayRealizedCny = hd.today_realized_cny || 0;
     const ddl = document.getElementById('dayDateLbl');
     if (ddl) ddl.textContent = dayDate;
     renderFreshness();
     if (!freshnessTimer) freshnessTimer = setInterval(renderFreshness, 30000);
-    await loadSourcesCache();
-    sparkCache = await loadSpark(hd.holdings || []);
     buildFilters();
     renderFiltered();
   } catch (e) {
     toast('加载异常：' + e.message, 'err');
-  }
-}
-
-// 批量拉取各标的历史收盘价序列（近20日），供表格迷你走势线使用；失败降级为空对象。
-async function loadSpark(hs) {
-  const syms = [...new Set((hs || []).map(x => x.symbol).filter(Boolean))];
-  if (!syms.length) return {};
-  try {
-    const r = await api('/api/price/spark?symbols=' + encodeURIComponent(syms.join(',')));
-    const d = await r.json().catch(() => null);
-    return (d && d.spark) || {};
-  } catch (e) {
-    return {};
   }
 }
 
