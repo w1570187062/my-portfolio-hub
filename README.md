@@ -1,8 +1,8 @@
-# Portfolio · 观澜 / My Folio Hub
+# Portfolio · 持仓侠 / My Folio Hub
 
-> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓与**理财 / 现金 / 负债 / 消费**全景资产。自动刷新行情、计算盈亏、记录历史，提供盈亏日历、技术分析、动态调仓计划与 AI 总结。桌面与移动端自适应。
+> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓与**理财 / 现金 / 负债 / 消费**全景资产。自动刷新行情、计算盈亏、记录历史，提供盈亏日历、技术分析、动态调仓计划与 AI 总结。桌面与移动端自适应。**极致轻量：前后端单二进制、纯 Go 无 CGO，实测常驻内存仅 10 余 MB。**
 >
-> **English**: A self-hosted, multi-user personal investment dashboard for tracking **A-share / US / HK stocks and funds**, plus wealth products, cash, liabilities and consumption. Auto-refreshes quotes, computes P/L, records history, and offers a P/L calendar, technical analysis, dynamic rebuy plans, and AI summaries. Responsive on desktop and mobile.
+> **English**: A self-hosted, multi-user personal investment dashboard for tracking **A-share / US / HK stocks and funds**, plus wealth products, cash, liabilities and consumption. Auto-refreshes quotes, computes P/L, records history, and offers a P/L calendar, technical analysis, dynamic rebuy plans, and AI summaries. Responsive on desktop and mobile. **Ultra-lightweight: a single pure-Go binary (no CGO); measured resident memory is only ~10 MB.**
 
 ## 🌐 在线 Demo / Live Demo
 
@@ -19,14 +19,13 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 **盈亏分析**
 - 盈亏日历：按日着色的月度热力、本月总盈亏、年 / 月快速跳转、单日持仓级明细（前一天 / 后一天切换）
-- 盈亏走势：累计盈亏曲线 + 当日盈亏柱状图，hover 查看 tooltip
 
 **技术分析**
 - K 线 + MA / MACD / RSI / KDJ / BOLL 全指标
 - 自动信号评级（看多 / 看空）+ 逐日信号回测胜率与期望收益，结果缓存
 - 🌟 **基金可关联场内 ETF 做技术分析**：场外基金 / QDII 本身没有 K 线，填一个「关联股票代码」指向对应的场内 ETF（如中概互联 → `513050`），即可像股票一样看 K 线、指标、信号评级与回测；关联代码同时驱动动态补仓档位的计算
 
-**资产全景**
+**资产**
 - 来源 / 理财 / 负债 / 现金 / 消费五类资产，环形占比 + 明细钻取
 - 理财：批量「更新理财持仓」、申购 / 赎回流水、上次快照对比
 - 现金账户：多币种（RMB / HKD / USD）、每来源每币种默认子账户（★）、账户间转账、现金流水
@@ -47,9 +46,17 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 - 多用户隔离（`X-User-Id`），支持数据清空、删除（需输入确认短语）
 - 暗黑 / 亮色双主题 + 主题色自定义：内置 3 套预设（土豪金 / 豆沙绿 / 经典蓝），取色器自定义任意主题色（本机 `localStorage` 记忆）
 
+## 🆕 近期新增
+
+- **收支计划**：首页紧凑卡片 + 「收支计划」页统一管理每月**待入账 / 待还款**；勾选完成即把真实出入账记入对应现金账户（关联负债则同步记一笔还款流水，可一键撤销）；已完成项自动从首页卡片隐藏（不再置灰），条目过多时卡片限高、内部滚动查看。
+- **待还款提前提醒**：到期前一天按自定义时间（默认 07:00）通过钉钉 / 邮件推送。
+- **完整迁移（导出 / 导入）**：勾选「完整迁移」后，除五大类资产外还会一并导出 / 导入 **收支计划、来源账户元数据（类型 / 境内外 / 币种）、AI 配置、应用设置与净值历史**，跨实例无缝搬迁。
+- **资产再平衡**：按风险画像（稳健 / 激进，可自定义）对比当前持仓，给出各类资产目标占比与买入 / 卖出调整建议。
+- **理财快照审计与撤销**：误改 / 误删的每日快照可查看改动前后并一键撤销。
+
 ## 界面预览
 
-| 主页（亮色） | 资产全景 |
+| 主页（亮色） | 资产 |
 | :---: | :---: |
 | ![](docs/screenshots/home-light.png) | ![](docs/screenshots/asset.png) |
 
@@ -61,9 +68,9 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 | :---: | :---: |
 | ![](docs/screenshots/wealth-update.png) | ![](docs/screenshots/buy-plan.png) |
 
-| AI 中枢 · AI 总结 |
-| :---: |
-| ![](docs/screenshots/ai-modal.png) |
+| 编辑收支计划 | AI 中枢 · AI 总结 |
+| :---: | :---: |
+| ![](docs/screenshots/cashflow-plan.png) | ![](docs/screenshots/ai-modal.png) |
 
 ## 功能详解
 
@@ -73,9 +80,9 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 表格行内的「操作」列统一为**纯图标按钮**（编辑 / 历史 / 删除），默认随鼠标悬停淡入，触屏设备常显；图表列、金额列均按等宽数字对齐。
 
-### 盈亏日历与走势
+### 盈亏日历
 
-「盈亏分析」弹框内含 **盈亏日历 / 盈亏走势** 双 Tab。日历按日着色显示每日总盈亏（红涨绿跌），悬停有数据的日期会以表情符号（😍 大涨 → 😱 大跌）代替金额展示当日情绪；点击月份标题可年 / 月快速跳转；点击有数据的日期弹出当日持仓级盈亏明细，可用 ‹ › 按钮在前 / 后一个有数据日期间连续浏览。走势 Tab 提供累计盈亏曲线与当日盈亏柱状图，hover 显示具体数值。
+「盈亏分析」弹框为纯日历视图（已移除旧版「盈亏走势」Tab）：按日着色显示每日总盈亏（红涨绿跌），悬停有数据的日期会以表情符号（😍 大涨 → 😱 大跌）代替金额展示当日情绪；点击月份标题可年 / 月快速跳转；点击有数据的日期弹出当日持仓级盈亏明细，可用 ‹ › 按钮在前 / 后一个有数据日期间连续浏览。
 
 ### 技术分析
 
@@ -92,9 +99,9 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 关联代码同时驱动**动态补仓档位**：档位依据关联 ETF 的均线与波动率给出，而不是基金净值，所以场外基金也能拿到与场内一致的价量依据。若关联代码的 K 线拉取失败，该基金的补仓档位会退回为空，不会拿陈旧行情给出建议。
 
-### 资产全景 · 理财与现金
+### 资产 · 理财与现金
 
-资产全景覆盖来源 / 理财 / 负债 / 现金 / 消费五类，环形图显示占比，点击可钻取明细。
+资产页覆盖来源 / 理财 / 负债 / 现金 / 消费五类，环形图显示占比，点击可钻取明细。
 
 「更新理财持仓」弹框一次性录入所有理财产品的当日持仓金额与当日净存入（转入为正、取出为负），并可指定联动资金账户（申购扣款 / 赎回回款自动记账），保存后自动生成快照与收益统计。
 
@@ -166,7 +173,7 @@ docker compose up -d
 
 ```bash
 docker compose up -d --build
-# 或强制无缓存重建（前端改动必须）
+# 或强制无缓存重建
 docker compose build --no-cache && docker compose up -d --force-recreate
 ```
 
@@ -182,88 +189,6 @@ go build -o portfolio .      # 产物 ./portfolio
 ```
 
 数据落在 `./data/portfolio.db`（compose 已挂 volume）。停止：`docker compose down`（保留数据）；`docker compose down -v` 连数据卷一并删除，慎用。
-
-### 前端缓存与版本号
-
-前端 `index.html` 以 `app.js?v=VERSION` / `style.css?v=VERSION` 引用资源。**改动前端后必须更新 `VERSION` 并重建**，否则浏览器仍用旧缓存：
-
-```bash
-./update-version.sh          # 写入 VERSION = git短哈希|时间戳（无 git 时退化为纯时间戳）
-```
-
-### 部署验证清单
-
-部署后务必核验，不要只看构建成功：
-
-1. **HTTP 可达**：`curl -s -m 10 "http://localhost:9989/" -o /dev/null -w "HTTP %{http_code}\n"` → 期望 `200`。
-2. **版本号生效**：`curl -s "http://localhost:9989/" | grep -o "v=新VERSION值"` 应命中。
-3. **接口自检**：`curl -s "http://localhost:9989/api/version"` 返回 JSON 含版本。
-4. **前端语法把关**（无需构建）：`node --check web/app.js`。
-5. **进程/容器状态**：`docker ps --filter name=portfolio` 为 `Up`，或本机 `./portfolio` 进程在跑。
-
-### 常见坑
-
-- **前端改了不生效** → 忘了 `./update-version.sh` 或忘了重建镜像（必须 `build --no-cache`，确保最新前端进镜像）。
-- **docker build 卡在模块下载** → Dockerfile 用 `GOPROXY=https://goproxy.cn`；若所在网络无法访问该代理，需在能联网的环境构建。
-
-## 目录结构
-
-```
-portfolio/
-├── main.go                # 入口：embed web、初始化 DB / FX / 定时任务
-├── internal/
-│   ├── api/               # Gin 路由 + HTTP 处理（handler / analysis / asset / ai / notify / import）
-│   ├── db/                # SQLite 访问、表结构、迁移
-│   └── market/            # 行情抓取、技术指标、概率评估、补仓计划
-├── web/                   # 前端（//go:embed 打包）
-│   ├── index.html / app.js / style.css / favicon.svg
-├── Dockerfile / docker-compose.yml
-├── update-version.sh      # 写 VERSION = git short-hash|时间戳（破除浏览器缓存）
-└── docs/                  # 文档目录
-```
-
-## 数据模型（核心表）
-
-共 25 张表。多用户隔离方式：业务主表（`holdings`、资产全景各表、AI、小工具、设置）均带 `user_id`；`position_tx` / `buy_plan_executed` / `analysis_cache` / `wealth_snapshots` 通过关联 ID 间接隔离；`notify_settings`（单行 `id=1`）、`fx_cache`、`meta` 为全局共享。
-
-### 持仓与行情
-
-| 表 | 作用 |
-|---|---|
-| `holdings` | 持仓主表。`symbol/name/category/market/currency`、`quantity/cost_price/current_price/prev_close`、`buy_date`（持有天数）、`source_id`（资产来源）、`buy_plan`（动态补仓档位 JSON）、`closed/last_quantity/last_cost_price`（清仓后快照，供历史盈亏重算）、`analysis_signal/analysis_up_pct/analysis_at`（信号缓存）、`transaction_cost`、`asset_type` |
-| `price_daily` | 每日收盘价，主键 `(date, symbol, user_id)` |
-| `pnl_daily` | 每日盈亏汇总，主键 `(date, user_id)`；`total_cny/total_usd/rate` + `detail` JSON（个股 / 理财明细） |
-| `realized_pnl_daily` | 减仓落库的**已实现**盈亏（按用户 + 日期 + 持仓），与浮盈分开统计 |
-| `position_tx` | 加减仓流水：`tx_type` / `quantity` / `price` / `amount` / `fee` / `realized_pnl` / `note` |
-| `buy_plan_executed` | 补仓档位「已执行」标记（含 `action`） |
-| `analysis_cache` | 技术指标与信号回测结果缓存（按 `symbol`，带 `idx_analysis_cache_symbol`） |
-
-### 资产全景
-
-| 表 | 作用 |
-|---|---|
-| `asset_sources` | 资产来源 / 平台：`type`（bank / broker / software）、`region`、`currencies`（逗号分隔多币种） |
-| `wealth_products` | 理财产品：`currency`、`cum_pnl`（累计收益） |
-| `wealth_snapshots` | 理财每日快照，主键 `(wealth_id, date)`；`amount` 持仓金额 + `cashflow` 当日净存入 |
-| `wealth_snapshot_audit` | 理财快照改动审计：记录改前 / 改后值，支持一键撤销误改误删 |
-| `liabilities` | 负债：金额 / 年利率（`rate` 可为 0）/ 月供 |
-| `liability_flows` | 负债流水：`loan` 增加贷款 / `repay` 还款，逐笔记余额变动 |
-| `cash_accounts` | 现金账户：多币种 `currency`、`is_default`（每来源每币种一个 ★ 默认子账户） |
-| `cash_flow` | 现金流水：加减仓付款 / 回款、转账（`transfer_out/in`）、手工调整，含 `ref_*` 关联与余额快照 |
-| `consumptions` | 消费记录：日期 / 来源 / 分类 / 金额 |
-
-### 设置与其他
-
-| 表 | 作用 |
-|---|---|
-| `operation_guides` | 持仓操作指南（买卖笔记）：`title/content/tags/side`（buy / sell） |
-| `users` | 多用户，按 `X-User-Id` 隔离数据；上限 5 个 |
-| `notify_settings` | 通知渠道（钉钉加签 / 邮件 TLS）与推送策略 |
-| `ai_settings` | AI 模型与提示词配置，主键含 `user_id` |
-| `ai_summary_history` | AI 总结历史，正文按 Markdown 渲染 |
-| `calc_inputs` | 小工具输入持久化，主键 `(kind, user_id)`，`payload` 为 JSON |
-| `portfolio_settings` | 应用设置 KV，主键 `(kind, user_id)`；现有 `risk_profiles`（风险画像）、`asset_type_labels`（资产类型标签） |
-| `fx_cache` / `meta` | 汇率缓存（含昨日值，算「汇率日变动」）/ 通用 KV |
 
 ## 定时任务
 
