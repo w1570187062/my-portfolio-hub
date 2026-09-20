@@ -36,7 +36,7 @@ func EnsureUsers() error {
 	// 1) 为子表补充 user_id 列
 	for _, t := range []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
-		"cash_accounts", "consumptions", "ai_summary_history", "operation_guides",
+		"cash_accounts", "consumptions", "operation_guides",
 	} {
 		addColumnIfMissing(t, "user_id", "INTEGER NOT NULL DEFAULT 0")
 	}
@@ -85,7 +85,7 @@ func EnsureUsers() error {
 func backfillUser(def int64) {
 	tables := []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
-		"cash_accounts", "consumptions", "ai_summary_history", "operation_guides",
+		"cash_accounts", "consumptions", "operation_guides",
 		"pnl_daily", "price_daily", "calc_inputs", "ai_settings",
 	}
 	for _, t := range tables {
@@ -268,7 +268,7 @@ func CountUserData(userID int64) (map[string]int, error) {
 	out := map[string]int{}
 	tables := []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
-		"cash_accounts", "consumptions", "operation_guides", "ai_summary_history",
+		"cash_accounts", "consumptions", "operation_guides",
 	}
 	for _, t := range tables {
 		var n int
@@ -283,7 +283,7 @@ func CountUserData(userID int64) (map[string]int, error) {
 		return nil, err
 	}
 	out["position_tx"] = txn
-	// 合计条数（不含 ai 历史这类偏配置性的）
+	// 合计条数（不含 AI 设置这类偏配置性的）
 	total := out["holdings"] + out["asset_sources"] + out["wealth_products"] + out["liabilities"] +
 		out["cash_accounts"] + out["consumptions"] + out["operation_guides"] + out["position_tx"]
 	out["total"] = total
@@ -339,9 +339,6 @@ func ClearUserData(userID int64) error {
 		return err
 	}
 	if _, err := DB.Exec(`DELETE FROM ai_settings WHERE user_id=?`, userID); err != nil {
-		return err
-	}
-	if _, err := DB.Exec(`DELETE FROM ai_summary_history WHERE user_id=?`, userID); err != nil {
 		return err
 	}
 	return nil

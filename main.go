@@ -46,6 +46,9 @@ func main() {
 	api.EnsureMidnightReset()
 	go api.ScheduleMidnightReset()
 
+	// 待还款提前一天提醒：每天在配置时间（默认 07:00）检查次日到期的待还款并推送。
+	go api.ScheduleCashflowReminder()
+
 	sub, err := fs.Sub(webFS, "web/dist")
 	if err != nil {
 		log.Fatalf("embed fs: %v", err)

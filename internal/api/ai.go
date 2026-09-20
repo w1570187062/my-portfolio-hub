@@ -183,14 +183,6 @@ func aiSummary(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	// Persist to history (keep latest 10). Failure is non-fatal. 空内容不写库，避免污染历史。
-	if strings.TrimSpace(content) != "" {
-		if err := db.SaveAISummary(content, b.Model, uid); err != nil {
-			log.Printf("warn: save ai summary history failed: %v", err)
-		}
-	} else {
-		log.Printf("[ai] model=%s 返回内容为空，跳过历史保存", b.Model)
-	}
 	// If the key actually used differs from the saved one (e.g. the user typed a
 	// fresh key and generated without clicking "保存设置"), persist it so it
 	// survives a page refresh. Non-fatal; only when the config loaded cleanly.
@@ -503,19 +495,9 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// aiHistoryGet returns the most recent AI summary history (newest first, max 5).
-func aiHistoryGet(c *gin.Context) {
-	rows, err := db.GetAISummaryHistory(5, currentUserID(c))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"history": rows})
-}
-
 // generateDailyAISummary generates the portfolio AI summary using the saved
-// config, persists it to history, and returns the content. It mirrors the logic
-// in aiSummary but runs without an HTTP context (for the scheduled job).
+// config and returns the content. It mirrors the logic in aiSummary but runs
+// without an HTTP context (for the scheduled job).
 func generateDailyAISummary(uid int64) (string, error) {
 	cfg, err := loadAIConfig(uid)
 	if err != nil {
@@ -537,16 +519,13 @@ func generateDailyAISummary(uid int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := db.SaveAISummary(content, cfg.Model, uid); err != nil {
-		log.Printf("warn: save ai summary history failed: %v", err)
-	}
 	return content, nil
 }
 
 // ScheduleDailyAISummary runs once per day at 21:30 Beijing (after the 21:00
 // fund snapshot). If AutoDaily is enabled in the AI settings, it generates the
-// summary and saves it to history; if AutoSend is also enabled, it pushes the
-// result via the configured notify channels.
+// summary; if AutoSend is also enabled, it pushes the result via the configured
+// notify channels.
 func ScheduleDailyAISummary() {
 	scheduleAt(21, 30, "AI收盘总结", func(label string) {
 		if !isTradingDayCN(time.Now()) {

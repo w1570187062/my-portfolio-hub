@@ -124,6 +124,9 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/users/:id/stats", userStats)
 		g.POST("/users/:id/clear", clearUserHandler)
 
+		// 证券联想：名称/代码模糊匹配（添加/编辑持仓弹框的自动填充数据源）
+		g.GET("/search", searchSecuritiesHandler)
+
 		g.GET("/holdings", listHoldings)
 		g.POST("/holdings", createHolding)
 		g.PUT("/holdings/:id", updateHolding)
@@ -150,7 +153,6 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/ai/settings", aiSettingsGet)
 		g.POST("/ai/settings", aiSettingsPost)
 		g.POST("/ai/summary", aiSummary)
-		g.GET("/ai/history", aiHistoryGet)
 
 		// 通知渠道：配置读写 + 测试发送
 		g.GET("/version", versionGet)
@@ -189,6 +191,14 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/asset/liabilities/:id", updateLiability)
 		g.DELETE("/asset/liabilities/:id", deleteLiability)
 		g.GET("/asset/liabilities/:id/flows", liabilityFlows)
+
+		// 月度待入账 / 待还款计划：首页紧凑卡片 + 资产全景编辑入口 + 待还款定时提醒
+		g.GET("/cashflow/plans", listCashflowPlans)
+		g.POST("/cashflow/plans", createCashflowPlan)
+		g.PUT("/cashflow/plans/:id", updateCashflowPlan)
+		g.DELETE("/cashflow/plans/:id", deleteCashflowPlan)
+		g.POST("/cashflow/plans/:id/complete", completeCashflowPlan)
+		g.POST("/cashflow/plans/:id/uncomplete", uncompleteCashflowPlan)
 		g.GET("/asset/flows", listFlows)
 		g.GET("/asset/consumptions", listConsumptionsH)
 		g.POST("/asset/consumptions", createConsumption)
@@ -345,6 +355,18 @@ func listHoldings(c *gin.Context) {
 		"snapshot_date":  snap,
 		"updated_at_max": upd,
 	})
+}
+
+// searchSecuritiesHandler 处理 GET /api/search?q=，供添加/编辑持仓弹框做名称/代码联想。
+// 联想失败（网络/上游异常）时返回空结果而非 5xx，避免打断弹框输入体验。
+func searchSecuritiesHandler(c *gin.Context) {
+	q := c.Query("q")
+	results, err := market.SearchSecurities(q)
+	if err != nil || results == nil {
+		c.JSON(http.StatusOK, gin.H{"results": []market.SearchResult{}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
 // maxUpdatedAt returns the most recent holdings.updated_at across the slice

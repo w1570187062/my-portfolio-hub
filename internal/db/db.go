@@ -159,9 +159,6 @@ _, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 	if err := initAISettings(); err != nil {
 		return fmt.Errorf("init ai_settings: %w", err)
 	}
-	if err := initAISummaryHistory(); err != nil {
-		return fmt.Errorf("init ai_summary_history: %w", err)
-	}
 	if err := initAssetTables(); err != nil {
 		return fmt.Errorf("init asset tables: %w", err)
 	}
@@ -1070,55 +1067,6 @@ func SaveAIConfig(userID int64, cfg string) error {
 	return err
 }
 
-// ---- AI summary history (keep latest 10) ----
-
-func initAISummaryHistory() error {
-	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS ai_summary_history (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		created_at TEXT NOT NULL,
-		model TEXT NOT NULL DEFAULT '',
-		content TEXT NOT NULL
-	)`)
-	return err
-}
-
-// SaveAISummary inserts a record and trims the table to the most recent 10 per user.
-func SaveAISummary(content, model string, userID int64) error {
-	now := time.Now().Format("2006-01-02 15:04:05")
-	if _, err := DB.Exec(`INSERT INTO ai_summary_history(user_id,created_at,model,content) VALUES(?,?,?,?)`, userID, now, model, content); err != nil {
-		return err
-	}
-	_, err := DB.Exec(`DELETE FROM ai_summary_history WHERE user_id=? AND id NOT IN (SELECT id FROM ai_summary_history WHERE user_id=? ORDER BY id DESC LIMIT 5)`, userID, userID)
-	return err
-}
-
-// AISummaryRecord is one saved AI summary.
-type AISummaryRecord struct {
-	ID        int64  `json:"id"`
-	UserID    int64  `json:"user_id"`
-	CreatedAt string `json:"created_at"`
-	Model     string `json:"model"`
-	Content   string `json:"content"`
-}
-
-// GetAISummaryHistory returns a user's most recent records (newest first), up to limit.
-func GetAISummaryHistory(limit int, userID int64) ([]AISummaryRecord, error) {
-	rows, err := DB.Query(`SELECT id,user_id,created_at,model,content FROM ai_summary_history WHERE user_id=? ORDER BY id DESC LIMIT ?`, userID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []AISummaryRecord
-	for rows.Next() {
-		var r AISummaryRecord
-		if err := rows.Scan(&r.ID, &r.UserID, &r.CreatedAt, &r.Model, &r.Content); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
-}
-
 // ============================================================================
 // 资产全景模块：资产来源 / 理财 / 负债 / 消费
 // ============================================================================
@@ -1247,9 +1195,46 @@ func initAssetTables() error {
 			ref_name TEXT NOT NULL DEFAULT '',
 			note TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT ''
-		)`,
-	}
-	for _, s := range stmts {
+			)`,
+			// 月度待入账/待还款计划：每月固定某日发生的收支（工资待入账 / 房贷待还款 等）。
+			// type: income=待入账(入账) / expense=待还款(出账)；account_id 关联已有现金账户系统；
+			// liability_id 仅 expense 有意义，关联某笔负债，完成时同步记一笔负债还款流水。
+			`CREATE TABLE IF NOT EXISTS cashflow_plans (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				user_id INTEGER NOT NULL DEFAULT 0,
+				type TEXT NOT NULL DEFAULT 'income',
+				title TEXT NOT NULL DEFAULT '',
+				day_of_month INTEGER NOT NULL DEFAULT 1,
+				amount REAL NOT NULL DEFAULT 0,
+				currency TEXT NOT NULL DEFAULT 'rmb',
+				account_id INTEGER NOT NULL DEFAULT 0,
+				liability_id INTEGER NOT NULL DEFAULT 0,
+				note TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL DEFAULT ''
+			)`,
+			// 完成记录：某计划在某一月份(ym)被勾选完成后落库一条，保证幂等（同 plan+ym 唯一）。
+			// ref_type/ref_id 指向完成时所记的真实资金流水（cash_flow.id / liability_flows.id），供撤销时反向记账。
+			`CREATE TABLE IF NOT EXISTS cashflow_plan_done (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				user_id INTEGER NOT NULL DEFAULT 0,
+				plan_id INTEGER NOT NULL DEFAULT 0,
+				ym TEXT NOT NULL DEFAULT '',
+				actual_amount REAL NOT NULL DEFAULT 0,
+				ref_type TEXT NOT NULL DEFAULT '',
+				ref_id INTEGER NOT NULL DEFAULT 0,
+				note TEXT NOT NULL DEFAULT '',
+				done_at TEXT NOT NULL DEFAULT ''
+			)`,
+			// 待还款提醒发送日志：每个计划每个月(ym)只提醒一次，避免重复推送。
+			`CREATE TABLE IF NOT EXISTS cashflow_reminder_log (
+				plan_id INTEGER NOT NULL DEFAULT 0,
+				user_id INTEGER NOT NULL DEFAULT 0,
+				ym TEXT NOT NULL DEFAULT '',
+				sent_at TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (plan_id, ym)
+			)`,
+			}
+			for _, s := range stmts {
 		if _, err := DB.Exec(s); err != nil {
 			return err
 		}
@@ -1266,6 +1251,8 @@ func initAssetTables() error {
 	addColumnIfMissing("cash_accounts", "type", "TEXT NOT NULL DEFAULT ''")
 	// currency：负债支持多币种（与现金/持仓一致），默认 rmb
 	addColumnIfMissing("liabilities", "currency", "TEXT NOT NULL DEFAULT 'rmb'")
+	// end_date：收支计划截止日期（YYYY-MM-DD，空=长期有效）
+	addColumnIfMissing("cashflow_plans", "end_date", "TEXT NOT NULL DEFAULT ''")
 	// 存量更名：「现金账户」统一改称「子账户」，自动创建的默认账户名一并更新。
 	_, _ = DB.Exec(`UPDATE cash_accounts SET name='默认子账户' WHERE name='默认现金账户'`)
 	// 清理冗余审计记录（一次性）：旧版整批保存会把未编辑的产品也 upsert 并写审计，两类冗余：
@@ -2296,6 +2283,228 @@ func ListLiabilityFlows(userID, liabilityID int64) ([]LiabilityFlow, error) {
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// ---- Cashflow plans (月度待入账 / 待还款计划) ----
+
+type CashflowPlan struct {
+	ID          int64   `json:"id"`
+	UserID      int64   `json:"user_id"`
+	Type        string  `json:"type"`         // income 待入账 | expense 待还款
+	Title       string  `json:"title"`
+	DayOfMonth  int     `json:"day_of_month"` // 每月几号（1-31）
+	Amount      float64 `json:"amount"`
+	Currency    string  `json:"currency"`
+	AccountID   int64   `json:"account_id"`   // 关联现金账户（入账/还款账户）
+	LiabilityID int64   `json:"liability_id"` // 关联负债（仅 expense）
+	Note        string  `json:"note"`
+	EndDate     string  `json:"end_date"`    // 截止日期 YYYY-MM-DD，空=长期有效（每月循环到该月为止）
+	CreatedAt   string  `json:"created_at"`
+}
+
+type CashflowDone struct {
+	ID           int64   `json:"id"`
+	UserID       int64   `json:"user_id"`
+	PlanID       int64   `json:"plan_id"`
+	YM           string  `json:"ym"`
+	ActualAmount float64 `json:"actual_amount"`
+	RefType      string  `json:"ref_type"` // cash | liability（完成时所记真实流水的类型）
+	RefID        int64   `json:"ref_id"`   // cash_flow.id / liability_flows.id
+	Note         string  `json:"note"`
+	DoneAt       string  `json:"done_at"`
+}
+
+func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
+	rows, err := DB.Query(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,created_at FROM cashflow_plans WHERE user_id=? ORDER BY day_of_month ASC, id ASC`, uid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CashflowPlan
+	for rows.Next() {
+		var p CashflowPlan
+		var typ, title, cur, note string
+		if err := rows.Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		p.Type, p.Title, p.Currency, p.Note = typ, title, cur, note
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func GetCashflowPlan(id int64) (*CashflowPlan, error) {
+	var p CashflowPlan
+	var typ, title, cur, note string
+	err := DB.QueryRow(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,created_at FROM cashflow_plans WHERE id=?`, id).
+		Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &p.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.Type, p.Title, p.Currency, p.Note = typ, title, cur, note
+	return &p, nil
+}
+
+func CreateCashflowPlan(p *CashflowPlan) (int64, error) {
+	if err := checkEntityLimit(p.UserID, "cashflow_plans"); err != nil {
+		return 0, err
+	}
+	if p.Currency == "" {
+		p.Currency = "rmb"
+	}
+	p.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+	res, err := DB.Exec(`INSERT INTO cashflow_plans(user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		p.UserID, p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.CreatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func UpdateCashflowPlan(p *CashflowPlan) error {
+	if p.Currency == "" {
+		p.Currency = "rmb"
+	}
+	_, err := DB.Exec(`UPDATE cashflow_plans SET type=?,title=?,day_of_month=?,amount=?,currency=?,account_id=?,liability_id=?,note=?,end_date=? WHERE id=? AND user_id=?`,
+		p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.ID, p.UserID)
+	return err
+}
+
+func DeleteCashflowPlan(id, uid int64) error {
+	// 连带清除完成记录（避免孤儿数据）
+	_, _ = DB.Exec(`DELETE FROM cashflow_plan_done WHERE plan_id=? AND user_id=?`, id, uid)
+	_, err := DB.Exec(`DELETE FROM cashflow_plans WHERE id=? AND user_id=?`, id, uid)
+	return err
+}
+
+func GetCashflowDone(uid, planID int64, ym string) (*CashflowDone, error) {
+	var d CashflowDone
+	var note, refType, doneAt string
+	err := DB.QueryRow(`SELECT id,plan_id,ym,actual_amount,ref_type,ref_id,note,done_at FROM cashflow_plan_done WHERE user_id=? AND plan_id=? AND ym=?`, uid, planID, ym).
+		Scan(&d.ID, &d.PlanID, &d.YM, &d.ActualAmount, &refType, &d.RefID, &note, &doneAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	d.Note, d.RefType, d.DoneAt = note, refType, doneAt
+	d.UserID, d.YM = uid, ym
+	return &d, nil
+}
+
+func UpsertCashflowDone(d *CashflowDone) error {
+	d.DoneAt = time.Now().Format("2006-01-02 15:04:05")
+	if existing, _ := GetCashflowDone(d.UserID, d.PlanID, d.YM); existing != nil {
+		d.ID = existing.ID
+		_, err := DB.Exec(`UPDATE cashflow_plan_done SET actual_amount=?,ref_type=?,ref_id=?,note=?,done_at=? WHERE id=?`,
+			d.ActualAmount, d.RefType, d.RefID, d.Note, d.DoneAt, existing.ID)
+		return err
+	}
+	res, err := DB.Exec(`INSERT INTO cashflow_plan_done(user_id,plan_id,ym,actual_amount,ref_type,ref_id,note,done_at) VALUES(?,?,?,?,?,?,?,?)`,
+		d.UserID, d.PlanID, d.YM, d.ActualAmount, d.RefType, d.RefID, d.Note, d.DoneAt)
+	if err != nil {
+		return err
+	}
+	d.ID, _ = res.LastInsertId()
+	return nil
+}
+
+func DeleteCashflowDone(uid, planID int64, ym string) error {
+	_, err := DB.Exec(`DELETE FROM cashflow_plan_done WHERE user_id=? AND plan_id=? AND ym=?`, uid, planID, ym)
+	return err
+}
+
+// ListCashflowDoneMonth 返回某用户某月份的全部完成记录，key 为 plan_id，便于前端一次性渲染勾选态。
+func ListCashflowDoneMonth(uid int64, ym string) (map[int64]*CashflowDone, error) {
+	rows, err := DB.Query(`SELECT plan_id,id,actual_amount,ref_type,ref_id,note,done_at FROM cashflow_plan_done WHERE user_id=? AND ym=?`, uid, ym)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]*CashflowDone{}
+	for rows.Next() {
+		var d CashflowDone
+		var note, refType, doneAt string
+		if err := rows.Scan(&d.PlanID, &d.ID, &d.ActualAmount, &refType, &d.RefID, &note, &doneAt); err != nil {
+			return nil, err
+		}
+		d.Note, d.RefType, d.DoneAt = note, refType, doneAt
+		d.UserID, d.YM = uid, ym
+		out[d.PlanID] = &d
+	}
+	return out, rows.Err()
+}
+
+// HasReminderLog 判断某计划在某月份是否已发送过提醒，避免重复推送。
+func HasReminderLog(planID, uid int64, ym string) (bool, error) {
+	var n int
+	err := DB.QueryRow(`SELECT COUNT(1) FROM cashflow_reminder_log WHERE plan_id=? AND user_id=? AND ym=?`, planID, uid, ym).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// InsertReminderLog 记录一次提醒发送（同 plan_id+ym 覆盖写入）。
+func InsertReminderLog(planID, uid int64, ym, sentAt string) error {
+	_, err := DB.Exec(`INSERT OR REPLACE INTO cashflow_reminder_log(plan_id,user_id,ym,sent_at) VALUES(?,?,?,?)`, planID, uid, ym, sentAt)
+	return err
+}
+
+// SetLiabilityAmount 直接更新负债当前余额（还款/撤销还款时同步），不写流水。
+func SetLiabilityAmount(id int64, amount float64) error {
+	_, err := DB.Exec(`UPDATE liabilities SET amount=? WHERE id=?`, math.Round(amount*100)/100, id)
+	return err
+}
+
+// GetCashFlow 按 id 取单条现金流水（撤销待还款入账时定位当初落账的流水）。
+func GetCashFlow(id int64) (*CashFlow, error) {
+	var f CashFlow
+	var refName, note string
+	err := DB.QueryRow(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at FROM cash_flow WHERE id=?`, id).
+		Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &refName, &note, &f.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	f.RefName, f.Note = refName, note
+	return &f, nil
+}
+
+// GetLatestCashFlowByRef 取某引用（ref_type+ref_id）最近一条现金流水，用于定位待还款完成所记的真实流水。
+func GetLatestCashFlowByRef(refType string, refID int64) (*CashFlow, error) {
+	var f CashFlow
+	var refName, note string
+	err := DB.QueryRow(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at FROM cash_flow WHERE ref_type=? AND ref_id=? ORDER BY id DESC LIMIT 1`, refType, refID).
+		Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &refName, &note, &f.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	f.RefName, f.Note = refName, note
+	return &f, nil
+}
+
+// GetLiabilityFlow 按 id 取单条负债流水。
+func GetLiabilityFlow(id int64) (*LiabilityFlow, error) {
+	var f LiabilityFlow
+	err := DB.QueryRow(`SELECT id,user_id,liability_id,date,type,amount,balance,note,created_at FROM liability_flows WHERE id=?`, id).
+		Scan(&f.ID, &f.UserID, &f.LiabilityID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.Note, &f.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
 }
 
 // ---- Consumptions (消费) ----

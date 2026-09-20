@@ -41,6 +41,12 @@ type emailCfg struct {
 	To       string `json:"to"` // 逗号分隔多个收件人
 }
 
+type cashflowReminderCfg struct {
+	Enabled bool `json:"enabled"` // 是否开启待还款提前提醒
+	Hour    int  `json:"hour"`    // 提醒发送时间（北京时间，时）；默认 7
+	Minute  int  `json:"minute"`  // 提醒发送时间（分）；默认 0
+}
+
 type notifyConfig struct {
 	Dingtalk dingtalkCfg `json:"dingtalk"`
 	Email    emailCfg    `json:"email"`
@@ -49,6 +55,9 @@ type notifyConfig struct {
 	//   "only_close"      —— 仅收盘后定时快照推送
 	//   "only_signal"     —— 仅在有补仓信号时推送
 	Policy string `json:"policy"`
+	// CashflowReminder 待还款提前一天提醒（如每月 10 号还款，则在 9 号 HH:MM 推送）。
+	// 提醒时间（hour/minute）可自定义，默认早上 7:00。
+	CashflowReminder cashflowReminderCfg `json:"cashflow_reminder"`
 }
 
 func loadNotifyConfig() (notifyConfig, error) {
@@ -59,6 +68,11 @@ func loadNotifyConfig() (notifyConfig, error) {
 	var cfg notifyConfig
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		return notifyConfig{}, err
+	}
+	// 待还款提醒默认早上 7:00：未开启且时间为零值时视为「未设置」，回填 7:00，
+	// 便于前端首次展示与默认行为一致（用户主动设为 00:00 且开启时则保留）。
+	if !cfg.CashflowReminder.Enabled && cfg.CashflowReminder.Hour == 0 && cfg.CashflowReminder.Minute == 0 {
+		cfg.CashflowReminder.Hour = 7
 	}
 	return cfg, nil
 }
@@ -77,6 +91,13 @@ func notifySettingsPost(c *gin.Context) {
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式错误: " + err.Error()})
 		return
+	}
+	// 待还款提醒时间做合法范围收敛（默认早上 7:00）。
+	if b.CashflowReminder.Hour < 0 || b.CashflowReminder.Hour > 23 {
+		b.CashflowReminder.Hour = 7
+	}
+	if b.CashflowReminder.Minute < 0 || b.CashflowReminder.Minute > 59 {
+		b.CashflowReminder.Minute = 0
 	}
 	// 控制字段长度，避免有人把巨大字符串塞进配置
 	if len(b.Dingtalk.Webhook) > 2000 || len(b.Dingtalk.Secret) > 500 ||
@@ -109,7 +130,7 @@ func notifyTest(c *gin.Context) {
 		return req.Channel == "" || req.Channel == ch
 	}
 	if want("dingtalk") && cfg.Dingtalk.Enabled && cfg.Dingtalk.Webhook != "" {
-		test := "## 测试通知\n\n这是一条来自「观澜」的**测试**消息。\n\n> 若你收到此消息，说明钉钉通知渠道配置正确 ✅"
+		test := "## 测试通知\n\n这是一条来自「持仓侠」的**测试**消息。\n\n> 若你收到此消息，说明钉钉通知渠道配置正确 ✅"
 		if e := sendDingtalk(cfg.Dingtalk, "持仓通知测试", test); e != nil {
 			results["dingtalk"] = "失败: " + e.Error()
 		} else {
@@ -117,7 +138,7 @@ func notifyTest(c *gin.Context) {
 		}
 	}
 	if want("email") && cfg.Email.Enabled {
-		if e := sendEmail(cfg.Email, "持仓通知测试", "这是一封来自「观澜」的测试邮件。\n\n若你收到此邮件，说明邮箱通知渠道配置正确。\n"); e != nil {
+		if e := sendEmail(cfg.Email, "持仓通知测试", "这是一封来自「持仓侠」的测试邮件。\n\n若你收到此邮件，说明邮箱通知渠道配置正确。\n"); e != nil {
 			results["email"] = "失败: " + e.Error()
 		} else {
 			results["email"] = "ok"
@@ -465,7 +486,7 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool
 			}
 		}
 	}
-	sb.WriteString("\n> 由「观澜」自动推送")
+	sb.WriteString("\n> 由「持仓侠」自动推送")
 	return sb.String(), hasData
 }
 
@@ -600,4 +621,132 @@ func stripMarkdown(s string) string {
 		lines[i] = l
 	}
 	return strings.Join(lines, "\n")
+}
+
+// ---- 待还款提前提醒 ----
+
+// ScheduleCashflowReminder 每天在配置的时间（默认 07:00）检查次日到期的待还款，
+// 提前一天推送提醒。配置关闭时每小时探一次配置，开启后次日按新时间生效，无需重启。
+func ScheduleCashflowReminder() {
+	go func() {
+		for {
+			cfg, err := loadNotifyConfig()
+			if err == nil && cfg.CashflowReminder.Enabled {
+				h := cfg.CashflowReminder.Hour
+				m := cfg.CashflowReminder.Minute
+				if h < 0 || h > 23 {
+					h = 7
+				}
+				if m < 0 || m > 59 {
+					m = 0
+				}
+				loc := time.FixedZone("CST", 8*3600)
+				now := time.Now()
+				next := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, loc)
+				if !next.After(now) {
+					next = next.AddDate(0, 0, 1)
+				}
+				time.Sleep(time.Until(next))
+				checkCashflowReminders()
+				continue
+			}
+			time.Sleep(time.Hour)
+		}
+	}()
+}
+
+// checkCashflowReminders 遍历所有用户，对次日到期且尚未提醒过的待还款推送通知。
+func checkCashflowReminders() {
+	loc := time.FixedZone("CST", 8*3600)
+	now := time.Now().In(loc)
+	tomorrow := now.AddDate(0, 0, 1)
+	tomorrowDay := tomorrow.Day()
+	ym := tomorrow.Format("2006-01")
+	cfg, err := loadNotifyConfig()
+	if err != nil {
+		log.Printf("[cashflow-reminder] 读取通知配置失败: %v", err)
+		return
+	}
+	if !cfg.Dingtalk.Enabled && !cfg.Email.Enabled {
+		return
+	}
+	for _, u := range allUsers() {
+		plans, e := db.ListCashflowPlans(u.ID)
+		if e != nil {
+			log.Printf("[cashflow-reminder] 读取计划失败(uid=%d): %v", u.ID, e)
+			continue
+		}
+		var due []db.CashflowPlan
+		for _, p := range plans {
+			if p.Type != "expense" { // 仅待还款参与提醒
+				continue
+			}
+			if p.DayOfMonth == tomorrowDay {
+				due = append(due, p)
+			}
+		}
+		if len(due) == 0 {
+			continue
+		}
+		var tosend []db.CashflowPlan
+		for _, p := range due {
+			has, e := db.HasReminderLog(p.ID, u.ID, ym)
+			if e != nil {
+				log.Printf("[cashflow-reminder] 查询提醒日志失败(plan=%d): %v", p.ID, e)
+				continue
+			}
+			if has {
+				continue
+			}
+			tosend = append(tosend, p)
+		}
+		if len(tosend) == 0 {
+			continue
+		}
+		text := buildCashflowReminderText(tosend, tomorrow)
+		sendToChannels(cfg, "待还款提醒", text)
+		for _, p := range tosend {
+			_ = db.InsertReminderLog(p.ID, u.ID, ym, time.Now().In(loc).Format("2006-01-02 15:04:05"))
+		}
+		log.Printf("[cashflow-reminder] 已推送 %d 条待还款提醒（到期日 %s）", len(tosend), tomorrow.Format("2006-01-02"))
+	}
+}
+
+// buildCashflowReminderText 构造待还款提醒正文（钉钉 markdown）。
+func buildCashflowReminderText(items []db.CashflowPlan, due time.Time) string {
+	var sb strings.Builder
+	sb.WriteString("## 待还款提醒\n\n")
+	sb.WriteString(fmt.Sprintf("- **到期日**：%s（提前一天提醒）\n", due.Format("2006-01-02")))
+	sb.WriteString(fmt.Sprintf("- **待还款 %d 笔**，合计约 %s\n\n", len(items), curSymbol("rmb")+moneyFmtPrec(sumPlanAmount(items), 2)))
+	for _, p := range items {
+		cur := curSymbol(p.Currency)
+		accName := ""
+		if p.AccountID > 0 {
+			if acc, e := db.GetCash(p.AccountID); e == nil && acc != nil {
+				accName = "（扣款账户：" + acc.Name + "）"
+			}
+		}
+		liabName := ""
+		if p.LiabilityID > 0 {
+			if l, e := db.GetLiability(p.LiabilityID); e == nil && l != nil {
+				liabName = " 关联「" + l.Name + "」"
+			}
+		}
+		sb.WriteString(fmt.Sprintf("- **%s**%s：每月 %d 号 %s%s%s\n", escTitle(p.Title), liabName, p.DayOfMonth, cur, moneyFmtPrec(p.Amount, 2), accName))
+	}
+	sb.WriteString("\n> 由「持仓侠」自动推送")
+	return sb.String()
+}
+
+func sumPlanAmount(items []db.CashflowPlan) float64 {
+	var s float64
+	for _, p := range items {
+		s += p.Amount
+	}
+	return s
+}
+
+func escTitle(s string) string {
+	r := strings.NewReplacer("*", "", "`", "", "\\", "")
+	return r.Replace(s)
 }

@@ -1417,14 +1417,6 @@ func assetSummary(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	// 空内容不写库，避免污染历史
-	if strings.TrimSpace(content) != "" {
-		if err := db.SaveAISummary(content, b.Model, uid); err != nil {
-			log.Printf("warn: save asset ai summary history failed: %v", err)
-		}
-	} else {
-		log.Printf("[ai] asset model=%s 返回内容为空，跳过历史保存", b.Model)
-	}
 	if cfgErr == nil && b.APIKey != "" && b.APIKey != cfg.APIKey {
 		cfg.APIKey = b.APIKey
 		if raw, e := json.Marshal(cfg); e == nil {
