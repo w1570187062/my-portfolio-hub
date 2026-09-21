@@ -263,6 +263,28 @@ func ListUsers() ([]User, error) {
 	return out, rows.Err()
 }
 
+// GetUser 按 id 查询单个用户；不存在返回 sql.ErrNoRows。
+func GetUser(id int64) (*User, error) {
+	var u User
+	err := DB.QueryRow(`SELECT id,name,created_at FROM users WHERE id=?`, id).
+		Scan(&u.ID, &u.Name, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// GetUserByName 按用户名（精确匹配）查询单个用户；不存在返回 sql.ErrNoRows。
+func GetUserByName(name string) (*User, error) {
+	var u User
+	err := DB.QueryRow(`SELECT id,name,created_at FROM users WHERE name=?`, name).
+		Scan(&u.ID, &u.Name, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
 // CountUserData 统计某用户名下各维度的数据条数，用于设置面板展示。
 func CountUserData(userID int64) (map[string]int, error) {
 	out := map[string]int{}

@@ -6,68 +6,6 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" data-page-node-id="sQGs514He3P5SEzVVKfvGO">
 <title>持仓侠</title>
 <link rel="stylesheet" href="/style.css" data-page-node-id="b5mR41UapyQYKGlXNRWu5c">
-<style>
-  /* 加减仓弹窗样式统一在 style.css 管理，避免内联覆盖导致 ± 高度/对齐不生效 */
-  .adj-row { display:flex; gap:10px; margin-bottom:10px; align-items:flex-start; }
-  .adj-preview { display:none; margin:6px 0 10px; padding:10px 12px; border-radius:8px; font-size:13px; line-height:1.6; color:var(--text,#1f2329); }
-  .adj-preview .warn { color:var(--danger); }
-  .adj-preview b { color:var(--primary,#d9a52b); }
-  .adj-history { margin-top:14px; border-top:1px solid var(--border,#e5e7eb); padding-top:10px; }
-  .adj-history h3 { font-size:13px; color:var(--text-muted,#6b7280); margin:0 0 8px; font-weight:600; }
-  .adj-realized { font-size:13px; margin-bottom:8px; }
-  .adj-realized b { color:var(--primary,#d9a52b); }
-  .adj-history-list { max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
-  .adj-empty { font-size:12px; color:var(--text-muted,#9aa0a6); padding:6px 0; }
-  .adj-tx { border:1px solid var(--border,#e5e7eb); border-radius:8px; padding:8px 10px; font-size:12px; }
-  /* .adj-tag / .flow-tag 已统一收拢到 style.css（此处内联块加载晚于 style.css，重复定义会反向覆盖） */
-  .adj-meta { color:var(--text-muted,#9aa0a6); font-size:11px; }
-  .adj-rl { float:right; font-weight:600; }
-  .adj-rl.up { color:var(--up); }
-  .adj-rl.down { color:var(--down); }
-  .adj-detail { margin-top:4px; color:var(--text-muted,#6b7280); word-break:break-all; }
-  .adj-calc { padding-top:4px; }
-  /* 弹框内密度收紧：标签间距减小、确认按钮上下更紧凑 */
-  #adjustModal label { margin-bottom:10px; }
-  #adjustModal .modal-actions { margin-top:4px; padding-top:8px; padding-bottom:12px; }
-  /* 加减仓弹框 tab 切换：连体胶囊（有边框、圆角、两段连在一起） */
-  .adj-tabs { display:flex; border:1px solid var(--border,#e5e7eb); border-radius:10px; overflow:hidden; margin:2px 28px 12px; padding:0; }
-  .adj-tab { flex:1; padding:7px 0; border:none; background:transparent; cursor:pointer; font-size:12px; text-align:center; color:var(--text-muted,#6b7280); transition:var(--btn-transition, all .15s ease); }
-  .adj-tab + .adj-tab { border-left:1px solid var(--border,#e5e7eb); }
-  .adj-tab:not(.active):hover { background:var(--bg-soft,#f4f5f7); color:var(--text,#1f2329); }
-  .adj-tab.active { background:var(--btn-primary); color:var(--on-primary); font-weight:600; }
-  /* 调整弹框底部「确定」按钮上下间距收紧 */
-  #adjustModal .modal-actions { margin-top:4px; padding-top:8px; padding-bottom:12px; }
-  /* 面板：自身滚动；内部 form 不另起滚动，避免双重内边距 */
-  .modal-card .adj-panel form { flex:none; min-height:0; overflow:visible; padding:0; }
-  /* 计算器：描述与输入框左边缘对齐，输入框占满宽度 */
-  .adj-calc .tool-rate { padding:0; }
-  .adj-calc .tool-rate input,
-  .adj-calc .tool-rate select { width:100%; }
-  /* 编辑持仓弹框：三列网格，标签在上、控件在下，跨列对齐 */
-  #modal .f-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:10px; }
-  #modal .f-row.f-row2 { grid-template-columns:1fr 1fr; }
-  #modal .f-row > label { display:flex; flex-direction:column; gap:4px; margin-bottom:0; font-size:12px; color:var(--text-muted,#6b7280); }
-  #modal .f-row > label input,
-  #modal .f-row > label select { width:100%; margin-top:4px; }
-  @media (max-width:520px) { #modal .f-row { grid-template-columns:repeat(2,1fr); } #modal .f-row2 { grid-template-columns:1fr; } }
-
-  /* 导航区 */
-  .brand-nav { position:relative; display:flex; align-items:center; gap:10px; }
-
-  /* 操作指南 */
-  .guide-list { max-height:360px; overflow-y:auto; margin-bottom:12px; }
-  .guide-item { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px; transition:background .15s; }
-  .guide-item:hover { background:var(--bg-hover,rgba(217,165,43,.06)); }
-  .guide-item-body { flex:1; min-width:0; }
-  .guide-item-title { font-weight:600; color:var(--text); margin-bottom:2px; }
-  .guide-item-tags { display:flex; flex-wrap:wrap; gap:4px; margin:4px 0; }
-  .guide-tag { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; background:var(--primary-soft,rgba(217,165,43,.14)); color:var(--primary,#d9a52b); }
-  .guide-item-info { font-size:12px; color:var(--text-muted,#6b7280); display:flex; gap:12px; flex-wrap:wrap; }
-  .guide-item-content { font-size:13px; color:var(--text); white-space:pre-wrap; word-break:break-word; line-height:1.5; margin:6px 0; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card,#fff); max-height:180px; overflow-y:auto; }
-  .guide-item-actions { display:flex; flex-direction:column; gap:4px; flex-shrink:0; }
-  .guide-item-actions button { padding:4px 8px; font-size:12px; }
-  .guide-empty { text-align:center; padding:32px 0; color:var(--text-muted,#6b7280); }
-</style>
 </head>
 <body data-page-node-id="AJqlV7Lg2XYtjlztBwTug9">
 <div id="app" hidden data-page-node-id="hDIhV8uvRUbxnuq7ZbkB9W">
@@ -169,9 +107,9 @@
   <div id="cards" class="cards-grid" hidden data-page-node-id="5lVpiJmkUG70UCneeTBsXY"></div>
   <div id="pager" class="pager" data-page-node-id="i1SHkwiyoWJhYVcd7zKDgY"></div>
   <div id="holdingsEmpty" class="empty-state" hidden data-page-node-id="hHM79gN0Rt5H4nPOzfucim">
-    <div class="empty-icon" data-page-node-id="ZLuQ1w84shPFSBUGuTDVEl">📭</div>
+    <div class="empty-icon" aria-hidden="true" data-page-node-id="ZLuQ1w84shPFSBUGuTDVEl"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 13.4h4.2l1.6 3h5.6l1.6-3h4.2"/><path d="M6.2 5.6h11.6l2.8 7.8v4.6a1.6 1.6 0 0 1-1.6 1.6H5a1.6 1.6 0 0 1-1.6-1.6v-4.6l2.8-7.8Z"/></svg></div>
     <p id="emptyMsg" data-page-node-id="yOg1vV86ICYDtqeBD4e2vc">还没有任何持仓，添加第一笔开始记录吧。</p>
-    <button class="btn" id="emptyAddBtn" type="button" data-page-node-id="Wcx37vRohGtCMYzgQogEBU">➕ 添加第一笔持仓</button>
+    <button class="btn" id="emptyAddBtn" type="button" data-page-node-id="Wcx37vRohGtCMYzgQogEBU">＋ 添加第一笔持仓</button>
   </div>
   </div>
 
@@ -185,7 +123,7 @@
         <button class="btn atab active" data-tab="sources" type="button" data-page-node-id="MjujBXXjtDXusU2sF5rSFF">账户</button>
         <button class="btn atab" data-tab="wealth" type="button" data-page-node-id="VJw3KSa2xIWsLwN3Xjt8ps">理财</button>
         <button class="btn atab" data-tab="consume" type="button" style="display:none" data-page-node-id="uOh4dMCBHCRufvoinIlSXC">消费</button>
-        <button class="btn atab" data-tab="cashflow" type="button">收支计划</button>
+        <button class="btn atab" data-tab="cashflow" type="button">收支</button>
         <button class="btn atab" data-tab="flows" type="button">流水</button>
       </div>
       <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar" data-page-node-id="Rd6qyVt3c3yQo477sDWAQc"></div>
@@ -197,6 +135,7 @@
     <div class="settings-layout">
       <section class="settings-group">
         <h3 class="settings-group-title">通知</h3>
+        <p class="settings-group-desc">配置净值更新后的推送策略，以及钉钉 / 邮箱通知渠道。</p>
         <div class="settings-group-body">
       <div class="ana-tabs ac-tabs" data-page-node-id="Cqy7sKgLrTGBtYAAPNjqbk">
         <button id="ntTabPolicy" class="ana-tab-btn active" type="button" data-page-node-id="TCHJAiiquhKnKmvKypDfuL">推送策略</button>
@@ -215,8 +154,9 @@
         </label>
         <p class="tool-hint" data-page-node-id="BpvIpDM1p2wB0fGXdVKT1C">控制净值更新后何时推送通知，避免频繁打扰。</p>
         <hr class="set-sep" />
+        <p class="tool-hint" data-page-node-id="cfRemindDesc">待还款提醒</p>
         <div class="cf-remind-row">
-          <span class="cf-remind-label">待还款提前提醒</span>
+          <span class="cf-remind-label">待还款提醒</span>
           <label class="switch"><input type="checkbox" id="cfReminderEnabled"><span class="switch-knob"></span></label>
           <span class="cf-remind-time">提前一天的
             <input type="number" id="cfReminderHour" min="0" max="23" value="7" class="num-sm" /> 时
@@ -257,14 +197,19 @@
     </div><!-- /settings-layout -->
   </div><!-- /settingsView -->
 
-  <div id="toolsView" class="page-view settings-page" hidden>
+  <div id="toolsView" class="page-view settings-page pano-open" hidden>
     <div class="settings-layout">
       <section class="settings-group">
-        <h3 class="settings-group-title">汇率计算</h3>
+        <h3 class="settings-group-title">工具</h3>
         <div class="settings-group-body">
-
+          <div class="ana-tabs ac-tabs" id="toolsTabs">
+            <button class="ana-tab-btn active" type="button" data-tab="fx">汇率计算</button>
+            <button class="ana-tab-btn" type="button" data-tab="eq">权益盈亏</button>
+            <button class="ana-tab-btn" type="button" data-tab="usd">美元盈亏</button>
+            <button class="ana-tab-btn" type="button" data-tab="loan">贷款计算器</button>
+          </div>
       <!-- 汇率计算 -->
-      <div id="tlPanelFx" data-page-node-id="lkquxcsGjxitJU2tHQ368y">
+      <div id="tlPanelFx" class="ac-panel" data-tab="fx" data-page-node-id="lkquxcsGjxitJU2tHQ368y">
         <p class="tool-hint" data-page-node-id="8fWosi04BBEnR0B6WEPgLa">在 CNY / HKD / USD 之间换算金额，汇率取页面实时汇率。<span class="tool-fx" id="fxRateHint" data-page-node-id="Fl5AN8vA1j44yJYd12PGbG"></span></p>
         <div class="fx-calc" data-page-node-id="Lph4g4l9iHCWRkyvAUSsy6">
           <div class="fx-row" data-page-node-id="WZy9wmrPMPhbz38MDg1ewW">
@@ -275,18 +220,18 @@
             <div class="fx-side" data-page-node-id="ds7aVR1NPsBonxIMeUdXMo">
               <label data-page-node-id="NU5Mhe7Zzf5QS4lLDmXXw3">从</label>
               <select id="fxFrom" data-page-node-id="EB1bZ1wBmBBMeB4JNwi2Iy">
-                <option value="CNY" data-page-node-id="xazCDjNEB1hcSDyYYsjSlD">CNY 人民币</option>
-                <option value="HKD" data-page-node-id="peZA2Ck2WadMdmkei2mGYe">HKD 港币</option>
-                <option value="USD" data-page-node-id="BW9ayHXhiDZUgOvsKRwn9m">USD 美元</option>
+                <option value="CNY" data-page-node-id="xazCDjNEB1hcSDyYYsjSlD">CNY</option>
+                <option value="HKD" data-page-node-id="peZA2Ck2WadMdmkei2mGYe">HKD</option>
+                <option value="USD" data-page-node-id="BW9ayHXhiDZUgOvsKRwn9m">USD</option>
               </select>
             </div>
             <div class="fx-arrow" data-page-node-id="7ck6cenkpnpj1MSnLrQpC8">⇄</div>
             <div class="fx-side" data-page-node-id="Azp5BqMUdxGjnAsroHMmhM">
               <label data-page-node-id="CENnfsW3PPfHiOUEiGf84N">到</label>
               <select id="fxTo" data-page-node-id="ughDMfhSm0L5LbpD0NzRgq">
-                <option value="CNY" data-page-node-id="ssVvUItsuGvBgsU2Fk0Hdk">CNY 人民币</option>
-                <option value="USD" data-page-node-id="EnBopW5tu2HezXWiR1fVEp">USD 美元</option>
-                <option value="HKD" data-page-node-id="k7igbbzS18B3rxplESTkEm">HKD 港币</option>
+                <option value="CNY" data-page-node-id="ssVvUItsuGvBgsU2Fk0Hdk">CNY</option>
+                <option value="USD" data-page-node-id="EnBopW5tu2HezXWiR1fVEp">USD</option>
+                <option value="HKD" data-page-node-id="k7igbbzS18B3rxplESTkEm">HKD</option>
               </select>
             </div>
           </div>
@@ -294,13 +239,8 @@
         </div>
       </div>
 
-        </div><!-- /settings-group-body (汇率计算) -->
-      </section><!-- /汇率计算 -->
-      <section class="settings-group">
-        <h3 class="settings-group-title">权益盈亏</h3>
-        <div class="settings-group-body">
       <!-- 权益资产盈亏计算器 -->
-      <div id="tlPanelEq" data-page-node-id="9G4PpAmHNO9t9O2q1bM9BQ">
+      <div id="tlPanelEq" class="ac-panel" data-tab="eq" hidden data-page-node-id="9G4PpAmHNO9t9O2q1bM9BQ">
         <p class="tool-hint" data-page-node-id="Q5VuAy7Z3xc9P4heSSLmWe">逐笔录入每笔盈亏（正=盈利，负=亏损），选择类型与币种，自动汇总为人民币。<span id="eqFxHint" class="tool-fx" data-page-node-id="5q1orxtAhMG1qwFx2ufIHj"></span></p>
         <div class="tool-table" id="eqRows" data-page-node-id="TgKpt647R0504iHkdbD6WN"></div>
         <button id="eqAddRow" class="btn btn-sm" type="button" data-page-node-id="OtJBEVc24fFOt0KUmjLqug">＋ 添加一笔</button>
@@ -312,15 +252,8 @@
         </div>
       </div>
 
-        </div><!-- /settings-group-body (权益盈亏) -->
-      </section><!-- /权益盈亏 -->
-      <section class="settings-group">
-        <h3 class="settings-group-title">美元盈亏</h3>
-        <div class="settings-group-body">
       <!-- 美元资产盈亏计算器 -->
-      <div id="tlPanelUsd" data-page-node-id="q352CUYgNTVFVA1PN96yAX">
-        <p class="tool-hint" data-page-node-id="LNwAVWJk7bpqvzgY0PnAdD">买入与盈亏是两件独立的事：① 逐笔录入「美元买入」（金额 + 买入汇率），按金额加权得平均买入汇率。</p>
-        <p class="tool-hint" data-page-node-id="OuIxygPfF0pCNESzeS1ai9">② 逐笔录入「盈亏」（USD 盈亏额），与当前汇率对比，判断美元资产是否跑赢汇率贬值。</p>
+      <div id="tlPanelUsd" class="ac-panel" data-tab="usd" hidden data-page-node-id="q352CUYgNTVFVA1PN96yAX">
         <label class="tool-rate" data-page-node-id="ayvHbvzUMMqjv2YVkPwLoS">当前汇率（RMB / 1 USD）<input id="usdRate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="自动填充实时汇率" data-page-node-id="Ve6vRDJQksNayZ2SrNc8zb"></label>
         <div class="tool-sub" data-page-node-id="8G8f5KvaUSttEkaI7tfyqJ">① 买入美元记录</div>
         <div class="tool-table" id="usdBuyRows" data-page-node-id="ymqHaWa7s9TcpzAAFu8esj"></div>
@@ -336,13 +269,8 @@
         </div>
       </div>
 
-        </div><!-- /settings-group-body (美元盈亏) -->
-      </section><!-- /美元盈亏 -->
-      <section class="settings-group">
-        <h3 class="settings-group-title">贷款计算器</h3>
-        <div class="settings-group-body">
       <!-- 贷款计算器：等额本息 / 等额本金，本金利息彩色条 -->
-      <div id="tlPanelLoan" data-page-node-id="MFKrwEeFsIwR1tCX9Rf59p">
+      <div id="tlPanelLoan" class="ac-panel" data-tab="loan" hidden data-page-node-id="MFKrwEeFsIwR1tCX9Rf59p">
         <div class="loan-grid" data-page-node-id="aFGATCzTwLlXPupz1EHRn4">
           <label data-page-node-id="Xvvza4mULNXC42g6Lmq7dm">贷款本金（¥） <input id="loanAmount" type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" placeholder="如 1000000" data-page-node-id="Nxfx22jP8cdkS5XMxgpbfQ"></label>
           <label data-page-node-id="TLCVTVvggyiikzluE4Ja3L">年利率（%） <input id="loanRate" type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" placeholder="如 3.6" data-page-node-id="h15RZtKHSlvRhTkiDx7NZj"></label>
@@ -361,8 +289,8 @@
           <div class="loan-legend" id="loanLegend" data-page-node-id="fTc6CkTGMraCI14Pn7AEQI"></div>
         </div>
       </div>
-        </div><!-- /settings-group-body (贷款计算器) -->
-      </section><!-- /贷款计算器 -->
+        </div><!-- /settings-group-body -->
+      </section><!-- /工具 -->
     </div><!-- /settings-layout -->
   </div><!-- /toolsView -->
 
@@ -371,7 +299,7 @@
     <div class="modal-card" style="width:min(900px, 96vw); max-width:96vw;" data-page-node-id="zDrcgS5W4j55gs6KPvHE9x">
       <h2 id="pnlModalTitle" data-icon="calendar" data-page-node-id="MpdG5DCXGCfG5ccXqhM8oQ">盈亏日历</h2>
       <button class="card-close" type="button" id="pnlClose" title="关闭" aria-label="关闭" data-page-node-id="egGJQXBiFK4VzfNJXLH5tl">✕</button>
-      <div id="pnlTabCal" class="ac-panel" data-page-node-id="uwqSk7DxA3H2fowHxBPfaw">
+      <div id="pnlTabCal" class="ac-panel m-body" data-page-node-id="uwqSk7DxA3H2fowHxBPfaw">
         <div class="cal-body" data-page-node-id="t6yfU2dDviJPpBBdsQ8sV0">
           <div class="cal-head" data-page-node-id="U1SD3x172XmGjrDkHJcB4x">
             <div class="cal-nav" data-page-node-id="I2YfLqJ1HB5neTDaqY7BUP">
@@ -398,6 +326,7 @@
     <div class="settings-layout">
       <section class="settings-group">
         <h3 class="settings-group-title">AI</h3>
+        <p class="settings-group-desc">配置 AI 模型与提示词模板、一键生成总结，以及供 MCP 客户端连接的参数。</p>
         <div class="settings-group-body">
           <div class="ana-tabs ac-tabs" data-page-node-id="Xq7Ta9AiTabsSumSet01">
             <button id="aiTabSummary" class="ana-tab-btn active" type="button" data-page-node-id="Xq7Ta9AiTabSumBtn002">AI 总结</button>
@@ -406,31 +335,43 @@
 
           <!-- 面板 ①：AI 总结 -->
           <div id="aiPanelSummary" class="ac-panel" data-page-node-id="Xq7Ta9AiPanelSum004">
-      <!-- 总结：下拉选择类型后生成 -->
+      <!-- 总结：范围 / 提示词 / 模型 三个维度全部平铺为单选胶囊（可见即选），选好直接点生成 -->
       <div id="hubSummaryPanel" class="more-panel" data-page-node-id="VDdSQ8ch0jLAUpzimqYa4r">
-        <label data-page-node-id="tMhtPVbezHHOk9l1NEMf8h">总结类型
-          <select id="aiPickType" data-page-node-id="7sxC523SGqXYpmgkgEotBP">
-            <option value="all" data-page-node-id="dYURAWxl6OOIOCbzlbnjAf">一键 AI 总结（汇总全部资产）</option>
-            <option value="equity" data-page-node-id="EuqO8y6eGE8wEYlILMlvRK">权益类总结（股票 / 基金）</option>
-          </select>
-        </label>
-        <label data-page-node-id="kWCv6PFMRhP44TpHaw8AOt">提示词模板
-          <select id="aiPickTpl" data-page-node-id="KZhznVOinjInm3WCKApder"></select>
-        </label>
-        <label data-page-node-id="YfeSpsKXQyVxiCtUjG2tkX">模型
-          <select id="aiPickModel" data-page-node-id="4Z1bPJfBixuW3L1x7WG8ai"></select>
-        </label>
-        <p class="tool-hint" data-page-node-id="fNxkLDtDQ2PkDfRhOSABSn">使用「AI 设置」中的 API Key / 模型 / 提示词模板生成总结。</p>
+        <div class="ai-pick-row">
+          <span class="ai-pick-cap" data-page-node-id="tMhtPVbezHHOk9l1NEMf8h">总结范围</span>
+          <div id="aiPickTypeRow" class="ai-pick-opts" role="radiogroup" aria-label="总结范围" data-page-node-id="7sxC523SGqXYpmgkgEotBP">
+            <button type="button" class="at-chip-toggle on" data-v="all" role="radio" aria-checked="true" data-page-node-id="dYURAWxl6OOIOCbzlbnjAf">全部资产 · 一键总结</button>
+            <button type="button" class="at-chip-toggle" data-v="equity" role="radio" aria-checked="false" data-page-node-id="EuqO8y6eGE8wEYlILMlvRK">权益类 · 股票 / 基金</button>
+          </div>
+        </div>
+        <div class="ai-pick-row">
+          <span class="ai-pick-cap" data-page-node-id="kWCv6PFMRhP44TpHaw8AOt">提示词</span>
+          <div id="aiPickTplRow" class="ai-pick-opts" role="radiogroup" aria-label="提示词模板" data-page-node-id="KZhznVOinjInm3WCKApder"></div>
+        </div>
+        <div class="ai-pick-row">
+          <span class="ai-pick-cap" data-page-node-id="YfeSpsKXQyVxiCtUjG2tkX">模型</span>
+          <div id="aiPickModelRow" class="ai-pick-opts" role="radiogroup" aria-label="模型" data-page-node-id="4Z1bPJfBixuW3L1x7WG8ai"></div>
+        </div>
+        <p id="aiPickStatus" class="tool-hint" data-page-node-id="fNxkLDtDQ2PkDfRhOSABSn"></p>
         <div id="aiPickErr" class="err" data-page-node-id="vt2YWRDgw5LAX7EF62EqYJ"></div>
-        <div class="modal-actions" data-page-node-id="A4YKCCx5IvQVE5TTCpIeEe">
+        <div class="modal-actions ai-pick-actions" data-page-node-id="A4YKCCx5IvQVE5TTCpIeEe">
           <button class="btn primary" type="button" id="aiPickGo" data-page-node-id="qtW0knm2IOBbhIHsycDrtr">生成总结</button>
         </div>
+        <!-- 结果直接输出在按钮下方（不再弹框）：长文可滚动，复用 .ai-result 的 Markdown 排版 -->
+        <div id="aiPickResult" class="ai-result" hidden data-page-node-id="uvJv1ZdXOtC6wOxmFtNAYS"></div>
       </div>
 
           </div><!-- /aiPanelSummary -->
 
           <!-- 面板 ②：AI 设置 -->
           <div id="aiPanelSettings" class="ac-panel" data-page-node-id="Xq7Ta9AiPanelSet005" hidden>
+          <div class="ana-tabs mcp-sub-tabs" data-page-node-id="mcpSubTabs01">
+            <button id="aiSubTabModel" class="ana-tab-btn active" type="button" data-page-node-id="mcpSubTabModel02">模型与提示词</button>
+            <button id="aiSubTabMcp" class="ana-tab-btn" type="button" data-page-node-id="mcpSubTabMcp03">MCP 参数</button>
+          </div>
+
+          <!-- 子面板 ②-1：模型与提示词 -->
+          <div id="aiSubPanelModel" data-page-node-id="mcpSubPanelModel04">
           <label class="span2">模型配置（可保存多个）
             <span class="ai-tpl-row">
               <select id="ai_model_sel"></select>
@@ -466,6 +407,50 @@
           </label>
           <div id="aiErr" class="err"></div>
           <div class="modal-actions"><button class="btn primary" type="button" id="ai_save">保存设置</button></div>
+          </div><!-- /aiSubPanelModel -->
+
+          <!-- 子面板 ②-2：MCP 参数设置 -->
+          <div id="aiSubPanelMcp" class="ac-panel" data-page-node-id="mcpSubPanelMcp05" hidden>
+            <div class="mcp-status-row" data-page-node-id="mcpStatusRow34">
+              <span class="mcp-status-dot off" id="mcpStatusDot" data-page-node-id="mcpStatusDot35"></span>
+              <span class="mcp-status-text" id="mcpStatusText" data-page-node-id="mcpStatusText36">检测中…</span>
+            </div>
+            <p class="tool-hint" data-page-node-id="mcpHint06">MCP 服务允许 AI 客户端（支持 MCP 协议）连接本应用，按实体的「备注（mcp 标记）」记录流水。填写并保存后：HTTP 模式请点击「重启 MCP 服务」生效；stdio 模式用命令 <code>portfolio mcp</code> 启动。</p>
+
+            <label class="switch-row" data-page-node-id="mcpEnableRow07">启用 MCP 服务
+              <label class="switch"><input type="checkbox" id="mcp_enabled" data-page-node-id="mcpEnabled08"><span class="switch-knob"></span></label>
+            </label>
+            <label data-page-node-id="mcpTransportRow09">传输方式
+              <select id="mcp_transport" data-page-node-id="mcpTransport10">
+                <option value="http" data-page-node-id="mcpTrHttp11">HTTP（远程：客户端通过 URL 连接）</option>
+                <option value="stdio" data-page-node-id="mcpTrStdio12">stdio（本地：客户端拉起子进程）</option>
+              </select>
+            </label>
+            <label data-page-node-id="mcpAddrRow13">HTTP 监听地址 <input id="mcp_http_addr" placeholder=":9988" data-page-node-id="mcpAddr14"></label>
+            <label data-page-node-id="mcpTokenRow15">鉴权令牌（可选）
+              <span class="mcp-token-row">
+                <input id="mcp_token" type="password" placeholder="留空则不鉴权" data-page-node-id="mcpToken16">
+                <button type="button" id="mcp_token_toggle" class="btn btn-sm mcp-eye" title="显示/隐藏令牌" aria-label="显示或隐藏令牌" data-page-node-id="mcpTokenToggle18">
+                  <svg class="eye-open" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                  <svg class="eye-closed" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                </button>
+                <button type="button" id="mcp_gen_token" class="btn btn-sm" data-page-node-id="mcpGenToken17">生成</button>
+              </span>
+            </label>
+            <label data-page-node-id="mcpNameRow19">服务名 <input id="mcp_server_name" placeholder="portfolio-mcp" data-page-node-id="mcpName20"></label>
+            <label data-page-node-id="mcpVerRow21">版本 <input id="mcp_server_version" placeholder="1.0.0" data-page-node-id="mcpVer22"></label>
+
+            <h4 class="mcp-subtitle" data-page-node-id="mcpClientTitle23">客户端配置（粘贴到 AI 客户端）</h4>
+            <label data-page-node-id="mcpExeRow24">可执行文件路径（stdio 用） <input id="mcp_exe_path" placeholder="portfolio" data-page-node-id="mcpExe25"></label>
+            <label data-page-node-id="mcpHostRow26">连接主机 / 地址（HTTP 用） <input id="mcp_host" placeholder="127.0.0.1" data-page-node-id="mcpHost27"></label>
+            <pre id="mcp_client_json" class="mcp-json" data-page-node-id="mcpClientJson28"></pre>
+            <div class="modal-actions" data-page-node-id="mcpActions29">
+              <button class="btn" type="button" id="mcp_copy_client" data-page-node-id="mcpCopyClient30">复制客户端配置</button>
+              <button class="btn" type="button" id="mcp_restart" data-page-node-id="mcpRestart37">重启 MCP 服务</button>
+              <button class="btn primary" type="button" id="mcp_save" data-page-node-id="mcpSave32">保存 MCP 设置</button>
+            </div>
+            <div id="mcpErr" class="err" data-page-node-id="mcpErr33"></div>
+          </div><!-- /aiSubPanelMcp -->
           </div><!-- /aiPanelSettings -->
 
         </div><!-- /settings-group-body -->
@@ -514,7 +499,7 @@
             </div>
             <div class="f-row" data-page-node-id="NhWc3XOXTX2ZeirjiAYOHR">
               <label data-page-node-id="MKgVXg1NAjPwSGRZVADDQN">交易日期 <input id="f_buy_date" type="date" data-page-node-id="7qArVdtf9Easn6H8Eaaq5W"></label>
-              <label data-page-node-id="eDNvbZVZJAzpNmCL3PUV5T">描述 <input id="f_note" placeholder="可选，备忘用途" data-page-node-id="rrnlGiAaInYR5XAoLFYdpT"></label>
+              <label data-page-node-id="eDNvbZVZJAzpNmCL3PUV5T">描述 <input id="f_note" placeholder="用于mcp的标记" data-page-node-id="rrnlGiAaInYR5XAoLFYdpT"></label>
             </div>
           <label id="linked_symbol_row" style="display:none" data-page-node-id="nVR796SFtFwUSFAJsYZiQV">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL" data-page-node-id="f38RGALsoViGU0Oog3Ix3F"></label>
           <div id="formErr" class="err" data-page-node-id="Rmg6GFYhfrpr9T1HBcaAYU"></div>
@@ -534,7 +519,7 @@
         <button type="button" class="adj-tab" data-tab="dividend" data-page-node-id="xCS6B0IBwfqHNnKUbspmIo">分红</button>
       </div>
 
-      <div class="adj-panel" data-panel="dividend" hidden data-page-node-id="M3Mg4KBUaQeyvPK82fco3Y">
+      <div class="adj-panel m-body" data-panel="dividend" hidden data-page-node-id="M3Mg4KBUaQeyvPK82fco3Y">
         <form id="dividendForm" data-page-node-id="6rwnCFtFSqloZnEYv6Xelz">
           <input type="hidden" id="div_id" data-page-node-id="rP8cDCx6kXJ9AFeqklixiP">
           <label data-page-node-id="JBL3VAal5zJOEGSwE8YN5S">每股分红<span class="ua-hint" data-page-node-id="Z2FIvoB7XXAkCa7raMUp8Z">税前口径；份额不变，成本价按此下调</span>
@@ -553,7 +538,7 @@
         </form>
         <p class="tool-hint" data-page-node-id="DA2lSQwcuh1rwCutsU2bX2">分红记录见「加减仓」tab 的交易记录（标记为「分红」），同时在现金账户流水中留痕。</p>
       </div>
-      <div class="adj-panel" data-panel="calc" data-page-node-id="h8dLa3iWF3edQfl7sSBv23">
+      <div class="adj-panel m-body" data-panel="calc" data-page-node-id="h8dLa3iWF3edQfl7sSBv23">
         <input type="hidden" id="adj_id" data-page-node-id="nqfOhC8dM8srVyhrkBgT87">
         <div class="adj-calc" data-page-node-id="37TfDYTrfH1AJMH6uKndZi">
           <div class="adj-row" data-page-node-id="Z1G6Aandfe8sniIDL5bkBD">
@@ -641,15 +626,15 @@
   <div id="guideModal" class="modal" hidden data-page-node-id="FmCWPlxB6Pc7HL6xdflDaF">
     <div class="modal-card" style="width:560px; max-width:94vw;" data-page-node-id="vkaQI0kI56jOOG9RcyNqKU">
       <h2 data-icon="target" data-page-node-id="540AJNlNCxQrFt6sWrrAaZ">调仓计划</h2>
-      <div class="guide-plan" data-page-node-id="nlGYQxkQJT5XNUALnBX4j8">
+      <div class="guide-plan m-body" data-page-node-id="nlGYQxkQJT5XNUALnBX4j8">
         <div class="guide-plan-head" data-page-node-id="SmaM31hodqDJkfb3BeIMLN">
-          <span class="guide-plan-title" data-page-node-id="l0mHDsND9t64DlpyoNgoR4">📊 动态调仓计划</span>
+          <span class="guide-plan-title" data-page-node-id="l0mHDsND9t64DlpyoNgoR4"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="3.8"/></svg>动态调仓计划</span>
         </div>
         <div id="guidePlanBody" class="guide-plan-body" data-page-node-id="V8HcIPf7sCf7EddkZjIioA"></div>
       </div>
-      <div class="guide-manual" data-page-node-id="baK9gaj9K3LII3G9qD6mO4">
+      <div class="guide-manual m-body" data-page-node-id="baK9gaj9K3LII3G9qD6mO4">
         <div class="guide-plan-head" data-page-node-id="GR3F7GsbZ0BhWeNSFgiCAV">
-          <span class="guide-plan-title" data-page-node-id="4dxW5Dl0UToU1YIgwR07Rd">📝 手动添加调仓计划</span>
+          <span class="guide-plan-title" data-page-node-id="4dxW5Dl0UToU1YIgwR07Rd"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><rect x="4.6" y="4" width="14.8" height="16" rx="2.2"/><path d="M8.6 9h6.8M8.6 12.8h6.8M8.6 16.6h4.2"/></svg>手动添加调仓计划</span>
         </div>
         <div id="guideList" class="guide-list" data-page-node-id="iZZo7LOW3FcpPpbIFaY66w"><div class="guide-empty" data-page-node-id="WWU7w1xw5bSvZshOq6ZnSp">暂无操作记录</div></div>
       <form id="guideForm" hidden data-page-node-id="hhUfkRDEiqJzwN9h3lChAp">
@@ -682,13 +667,13 @@
   <div id="chartModal" class="modal" hidden data-page-node-id="IKOZbOwPpIUI5eKPPyV2KE">
     <div class="modal-card chart-card" data-page-node-id="z7arL1JSp0WFrn9lTCKG33">
       <h2 id="chartTitle" data-icon="chart" data-page-node-id="Pn1N0w6yQUvAiYU6Fk0KXV">图表</h2>
-      <div id="chartBody" data-page-node-id="zGnfdAgp04o4zLNoZ7QEOj"></div>
+      <div id="chartBody" class="m-body" data-page-node-id="zGnfdAgp04o4zLNoZ7QEOj"></div>
     </div>
   </div>
 
   <!-- ===== 资产全景：构成 / 再平衡 / 设置 三 Tab ===== -->
   <div id="assetCompModal" class="modal" hidden data-page-node-id="FQAcBMPCCtWFoFkpxlBspz">
-    <div class="modal-card" style="width:780px; max-width:96vw;" data-page-node-id="TtfzV3s4UBign1c1HvBQXy">
+    <div class="modal-card" style="width:min(900px, 96vw); max-width:96vw;" data-page-node-id="TtfzV3s4UBign1c1HvBQXy">
       <h2 id="acModalTitle" data-icon="pie" data-page-node-id="hXbHRYywLV02VDn1mGXrme">资产全景</h2>
       <button class="card-close" type="button" id="acCompClose" title="关闭" aria-label="关闭" data-page-node-id="us9C6i8h5Ajn88WgY5EqVr">✕</button>
       <div class="ana-tabs ac-tabs" data-page-node-id="OA8t5L5YWRyAGp6qEaEohE">
@@ -696,12 +681,12 @@
         <button id="acTabRebalBtn" class="ana-tab-btn" type="button" data-tab="rebal" data-page-node-id="6P5AjBRmBRinj4ZE9ctcEn">资产再平衡</button>
         <button id="acTabSetBtn" class="ana-tab-btn" type="button" data-tab="settings" data-page-node-id="W6f0Hwe25PkkNUZq9pwHKe">设置</button>
       </div>
-      <div id="acTabComp" class="ac-panel" data-page-node-id="VgOIMI0xgZJPi3lHxQmIi3">
+      <div id="acTabComp" class="ac-panel m-body" data-page-node-id="VgOIMI0xgZJPi3lHxQmIi3">
         <h3 id="acCompTitle" data-page-node-id="LyPeHSQIDGr61LGW8kEK4R"></h3>
         <div id="acCompBody" data-page-node-id="yCUeq8smZ9JfoFIDwl5b67"></div>
       </div>
-      <div id="acTabRebal" class="ac-panel" hidden data-page-node-id="8FA2r5uyfbpV7SSv9NRO41"></div>
-      <div id="acTabSet" class="ac-panel" hidden data-page-node-id="H0SQK1QygWpMXncwq3C7Xv"></div>
+      <div id="acTabRebal" class="ac-panel m-body" hidden data-page-node-id="8FA2r5uyfbpV7SSv9NRO41"></div>
+      <div id="acTabSet" class="ac-panel m-body" hidden data-page-node-id="H0SQK1QygWpMXncwq3C7Xv"></div>
     </div>
   </div>
 
@@ -710,19 +695,11 @@
       <div class="cal-modal-head" data-page-node-id="fh6mNSJUvxokcBrBmoagZZ">
         <h2 id="calModalDate" data-icon="list" data-page-node-id="HClOBx8qUHcShcd0ua4jzS">日期明细</h2>
       </div>
-      <div id="calModalBody" data-page-node-id="Elc98rBPlweyOoCgjo3wzQ"></div>
+      <div id="calModalBody" class="m-body" data-page-node-id="Elc98rBPlweyOoCgjo3wzQ"></div>
       <!-- 前一天/后一天按钮：由 openCalDay 每次渲染时重建拼入统计行（静态元素 append 进 innerHTML 内容区会被销毁，故改重建+事件委托） -->
     </div>
   </div>
 
-
-  <!-- AI 持仓总结结果（独立顶层弹框，避免被 aiHubModal 的 hidden 态影响） -->
-  <div id="aiResultModal" class="modal" hidden data-page-node-id="uvJv1ZdXOtC6wOxmFtNAYS">
-    <div class="modal-card" style="width:700px; max-width:94vw;" data-page-node-id="Hatl6IxdXYCQZ98yFfSiWy">
-      <h2 data-icon="doc" data-page-node-id="qaziVxOg44sV0fY6DfM3KR">AI 持仓总结</h2>
-      <div id="aiResultBody" class="ai-result" data-page-node-id="r6dvuYZSK724OhfH9tMun7">生成中…</div>
-    </div>
-  </div>
 
   <div id="histModal" class="modal" hidden data-page-node-id="J4Dzkg9IQScICe6BRDTyRA">
     <div class="modal-card" style="width:720px; max-width:94vw;" data-page-node-id="iUrymcTnUOdqgyXOcHmm5e">
@@ -732,8 +709,8 @@
         <button id="histTabChart" class="ana-tab-btn" type="button" data-page-node-id="x5YQwGF6fC7JpK45GfuZsU">盈亏曲线</button>
         <button id="histTabAudit" class="ana-tab-btn" type="button" data-page-node-id="6Y9ET7d8XFE1BOKDqCg3Wg">审计记录</button>
       </div>
-      <div id="histTableWrap" data-page-node-id="GawvrNfJQUfA0qoJjbfKAz"><div id="histTable" class="hist-table" data-page-node-id="ZsOBAS2aT0oryCThhmbhHh"></div></div>
-      <div id="histChartWrap" hidden data-page-node-id="NFhJjnliDAlKzTOpPmaz2b"><div id="histChartBody" data-page-node-id="HCZyWS9kRBNOnmF9szLGpM"></div></div>
+      <div id="histTableWrap" class="m-body" data-page-node-id="GawvrNfJQUfA0qoJjbfKAz"><div id="histTable" class="hist-table" data-page-node-id="ZsOBAS2aT0oryCThhmbhHh"></div></div>
+      <div id="histChartWrap" class="m-body" hidden data-page-node-id="NFhJjnliDAlKzTOpPmaz2b"><div id="histChartBody" data-page-node-id="HCZyWS9kRBNOnmF9szLGpM"></div></div>
     </div>
   </div>
 
@@ -741,7 +718,7 @@
   <div id="cashHistModal" class="modal" hidden data-page-node-id="EBCmjqdaeRZLNlA9PXLV2U">
     <div class="modal-card" style="width:720px; max-width:94vw;" data-page-node-id="ZduWV3YlRUpqbw9cUacEK8">
       <h2 id="cashHistTitle" data-icon="clock" data-page-node-id="vGFCVhtzItoMe7LyihGXLR">资金变动历史</h2>
-      <div id="cashHistBody" data-page-node-id="XtWTRZoKt0qatuoz4CezAj"></div>
+      <div id="cashHistBody" class="m-body" data-page-node-id="XtWTRZoKt0qatuoz4CezAj"></div>
     </div>
   </div>
 
@@ -749,8 +726,8 @@
   <div id="analysisModal" class="modal" hidden data-page-node-id="PbKQPREm3h4ENFh8WVF2GY">
     <div class="modal-card" style="width:680px; max-width:94vw;" data-page-node-id="3ZojMdxCTWsj9sN4xFSWf5">
       <h2 id="analysisTitle" data-icon="analysis" data-page-node-id="uq57qCIc2GPM2J5nolQGpG">技术分析</h2>
-      <div id="analysisTime" class="analysis-time" data-page-node-id="HUuMY1ewkDEzcU3sPGDNjt"></div>
-      <div id="analysisBody" class="analysis-body" data-page-node-id="UA4E2ALHKHdPq0Tyhm1uF5"></div>
+      <div id="analysisTime" class="analysis-time m-body" data-page-node-id="HUuMY1ewkDEzcU3sPGDNjt"></div>
+      <div id="analysisBody" class="analysis-body m-body" data-page-node-id="UA4E2ALHKHdPq0Tyhm1uF5"></div>
     </div>
   </div>
 
@@ -771,9 +748,9 @@
         </label>
         <label data-page-node-id="VB2R7gnsZyHs7E0LqcTS9B">币种</label>
         <div id="as_currencies" class="cur-checks" data-page-node-id="1IeJSztTIH6XHiGfJCKhZn">
-          <label class="cur-check" data-page-node-id="6B5BvgdmNXU8rMQE81pjzR"><input type="checkbox" value="rmb" data-page-node-id="U5xpCwtaioQHUWCixhfRlq"> RMB（人民币）</label>
-          <label class="cur-check" data-page-node-id="Yk1QWdo6fWFlqMjD9begM4"><input type="checkbox" value="hkd" data-page-node-id="UVxXH6EoEGFGB1uVcWFVeb"> HKD（港币）</label>
-          <label class="cur-check" data-page-node-id="ZUEfB3GgsRNgATwto7OxH5"><input type="checkbox" value="usd" data-page-node-id="3ypZtUWvnXxNHSUC8YDzme"> USD（美元）</label>
+          <label class="cur-check" data-page-node-id="6B5BvgdmNXU8rMQE81pjzR"><input type="checkbox" value="rmb" data-page-node-id="U5xpCwtaioQHUWCixhfRlq"> RMB</label>
+          <label class="cur-check" data-page-node-id="Yk1QWdo6fWFlqMjD9begM4"><input type="checkbox" value="hkd" data-page-node-id="UVxXH6EoEGFGB1uVcWFVeb"> HKD</label>
+          <label class="cur-check" data-page-node-id="ZUEfB3GgsRNgATwto7OxH5"><input type="checkbox" value="usd" data-page-node-id="3ypZtUWvnXxNHSUC8YDzme"> USD</label>
         </div>
         <label data-page-node-id="xtPqD48K9iETmjnbAPE2dj">备注 <input id="as_note" data-page-node-id="pKDdmG74nLS4FhjtHNfHOL"></label>
         <div id="assetSourceErr" class="err" data-page-node-id="m78BXJiMllN2sdAOyKGOLo"></div>
@@ -790,10 +767,10 @@
         <label data-page-node-id="T9gGoHHNUD20jMKhEo7PZ7">名称 <input id="w_name" placeholder="如 安心天天成长3号163期A" required data-page-node-id="0APRw7AmCJouryN8xhiKQ1"></label>
         <label data-page-node-id="7dazD4DewyRy6ksS4Nd6OG">产品代码/登记编码 <input id="w_code" data-page-node-id="EG4Q29kXexsD2x6TyivZxK"></label>
         <label data-page-node-id="TSb0Ff27tdDjyYXXgqD7vw">所属账户 <select id="w_source" data-page-node-id="KSFcGIqtxKBjDurEl5hFr5"></select></label>
-        <label data-page-node-id="B8yWiNFm6FWjtHLLbk0zgx">货币类型
-          <select id="w_currency" data-page-node-id="sQiGE1Flj7alG7wUh9qMZK"><option value="rmb" data-page-node-id="vv3vARkdMHcU4mbjYQttBA">RMB（人民币）</option><option value="hkd" data-page-node-id="jQAwdzJHEHGIRWFQE5McP6">HKD（港币）</option><option value="usd" data-page-node-id="vxpZMAIcGev7qFhUc2rVlN">USD（美元）</option></select>
+        <label data-page-node-id="B8yWiNFm6FWjtHLLbk0zgx">币种
+          <select id="w_currency" data-page-node-id="sQiGE1Flj7alG7wUh9qMZK"><option value="rmb" data-page-node-id="vv3vARkdMHcU4mbjYQttBA">RMB</option><option value="hkd" data-page-node-id="jQAwdzJHEHGIRWFQE5McP6">HKD</option><option value="usd" data-page-node-id="vxpZMAIcGev7qFhUc2rVlN">USD</option></select>
         </label>
-        <label data-page-node-id="MW6vJewmlXl5HI23mQBS7O">备注 <input id="w_note" data-page-node-id="xzVRvQ3B4Ygp64hpzRqPcQ"></label>
+        <label data-page-node-id="MW6vJewmlXl5HI23mQBS7O">备注 <input id="w_note" placeholder="用于mcp的标记" data-page-node-id="xzVRvQ3B4Ygp64hpzRqPcQ"></label>
         <div id="wealthErr" class="err" data-page-node-id="aR3I1FZUGUaFUFtBE1hWmG"></div>
         <div class="modal-actions" data-page-node-id="Pa9BWVlM2To5z3wn9xKLzu"><button class="btn primary" type="submit" data-page-node-id="rgFM7OClizkjEmAZJLfqyT">保存</button></div>
       </form>
@@ -829,11 +806,11 @@
         <div id="cashEditFields" hidden data-page-node-id="6tRUyMLcd7cK6PoD2lDWvv">
           <div class="cash-edit-info" id="cashEditInfo" data-page-node-id="FAnMgco805A3vzOEovJlb9"></div>
           <label data-page-node-id="6QvHhkuYjuVWje1jMyYWoo">子账户名称 <input id="c_name_edit" placeholder="修改后保存即生效" data-page-node-id="HOHhm0A8gQU89mdTomYlk7"></label>
-          <label data-page-node-id="oUxZo9VomHeVJQcel2ZjHw">货币类型
-            <select id="c_currency_edit" data-page-node-id="1RznOalt9EMH9ezhHPFlEr"><option value="rmb" data-page-node-id="h6pSjFcjWjvMcalpnD6fzI">RMB（人民币）</option><option value="hkd" data-page-node-id="LQ7HC5Enqe2UHlAXqNFKtB">HKD（港币）</option><option value="usd" data-page-node-id="wrkvAq4pCJeEjh4BEFO0Ta">USD（美元）</option></select>
+          <label data-page-node-id="oUxZo9VomHeVJQcel2ZjHw">币种
+            <select id="c_currency_edit" data-page-node-id="1RznOalt9EMH9ezhHPFlEr"><option value="rmb" data-page-node-id="h6pSjFcjWjvMcalpnD6fzI">RMB</option><option value="hkd" data-page-node-id="LQ7HC5Enqe2UHlAXqNFKtB">HKD</option><option value="usd" data-page-node-id="wrkvAq4pCJeEjh4BEFO0Ta">USD</option></select>
           </label>
           <label data-page-node-id="NNFx6Y92DpaA0neVniqA2y">类型 <input id="c_type_edit" placeholder="如 活期/定期/零钱/保证金（可选）" data-page-node-id="oToNpRCMUb1gzlo1vews7h"></label>
-          <label data-page-node-id="ZcTcMO9ctjJNjKm6uq8M0o">备注 <input id="c_note_edit" placeholder="子账户备注（可选）" data-page-node-id="qG6VpLDkXSdAL8RvF0xEPe"></label>
+          <label data-page-node-id="ZcTcMO9ctjJNjKm6uq8M0o">备注 <input id="c_note_edit" placeholder="用于mcp的标记" data-page-node-id="qG6VpLDkXSdAL8RvF0xEPe"></label>
           <label data-page-node-id="NinHakuSRUz0UxPwnY4VZA">改为新余额 <input id="c_amount_edit" type="number" step="0.0001" oninput="clampDecimals(this,4)" placeholder="与 ± 资金二选一" data-page-node-id="5RUtDt5QJgVoL41tOe7jjP"></label>
           <div class="sign-edit" data-page-node-id="Hj4n0YsmXKuQgwOV7EDCj1">
             <div class="field-label" data-page-node-id="fWvsAlQhHjRc9UfWU3PQ7v">资金变动</div>
@@ -849,8 +826,8 @@
         <!-- 添加子账户：干净的新增表单 -->
         <div id="cashNewFields" hidden data-page-node-id="ZWCbH9vjLxovycLjHJsfFn">
           <label data-page-node-id="7pcsCeSgBxDBVOJ1GJ1z0j">名称 <input id="c_name" placeholder="如 招行活期 / 微信零钱" data-page-node-id="ODdSmKb528CnmUNCK37IId"></label>
-          <label data-page-node-id="kRSOuReUjIzWPJFeXDM7KY">货币类型
-            <select id="c_currency" data-page-node-id="bQpss8pHz5oAY9tFJpGbf2"><option value="rmb" data-page-node-id="op6Sx3XKqXTE97Wq2r5STg">RMB（人民币）</option><option value="hkd" data-page-node-id="1E2Gn6YsBAAqW3UO2vDWDc">HKD（港币）</option><option value="usd" data-page-node-id="MJn9vU4PWG3neEmxScwRVr">USD（美元）</option></select>
+          <label data-page-node-id="kRSOuReUjIzWPJFeXDM7KY">币种
+            <select id="c_currency" data-page-node-id="bQpss8pHz5oAY9tFJpGbf2"><option value="rmb" data-page-node-id="op6Sx3XKqXTE97Wq2r5STg">RMB</option><option value="hkd" data-page-node-id="1E2Gn6YsBAAqW3UO2vDWDc">HKD</option><option value="usd" data-page-node-id="MJn9vU4PWG3neEmxScwRVr">USD</option></select>
           </label>
           <label data-page-node-id="fL2P33YoA60JmKPzrvDBbZ">类型 <input id="c_type" placeholder="如 活期/定期/零钱/保证金（可选）" data-page-node-id="U2WCOJ9qyU7C0WDHFiuGri"></label>
           <label data-page-node-id="Uj1B4oBBgIlnD9nX7NqcAG">当前余额 <input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="FMSBHzDZGnINgG8LYVzHjz"></label>
@@ -858,7 +835,7 @@
           <label id="c_source_fix_row" hidden data-page-node-id="saJnyjHx4RVb0KVf7k0SeE">所属账户 <input id="c_source_fix" readonly placeholder="—" data-page-node-id="k0gy44BxRZ6lDCNBW7bntM"></label>
           <label id="c_source_sel_row" hidden data-page-node-id="t0necID2OAsBVw0Xn5BvQm">所属账户 <select id="c_source" data-page-node-id="4mBy0As0Qm1ylPgU2IE9rS"></select></label>
           <label class="c-default-row" data-page-node-id="jVUh2zGR8XuTm0Xp9RBA5B"><input type="checkbox" id="c_is_default" data-page-node-id="afuh0AgjLNK3mp0FFiJwWX"> 设为默认子账户<span class="ua-hint" data-page-node-id="IuhYSnlR7PkdFkedi0wk6x">（同币种唯一；加减仓资金默认走此账户）</span></label>
-          <label data-page-node-id="JqPv9b7e6tsnaznyDJurPG">备注 <input id="c_note" data-page-node-id="D0psJyFudbmzUl55dSo0c1"></label>
+          <label data-page-node-id="JqPv9b7e6tsnaznyDJurPG">备注 <input id="c_note" placeholder="用于mcp的标记" data-page-node-id="D0psJyFudbmzUl55dSo0c1"></label>
         </div>
         <!-- 负债面板：与子账户同弹框，tab 切换（原独立负债弹框并入此处） -->
         <div id="liabFields" hidden data-page-node-id="5H59mlByFFMXL2K5gAEUxW">
@@ -868,10 +845,10 @@
           <!-- 所属账户：编辑/新增负债时账户由入口父账户或负债自身决定，弹框不展示（与编辑子账户一致） -->
           <input type="hidden" id="lb_source" data-page-node-id="89yg1r3WYjwHDzZOgAYfxD">
           <label data-page-node-id="3s4RZZZhVVkHLjDDB95Wmf">当前欠款余额 <input id="lb_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="e2khC3Tzqu9oqiCAq6H8al"></label>
-          <label data-page-node-id="tq0HDxll6oZLpIJGVGYdPu">币种 <select id="lb_currency" data-page-node-id="uCbK0shBLOo3n4BU9bUAIi"><option value="rmb" data-page-node-id="jSuqnJ6WRfqQYRrSd05JCa">RMB（人民币）</option><option value="hkd" data-page-node-id="csbuUKTaGNtZTA2iuLltSF">HKD（港币）</option><option value="usd" data-page-node-id="rt1DeCxfsVAP9nrE3ISfcY">USD（美元）</option></select></label>
+          <label data-page-node-id="tq0HDxll6oZLpIJGVGYdPu">币种 <select id="lb_currency" data-page-node-id="uCbK0shBLOo3n4BU9bUAIi"><option value="rmb" data-page-node-id="jSuqnJ6WRfqQYRrSd05JCa">RMB</option><option value="hkd" data-page-node-id="csbuUKTaGNtZTA2iuLltSF">HKD</option><option value="usd" data-page-node-id="rt1DeCxfsVAP9nrE3ISfcY">USD</option></select></label>
           <label data-page-node-id="JwGhRczsNVl4zHb1hzacbS">年利率(%) <input id="lb_rate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="uGCG3DEzZHQC8Qxd48GVqH"></label>
           <label data-page-node-id="YjMv48xJ3qIjLQWmsaaDZ8">月供 <input id="lb_monthly" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="PLjJoEsWZtqegoYApUud6s"></label>
-          <label data-page-node-id="pYzovBjIbMuv6fMMsDwPqc">备注 <input id="lb_note" data-page-node-id="GvXEQQSv6i1XTKonTEBu8v"></label>
+          <label data-page-node-id="pYzovBjIbMuv6fMMsDwPqc">备注 <input id="lb_note" placeholder="用于mcp的标记" data-page-node-id="GvXEQQSv6i1XTKonTEBu8v"></label>
         </div>
         <div id="cashErr" class="err" data-page-node-id="rdH06qOgNOYKEnE4yENvq3"></div>
         <div class="modal-actions" data-page-node-id="wQOQT3gSJfCBPYeOsIiwvQ"><button class="btn primary" type="submit" data-page-node-id="ld3noD231SL5EfD0HlInbP">保存</button></div>
@@ -881,7 +858,7 @@
 
   <div id="flowModal" class="modal" hidden data-page-node-id="vaGfShzxxOKjnQQwAu0S3A">
     <div class="modal-card" data-page-node-id="PAzMVGMQ0FSpq10gvPH8Wd">
-      <div class="modal-head" data-page-node-id="QJNebDSeUg89AEAoFuMrk4"><h2 data-icon="plus" data-page-node-id="woVGAiJaeNFQECdcT073Cg">添加流水</h2></div>
+      <h2 class="m-head" data-icon="plus" data-page-node-id="woVGAiJaeNFQECdcT073Cg">添加流水</h2>
       <form id="flowForm" data-page-node-id="zQQDtrBQM1eCgtAzyc6yYR">
         <label data-page-node-id="yIUDrqc1u3pKshoZc4qcqm">子账户</label>
         <div class="ac-picker" id="flowCashPicker" data-page-node-id="z7KeOdPjDNxWCE6NgcyWIt">
@@ -905,10 +882,74 @@
     </div>
   </div>
 
+  <div id="flowEditModal" class="modal" hidden>
+    <div class="modal-card" style="width:460px; max-width:94vw;">
+      <h2 class="m-head" id="feTitle" data-icon="adjust">修改流水</h2>
+      <form id="flowEditForm">
+        <input type="hidden" id="fe_kind" />
+        <input type="hidden" id="fe_id" />
+        <label id="feAccountWrap">子账户
+          <select id="fe_cash"></select>
+        </label>
+        <label id="feTypeWrap" hidden>类型
+          <select id="fe_liab_type">
+            <option value="loan">借入（增加贷款）</option>
+            <option value="repay">还款（减少贷款）</option>
+          </select>
+        </label>
+        <div id="feDirWrap" class="sign-edit">
+          <div class="field-label">资金变动</div>
+          <span class="seg-flat" id="fe_sign_toggle" role="group" aria-label="存入或取出">
+            <button type="button" class="sign-opt active" data-sign="in">＋ 入账</button>
+            <span class="seg-sep">/</span>
+            <button type="button" class="sign-opt" data-sign="out">－ 出账</button>
+          </span>
+        </div>
+        <label>金额 <input id="fe_amount" type="number" step="0.01" min="0" placeholder="金额（正数）" /></label>
+        <label>备注 <input id="fe_note" maxlength="120" placeholder="可选" /></label>
+        <div id="feErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="feCancel">取消</button>
+          <button class="btn primary" type="submit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="bpExecModal" class="modal" hidden>
+    <div class="modal-card" style="width:460px; max-width:94vw;">
+      <h2 class="m-head" id="bpExecTitle" data-icon="target">标记已补</h2>
+      <form id="bpExecForm">
+        <input type="hidden" id="bp_hid" />
+        <input type="hidden" id="bp_idx" />
+        <input type="hidden" id="bp_action" />
+        <input type="hidden" id="bp_price" />
+        <input type="hidden" id="bp_label" />
+        <input type="hidden" id="bp_plan_amount" />
+        <label id="bpCashWrap"><span id="bpCashLabel">买入账户（资金将从该账户扣出）</span>
+          <select id="bp_cash"></select>
+        </label>
+        <label id="bpAmountWrap"><span id="bpAmountLabel">实际成交金额</span>
+          <input id="bp_amount" type="number" step="0.01" min="0" placeholder="0.00" />
+        </label>
+        <label>实际成交份额
+          <input id="bp_shares" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="0" />
+        </label>
+        <label>备注（可选）<input id="bp_note" maxlength="120" placeholder="如 实际成交价 / 手续费" /></label>
+        <div class="ua-hint" id="bpHint"></div>
+        <div id="bpErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="bpCancel">取消</button>
+          <button class="btn primary" type="submit" id="bpSubmit">确认</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="wealthRedeemModal" class="modal" hidden data-page-node-id="PwPUJTuNmr2mgdArNyvYGe">
     <div class="modal-card" style="width:480px; max-width:94vw;" data-page-node-id="J7kyjcx4QtpMm3TVvgjVrR">
       <h2 id="wrTitle" data-icon="arrowDown" data-page-node-id="hCimSLJbbFnHFAKuGmFiKg">理财减仓</h2>
-      <div class="cash-edit-info" id="wrInfo" data-page-node-id="OOWnpLcaDc5r7BG17Li89z"></div>
+      <div class="cash-edit-info m-body" id="wrInfo" data-page-node-id="OOWnpLcaDc5r7BG17Li89z"></div>
       <form id="wrForm" data-page-node-id="WQ2dEqSYPw12jSWvD7TJsN">
         <label data-page-node-id="bGz5T4hJFXCDzP94I3QYmL">转出金额 <input id="wr_amount" type="number" step="0.01" min="0" oninput="clampDecimals(this,2);wrSyncHint()" data-page-node-id="bIJr99CHP0mXAFwExFAaF2"></label>
         <label data-page-node-id="v2H5MQn6Wf6VUhLuHfMIOs">转入子账户（同来源） <select id="wr_cash" data-page-node-id="Cv3bcCnwZ76lRphgL4gI9b"></select></label>
@@ -945,7 +986,7 @@
   <div id="snapModal" class="modal" hidden data-page-node-id="w0OygdNODEy5jbBfUATLLa">
     <div class="modal-card" style="width:720px; max-width:94vw;" data-page-node-id="w7OTMkePZILkBHl2YBMZKs">
       <h2 data-icon="refresh" data-page-node-id="XQDct9eKYBV7MdQZTnGEij">更新理财持仓</h2>
-      <div id="snapBody" class="snap-body" data-page-node-id="hGBjIHu0b4a9Av2AxpjbZS"></div>
+      <div id="snapBody" class="snap-body m-body" data-page-node-id="hGBjIHu0b4a9Av2AxpjbZS"></div>
       <div class="modal-actions" data-page-node-id="xTaEOs46Hi7UPSKtF8saLo"><button type="button" id="snapSave" class="btn primary" data-page-node-id="N7NIz4Y7U2vfpenBrbJD7j">保存</button></div>
     </div>
   </div>
@@ -953,7 +994,7 @@
   <div id="snapConfirmModal" class="modal" hidden data-page-node-id="dkmYPN0ordAZoD70ndq7DW">
     <div class="modal-card" style="width:680px; max-width:94vw;" data-page-node-id="jpazzM0IveQGJJ1BYBCedS">
       <h2 data-icon="check" data-page-node-id="sKcHvJ52hjcmRlsKfl8WBf">确认保存持仓</h2>
-      <div id="snapConfirmBody" data-page-node-id="xKDGYBIFG8LNfbvAWuOELc"></div>
+      <div id="snapConfirmBody" class="m-body" data-page-node-id="xKDGYBIFG8LNfbvAWuOELc"></div>
       <div class="modal-actions" data-page-node-id="zMRc2gDrcUMSYS2GKm3hGl">
         <button type="button" id="snapConfirmCancel" class="btn" data-page-node-id="xw2dk6o8HYwFtPx2NXP7by">取消</button>
         <button type="button" id="snapConfirmOk" class="btn primary" data-page-node-id="I0qF2vNVvHnrJRj1fHA2AO">确认保存</button>
@@ -982,7 +1023,7 @@
         <button class="accent-swatch" type="button" data-accent="gold" title="土豪金（默认）" aria-label="土豪金" data-page-node-id="c8x2ZvJ23aW5ABDKIdVfHh"></button>
         <button class="accent-swatch" type="button" data-accent="green" title="豆沙护眼绿" aria-label="豆沙绿" data-page-node-id="ijPoilHCYMYZweOS7GMxGg"></button>
         <button class="accent-swatch" type="button" data-accent="blue" title="经典蓝" aria-label="经典蓝" data-page-node-id="VpntpM8SamOEBAoskzNZ32"></button>
-        <button class="accent-swatch accent-custom" type="button" id="accentCustomBtn" title="自定义主题色（铅笔挑选任意颜色）" aria-label="自定义主题色" data-page-node-id="NXPI17xPRzxItdhkxMVBzs">✏️</button>
+        <button class="accent-swatch accent-custom" type="button" id="accentCustomBtn" title="自定义主题色（铅笔挑选任意颜色）" aria-label="自定义主题色" data-page-node-id="NXPI17xPRzxItdhkxMVBzs"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;margin:auto"><path d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"/><path d="M14.5 6.5 17.5 9.5"/></svg></button>
         <input type="color" id="accentCustom" value="#d9a52b" style="position:absolute;opacity:0;width:0;height:0;border:0;padding:0" tabindex="-1" aria-hidden="true" data-page-node-id="iUcnToVEIX8VVrrIMs8jXn">
       </div>
     </div>
@@ -990,8 +1031,8 @@
     <label class="full-migrate" title="勾选后导出/导入将包含：收支计划、来源账户(类型/境内外/币种)、AI配置(密钥/模型/模板)、应用设置与净值历史，实现完整迁移">
       <input type="checkbox" id="fullMigrateChk"> 完整迁移（含收支计划 / 来源 / AI配置 / 设置 / 净值历史）
     </label>
-    <button class="btn" type="button" id="ai_export_json" data-page-node-id="zSBcyJgdaFMM1hPoZbhgXE">⬇️ 导出数据</button>
-    <button class="btn" type="button" id="ai_import_json" data-page-node-id="pd0rPAvWKyHRoYwmPAXI9w">⬆️ 导入数据</button>
+    <button class="btn" type="button" id="ai_export_json" data-page-node-id="zSBcyJgdaFMM1hPoZbhgXE"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.8v10.4"/><path d="M8 10.2 12 14.2 16 10.2"/><path d="M4.6 16.6v2.2a1.6 1.6 0 0 0 1.6 1.6h11.6a1.6 1.6 0 0 0 1.6-1.6v-2.2"/></svg>导出数据</button>
+    <button class="btn" type="button" id="ai_import_json" data-page-node-id="pd0rPAvWKyHRoYwmPAXI9w"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14.4V3.8"/><path d="M8 7.8 12 3.8 16 7.8"/><path d="M4.6 16.6v2.2a1.6 1.6 0 0 0 1.6 1.6h11.6a1.6 1.6 0 0 0 1.6-1.6v-2.2"/></svg>导入数据</button>
   </div>
   <div class="user-clear" data-page-node-id="9nIsBnDZvHTBcDxl0ZQLdx">
     <button class="btn danger" type="button" id="userClearBtn" data-page-node-id="Vc7lBJKIWJjj6ahiHg59fO">清空当前用户数据</button>

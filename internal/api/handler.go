@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -152,6 +153,10 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/holdings/:id/pnl-history", holdingPnlHistory)
 		g.GET("/ai/settings", aiSettingsGet)
 		g.POST("/ai/settings", aiSettingsPost)
+		g.GET("/mcp/config", mcpConfigGet)
+		g.PUT("/mcp/config", mcpConfigPut)
+		g.GET("/mcp/status", mcpConfigStatus)
+		g.POST("/mcp/restart", mcpConfigRestart)
 		g.POST("/ai/summary", aiSummary)
 
 		// 通知渠道：配置读写 + 测试发送
@@ -200,6 +205,8 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/cashflow/plans/:id/complete", completeCashflowPlan)
 		g.POST("/cashflow/plans/:id/uncomplete", uncompleteCashflowPlan)
 		g.GET("/asset/flows", listFlows)
+		g.PUT("/asset/flows/:kind/:id", updateFlow)
+		g.DELETE("/asset/flows/:kind/:id", deleteFlow)
 		g.GET("/asset/consumptions", listConsumptionsH)
 		g.POST("/asset/consumptions", createConsumption)
 		g.PUT("/asset/consumptions/:id", updateConsumption)
@@ -721,10 +728,13 @@ func refresh(c *gin.Context) {
 // refreshOne 已移除：单只持仓手动刷新逻辑取消，行情改由定时快照（refreshAllQuotes）自动更新。
 // 批量刷新 /api/refresh 与定时快照仍复用 refreshAllQuotes。
 
-// executeBuyPlanTier records that a specific buy-plan tier was executed
-// ("标记已补"): the tier is persisted as executed so the UI can grey it out (✓)
-// and the notify path excludes it from pending 补仓信号. It does NOT modify the
-// holding's quantity/cost (no automatic 加仓) — it only records the execution.
+// executeBuyPlanTier 真实落库执行某档补仓计划（"标记已补" / "标记已减"）：
+//   - 依据弹框填写的「实际成交金额 + 实际成交份额」更新持仓（份额、摊薄成本），
+//     折合成交价 = 金额 ÷ 份额，不动用手续费列；
+//   - 同步资金账户余额并记一笔真实现金流水（买入=账户出账 adjust_buy，
+//     卖出=账户入账 adjust_sell），该流水可在「资产 → 流水」中修改 / 删除；
+//   - 卖出档位额外记已实现盈亏并重算当日盈亏；
+//   - 最后把档位标记为已执行（holdings 计划置灰 ✓，并从待触发信号中排除）。
 func executeBuyPlanTier(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -732,12 +742,15 @@ func executeBuyPlanTier(c *gin.Context) {
 		return
 	}
 	var req struct {
-		TierIndex int     `json:"tier_index"`
-		TierLabel  string  `json:"tier_label"`
-		Action     string  `json:"action"`
-		Price      float64 `json:"price"`
-		Amount     float64 `json:"amount"`
-		Note       string  `json:"note"`
+		TierIndex    int     `json:"tier_index"`
+		TierLabel    string  `json:"tier_label"`
+		Action       string  `json:"action"`
+		Price        float64 `json:"price"` // 计划档位触发价，作为金额/份额互算的参考价
+		Amount       float64 `json:"amount"`
+		ActualAmount float64 `json:"actual_amount"`
+		ActualShares float64 `json:"actual_shares"`
+		CashID       int64   `json:"cash_id"`
+		Note         string  `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
@@ -747,20 +760,143 @@ func executeBuyPlanTier(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tier_index 非法"})
 		return
 	}
+	uid := currentUserID(c)
+	h, err := db.Get(id)
+	if err != nil || h == nil || h.UserID != uid {
+		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
+		return
+	}
+	action := strings.TrimSpace(req.Action)
+	if action == "" {
+		action = "buy"
+	}
+	isSell := action == "sell"
+	holdName := h.Name
+	if holdName == "" {
+		holdName = h.Symbol
+	}
+	// 参考价：优先计划档位触发价，缺失时回落持仓现价，用于金额 / 份额互算与兜底成交价。
+	refPrice := req.Price
+	if refPrice <= 0 {
+		refPrice = h.CurrentPrice
+	}
+	actual := req.ActualAmount
+	if actual <= 0 {
+		actual = req.Amount
+	}
+	shares := req.ActualShares
+	if shares <= 0 && actual > 0 && refPrice > 0 {
+		shares = actual / refPrice
+	}
+	if actual <= 0 && shares > 0 && refPrice > 0 {
+		actual = shares * refPrice
+	}
+	if shares <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写实际成交份额"})
+		return
+	}
+	if actual <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写实际成交金额"})
+		return
+	}
+	actual = math.Round(actual*100) / 100
+	note := strings.TrimSpace(req.Note)
+
+	if req.CashID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择资金账户"})
+		return
+	}
+	acc, e := db.GetCash(req.CashID)
+	if e != nil || acc == nil || acc.UserID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "资金账户不存在或无权访问"})
+		return
+	}
+	if !isSell && acc.Amount-actual < -0.004 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("账户「%s」余额不足（当前 %.2f，需 %.2f）", acc.Name, acc.Amount, actual)})
+		return
+	}
+	// 折合成交价 = 实际成交金额 ÷ 实际成交份额（无参考价时也据此得到）。
+	price := refPrice
+	if shares > 0 && actual > 0 {
+		price = math.Round(actual/shares*10000) / 10000
+	}
+	if price <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无法确定成交价，请填写实际成交金额与份额"})
+		return
+	}
+
+	// 1) 更新持仓：份额 + 摊薄成本（含实际成交金额），并写 position_tx 留痕。
+	txType := "BUY"
+	if isSell {
+		txType = "SELL"
+	}
+	txNote := fmt.Sprintf("补仓计划「%s」", strings.TrimSpace(req.TierLabel))
+	if note != "" {
+		txNote += "｜" + note
+	}
+	nh, realized, e := db.AdjustHolding(id, txType, shares, price, 0, txNote)
+	if e != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
+		return
+	}
+
+	// 2) 账户资金变动 + 现金流水（买入出账 / 卖出入账）。
+	delta, flowType, verb := -actual, "adjust_buy", "补仓买入"
+	if isSell {
+		delta, flowType, verb = actual, "adjust_sell", "调仓卖出"
+	}
+	detail := fmt.Sprintf("%s %s %s｜份额 %g｜价 %g", verb, holdName, h.Symbol, shares, price)
+	if note != "" {
+		detail += "｜" + note
+	}
+	if e := db.AddCashAmount(acc.ID, delta, flowType, "buy_plan", h.ID, holdName, detail); e != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
+		return
+	}
+	var flowID int64
+	if f, e := db.GetLatestCashFlowByRef("buy_plan", h.ID); e == nil && f != nil {
+		flowID = f.ID
+	}
+
+	// 3) 卖出档位：记已实现盈亏并立即重算当日盈亏（与加减仓减仓口径一致）。
+	if isSell && math.Abs(realized) > 1e-9 {
+		today := time.Now().Format("2006-01-02")
+		if e := db.RecordRealizedPnl(uid, today, id, nh.Symbol, nh.Name, nh.Currency, realized); e != nil {
+			log.Printf("[buyplan] 记录已实现盈亏失败(uid=%d hid=%d): %v", uid, id, e)
+		}
+		if e := doSnapshot(uid); e != nil {
+			log.Printf("[buyplan] 重算当日盈亏失败(uid=%d): %v", uid, e)
+		}
+	}
+
+	// 4) 档位标记为已执行（备注带上账户名，便于回看）。
+	execNote := acc.Name
+	if execNote != "" && note != "" {
+		execNote += " · " + note
+	} else if execNote == "" {
+		execNote = note
+	}
 	tx := &db.BuyPlanExec{
 		HoldingID: id,
 		TierIndex: req.TierIndex,
 		TierLabel: strings.TrimSpace(req.TierLabel),
-		Action:    strings.TrimSpace(req.Action),
-		Price:     req.Price,
-		Amount:    req.Amount,
-		Note:      strings.TrimSpace(req.Note),
+		Action:    action,
+		Price:     price,
+		Amount:    actual,
+		Note:      execNote,
 	}
 	if err := db.SaveExecutedBuyPlan(tx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "executed": tx})
+	c.JSON(http.StatusOK, gin.H{
+		"ok":           true,
+		"executed":     tx,
+		"flow_id":      flowID,
+		"cash_name":    acc.Name,
+		"holding":      enrich(*nh, uid),
+		"realized_pnl": realized,
+	})
 }
 
 // listExecutedBuyPlan returns the executed tiers for a holding.

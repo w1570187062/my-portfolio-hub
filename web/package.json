@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "lint:ui": "node check-ui.mjs",
+    "verify": "node check-ui.mjs && node build.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.2"

@@ -5,6 +5,7 @@ services:
     container_name: portfolio
     ports:
       - "9989:9989"
+      - "9988:9988"
     environment:
       - PORT=9989
       - DATA_DIR=/data/portfolio.db

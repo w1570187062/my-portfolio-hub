@@ -1271,6 +1271,10 @@ func initAssetTables() error {
 		  )`)
 	// 索引：按账户查流水（历史弹框）
 	_, _ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_cash_flow_cash ON cash_flow(cash_id)`)
+	// source：流水来源标记（''=应用内操作 / 'mcp'=通过 MCP 服务写入），供流水表格打标签区分。
+	addColumnIfMissing("cash_flow", "source", "TEXT NOT NULL DEFAULT ''")
+	// 存量回填：早期 MCP 写入的流水未记录 source，其 type 以 'mcp_' 开头，一次性补齐来源标记。
+	_, _ = DB.Exec(`UPDATE cash_flow SET source='mcp' WHERE COALESCE(source,'')='' AND substr(type,1,4)='mcp_'`)
 	return nil
 }
 
@@ -1489,6 +1493,7 @@ type CashFlow struct {
 	RefID     int64   `json:"ref_id"`
 	RefName   string  `json:"ref_name"`
 	Note      string  `json:"note"`
+	Source    string  `json:"source"` // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
 	CreatedAt string  `json:"created_at"`
 }
 
@@ -1754,8 +1759,8 @@ func SetDefaultCash(userID, sourceID, cashID int64) error {
 
 func AddCashFlow(f *CashFlow) error {
 	f.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec(`INSERT INTO cash_flow(user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		f.UserID, f.CashID, f.Date, f.Type, f.Amount, f.Balance, f.RefType, f.RefID, f.RefName, f.Note, f.CreatedAt)
+	_, err := DB.Exec(`INSERT INTO cash_flow(user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		f.UserID, f.CashID, f.Date, f.Type, f.Amount, f.Balance, f.RefType, f.RefID, f.RefName, f.Note, f.Source, f.CreatedAt)
 	return err
 }
 
@@ -1763,7 +1768,7 @@ func ListCashFlows(cashID int64, limit int) ([]CashFlow, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
-	rows, err := DB.Query(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at FROM cash_flow WHERE cash_id=? ORDER BY id DESC LIMIT ?`, cashID, limit)
+	rows, err := DB.Query(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,COALESCE(source,''),created_at FROM cash_flow WHERE cash_id=? ORDER BY id DESC LIMIT ?`, cashID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1771,7 +1776,7 @@ func ListCashFlows(cashID int64, limit int) ([]CashFlow, error) {
 	var out []CashFlow
 	for rows.Next() {
 		var f CashFlow
-		if err := rows.Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.Source, &f.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, f)
@@ -1793,13 +1798,18 @@ type AggFlow struct {
 	Balance   float64 `json:"balance"`
 	Direction string  `json:"direction"` // "in" | "out"
 	Note      string  `json:"note"`
+	Source    string  `json:"source"` // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
 }
 
 // ListFlows 返回某用户在 [start,end] 日期区间内的全部资金流水（现金+负债），按日期倒序。
 func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 	out := []AggFlow{}
-	// 现金流水：持仓调仓/理财调仓/转账/手工调整，关联 cash_accounts 取币种与名称
-	q1 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.ref_name, f.note, COALESCE(c.name,''), COALESCE(c.currency,'rmb')
+	// 现金流水：持仓调仓/理财调仓/转账/手工调整，关联 cash_accounts 取币种与名称。
+	// 来源(source)：优先取显式落库的 source 列；兼容存量数据——早期 MCP 流水 type 以 'mcp_' 开头。
+	q1 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.ref_name, f.note, COALESCE(c.name,''), COALESCE(c.currency,'rmb'),
+	              CASE WHEN COALESCE(f.source,'')<>'' THEN f.source
+	                   WHEN substr(f.type,1,4)='mcp_' THEN 'mcp'
+	                   ELSE '' END
 	       FROM cash_flow f LEFT JOIN cash_accounts c ON c.id=f.cash_id
 	       WHERE f.user_id=? AND f.date>=? AND f.date<=?`
 	rows, err := DB.Query(q1, userID, start, end)
@@ -1809,7 +1819,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 	for rows.Next() {
 		var f AggFlow
 		var amt float64
-		if e := rows.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.RefName, &f.Note, &f.Name, &f.Currency); e != nil {
+		if e := rows.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.RefName, &f.Note, &f.Name, &f.Currency, &f.Source); e != nil {
 			rows.Close()
 			return nil, e
 		}
@@ -1881,6 +1891,12 @@ func FlowYears(userID int64) ([]int, error) {
 // AddCashAmount 调整现金账户余额（delta 正=入账 / 负=出账）并写入一条流水，
 // 保证账户余额与流水始终成对一致。调用方需保证 cashID 属于当前用户。
 func AddCashAmount(cashID int64, delta float64, typ, refType string, refID int64, refName, note string) error {
+	return AddCashAmountFrom("", cashID, delta, typ, refType, refID, refName, note)
+}
+
+// AddCashAmountFrom 同 AddCashAmount，但额外记录流水来源（source），
+// 例如 source="mcp" 表示该流水由 MCP 服务写入，前端流水表格据此打标签突出显示。
+func AddCashAmountFrom(source string, cashID int64, delta float64, typ, refType string, refID int64, refName, note string) error {
 	c, err := GetCash(cashID)
 	if err != nil {
 		return err
@@ -1903,6 +1919,7 @@ func AddCashAmount(cashID int64, delta float64, typ, refType string, refID int64
 		RefID:   refID,
 		RefName: refName,
 		Note:    note,
+		Source:  source,
 	})
 }
 
@@ -2505,6 +2522,129 @@ func GetLiabilityFlow(id int64) (*LiabilityFlow, error) {
 		return nil, err
 	}
 	return &f, nil
+}
+
+// ---- 资金流水的修改 / 删除 ----
+// 资金流水（cash_flow）与账户余额是一对镜像：任何对历史流水的改动都必须同步调整
+// 对应账户的当前余额，否则账户余额会与流水明细对不上。负债流水（liability_flows）
+// 同理需要同步 liabilities.amount。以下函数只做余额搬运，不额外写新流水。
+
+// AdjustCashBalance 直接对现金账户余额做增减（delta 正=加、负=减），返回调整后余额。
+func AdjustCashBalance(cashID int64, delta float64) (float64, error) {
+	var amt float64
+	if err := DB.QueryRow(`SELECT amount FROM cash_accounts WHERE id=?`, cashID).Scan(&amt); err != nil {
+		return 0, err
+	}
+	bal := math.Round((amt+delta)*100) / 100
+	if _, err := DB.Exec(`UPDATE cash_accounts SET amount=? WHERE id=?`, bal, cashID); err != nil {
+		return 0, err
+	}
+	return bal, nil
+}
+
+// UpdateCashFlowRecord 修改一条现金流水的归属账户 / 金额 / 备注，并同步两个账户余额
+// （旧账户冲销原金额、新账户应用新金额）。返回更新后的流水。
+func UpdateCashFlowRecord(id, newCashID int64, newAmount float64, newNote string) (*CashFlow, error) {
+	old, err := GetCashFlow(id)
+	if err != nil {
+		return nil, err
+	}
+	if old == nil {
+		return nil, fmt.Errorf("流水不存在")
+	}
+	newAmount = math.Round(newAmount*100) / 100
+	// 先冲销旧流水对旧账户的影响
+	if _, err := AdjustCashBalance(old.CashID, -old.Amount); err != nil {
+		return nil, err
+	}
+	// 再应用新流水到新账户
+	bal, err := AdjustCashBalance(newCashID, newAmount)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DB.Exec(`UPDATE cash_flow SET cash_id=?, amount=?, balance=?, note=? WHERE id=?`,
+		newCashID, newAmount, bal, strings.TrimSpace(newNote), id); err != nil {
+		return nil, err
+	}
+	return GetCashFlow(id)
+}
+
+// DeleteCashFlowRecord 删除一条现金流水，并把其金额从对应账户余额中冲销。
+func DeleteCashFlowRecord(id int64) error {
+	old, err := GetCashFlow(id)
+	if err != nil {
+		return err
+	}
+	if old == nil {
+		return nil
+	}
+	if _, err := AdjustCashBalance(old.CashID, -old.Amount); err != nil {
+		return err
+	}
+	_, err = DB.Exec(`DELETE FROM cash_flow WHERE id=?`, id)
+	return err
+}
+
+// liabilityEffect 返回一条负债流水对债务余额的影响：借入=+金额，还款=-金额。
+func liabilityEffect(typ string, amount float64) float64 {
+	if typ == "loan" {
+		return amount
+	}
+	return -amount
+}
+
+// UpdateLiabilityFlowRecord 修改一条负债流水的类型 / 金额 / 备注，并同步负债当前余额。
+func UpdateLiabilityFlowRecord(id int64, newType string, newAmount float64, newNote string) (*LiabilityFlow, error) {
+	old, err := GetLiabilityFlow(id)
+	if err != nil {
+		return nil, err
+	}
+	if old == nil {
+		return nil, fmt.Errorf("流水不存在")
+	}
+	if newType != "loan" && newType != "repay" {
+		newType = old.Type
+	}
+	newAmount = math.Round(math.Abs(newAmount)*100) / 100
+	l, err := GetLiability(old.LiabilityID)
+	if err != nil {
+		return nil, err
+	}
+	if l == nil {
+		return nil, fmt.Errorf("关联负债不存在")
+	}
+	newBal := math.Round((l.Amount-liabilityEffect(old.Type, old.Amount)+liabilityEffect(newType, newAmount))*100) / 100
+	if _, err := DB.Exec(`UPDATE liability_flows SET type=?, amount=?, balance=?, note=? WHERE id=?`,
+		newType, newAmount, newBal, strings.TrimSpace(newNote), id); err != nil {
+		return nil, err
+	}
+	if err := SetLiabilityAmount(old.LiabilityID, newBal); err != nil {
+		return nil, err
+	}
+	return GetLiabilityFlow(id)
+}
+
+// DeleteLiabilityFlowRecord 删除一条负债流水，并反向冲销其对负债余额的影响。
+func DeleteLiabilityFlowRecord(id int64) error {
+	old, err := GetLiabilityFlow(id)
+	if err != nil {
+		return err
+	}
+	if old == nil {
+		return nil
+	}
+	l, err := GetLiability(old.LiabilityID)
+	if err != nil {
+		return err
+	}
+	if l == nil {
+		return nil
+	}
+	newBal := math.Round((l.Amount-liabilityEffect(old.Type, old.Amount))*100) / 100
+	if _, err := DB.Exec(`DELETE FROM liability_flows WHERE id=?`, id); err != nil {
+		return err
+	}
+	return SetLiabilityAmount(old.LiabilityID, newBal)
 }
 
 // ---- Consumptions (消费) ----

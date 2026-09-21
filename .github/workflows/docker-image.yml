@@ -19,6 +19,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # P3-0：UI 一致性校验（设计规范 §5）不通过就不出镜像
+      - name: Lint UI (design spec §5 / P3-0)
+        run: npm --prefix web run lint:ui
+
       - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3

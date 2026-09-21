@@ -597,7 +597,7 @@ func redeemWealth(c *gin.Context) {
 		aCur = "rmb"
 	}
 	if wCur != aCur {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("货币类型不一致：理财为 %s，所选子账户为 %s，请选择同币种子账户", wCur, aCur)})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("币种不一致：理财为 %s，所选子账户为 %s，请选择同币种子账户", wCur, aCur)})
 		return
 	}
 	full := amt >= curAmt-0.005

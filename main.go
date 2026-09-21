@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"flag"
 	"io/fs"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"portfolio/internal/api"
 	"portfolio/internal/db"
 	"portfolio/internal/market"
+	"portfolio/internal/mcp"
 
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
@@ -20,6 +22,11 @@ import (
 var webFS embed.FS
 
 func main() {
+	// MCP 子命令：以 stdio / http 传输独立运行 MCP 服务端，供 hermes 等客户端连接。
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		os.Exit(runMCP(os.Args[2:]))
+	}
+
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
 		dataDir = "data/portfolio.db"
@@ -89,6 +96,12 @@ func main() {
 	// 启用 HTTP 响应 gzip 压缩（JS/CSS/HTML/JSON 均受益；客户端未带 Accept-Encoding: gzip 时自动透传）。
 	r.Use(gzip.Gzip(gzip.DefaultCompression))
 	api.RegisterRoutes(r)
+
+	// MCP：若配置启用且为 HTTP 传输，随 Web 服务一起在后台拉起，供远程 hermes 连接。
+	if mcpCfg := mcp.LoadConfig(); mcpCfg.Enabled && strings.EqualFold(mcpCfg.Transport, "http") {
+		mcp.StartHTTP(mcpCfg)
+	}
+
 	r.NoRoute(gin.WrapH(noCache))
 
 	addr := os.Getenv("PORT")
@@ -100,4 +113,47 @@ func main() {
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("server: %v", err)
 	}
+}
+
+// runMCP 以 MCP 子命令运行独立服务端：先初始化数据库，再按配置/参数启动传输。
+func runMCP(args []string) int {
+	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
+	configPath := fs.String("config", "", "MCP 配置文件路径（缺省读 MCP_CONFIG 或 mcp.json）")
+	transport := fs.String("transport", "", "传输方式：stdio | http")
+	addr := fs.String("addr", "", "HTTP 监听地址，如 :9988")
+	token := fs.String("token", "", "HTTP Bearer 鉴权令牌")
+	userID := fs.Int64("user", 0, "MCP 操作归属用户 id（0=默认首个用户）")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	dataDir := os.Getenv("DATA_DIR")
+	if dataDir == "" {
+		dataDir = "data/portfolio.db"
+	}
+	if err := db.Init(dataDir); err != nil {
+		log.Fatalf("init db: %v", err)
+	}
+	if err := db.EnsureUsers(); err != nil {
+		log.Fatalf("ensure users: %v", err)
+	}
+	if *configPath != "" {
+		os.Setenv("MCP_CONFIG", *configPath)
+	}
+	cfg := mcp.LoadConfig()
+	if *transport != "" {
+		cfg.Transport = *transport
+	}
+	if *addr != "" {
+		cfg.HTTPAddr = *addr
+	}
+	if *token != "" {
+		cfg.Token = *token
+	}
+	if *userID != 0 {
+		cfg.UserID = *userID
+	}
+	if err := mcp.Run(cfg); err != nil {
+		log.Fatalf("mcp server: %v", err)
+	}
+	return 0
 }
