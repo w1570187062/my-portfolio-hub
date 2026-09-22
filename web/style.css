@@ -1857,7 +1857,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   color: var(--text);
 }
 /* 币种下拉：仅保留英文代码（RMB/HKD/USD），初始宽度收窄，不再整行铺满 */
-#w_currency, #c_currency, #c_currency_edit, #lb_currency {
+#c_currency, #c_currency_edit, #lb_currency {
   width: 96px;
   min-width: 96px;
 }
@@ -2429,7 +2429,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   }
   th, td { padding: var(--sp-1) var(--sp-2); font-size: var(--fs-md); }
   /* 弹窗/图表/日历在手机上更贴边 */
-  .modal-card { width: auto; max-width: 92vw; margin: 0 var(--sp-3); }
+  /* 手机端统一宽度：原本 width:auto 会让每个弹框按自身内容收缩，导致「添加账户」(窄)
+     比「添加流水」(宽) 明显偏窄 —— 改成统一的 92vw(上限 420px)，所有弹框同宽 */
+  .modal-card { width: min(420px, 92vw); max-width: 92vw; margin: 0 var(--sp-3); }
   .chart-card { width: auto; max-width: 94vw; }
 
   .cal-month-summary .cal-ms-val { font-size: var(--fs-base); }
@@ -2461,8 +2463,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   /* 表格：与首页 .table-wrap + th/td 一致，可横向滚动 */
   .asset-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .asset-table th, .asset-table td { padding: var(--sp-2) var(--sp-2); }
-  /* 理财：窄屏强制卡片视图（同首页持仓），隐藏表格/卡片切换器避免误切宽表撑宽 */
-  #wealthViewToggle { display: none; }
+  /* 理财：窄屏仍展示表格/卡片切换器（表格本身可横向滚动），不再隐藏切换按钮 */
   /* 理财卡片：手机端一行一个，撑满容器宽度 */
   .asset-list.wealth-list { flex-direction: column; }
   .asset-card.wealth-card { flex: 0 0 auto; width: 100%; min-width: 0; max-width: none; }
@@ -2792,8 +2793,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 /* 展开的选项列表：与其它下拉一致，避免暗黑模式下白底白字看不清 */
 .fx-side select option { background: var(--bg-card); color: var(--text); }
-/* 币种下拉只显示代码（CNY/HKD/USD）：从/到两列不再均分整行，下拉宽度收窄 */
-.fx-side:has(select) { flex: 0 0 auto; }
+/* 币种下拉只显示代码（CNY/HKD/USD）：从/到两列不再均分整行，下拉宽度收窄。
+   用直接子选择器：金额侧的 select 已并入 .combo（不再是 .fx-side 的直接子元素），不能被收窄。 */
+.fx-side:has(> select) { flex: 0 0 auto; }
 #fxFrom, #fxTo { width: 96px; min-width: 96px; }
 /* 箭头：与相邻下拉/输入框水平居中对齐；nowrap 保证不被挤到下一行 */
 .fx-arrow {
@@ -2924,6 +2926,44 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .tool-table .trow .combo > select:focus,
 .tool-table .trow .combo > input:focus { outline: none; box-shadow: none; }
 .combo > select option { background: var(--bg-card); color: var(--text); }
+/* 组合控件复用到汇率面板 / 弹框表单：这两处对 input、select 有独立的全宽+描边样式，
+   必须显式降级为「无边框拼合件」，否则拼缝处会出现双重描边、hover 时各自描边闪烁。 */
+.fx-side .combo,
+.modal-card .combo { width: 100%; }
+.fx-side .combo > select,
+.fx-side .combo > input,
+.modal-card .combo > select,
+.modal-card .combo > input {
+  width: auto;
+  margin: 0;
+  padding: var(--sp-2);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.fx-side .combo > select,
+.modal-card .combo > select {
+  flex: 0 0 auto;
+  border-right: 1px solid var(--border);
+}
+.fx-side .combo > input,
+.modal-card .combo > input { flex: 1 1 0; min-width: 0; }
+.fx-side .combo > select:hover,
+.fx-side .combo > input:hover,
+.modal-card .combo > select:hover,
+.modal-card .combo > input:hover {
+  box-shadow: none;
+  background: transparent;
+}
+.fx-side .combo > select:focus,
+.fx-side .combo > input:focus,
+.modal-card .combo > select:focus,
+.modal-card .combo > input:focus {
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
 
 /* ===== 计算结果：md 风格表格 ===== */
 .md-table {
@@ -4017,15 +4057,24 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .adj-calc .tool-rate select { width: 100%; }
 
 /* ---------- 编辑持仓弹框：三列网格，标签在上、控件在下，跨列对齐 ---------- */
-#modal .f-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); margin-bottom: var(--sp-2); }
-#modal .f-row.f-row2 { grid-template-columns: 1fr 1fr; }
+/* 列宽一律 minmax(0, 1fr)（不是 1fr）：1fr 的最小值是 auto=min-content，
+   input[type=date] 自带的最小内容宽（年/月/日三段 + 日历图标）会顶开所在列、
+   视觉上压到相邻输入框上 —— 手机端「交易日期」压住「描述」就是这个原因。
+   minmax(0,…) 把列下限归零，配合下面 input 的 min-width:0，日期框才会和其它输入框同宽。 */
+#modal .f-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-2); }
+#modal .f-row.f-row2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* 份额 / 成本价 / 交易成本 / 交易日期：四格等宽 */
+#modal .f-row.f-row4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-#modal .f-row > label { display: flex; flex-direction: column; gap: var(--sp-1); margin-bottom: 0; font-size: var(--fs-sm); color: var(--text-muted); }
+#modal .f-row > label { display: flex; flex-direction: column; gap: var(--sp-1); margin-bottom: 0; font-size: var(--fs-sm); color: var(--text-muted); min-width: 0; }
 #modal .f-row > label input,
-#modal .f-row > label select { width: 100%; margin-top: var(--sp-1); }
+#modal .f-row > label select { width: 100%; min-width: 0; margin-top: var(--sp-1); }
+/* 日期框内部是 UA 固定布局，必须显式允许收缩，否则仍会撑破所在列 */
+#modal .f-row > label input[type="date"] { min-width: 0; }
 @media (max-width: 520px) {
-  #modal .f-row { grid-template-columns: repeat(2, 1fr); }
-  #modal .f-row2 { grid-template-columns: 1fr; }
+  #modal .f-row,
+  #modal .f-row.f-row4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #modal .f-row2 { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---------- 编辑持仓：名称/代码联想下拉 + 类别/市场胶囊 ---------- */

@@ -98,8 +98,9 @@ Authorization: Bearer <token>
 
 | 工具名 | 类型 | 说明 |
 | --- | --- | --- |
-| `record_transaction` | 写 | 按 mcp 标记记录一笔流水（加仓/减仓/分红、现金存取、理财申赎） |
+| `record_transaction` | 写 | 按 mcp 标记（`marker`）或名称 / 代码（`name`）记录一笔流水（加仓/减仓/分红、现金存取、理财申赎） |
 | `list_markers` | 读 | 列出所有带 mcp 标记的实体，供选择 `marker` |
+| `list_amount_modifiable` | 读 | 列出所有带 mcp 标记且「金额可被 MCP 修改」的实体（持仓/子账户/理财），含各自支持的 `action` 与当前金额 |
 | `list_accounts` | 读 | 列出账户来源（平台/银行/券商），默认内联其下现金子账户 |
 | `list_cash_accounts` | 读 | 列出所有现金子账户（扁平列表），含余额与所属来源 |
 | `list_holdings` | 读 | 列出持仓，含份额/成本/现价/市值/盈亏 |
@@ -107,7 +108,7 @@ Authorization: Bearer <token>
 
 所有工具统一返回文本块（`content[0].type = "text"`，内容为缩进 JSON）；出错时返回 `isError: true` 且文本为错误信息。
 
-**marker 说明**：实体的「备注」字段即 mcp 标记，用于在持仓/现金子账户/理财中定位目标实体。
+**marker / name 说明**：实体的「备注」字段即 mcp 标记（`marker`），按**精确**匹配定位目标实体；也可改用 `name` 按**名称 / 证券代码**做**大小写不敏感、包含**匹配。若 `name` 命中多个实体，工具返回候选列表并要求更精确或指定 `entity_type`。
 
 ---
 
@@ -115,7 +116,7 @@ Authorization: Bearer <token>
 
 ### 6.1 record_transaction（记录流水）
 
-按 mcp 标记定位实体并记录一笔流水。
+按 `marker`（mcp 标记，备注**精确**匹配）或 `name`（名称 / 证券代码模糊匹配）定位实体并记录一笔流水；**`marker` 与 `name` 至少提供一个**。
 
 > 来源标记：MCP 写入的流水 `type` 以 `mcp_` 开头，并在 `cash_flow.source` 落库为 `mcp`。
 > 资产全景「流水」表格会对这类流水显示高亮的 **MCP** 标签，与手动 / 应用内操作区分；备注同时保留 `MCP·<action>·<note>` 前缀。
@@ -124,7 +125,8 @@ Authorization: Bearer <token>
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `marker` | string | 是 | 目标实体的备注（标记）值 |
+| `marker` | string | 否* | 目标实体的备注（标记）值，**精确**匹配 |
+| `name` | string | 否* | 目标实体名称 / 证券代码，**大小写不敏感的包含**匹配（可匹配持仓名称、代码或子账户/理财名称） |
 | `action` | string | 是 | `buy`/`sell`/`dividend`（持仓）、`deposit`/`withdraw`（现金）、`subscribe`/`redeem`（理财） |
 | `entity_type` | string | 否 | `holding` | `cash` | `wealth`，省略则自动匹配 |
 | `quantity` | number | 否 | 加仓/减仓数量 |
@@ -135,7 +137,10 @@ Authorization: Bearer <token>
 | `note` | string | 否 | 附加说明，写入账本备注 |
 | `username` / `user_id` | string / int | 否 | 归属用户 |
 
-调用示例：
+\* `marker` 与 `name` 至少填一个；两者都传时优先按 `marker` 定位。
+`name` 命中 0 个返回错误、命中 1 个直接执行、**命中多个返回候选列表**（含 `type`/`id`/`name`/`extra`），需更精确或指定 `entity_type` 后重试。
+
+调用示例（按标记）：
 
 ```json
 {
@@ -149,6 +154,24 @@ Authorization: Bearer <token>
       "amount": 5000,
       "note": "月度定投",
       "username": "默认"
+    }
+  }
+}
+```
+
+调用示例（按名称 / 代码模糊定位）：
+
+```json
+{
+  "jsonrpc": "2.0", "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "record_transaction",
+    "arguments": {
+      "name": "茅台",
+      "action": "buy",
+      "quantity": 100,
+      "price": 1600
     }
   }
 }
@@ -224,6 +247,23 @@ Authorization: Bearer <token>
 
 返回：`count`、`amount_by_currency`、`wealth[]`。
 单条含：`code`、`currency`、`source`、`latest_amount`（最新快照金额）、`latest_date`（快照日期）、`cum_pnl`（累计收益）、`marker`。
+
+### 6.7 list_amount_modifiable（可改金额的实体）
+
+列出当前用户所有带 mcp 标记、且**金额可被 MCP 修改**的实体，即持仓（holding）、现金子账户（cash）、理财（wealth）三类；供 AI 先定位可改金额的目标，再选 `record_transaction` 的 `action`。
+
+> 负债（liability）与账户来源（source）**不支持** MCP 改金额，故不包含在内。
+
+参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `entity_type` | string | 只返回该类型：`holding` | `cash` | `wealth`；省略返回全部三类 |
+| `username` / `user_id` | string / int | 归属用户 |
+
+返回：`count`、`amount_modifiable[]`。单条含 `type`、`id`、`name`、`marker`、`currency`、`current_amount`（当前金额：持仓=份额×现价、现金=余额、理财=最新快照金额）、`supported_actions`。
+
+`supported_actions` 取值：holding=`buy`/`sell`/`dividend`；cash=`deposit`/`withdraw`；wealth=`subscribe`/`redeem`。
 
 ---
 

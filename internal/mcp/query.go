@@ -75,6 +75,22 @@ func (s *Server) registerQueryTools() {
 		},
 		Handler: listWealth,
 	})
+
+	s.tools = append(s.tools, &Tool{
+		Name: "list_amount_modifiable",
+		Description: "列出当前用户所有设置了 mcp 标记（备注非空）且「金额可被 MCP 修改」的实体，即持仓(holding)、现金子账户(cash)、理财(wealth) 三类（加仓/减仓/分红、存入/取出、申购/赎回均走 record_transaction）。" +
+			"返回每个实体的类型、id、名称、标记、币种、当前金额，以及支持的 mcp 动作列表，便于 AI 找到可改金额的目标并选择 action。" +
+			"注意：负债(liability)与账户来源(source) 不支持 MCP 改金额，故不包含在内。",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"entity_type": map[string]interface{}{"type": "string", "enum": []string{"holding", "cash", "wealth"}, "description": "只返回该类型的实体；省略返回全部三类。"},
+				"username":    map[string]interface{}{"type": "string", "description": "归属用户名：省略则使用默认（首个）用户。"},
+				"user_id":     map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一；省略则使用默认用户。"},
+			},
+		},
+		Handler: listAmountModifiable,
+	})
 }
 
 // ---- 工具实现 ----
@@ -358,5 +374,86 @@ func listWealth(args map[string]interface{}) (string, error) {
 	}
 	return marshalResult(map[string]interface{}{
 		"count": len(out), "amount_by_currency": total, "wealth": out,
+	})
+}
+
+// listAmountModifiable 列出所有带 mcp 标记且金额可被 MCP 修改的实体
+// （持仓/现金子账户/理财），返回其支持的 mcp 动作与当前金额，便于 AI 选择目标改金额。
+func listAmountModifiable(args map[string]interface{}) (string, error) {
+	uid, err := resolveUserID(args)
+	if err != nil {
+		return "", err
+	}
+	et := strings.ToLower(strings.TrimSpace(stringFrom(args, "entity_type")))
+
+	type target struct {
+		Type             string   `json:"type"`
+		ID               int64    `json:"id"`
+		Name             string   `json:"name"`
+		Marker           string   `json:"marker"`
+		Currency         string   `json:"currency"`
+		CurrentAmount    float64  `json:"current_amount"`
+		SupportedActions []string `json:"supported_actions"`
+	}
+	out := []target{}
+
+	if et == "" || et == "holding" {
+		hs, e := db.List(uid)
+		if e != nil {
+			return "", fmt.Errorf("列举持仓失败: %w", e)
+		}
+		for _, h := range hs {
+			if strings.TrimSpace(h.Note) == "" {
+				continue
+			}
+			out = append(out, target{
+				Type: "holding", ID: h.ID, Name: h.Name, Marker: strings.TrimSpace(h.Note),
+				Currency: h.Currency, CurrentAmount: round2(h.Quantity * h.CurrentPrice),
+				SupportedActions: []string{"buy", "sell", "dividend"},
+			})
+		}
+	}
+	if et == "" || et == "cash" {
+		cs, e := db.ListCash(uid)
+		if e != nil {
+			return "", fmt.Errorf("列举现金子账户失败: %w", e)
+		}
+		for _, c := range cs {
+			if strings.TrimSpace(c.Note) == "" {
+				continue
+			}
+			out = append(out, target{
+				Type: "cash", ID: c.ID, Name: c.Name, Marker: strings.TrimSpace(c.Note),
+				Currency: c.Currency, CurrentAmount: round2(c.Amount),
+				SupportedActions: []string{"deposit", "withdraw"},
+			})
+		}
+	}
+	if et == "" || et == "wealth" {
+		ws, e := db.ListWealth(uid)
+		if e != nil {
+			return "", fmt.Errorf("列举理财产品失败: %w", e)
+		}
+		for _, w := range ws {
+			if w.UserID != 0 && w.UserID != uid {
+				continue
+			}
+			if strings.TrimSpace(w.Note) == "" {
+				continue
+			}
+			amt := 0.0
+			if _, v, ok, e2 := db.GetWealthLatest(w.ID); e2 == nil && ok {
+				amt = round2(v)
+			}
+			out = append(out, target{
+				Type: "wealth", ID: w.ID, Name: w.Name, Marker: strings.TrimSpace(w.Note),
+				Currency: w.Currency, CurrentAmount: amt,
+				SupportedActions: []string{"subscribe", "redeem"},
+			})
+		}
+	}
+
+	return marshalResult(map[string]interface{}{
+		"count": len(out), "amount_modifiable": out,
 	})
 }

@@ -1749,7 +1749,7 @@ $('#form').onsubmit = async (e) => {
     current_price: (id && orig) ? roundByCat(Number(orig.current_price) || 0, $('#f_category').value) : roundByCat(parseFloat($('#f_cost_price').value || '0'), $('#f_category').value),
     prev_close: roundByCat((orig ? orig.prev_close : 0), $('#f_category').value),
     note: $('#f_note').value || '',
-    buy_date: $('#f_buy_date').value || '',
+    buy_date: normDateInput($('#f_buy_date')) || '',
     linked_symbol: $('#f_linked_symbol').value || '',
     asset_type: (fAtSelected || []).join(','),
   };
@@ -2653,9 +2653,96 @@ document.addEventListener('click', (e) => {
   if (!picker.contains(e.target)) { const p = document.getElementById('holdCashPanel'); if (p) p.hidden = true; }
 });
 
+// ---- 添加/编辑理财：账户·币种合并选择器（与「添加持仓」同一套折叠面板，交互一致，仅 id 前缀不同避免冲突） ----
+function wealthSetSelection(acc) {
+  $('#w_cash').value = acc ? acc.id : '0';
+  $('#wealthCashBtn').textContent = acc ? flowCashLabel(acc) : '请选择子账户';
+}
+const wealthCashBtn = document.getElementById('wealthCashBtn');
+const wealthCashPanel = document.getElementById('wealthCashPanel');
+if (wealthCashBtn) wealthCashBtn.addEventListener('click', () => { if (wealthCashPanel) wealthCashPanel.hidden = !wealthCashPanel.hidden; });
+if (wealthCashPanel) {
+  wealthCashPanel.addEventListener('click', (e) => {
+    const head = e.target.closest('.ac-pick-head');
+    if (head) { const body = head.nextElementSibling; if (body) body.hidden = !body.hidden; return; }
+    const row = e.target.closest('.ac-pick-row');
+    if (row) {
+      const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
+      if (c) wealthSetSelection(c);
+      wealthCashPanel.hidden = true;
+    }
+  });
+}
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('wealthCashPicker');
+  if (!picker) return;
+  if (!picker.contains(e.target)) { const p = document.getElementById('wealthCashPanel'); if (p) p.hidden = true; }
+});
+
+// ---- 添加/编辑消费：账户·币种合并选择器（与「添加理财」同一套折叠面板，交互一致，仅 id 前缀不同避免冲突） ----
+function consumeSetSelection(acc) {
+  $('#cs_cash').value = acc ? acc.id : '0';
+  $('#consumeCashBtn').textContent = acc ? flowCashLabel(acc) : '请选择子账户';
+}
+const consumeCashBtn = document.getElementById('consumeCashBtn');
+const consumeCashPanel = document.getElementById('consumeCashPanel');
+if (consumeCashBtn) consumeCashBtn.addEventListener('click', () => { if (consumeCashPanel) consumeCashPanel.hidden = !consumeCashPanel.hidden; });
+if (consumeCashPanel) {
+  consumeCashPanel.addEventListener('click', (e) => {
+    const head = e.target.closest('.ac-pick-head');
+    if (head) { const body = head.nextElementSibling; if (body) body.hidden = !body.hidden; return; }
+    const row = e.target.closest('.ac-pick-row');
+    if (row) {
+      const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
+      if (c) consumeSetSelection(c);
+      consumeCashPanel.hidden = true;
+    }
+  });
+}
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('consumeAcctPicker');
+  if (!picker) return;
+  if (!picker.contains(e.target)) { const p = document.getElementById('consumeCashPanel'); if (p) p.hidden = true; }
+});
+
+// ---- 新建/编辑收支计划：关联账户选择器（与「添加持仓/理财/消费」同一套二级子账户折叠面板，仅 id 前缀不同） ----
+function cfSetSelection(acc) {
+  $('#cf_account_id').value = acc ? acc.id : '0';
+  $('#cfCashBtn').textContent = acc ? flowCashLabel(acc) : '请选择子账户';
+}
+const cfCashBtn = document.getElementById('cfCashBtn');
+const cfCashPanel = document.getElementById('cfCashPanel');
+if (cfCashBtn) cfCashBtn.addEventListener('click', () => { if (cfCashPanel) cfCashPanel.hidden = !cfCashPanel.hidden; });
+if (cfCashPanel) {
+  cfCashPanel.addEventListener('click', (e) => {
+    const head = e.target.closest('.ac-pick-head');
+    if (head) { const body = head.nextElementSibling; if (body) body.hidden = !body.hidden; return; }
+    const row = e.target.closest('.ac-pick-row');
+    if (row) {
+      const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
+      if (c) cfSetSelection(c);
+      cfCashPanel.hidden = true;
+    }
+  });
+}
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('cfCashPicker');
+  if (!picker) return;
+  if (!picker.contains(e.target)) { const p = document.getElementById('cfCashPanel'); if (p) p.hidden = true; }
+});
+
 // ---- P&L Calendar ----
 const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+// 统一日期输入框：允许 - / . 分隔，归一成后端要求的 YYYY-MM-DD；空值不变
+function normDateInput(el) {
+  if (!el) return '';
+  const v = (el.value || '').trim();
+  if (!v) return '';
+  const m = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (m) el.value = m[1] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[3]).padStart(2, '0');
+  return el.value;
+}
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const sundayOf = (d) => addDays(new Date(d), -d.getDay());
 const saturdayOf = (d) => addDays(new Date(d), 6 - d.getDay());
@@ -4936,6 +5023,13 @@ function assetDel(type, id) {
 // ---- 资产来源 ----
 function renderSources(body) {
   const list = assetSources;
+  // 记录刷新前已展开的子账户行与分组折叠状态，重渲染后保持，
+  // 避免编辑/转账等操作触发全局刷新时把所有已展开的二级卡片表格收回折叠。
+  const openSubs = new Set();
+  body.querySelectorAll('tr.cash-sub-tr:not([hidden])').forEach((tr) => { if (tr.dataset && tr.dataset.sub) openSubs.add(tr.dataset.sub); });
+  const groupCollapsed = {};
+  body.querySelectorAll('.source-group').forEach((g) => { if (g.dataset && g.dataset.gtype) groupCollapsed[g.dataset.gtype] = g.classList.contains('collapsed'); });
+  const prevScroll = body.scrollTop;
   let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="addFlowBtn" type="button" title="添加流水" aria-label="添加流水">${actIcon('receipt')}</button><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div></div>`;
   if (!list.length) html += `<div class="empty-state"><p>还没有账户，先添加一个银行、证券或软件吧。</p><button class="btn" data-empty-add="source" type="button">＋ 添加账户</button></div>`;
   else {
@@ -4947,7 +5041,7 @@ function renderSources(body) {
       .filter((g) => g.items.length);
     for (const g of groups) {
       const gTotal = g.items.reduce((a, s) => a + (s.funds_cny || 0), 0);
-      html += `<div class="collapsible source-group asset-pano collapsed"><div class="collapse-hat asset-pano-head">`;
+      html += `<div class="collapsible source-group asset-pano collapsed" data-gtype="${g.t}"><div class="collapse-hat asset-pano-head">`;
       html += `<div class="ac-left"><span class="ac-name"><span class="src-ico">${srcTypeIcon(g.t)}</span> ${typeName[g.t]}（${g.items.length}）</span></div>`;
       html += `<div class="ac-right"><div class="ac-stat"><span class="ac-stat-lbl">关联资金</span><b>${money(gTotal)}</b></div><span class="hat-chevron">▾</span></div></div>`;
       html += `<div class="collapse-body source-group-body"><table class="asset-table"><colgroup><col class="cw-6"><col class="cw-34"><col class="cw-14"><col class="cw-18"><col class="cw-28"></colgroup><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联资金(CNY)</th><th>备注</th><th>操作</th></tr></thead><tbody>`;
@@ -4964,6 +5058,16 @@ function renderSources(body) {
     }
   }
   body.innerHTML = html;
+  // 恢复刷新前的展开/折叠状态与滚动位置（实现局部刷新：数据更新但保持当前视图状态）
+  openSubs.forEach((id) => {
+    const tr = body.querySelector(`tr[data-sub="${id}"]`);
+    if (tr) { tr.hidden = false; const btn = body.querySelector(`[data-act="sub-toggle"][data-id="${id}"]`); if (btn) btn.classList.add('open'); }
+  });
+  Object.keys(groupCollapsed).forEach((t) => {
+    const g = body.querySelector(`.source-group[data-gtype="${t}"]`);
+    if (g) g.classList.toggle('collapsed', groupCollapsed[t]);
+  });
+  body.scrollTop = prevScroll;
   $('#addSourceBtn').onclick = () => openAssetSourceModal(null);
   $('#addFlowBtn').onclick = () => openFlowModal();
   body.querySelectorAll('[data-act="edit-source"]').forEach((b) => b.onclick = () => openAssetSourceModal(Number(b.dataset.id)));
@@ -5308,16 +5412,19 @@ function deleteFlowRow(kind, id) {
 let wealthCum0 = 0; // 编辑理财打开时的累计收益原值（输入框已移除，PUT 时回传防清零）
 async function openWealthModal(id) {
   await loadSourcesCache();
-  const sel = $('#w_source');
-  sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加账户）</option>';
+  await loadCashAccounts();
   let w = null;
   if (id) { const r = await api('/api/asset/wealth'); if (r.ok) { const d = await r.json(); w = (d.wealth || []).find((x) => x.id === id); } }
   $('#wealthTitle').textContent = w ? '编辑理财' : '添加理财';
   $('#w_id').value = w ? w.id : '';
   $('#w_name').value = w ? w.name : '';
   $('#w_code').value = w ? (w.code || '') : '';
-  $('#w_source').value = w ? w.source_id : (assetSources[0] ? assetSources[0].id : '');
-  $('#w_currency').value = w ? (w.currency || 'rmb') : 'rmb';
+  // 账户·币种：合并选择器（二级子账户折叠面板，交互同「添加持仓」）。编辑时预选同 (来源, 币种) 的子账户；新增默认第一个子账户。
+  $('#wealthCashPanel').innerHTML = buildFlowPicker();
+  const presetAcc = w
+    ? (cashAccountsCache || []).find((c) => Number(c.source_id) === Number(w.source_id) && String(c.currency).toLowerCase() === String(w.currency).toLowerCase())
+    : (cashAccountsCache || [])[0];
+  wealthSetSelection(presetAcc);
   // 累计收益已无输入框：由每日盈亏快照自动累计；编辑时回传原值，避免 PUT 全量更新清零
   wealthCum0 = w ? Number(w.cum_pnl || 0) : 0;
   $('#w_note').value = w ? (w.note || '') : '';
@@ -5327,7 +5434,10 @@ async function openWealthModal(id) {
 $('#wealthForm').onsubmit = async (e) => {
   e.preventDefault();
   const id = $('#w_id').value ? Number($('#w_id').value) : 0;
-  const payload = { name: $('#w_name').value.trim(), code: $('#w_code').value.trim(), source_id: Number($('#w_source').value) || 0, currency: $('#w_currency').value, cum_pnl: wealthCum0, note: $('#w_note').value.trim() };
+  // 账户·币种：从所选子账户派生 source_id + currency（与「添加持仓」一致）
+  const selCash = (cashAccountsCache || []).find((x) => String(x.id) === String($('#w_cash').value));
+  if (!selCash) { $('#wealthErr').textContent = '请选择账户（子账户）'; return; }
+  const payload = { name: $('#w_name').value.trim(), code: $('#w_code').value.trim(), source_id: Number(selCash.source_id) || 0, currency: selCash.currency, cum_pnl: wealthCum0, note: $('#w_note').value.trim() };
   if (!payload.name) { $('#wealthErr').textContent = '名称不能为空'; return; }
   try {
     const r = id ? await api('/api/asset/wealth/' + id, { method: 'PUT', body: JSON.stringify(payload) })
@@ -6045,8 +6155,7 @@ function renderConsume(body) {
 
 async function openConsumeModal(id) {
   await loadSourcesCache();
-  const sel = $('#cs_source');
-  sel.innerHTML = assetSources.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('') || '<option value="">（请先添加账户）</option>';
+  await loadCashAccounts();
   let c = null;
   if (id) { const r = await api('/api/asset/consumptions'); if (r.ok) { const d = await r.json(); c = (d.consumptions || []).find((x) => x.id === id); } }
   $('#consumeTitle').textContent = c ? '编辑消费' : '添加消费';
@@ -6054,17 +6163,26 @@ async function openConsumeModal(id) {
   $('#cs_date').value = c ? c.date : ymd(new Date());
   $('#cs_category').value = c ? (c.category || '') : '';
   $('#cs_amount').value = c ? c.amount : '';
-  $('#cs_source').value = c ? c.source_id : (assetSources[0] ? assetSources[0].id : '');
   $('#cs_note').value = c ? (c.note || '') : '';
+  // 账户·币种：合并选择器（二级子账户折叠面板，交互同「添加理财」）。编辑时预选同 source 的子账户（优先默认）；新增默认第一个子账户。
+  $('#consumeCashPanel').innerHTML = buildFlowPicker();
+  const all = (cashAccountsCache || []);
+  const preset = c
+    ? all.find((x) => Number(x.source_id) === Number(c.source_id) && x.is_default) || all.find((x) => Number(x.source_id) === Number(c.source_id)) || all[0]
+    : all[0];
+  consumeSetSelection(preset);
   $('#consumeErr').textContent = '';
   $('#consumeModal').hidden = false;
 }
 $('#consumeForm').onsubmit = async (e) => {
   e.preventDefault();
   const id = $('#cs_id').value ? Number($('#cs_id').value) : 0;
+  // 账户·币种：从所选子账户派生 source_id（消费仅记录所属账户，与「添加理财」一致）
+  const selCash = (cashAccountsCache || []).find((x) => String(x.id) === String($('#cs_cash').value));
+  if (!selCash) { $('#consumeErr').textContent = '请选择账户（子账户）'; return; }
   const payload = {
     date: $('#cs_date').value || ymd(new Date()), category: $('#cs_category').value.trim(),
-    amount: Number($('#cs_amount').value || 0), source_id: Number($('#cs_source').value) || 0, note: $('#cs_note').value.trim(),
+    amount: Number($('#cs_amount').value || 0), source_id: Number(selCash.source_id) || 0, note: $('#cs_note').value.trim(),
   };
   if (!payload.category) { $('#consumeErr').textContent = '类别不能为空'; return; }
   if (!payload.amount) { $('#consumeErr').textContent = '金额不能为空'; return; }
@@ -7892,7 +8010,8 @@ function renderCashflowCard() {
   const activePlans = cashflowPlans.filter((p) => cfPlanActive(p, cashflowMonth) && !cashflowDone[p.id]);
   if (!activePlans.length) {
     card.hidden = false;
-    list.innerHTML = '<div class="cf-empty">本月暂无收支计划。<button class="link-btn" id="cfQuickAdd" type="button">＋ 添加</button></div>';
+    // 空状态只留一个「＋ 添加」入口：卡片标题已是「本月收支计划」，再写「本月暂无…」是重复说明
+    list.innerHTML = '<div class="cf-empty"><button class="link-btn" id="cfQuickAdd" type="button">＋ 添加</button></div>';
     const qa = document.getElementById('cfQuickAdd');
     if (qa) qa.onclick = () => openCashflowModal(null);
     return;
@@ -7979,7 +8098,8 @@ async function openCashflowModal(p) {
   document.getElementById('cfModalTitle').textContent = isEdit ? '编辑收支计划' : '新建收支计划';
   document.getElementById('cfErr').textContent = '';
   await loadCashAccounts();
-  renderCfAccountSelect(isEdit ? p.account_id : 0);
+  $('#cfCashPanel').innerHTML = buildFlowPicker();
+  cfSetSelection(isEdit && p.account_id ? (cashAccountsCache || []).find((x) => x.id === p.account_id) : null);
   await loadLiabilitiesForCf();
   renderCfLiabilitySelect(isEdit ? p.liability_id : 0);
   syncCfLiabilityVisibility();
@@ -8095,7 +8215,7 @@ if (cashflowForm) cashflowForm.onsubmit = async (e) => {
     currency: currency,
     account_id: accId,
     liability_id: liabId,
-    end_date: (document.getElementById('cf_end_date') || {}).value || '',
+    end_date: normDateInput(document.getElementById('cf_end_date')) || '',
     note: document.getElementById('cf_note').value.trim(),
   };
   if (!payload.title) { document.getElementById('cfErr').textContent = '名称不能为空'; return; }

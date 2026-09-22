@@ -1,8 +1,32 @@
 # Portfolio · 持仓侠 / My Folio Hub
 
-> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓与**理财 / 现金 / 负债 / 消费**全景资产。自动刷新行情、计算盈亏、记录历史，提供盈亏日历、技术分析、动态调仓计划与 AI 总结。桌面与移动端自适应。**极致轻量：前后端单二进制、纯 Go 无 CGO，镜像仅约 28 MB，实测常驻内存 10~16 MB。**
+[![GitHub stars](https://img.shields.io/github/stars/w1570187062/my-portfolio-hub?style=flat&logo=github&color=yellow)](https://github.com/w1570187062/my-portfolio-hub/stargazers)
+[![GitHub last commit](https://img.shields.io/github/last-commit/w1570187062/my-portfolio-hub?style=flat&logo=github&color=2ea44f)](https://github.com/w1570187062/my-portfolio-hub/commits/main)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](LICENSE)
+[![Go 1.25](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
+[![Image 28.3 MB](https://img.shields.io/badge/image-28.3_MB-2496ED?style=flat&logo=docker&logoColor=white)](https://github.com/w1570187062/my-portfolio-hub/pkgs/container/my-portfolio-hub)
+[![MCP ready](https://img.shields.io/badge/MCP-ready-5A0FC8?style=flat)](docs/mcp-api.md)
+
+> **数据私有 · 极致轻量 · AI 原生（MCP）** —— 不是又一个行情看板，而是把 持仓 / 理财 / 现金 / 负债 / 消费 统一成一个**可被 AI 理解与操作**的自托管账本。
+
+> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓与**理财 / 现金 / 负债 / 消费**全景资产。自动刷新行情、计算盈亏、记录历史，提供盈亏日历、技术分析/**基金关联ETF**、动态调仓计划与 AI 总结。桌面与移动端自适应。
+**极致轻量：前后端单二进制、纯 Go 无 CGO，镜像仅约 28 MB，实测常驻内存 10~16 MB。**
 >
 > **English**: A self-hosted, multi-user personal investment dashboard for tracking **A-share / US / HK stocks and funds**, plus wealth products, cash, liabilities and consumption. Auto-refreshes quotes, computes P/L, records history, and offers a P/L calendar, technical analysis, dynamic rebuy plans, and AI summaries. Responsive on desktop and mobile. **Ultra-lightweight: a single pure-Go binary (no CGO); ~28 MB image and only 10–16 MB resident memory.**
+
+## 📖 目录
+
+- [🌐 在线 Demo / Live Demo](#-在线-demo--live-demo)
+- [✨ 功能一览](#-功能一览)
+- [界面预览](#界面预览)
+- [功能详解](#功能详解)
+- [技术栈](#技术栈)
+- [🔌 MCP 服务（连接 hermes 等 AI 客户端）](#-mcp-服务连接-hermes-等-ai-客户端)
+- [快速开始](#快速开始)
+- [定时任务](#定时任务)
+- [通知策略](#通知策略)
+- [贡献与支持](#贡献与支持)
+- [许可](#许可)
 
 ## 🌐 在线 Demo / Live Demo
 
@@ -19,6 +43,7 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 **盈亏分析**
 - 盈亏日历：按日着色的月度热力、本月总盈亏、年 / 月快速跳转、单日持仓级明细（前一天 / 后一天切换）
+- 持仓平衡：根据设置的投资风格进行资产再平衡
 
 **技术分析**
 - K 线 + MA / MACD / RSI / KDJ / BOLL 全指标
@@ -39,7 +64,7 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 **MCP 服务**
 - 内建零依赖 MCP 服务端（stdio / HTTP(SSE)），hermes 等 AI 客户端可按「备注（mcp 标记）」查询账本并记录流水
-- 提供 `list_accounts` / `list_cash_accounts` / `list_holdings` / `list_wealth` / `list_markers` 查询工具与 `record_transaction` 写入工具，MCP 写入的流水在表格中打 **MCP** 标签
+- 提供 `list_accounts` / `list_cash_accounts` / `list_holdings` / `list_wealth` / `list_markers` / `list_amount_modifiable` 查询工具与 `record_transaction` 写入工具（支持按标记或名称 / 代码定位），MCP 写入的流水在表格中打 **MCP** 标签
 
 **AI 总结**
 - 一键 AI 总结（全资产 / 权益类），自定义提示词模板，支持多个模型配置（OpenAI 兼容接口）
@@ -52,34 +77,18 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 - 多用户隔离（`X-User-Id`），支持数据清空、删除（需输入确认短语）
 - 暗黑 / 亮色双主题 + 主题色自定义：内置 3 套预设（土豪金 / 豆沙绿 / 经典蓝），取色器自定义任意主题色（本机 `localStorage` 记忆）
 
-## 🆕 近期新增
-
-- **🔌 MCP 服务（AI 客户端接入）**：内建零依赖的 MCP（Model Context Protocol）服务端，hermes 等 AI 客户端可按实体的「备注（mcp 标记）」**查询账本并记录流水**（持仓加仓 / 减仓 / 分红、现金存入 / 取出、理财申购 / 赎回）；支持 stdio 与 HTTP(SSE) 两种传输，界面内即可开关、配置与一键复制客户端配置。MCP 写入的流水会记录来源，在「流水」表格带高亮 **MCP** 标签。详见下文「MCP 服务」与 [`docs/mcp-api.md`](docs/mcp-api.md)。
-- **补仓计划真实落库**：调仓计划的「标记已补 / 已减」改为弹框确认——选择资金子账户、填写**实际成交金额与份额**，确认后同步**更新持仓份额与摊薄成本**、扣减 / 入账子账户余额并记一笔现金流水（该流水可在「资产 → 流水」中修改 / 删除）。
-- **流水可修改 / 删除**：资产全景「流水」表格新增操作列，支持修改（现金流水可改子账户、方向、金额、备注；负债流水可改类型、金额、备注）与删除，改动会同步冲正账户 / 负债余额。
-- **收支计划**：首页紧凑卡片 + 「收支计划」页统一管理每月**待入账 / 待还款**；勾选完成即把真实出入账记入对应现金账户（关联负债则同步记一笔还款流水，可一键撤销）；已完成项自动从首页卡片隐藏（不再置灰），条目过多时卡片限高、内部滚动查看。
-- **待还款提前提醒**：到期前一天按自定义时间（默认 07:00）通过钉钉 / 邮件推送。
-- **完整迁移（导出 / 导入）**：勾选「完整迁移」后，除五大类资产外还会一并导出 / 导入 **收支计划、来源账户元数据（类型 / 境内外 / 币种）、AI 配置、应用设置与净值历史**，跨实例无缝搬迁。
-- **资产再平衡**：按风险画像（稳健 / 激进，可自定义）对比当前持仓，给出各类资产目标占比与买入 / 卖出调整建议。
-- **理财快照审计与撤销**：误改 / 误删的每日快照可查看改动前后并一键撤销。
-
 ## 界面预览
 
-| 主页（亮色） | 资产 |
-| :---: | :---: |
-| ![](docs/screenshots/home-light.png) | ![](docs/screenshots/asset.png) |
-
-| 盈亏日历 | 技术分析（QQQ） |
-| :---: | :---: |
-| ![](docs/screenshots/calendar-pnl.png) | ![](docs/screenshots/analysis.png) |
-
-| 更新理财持仓 | 动态调仓计划 |
-| :---: | :---: |
-| ![](docs/screenshots/wealth-update.png) | ![](docs/screenshots/buy-plan.png) |
-
-| 编辑收支计划 | AI 中枢 · AI 总结 |
-| :---: | :---: |
-| ![](docs/screenshots/cashflow-plan.png) | ![](docs/screenshots/ai-modal.png) |
+| 预览图 |
+| :---: |
+| **主页（亮色）**<br><img src="docs/screenshots/home-light.png" width="760" alt="主页（亮色）"> |
+| **资产**<br><img src="docs/screenshots/asset.png" width="760" alt="资产"> |
+| **盈亏日历**<br><img src="docs/screenshots/calendar-pnl.png" width="760" alt="盈亏日历"> |
+| **技术分析（QQQ）**<br><img src="docs/screenshots/analysis.png" width="760" alt="技术分析（QQQ）"> |
+| **更新理财持仓**<br><img src="docs/screenshots/wealth-update.png" width="760" alt="更新理财持仓"> |
+| **动态调仓计划**<br><img src="docs/screenshots/buy-plan.png" width="760" alt="动态调仓计划"> |
+| **编辑收支计划**<br><img src="docs/screenshots/cashflow-plan.png" width="760" alt="编辑收支计划"> |
+| **AI 中枢 · AI 总结**<br><img src="docs/screenshots/ai-modal.png" width="760" alt="AI 中枢 · AI 总结"> |
 
 ## 功能详解
 
@@ -202,21 +211,23 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
    ```
    端点：`GET /mcp`（SSE 握手）、`POST /mcp/messages?sessionId=`（发消息）、`POST /mcp/rpc`（非 SSE 调试，直接返回 JSON）。
 
-### 给实体打「mcp 标记」
+### 给实体打「MCP 标记」
 
-在**新增/编辑子账户、持仓、理财**的弹框中，备注输入框的提示已改为「用于mcp的标记」。把备注填成你约定的标记（如 `hermes-券商A`），AI 即可通过该标记定位目标。
+在**新增/编辑子账户、持仓、理财、负债**的弹框中，备注字段已统一改名为「**MCP 标记**」（占位提示「MCP 标记（供 AI 客户端识别）」）。把备注填成你约定的标记（如 `hermes-券商A`），AI 即可**按标记（精确）或按名称 / 代码（模糊）**定位目标。
 
 ### 已提供工具
 
 **写入**
-- `record_transaction`：按 `marker` 定位实体并记录一笔流水
+- `record_transaction`：按 `marker`（备注精确匹配）或 `name`（名称 / 代码模糊匹配，命中多个时返回候选列表）定位实体并记录一笔流水；`marker` 与 `name` 至少提供一个
   - `holding`（持仓）：`action=buy/sell/dividend`（加仓 / 减仓 / 分红，买入扣款、卖出与分红入账自动落到该持仓来源同币种的默认子账户）
   - `cash`（子账户）：`action=deposit/withdraw`（存入 / 取出）
   - `wealth`（理财）：`action=subscribe/redeem`（申购 / 赎回）
-  - 例：`record_transaction(marker="hermes-券商A", action="buy", quantity=100, price=12.5, fee=0)`
+  - 例 1（按标记）：`record_transaction(marker="hermes-券商A", action="buy", quantity=100, price=12.5, fee=0)`
+  - 例 2（按名称）：`record_transaction(name="茅台", action="buy", quantity=100, price=1600)`；`name` 为大小写不敏感的包含匹配
 
 **查询（只读）**
 - `list_markers`：列出当前用户所有带 mcp 标记的实体（持仓 / 子账户 / 理财），便于 AI 选择 `marker`
+- `list_amount_modifiable`：列出所有带 mcp 标记且**金额可被 MCP 修改**的实体（持仓 / 子账户 / 理财），返回各自支持的 `action` 与当前金额，便于 AI 直接定位可改金额的目标
 - `list_accounts`：账户来源（平台 / 银行 / 券商等），默认内联其下现金子账户；支持 `source_id`、`include_cash`
 - `list_cash_accounts`：现金子账户扁平列表（所属来源、币种、类型、余额、★默认、mcp 标记），支持 `source_id`、`currency` 过滤，并给出各币种合计
 - `list_holdings`：持仓列表（份额 / 成本价 / 现价 / 市值 / 浮动盈亏 / 盈亏% / 资产类型 / 买入日期 / mcp 标记），默认过滤已清仓，支持 `source_id`、`symbol`、`category`、`include_closed`
@@ -274,6 +285,12 @@ go build -o portfolio .      # 产物 ./portfolio
 
 数据落在 `./data/portfolio.db`（compose 已挂 volume）。停止：`docker compose down`（保留数据）；`docker compose down -v` 连数据卷一并删除，慎用。
 
+> **提示 / 可能要踩的坑**
+> - 首次启动会自动初始化 SQLite、补齐 `users` 表并预热汇率缓存，随后后台定时刷新行情 —— 需要能访问 腾讯行情 / 新浪外汇 / 公开基金 API 的网络。
+> - **MCP 默认关闭**：不设 `MCP_ENABLED=true` 时不会监听 `9988`、无任何额外开销；开启后为 HTTP(SSE) 传输。
+> - 前端 `/app.js`、`/style.css` 通过 `?v=<VERSION>` 缓存戳加载，`VERSION` 一变旧缓存自动失效，升级后无需让用户手动清缓存。
+> - 所有运行状态只落在数据卷 `/data`（容器可写层 0 B）；**升级只需 `docker pull` + 重建容器，数据不动**。
+
 ## 定时任务
 
 | 时间（北京时间） | 任务 |
@@ -294,6 +311,12 @@ go build -o portfolio .      # 产物 ./portfolio
 | 仅收盘后 | 仅定时快照推送 |
 | 仅补仓信号 | 仅在有补仓档位触发时推送 |
 
+## 贡献与支持
+
+- 如果这个项目对你有帮助，欢迎点右上角 ⭐ **Star** 支持一下，这是持续维护的最大动力。
+- Bug / 建议 / 新功能：欢迎提 [Issue](https://github.com/w1570187062/my-portfolio-hub/issues) 或 Pull Request（fork → 新建分支 → 提交 → 发起 PR）。
+- 想先看看效果：可直接访问[在线 Demo](https://www.mrchenyifei.icu:19999)。
+
 ## 许可
 
-自托管个人项目。请遵守所在司法辖区的金融数据法规。
+本项目基于 **MIT License** 发布，详见 [LICENSE](LICENSE)。自托管个人项目，请遵守所在司法辖区的金融数据法规。

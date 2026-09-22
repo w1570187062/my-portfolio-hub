@@ -20,13 +20,17 @@ const sourceMCP = "mcp"
 func (s *Server) registerDefaultTools() {
 	s.tools = append(s.tools, &Tool{
 		Name:        "record_transaction",
-		Description: "根据实体的 mcp 标记（备注字段）记录一笔流水。可作用于：持仓(holding)的加仓/减仓/分红、现金子账户(cash)的存入/取出、理财(wealth)的申购(转入)/赎回(转出)。marker 用于在三类资产中定位目标，entity_type 可省略以自动匹配。",
+		Description: "根据实体的 mcp 标记（备注字段）或名称记录一笔流水。可作用于：持仓(holding)的加仓/减仓/分红、现金子账户(cash)的存入/取出、理财(wealth)的申购(转入)/赎回(转出)。marker 按备注精确匹配定位；name 按名称/代码模糊匹配（大小写不敏感、包含匹配）定位；二者至少提供一个，entity_type 可省略以自动匹配。命中多个目标时返回候选列表并要求更精确或指定 entity_type。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"marker": map[string]interface{}{
 					"type":        "string",
-					"description": "mcp 标记：目标实体的「备注」字段值，用于在持仓/子账户/理财中定位。",
+					"description": "mcp 标记：目标实体的「备注」字段值，用于在持仓/子账户/理财中精确匹配定位。",
+				},
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "目标实体名称/代码模糊匹配（大小写不敏感、包含匹配）：可输入持仓名称、证券代码或子账户/理财名称。与 marker 二选一；命中多个时返回候选列表并要求更精确或指定 entity_type。",
 				},
 				"entity_type": map[string]interface{}{
 					"type":        "string",
@@ -46,7 +50,7 @@ func (s *Server) registerDefaultTools() {
 				"username": map[string]interface{}{"type": "string", "description": "归属用户名：指定后流水记录到该用户账本，必须与系统用户名精确匹配；省略则使用默认（首个）用户。"},
 				"user_id":  map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一，必须与系统中的用户 id 匹配；省略则使用默认用户。"},
 			},
-			"required": []string{"marker", "action"},
+			"required": []string{"action"},
 		},
 		Handler: recordTransaction,
 	})
@@ -194,6 +198,90 @@ func entityTypeText(t string) string {
 	return t + " 类型"
 }
 
+// resolveTargetEntity 先按 marker（备注精确匹配）定位；marker 为空时按 name（名称/代码模糊匹配）定位。
+func resolveTargetEntity(uid int64, marker, name, entityType string) (*entityHit, error) {
+	if strings.TrimSpace(marker) != "" {
+		return findEntityByMarker(uid, marker, entityType)
+	}
+	return findEntityByName(uid, strings.TrimSpace(name), entityType)
+}
+
+// matchName 大小写不敏感的包含匹配（q 为已 lowercase 的查询串）。
+func matchName(q, field string) bool {
+	if q == "" || field == "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(field), q)
+}
+
+// findEntityByName 按名称/代码（大小写不敏感、包含匹配）在指定或全部类型中定位实体。
+// 命中 0 个返回错误；命中 1 个直接返回；命中多个返回候选列表并要求更精确或指定 entity_type。
+func findEntityByName(uid int64, name, entityType string) (*entityHit, error) {
+	if name == "" {
+		return nil, fmt.Errorf("name 不能为空")
+	}
+	types := []string{"holding", "cash", "wealth"}
+	if entityType != "" {
+		types = []string{strings.ToLower(entityType)}
+	}
+	q := strings.ToLower(name)
+	hits := []*entityHit{}
+	for _, t := range types {
+		switch t {
+		case "holding":
+			hs, err := db.List(uid)
+			if err != nil {
+				return nil, err
+			}
+			for _, h := range hs {
+				if matchName(q, h.Name) || matchName(q, h.Symbol) {
+					hits = append(hits, &entityHit{Type: "holding", ID: h.ID, Name: h.Name, Extra: fmt.Sprintf("%s/%s", h.Symbol, h.Currency), Object: h})
+				}
+			}
+		case "cash":
+			cs, err := db.ListCash(uid)
+			if err != nil {
+				return nil, err
+			}
+			for _, c := range cs {
+				if matchName(q, c.Name) {
+					hits = append(hits, &entityHit{Type: "cash", ID: c.ID, Name: c.Name, Extra: c.Currency, Object: c})
+				}
+			}
+		case "wealth":
+			ws, err := db.ListWealth(uid)
+			if err != nil {
+				return nil, err
+			}
+			for _, w := range ws {
+				if matchName(q, w.Name) {
+					hits = append(hits, &entityHit{Type: "wealth", ID: w.ID, Name: w.Name, Extra: w.Currency, Object: w})
+				}
+			}
+		default:
+			return nil, fmt.Errorf("未知 entity_type: %s（应为 holding/cash/wealth）", entityType)
+		}
+	}
+	if len(hits) == 0 {
+		return nil, fmt.Errorf("未找到名称包含「%s」的%s实体（可尝试更完整的名称或指定 entity_type）", name, entityTypeText(entityType))
+	}
+	if len(hits) == 1 {
+		return hits[0], nil
+	}
+	type cand struct {
+		Type  string `json:"type"`
+		ID    int64  `json:"id"`
+		Name  string `json:"name"`
+		Extra string `json:"extra"`
+	}
+	cs := make([]cand, 0, len(hits))
+	for _, h := range hits {
+		cs = append(cs, cand{h.Type, h.ID, h.Name, h.Extra})
+	}
+	b, _ := json.MarshalIndent(cs, "", "  ")
+	return nil, fmt.Errorf("按名称「%s」命中 %d 个实体，请更精确或指定 entity_type 以区分：\n%s", name, len(hits), string(b))
+}
+
 // resolveCashAccount 复刻 api.resolveCashAccount：优先默认子账户，必要时补齐，最后兜底取来源下任一账户。
 func resolveCashAccount(uid, sourceID int64, currency string) (*db.Cash, error) {
 	if c, err := db.GetDefaultCash(uid, sourceID, currency); err == nil && c != nil {
@@ -217,13 +305,17 @@ func recordTransaction(args map[string]interface{}) (string, error) {
 		return "", err
 	}
 	marker, _ := args["marker"].(string)
+	name, _ := args["name"].(string)
 	entityType, _ := args["entity_type"].(string)
 	action, _ := args["action"].(string)
 	action = strings.ToLower(strings.TrimSpace(action))
-	if marker == "" || action == "" {
-		return "", fmt.Errorf("marker 与 action 均为必填")
+	if strings.TrimSpace(marker) == "" && strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("marker 与 name 至少提供其一以定位目标实体")
 	}
-	hit, err := findEntityByMarker(uid, marker, entityType)
+	if action == "" {
+		return "", fmt.Errorf("action 为必填")
+	}
+	hit, err := resolveTargetEntity(uid, marker, name, entityType)
 	if err != nil {
 		return "", err
 	}
