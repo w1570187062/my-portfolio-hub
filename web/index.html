@@ -37,23 +37,13 @@
   </header>
 
   <div id="holdingsView" data-page-node-id="eA9BnVqpDmsG5ENvSFkU7H">
-  <div class="market-bar" id="marketBar" hidden data-page-node-id="6QhALQl7eJXmWfAZWZsG9Z">
-    <div class="mb-left" data-page-node-id="fkVeaSp6cS0HGNAjXLy7QY">
-      <span class="breadcrumb" id="mbBreadcrumb" data-page-node-id="F36LdEWtyMnVPvkDfntsEX"><span class="breadcrumb-item breadcrumb-current" data-page-node-id="9n3FAVJGtATG5Th6DH0ZgZ">首页</span></span>
-      <span class="mb-sep" data-page-node-id="PWH1e5lWKaiPHaDIDPSm56">·</span>
-      <span class="mb-time" id="mbTime" data-page-node-id="hNg1ylZZOFxbFp925aotJ2"></span>
-    </div>
-    <div class="header-fx" id="headerFx" data-page-node-id="nY4q0RAoVYj1rKmmzaFhx9">
-      <div class="hf-marquee" id="hfMarquee" data-page-node-id="iwVXBO6GQZo7oBNQiBcYvu"><div class="hf-track" id="hfTrack" data-page-node-id="gYaOXlvprfkB4nEJZ8JzEb"></div></div>
-    </div>
-  </div>
   <div id="accountCard" class="account-card" hidden data-page-node-id="Q2KXN0H2U4sG8LNbPr5Dgv">
     <div class="ac-summary-cards" id="acSummaryData" data-page-node-id="D2uZFnIvK6wTfrRVbqefLN"></div>
   </div>
   <div id="cashflowCard" class="cf-card" hidden>
     <div class="cf-head">
-      <span class="cf-title" data-icon="calendar">本月收支计划</span>
-      <button class="btn btn-sm" type="button" id="cfManageBtn" title="管理" aria-label="管理"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h7"/><path d="M17 7h3"/><circle cx="14" cy="7" r="2.2"/><path d="M4 17h3"/><path d="M13 17h7"/><circle cx="10" cy="17" r="2.2"/></svg></button>
+      <span class="cf-title" data-icon="calendar">收支计划</span>
+      <span class="cf-sub" id="cfSub"></span>
     </div>
     <div id="cfList" class="cf-list"></div>
   </div>
@@ -61,7 +51,8 @@
     <div id="filters" class="filters" data-page-node-id="rJ0NCGyyqi1IwoC54luEW3"></div>
     <div class="list-actions" data-page-node-id="DuyK3cN7FRoyZrmwjCel0l">
       <div class="action-btns" data-page-node-id="9N7DJN0hDZ4HCG9aB97Cck">
-        <button id="addBtn" class="btn icon-btn" title="添加持仓" aria-label="添加持仓" data-page-node-id="hsHtQTtnqagRxe0FRE0ZXx"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px" data-page-node-id="ElLAqhDFcocL9vATRVskMf"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9" data-page-node-id="oheMGX8lKEdMs4EC8Cjw0a"/><path d="M12 7.8 V16.2 M7.8 12 H16.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="9xCwby2wE7GPOB9QWbufbW"/></svg></button>
+        <button id="wealthSnapBtn" class="btn icon-btn" title="更新理财持仓" aria-label="更新理财持仓"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><path d="M20 12a8 8 0 1 1-2.4-5.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="addBtn" class="btn icon-btn" title="添加" aria-label="添加" data-page-node-id="hsHtQTtnqagRxe0FRE0ZXx"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px" data-page-node-id="ElLAqhDFcocL9vATRVskMf"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9" data-page-node-id="oheMGX8lKEdMs4EC8Cjw0a"/><path d="M12 7.8 V16.2 M7.8 12 H16.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="9xCwby2wE7GPOB9QWbufbW"/></svg></button>
         <button id="guideBtn" class="btn icon-btn" title="调仓计划" aria-label="调仓计划" data-page-node-id="8rCBgehIeNogxJkqbkialu"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px" data-page-node-id="QFPGqCC6KOlqre9T5BBU9R"><rect x="5.5" y="4.5" width="13" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9" data-page-node-id="zSvXboQREF2SK8NMJgh3rs"/><rect x="9" y="2.8" width="6" height="3.4" rx="1.2" fill="currentColor" data-page-node-id="8OA1dAMB5EqlANNUujlq29"/><path d="M9 10.5 H15 M9 14 H15 M9 17.5 H12.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" data-page-node-id="Ieiq7YCyTl5R4dLIGm5d9l"/></svg><span id="guideBadge" class="guide-badge" hidden data-page-node-id="eaNKrxDXSm9TZoonSGzOVA"></span></button>
       </div>
       <div class="action-tools" data-page-node-id="SIrJRv3gDdKI4xop0vWg4h">
@@ -69,6 +60,9 @@
       </div>
     </div>
   </div>
+
+  <!-- 首页理财视图（筛选选「理财」时显示）：复用 renderWealth 渲染（标题/操作/表格/卡片） -->
+  <div id="homeWealthBox" class="home-wealth-box" hidden></div>
 
   <!-- 表格/卡片切换行：上方分割线；左侧为列表描述（持仓数量动态计算），右侧为视图切换；上下间距一致 -->
   <div class="tbl-meta-bar" data-page-node-id="uhQ2SeEj52bsV3jBqBZBsC">
@@ -104,7 +98,20 @@
     <div id="sourceFilterList" class="src-pop-list" data-page-node-id="rhkBVBHHEZ38QxMHLoTAIP"></div>
     <div class="src-pop-foot" data-page-node-id="0ZDgnqG1yBMXoTeKolKjHI"><button type="button" class="btn btn-sm" id="srcApply" data-page-node-id="0dk2YDX4lvGVYwYyUpXjZo">确定</button></div>
   </div>
+  <div id="mktFilterPop" class="src-pop" hidden>
+    <div class="src-pop-head">
+      <span>按市场筛选</span>
+      <span>
+        <button type="button" class="src-link" id="mktAll">全选</button>
+        <button type="button" class="src-link" id="mktNone">清空</button>
+      </span>
+    </div>
+    <div id="mktFilterList" class="src-pop-list"></div>
+    <div class="src-pop-foot"><button type="button" class="btn btn-sm" id="mktApply">确定</button></div>
+  </div>
   <div id="cards" class="cards-grid" hidden data-page-node-id="5lVpiJmkUG70UCneeTBsXY"></div>
+  <!-- 首页理财区块（非「理财」筛选时跟随持仓展示在下方：理财(N) + 账户分组二级表格；「理财」筛选时收起，由 #homeWealthBox 独占） -->
+  <div id="homeWealthInline" class="home-wealth-box" hidden></div>
   <div id="pager" class="pager" data-page-node-id="i1SHkwiyoWJhYVcd7zKDgY"></div>
   <div id="holdingsEmpty" class="empty-state" hidden data-page-node-id="hHM79gN0Rt5H4nPOzfucim">
     <div class="empty-icon" aria-hidden="true" data-page-node-id="ZLuQ1w84shPFSBUGuTDVEl"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 13.4h4.2l1.6 3h5.6l1.6-3h4.2"/><path d="M6.2 5.6h11.6l2.8 7.8v4.6a1.6 1.6 0 0 1-1.6 1.6H5a1.6 1.6 0 0 1-1.6-1.6v-4.6l2.8-7.8Z"/></svg></div>
@@ -121,12 +128,12 @@
     <div class="asset-tabs-row" data-page-node-id="z50XLw8BsDh8zx6e8VUJY9">
       <div class="asset-tabs" id="assetTabs" data-page-node-id="OBpSoN8Rs6WbhwP69ArNNE">
         <button class="btn atab active" data-tab="sources" type="button" data-page-node-id="MjujBXXjtDXusU2sF5rSFF">账户</button>
-        <button class="btn atab" data-tab="wealth" type="button" data-page-node-id="VJw3KSa2xIWsLwN3Xjt8ps">理财</button>
+        <!-- 理财 tab 已迁至首页持仓页（2026-10-09）：首页筛选选「理财」查看与操作 -->
         <button class="btn atab" data-tab="consume" type="button" style="display:none" data-page-node-id="uOh4dMCBHCRufvoinIlSXC">消费</button>
         <button class="btn atab" data-tab="cashflow" type="button">收支</button>
         <button class="btn atab" data-tab="flows" type="button">流水</button>
       </div>
-      <div class="asset-toolbar asset-local-toolbar" id="assetLocalToolbar" data-page-node-id="Rd6qyVt3c3yQo477sDWAQc"></div>
+      <div class="asset-tab-hint" id="assetTabHint" aria-live="polite"></div>
     </div>
     <div id="assetTabBody" data-page-node-id="AFXj4drRvbqSWqwVpRoEli"></div>
   </div>
@@ -138,13 +145,16 @@
         <p class="settings-group-desc">配置净值更新后的推送策略，以及钉钉 / 邮箱通知渠道。</p>
         <div class="settings-group-body">
       <div class="ana-tabs ac-tabs" data-page-node-id="Cqy7sKgLrTGBtYAAPNjqbk">
-        <button id="ntTabPolicy" class="ana-tab-btn active" type="button" data-page-node-id="TCHJAiiquhKnKmvKypDfuL">推送策略</button>
-        <button id="ntTabDt" class="ana-tab-btn" type="button" data-page-node-id="0eomb8CpOAaao01C0QVJ3K">钉钉</button>
-        <button id="ntTabEm" class="ana-tab-btn" type="button" data-page-node-id="w8kCEkzVrhwnplsm32FCwc">邮箱</button>
+        <button id="stTabAsset" class="ana-tab-btn active" type="button">风险偏好</button>
+        <button id="ntTabPolicy" class="ana-tab-btn" type="button" data-page-node-id="TCHJAiiquhKnKmvKypDfuL">推送策略</button>
       </div>
 
-      <!-- 推送策略 -->
-      <div id="ntPanelPolicy" data-page-node-id="KxF8OWHLbxTeFeGgz4xQ9U">
+      <!-- 资产设置：风险偏好 / 资产类型标签（原资产全景弹框设置页签迁入，JS 懒渲染）；默认页签 -->
+      <div id="stPanelAsset"></div>
+
+      <!-- 推送策略：策略 + 钉钉 + 邮箱三段配置上下排列（原钉钉/邮箱独立页签并入，减少页签层级）；
+           「测试通知 / 保存配置」按钮跟随本面板——风险偏好页签下不再露出通知操作按钮 -->
+      <div id="ntPanelPolicy" hidden data-page-node-id="KxF8OWHLbxTeFeGgz4xQ9U">
         <label data-page-node-id="wDMALgicx6FgNpK3euU020">推送频率
           <select id="ntfPolicy" data-page-node-id="GloLFm8NJlaf6bOHSvVKU5">
             <option value="every" data-page-node-id="lTe3cIXYkUXT2BDCETiuth">每次净值更新都推送</option>
@@ -163,19 +173,15 @@
             <input type="number" id="cfReminderMinute" min="0" max="59" value="0" class="num-sm" /> 分推送
           </span>
         </div>
-      </div>
 
-      <!-- 钉钉 -->
-      <div id="ntPanelDt" hidden data-page-node-id="EfOjIAkwjXpWd4USSqxfM0">
+        <hr class="set-sep" />
         <label data-page-node-id="hTFMWo0FiqXJAppNmNIYk9">启用钉钉通知
           <label class="switch" data-page-node-id="zdtLGeELMOHnkq5xjCwHnP"><input type="checkbox" id="dtEnabled" data-page-node-id="rxDNYe73koZFCUaEpWYK6d"><span class="switch-knob" data-page-node-id="BvvR0wWRj2aaCKQjmK1HXo"></span></label>
         </label>
         <label data-page-node-id="kpouKYB9mkCAHfvmbSmDgJ">Webhook 地址<span class="input-eye" data-page-node-id="UGPk59B7y79Awvuc2JcgQJ"><input type="text" id="dtWebhook" readonly placeholder="https://oapi.dingtalk.com/robot/send?access_token=..." data-page-node-id="Q3I7f7qtaTWICk5xvN2blV"><button type="button" class="eye-toggle" data-eye-for="dtWebhook" aria-label="显示明文" data-page-node-id="YTGm0akSbdmL6BWxSqJaGq"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="n8vhEsFgKK4epc8R4Ewhfh"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" data-page-node-id="jT7SkrfCVJXsuju6IGbfl6"/><circle cx="12" cy="12" r="3" data-page-node-id="v9dNmuWWu06wTT4HT8in79"/></svg></button></span></label>
         <label data-page-node-id="BjqDgAX2WBRBmaaA4RM2Ww">加签密钥（可选）<span class="input-eye" data-page-node-id="lhFlNWH5qaP4UB6uPVJldr"><input type="text" id="dtSecret" readonly placeholder="机器人安全设置中的加签密钥，不填则无需加签" data-page-node-id="nyJJmTC25ToADLGDoXuvrb"><button type="button" class="eye-toggle" data-eye-for="dtSecret" aria-label="显示明文" data-page-node-id="VarkB2rtCAKJoPz5UAsRkt"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="FKhivuvCBZFHneSg6mCEmg"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" data-page-node-id="5SQEURpMi5lnvNPDvXsLLG"/><circle cx="12" cy="12" r="3" data-page-node-id="u5YWm5UAP72IQijsi4YbAm"/></svg></button></span></label>
-      </div>
 
-      <!-- 邮箱 -->
-      <div id="ntPanelEm" hidden data-page-node-id="bI4COrYgwDUHTOK4D9EhKa">
+        <hr class="set-sep" />
         <label data-page-node-id="ks3cvn3dYXCIHckE9RSRWj">启用邮箱通知
           <label class="switch" data-page-node-id="7aMVmTSaDEWYhBtz0iCqxL"><input type="checkbox" id="emEnabled" data-page-node-id="b31Foo42xizwXKf9j5ctXh"><span class="switch-knob" data-page-node-id="aYAP6nOjT5QOT95ksBXEm5"></span></label>
         </label>
@@ -185,12 +191,12 @@
         <label data-page-node-id="0YQSb2BmzqcJZ07ImwWfKU">授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）" data-page-node-id="UeyW24yQJzeAeLjSrfaNbh"></label>
         <label data-page-node-id="KWEvXpK6gcErzio9jFNYE5">发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com" data-page-node-id="Rnc0f9iNe5GBGZIO5FxHDb"></label>
         <label data-page-node-id="gGIx0XhHb7ffZxVEXfh6WN">收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com" data-page-node-id="ukBADR6a2cBItwkt9hygDW"></label>
-      </div>
 
-      <div id="notifyErr" class="err"></div>
-      <div class="modal-actions">
-        <button class="btn" type="button" id="notifyTestBtn">测试通知</button>
-        <button class="btn primary" type="button" id="notifySaveBtn">保存配置</button>
+        <div id="notifyErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="notifyTestBtn">测试通知</button>
+          <button class="btn primary" type="button" id="notifySaveBtn">保存配置</button>
+        </div>
       </div>
       </div><!-- /settings-group-body -->
       </section><!-- /通知渠道 -->
@@ -203,13 +209,14 @@
         <h3 class="settings-group-title">工具</h3>
         <div class="settings-group-body">
           <div class="ana-tabs ac-tabs" id="toolsTabs">
-            <button class="ana-tab-btn active" type="button" data-tab="fx">汇率计算</button>
+            <button class="ana-tab-btn active" type="button" data-tab="rebal">资产再平衡</button>
+            <button class="ana-tab-btn" type="button" data-tab="fx">汇率计算</button>
             <button class="ana-tab-btn" type="button" data-tab="eq">权益盈亏</button>
             <button class="ana-tab-btn" type="button" data-tab="usd">美元盈亏</button>
             <button class="ana-tab-btn" type="button" data-tab="loan">贷款计算器</button>
           </div>
       <!-- 汇率计算 -->
-      <div id="tlPanelFx" class="ac-panel" data-tab="fx" data-page-node-id="lkquxcsGjxitJU2tHQ368y">
+      <div id="tlPanelFx" class="ac-panel" data-tab="fx" hidden data-page-node-id="lkquxcsGjxitJU2tHQ368y">
         <p class="tool-hint" data-page-node-id="8fWosi04BBEnR0B6WEPgLa">在 CNY / HKD / USD 之间换算金额，汇率取页面实时汇率。<span class="tool-fx" id="fxRateHint" data-page-node-id="Fl5AN8vA1j44yJYd12PGbG"></span></p>
         <div class="fx-calc" data-page-node-id="Lph4g4l9iHCWRkyvAUSsy6">
           <div class="fx-row" data-page-node-id="WZy9wmrPMPhbz38MDg1ewW">
@@ -289,6 +296,9 @@
           <div class="loan-legend" id="loanLegend" data-page-node-id="fTc6CkTGMraCI14Pn7AEQI"></div>
         </div>
       </div>
+
+      <!-- 资产再平衡（自资产构成弹框迁入：风险偏好目标占比 vs 实际分布） -->
+      <div id="tlPanelRebal" class="ac-panel" data-tab="rebal"></div>
         </div><!-- /settings-group-body -->
       </section><!-- /工具 -->
     </div><!-- /settings-layout -->
@@ -335,30 +345,27 @@
 
           <!-- 面板 ①：AI 总结 -->
           <div id="aiPanelSummary" class="ac-panel" data-page-node-id="Xq7Ta9AiPanelSum004">
-      <!-- 总结：范围 / 提示词 / 模型 三个维度全部平铺为单选胶囊（可见即选），选好直接点生成 -->
-      <div id="hubSummaryPanel" class="more-panel" data-page-node-id="VDdSQ8ch0jLAUpzimqYa4r">
-        <div class="ai-pick-row">
-          <span class="ai-pick-cap" data-page-node-id="tMhtPVbezHHOk9l1NEMf8h">总结范围</span>
-          <div id="aiPickTypeRow" class="ai-pick-opts" role="radiogroup" aria-label="总结范围" data-page-node-id="7sxC523SGqXYpmgkgEotBP">
-            <button type="button" class="at-chip-toggle on" data-v="all" role="radio" aria-checked="true" data-page-node-id="dYURAWxl6OOIOCbzlbnjAf">全部资产 · 一键总结</button>
-            <button type="button" class="at-chip-toggle" data-v="equity" role="radio" aria-checked="false" data-page-node-id="EuqO8y6eGE8wEYlILMlvRK">权益类 · 股票 / 基金</button>
+      <!-- AI 总结：上方结果框（带外边框）+ 下方输入区（下拉 + 可编辑 prompt + 发送按钮）。
+           下拉（范围 / 模板 / 模型）改选后，下方输入框的 {{DATA}} 会自动展开为实时数据，用户可看可改。 -->
+      <div id="hubSummaryPanel" class="more-panel ai-compose-panel" data-page-node-id="VDdSQ8ch0jLAUpzimqYa4r">
+        <!-- 上方：AI 返回的总结结果展示区（带外边框，长文可滚动，复用 .ai-result 的 Markdown 排版） -->
+        <div id="aiResultBox" class="ai-result-box" data-page-node-id="aiResultBox01">
+          <div id="aiResultEmpty" class="ai-result-empty" data-page-node-id="aiResultEmpty01">在下方选择提示词模板，确认数据后即可生成总结。</div>
+          <div id="aiPickResult" class="ai-result md" hidden data-page-node-id="uvJv1ZdXOtC6wOxmFtNAYS"></div>
+        </div>
+
+        <!-- 下方：输入区（模板/模型下拉与生成按钮同一行，左下下拉 / 右下按钮，均不覆盖输入框内容；默认全部资产分析） -->
+        <div class="ai-composer" data-page-node-id="aiComposer01">
+          <textarea id="aiPromptBox" class="ai-prompt-box" rows="12" spellcheck="false" data-page-node-id="aiPromptBox01" placeholder="选择模板后，这里会自动带入模板与实时数据（{{DATA}} 已展开），可直接编辑后再生成。"></textarea>
+          <div class="ai-composer-bar" data-page-node-id="aiComposerBar01">
+            <div class="ai-composer-selects">
+              <select id="aiTplPickSel" class="ai-select" data-page-node-id="aiTplPickSel01"></select>
+              <select id="aiModelPickSel" class="ai-select" data-page-node-id="aiModelPickSel01"></select>
+            </div>
+            <button class="btn primary ai-send-btn" type="button" id="aiPickGo" data-page-node-id="qtW0knm2IOBbhIHsycDrtr">生成总结</button>
           </div>
+          <div id="aiPickErr" class="err" data-page-node-id="vt2YWRDgw5LAX7EF62EqYJ"></div>
         </div>
-        <div class="ai-pick-row">
-          <span class="ai-pick-cap" data-page-node-id="kWCv6PFMRhP44TpHaw8AOt">提示词</span>
-          <div id="aiPickTplRow" class="ai-pick-opts" role="radiogroup" aria-label="提示词模板" data-page-node-id="KZhznVOinjInm3WCKApder"></div>
-        </div>
-        <div class="ai-pick-row">
-          <span class="ai-pick-cap" data-page-node-id="YfeSpsKXQyVxiCtUjG2tkX">模型</span>
-          <div id="aiPickModelRow" class="ai-pick-opts" role="radiogroup" aria-label="模型" data-page-node-id="4Z1bPJfBixuW3L1x7WG8ai"></div>
-        </div>
-        <p id="aiPickStatus" class="tool-hint" data-page-node-id="fNxkLDtDQ2PkDfRhOSABSn"></p>
-        <div id="aiPickErr" class="err" data-page-node-id="vt2YWRDgw5LAX7EF62EqYJ"></div>
-        <div class="modal-actions ai-pick-actions" data-page-node-id="A4YKCCx5IvQVE5TTCpIeEe">
-          <button class="btn primary" type="button" id="aiPickGo" data-page-node-id="qtW0knm2IOBbhIHsycDrtr">生成总结</button>
-        </div>
-        <!-- 结果直接输出在按钮下方（不再弹框）：长文可滚动，复用 .ai-result 的 Markdown 排版 -->
-        <div id="aiPickResult" class="ai-result" hidden data-page-node-id="uvJv1ZdXOtC6wOxmFtNAYS"></div>
       </div>
 
           </div><!-- /aiPanelSummary -->
@@ -521,10 +528,24 @@
       <div class="adj-panel m-body" data-panel="dividend" hidden data-page-node-id="M3Mg4KBUaQeyvPK82fco3Y">
         <form id="dividendForm" data-page-node-id="6rwnCFtFSqloZnEYv6Xelz">
           <input type="hidden" id="div_id" data-page-node-id="rP8cDCx6kXJ9AFeqklixiP">
-          <label data-page-node-id="JBL3VAal5zJOEGSwE8YN5S">每股分红<span class="ua-hint" data-page-node-id="Z2FIvoB7XXAkCa7raMUp8Z">税前口径；份额不变，成本价按此下调</span>
-            <input id="div_per_share" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 1.35" required data-page-node-id="P5O9owUBNZISXl7FgsjLsB">
+          <input type="hidden" id="div_mode" value="per_share">
+          <div class="adj-pills">
+            <div class="f-pills-row">
+              <span class="f-pill-cap">分红方式</span>
+              <div id="divModePills" class="f-pills"></div>
+            </div>
+          </div>
+          <label id="divPerWrap" data-page-node-id="JBL3VAal5zJOEGSwE8YN5S">每股分红<span class="ua-hint" data-page-node-id="Z2FIvoB7XXAkCa7raMUp8Z">税前口径；份额不变，成本价按此下调</span>
+            <input id="div_per_share" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4); computeDivPreview()" placeholder="如 1.35" required data-page-node-id="P5O9owUBNZISXl7FgsjLsB">
           </label>
-          <label data-page-node-id="2TGyF8t9yIslON8SHX9ZIC">分红总额（自动）<input id="div_amount" type="number" step="any" readonly data-page-node-id="N5ea5LTh0M4CSwzWGvpNFA"></label>
+          <label id="divTotalWrap" hidden>分红总额<span class="ua-hint">直接填本次分红总额，系统按「总额 ÷ 份额」反推每股并一次摊薄成本</span>
+            <input id="div_total" type="number" step="any" min="0" oninput="clampDecimals(this,2); computeDivPreview()" placeholder="如 132.50">
+          </label>
+          <label id="divAmountWrap" hidden data-page-node-id="2TGyF8t9yIslON8SHX9ZIC">分红总额（自动）<input id="div_amount" type="number" step="any" readonly data-page-node-id="N5ea5LTh0M4CSwzWGvpNFA"></label>
+          <label id="divPerShareOutWrap" hidden>折算每股（自动）<input id="div_per_share_out" type="number" step="0.0001" readonly></label>
+          <label id="divFeeWrap">扣除费用<span class="ua-hint">代扣税 / 手续费等，单独记一笔「费用」流水；成本按税前摊薄，不扣此费用</span>
+            <input id="div_fee" type="number" step="any" min="0" oninput="clampDecimals(this,2); computeDivPreview()" placeholder="如 0 或 19.88">
+          </label>
           <label data-page-node-id="25hJg4ZaHlwHCrhG2R8CPn">入账账户<span class="ua-hint" data-page-node-id="JmfwxNlUUPlS2MSFTlqKCU">分红金额入此账户（留空则用默认子账户 ★）</span>
             <select id="div_cash_id" data-page-node-id="tj8aEpp6RA4CQrBt7F71xf"></select>
           </label>
@@ -535,33 +556,31 @@
             <button class="btn primary" type="submit" data-page-node-id="sBRpWQ3pVPiCTERVvSsRED">确认分红</button>
           </div>
         </form>
-        <p class="tool-hint" data-page-node-id="DA2lSQwcuh1rwCutsU2bX2">分红记录见「加减仓」tab 的交易记录（标记为「分红」），同时在现金账户流水中留痕。</p>
+        <p class="tool-hint" data-page-node-id="DA2lSQwcuh1rwCutsU2bX2">分红记录见「加减仓」tab 的交易记录（标记为「分红」），同时在现金账户流水中留痕；扣除的费用会另记一笔「费用」流水。</p>
       </div>
       <div class="adj-panel m-body" data-panel="calc" data-page-node-id="h8dLa3iWF3edQfl7sSBv23">
         <input type="hidden" id="adj_id" data-page-node-id="nqfOhC8dM8srVyhrkBgT87">
         <div class="adj-calc" data-page-node-id="37TfDYTrfH1AJMH6uKndZi">
-          <div class="adj-row" data-page-node-id="Z1G6Aandfe8sniIDL5bkBD">
-            <label class="adj-inline" data-page-node-id="kLOvLTMTA6JVik8KRyqceI">计算方式
-              <select id="addMode" data-page-node-id="YP7Dav1MqlsCcaw5OH4Qil">
-                <option value="qty" data-page-node-id="eKIAh7Paz5YHBEpw9LsZwG">按数量</option>
-                <option value="amount" data-page-node-id="e4qApEEJRzM4EQXMIBWyFX">按金额</option>
-              </select>
-            </label>
-            <label class="adj-inline" data-page-node-id="dB8HogosKAPXt9j0kyTKBz">买卖方向
-              <select id="addSide" data-page-node-id="IMPt0I8fIO9uw6uqxG2MB8">
-                <option value="buy" data-page-node-id="vL1b2CRFpghHZtulXt9bE3">买入</option>
-                <option value="sell" data-page-node-id="G8e6qIPxAXnpg5v311rjOg">卖出</option>
-              </select>
-            </label>
+          <div class="adj-pills" data-page-node-id="Z1G6Aandfe8sniIDL5bkBD">
+            <div class="f-pills-row">
+              <span class="f-pill-cap">计算方式</span>
+              <div id="addModePills" class="f-pills"></div>
+            </div>
+            <div class="f-pills-row">
+              <span class="f-pill-cap">买卖方向</span>
+              <div id="addSidePills" class="f-pills"></div>
+            </div>
           </div>
+          <input type="hidden" id="addMode" value="qty">
+          <input type="hidden" id="addSide" value="buy">
           <div class="adj-row" data-page-node-id="CDohKu1ZonykJDHZZUa2Wi">
             <label class="adj-inline" data-page-node-id="JyDOy2X7gXKtsKV3CZbHAJ">原成交价（元/份）<input id="addOldPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 10.50" data-page-node-id="Dxeolc5yvOd33uDTXIjcaO"></label>
             <label class="adj-inline" data-page-node-id="HFchHk6DrZAdZrUBIWmV1o">原持仓数量（股/份）<input id="addOldQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 1000" data-page-node-id="0BcZO5GXTnokKOi7De1ikR"></label>
           </div>
           <div class="adj-row" data-page-node-id="1TgBJZ4jjDnOeBAIMIYCm1">
-            <label class="adj-inline" id="addQtyWrap" data-page-node-id="xF3aajumd8nybx8NhqeRSG">补仓数量<input id="addNewQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 500" data-page-node-id="EKMTlyEgfTawwqvFgeK6Qf"></label>
-            <label class="adj-inline" id="addAmtWrap" style="display:none" data-page-node-id="LCH3YpcNZCMwUZFUW0p2To">补仓金额<input id="addAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 5000" data-page-node-id="pDAXpiqLg3RhUmXg9f9b1P"></label>
-            <label class="adj-inline" data-page-node-id="1DXo78g8UOsStId1PZVieq">补仓现价<input id="addNewPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 9.80" data-page-node-id="Ymv4yGDtyarZBiLrFqZxor"></label>
+            <label class="adj-inline" id="addQtyWrap" data-page-node-id="xF3aajumd8nybx8NhqeRSG"><span id="addQtyLabel">补仓数量</span><input id="addNewQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 500" data-page-node-id="EKMTlyEgfTawwqvFgeK6Qf"></label>
+            <label class="adj-inline" id="addAmtWrap" style="display:none" data-page-node-id="LCH3YpcNZCMwUZFUW0p2To"><span id="addAmtLabel">补仓金额</span><input id="addAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 5000" data-page-node-id="pDAXpiqLg3RhUmXg9f9b1P"></label>
+            <label class="adj-inline" data-page-node-id="1DXo78g8UOsStId1PZVieq"><span id="addPriceLabel">补仓现价</span><input id="addNewPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 9.80" data-page-node-id="Ymv4yGDtyarZBiLrFqZxor"></label>
             <label class="adj-inline" data-page-node-id="aDZjXh9psBa6fcozrwx3ud">手续费<input id="addFee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 0 或 5" data-page-node-id="leyyB4N34kIwOxiknFWGGf"></label>
           </div>
           <div class="tool-result" id="addResult" data-page-node-id="ezgx1VkTJZvh6cHf8JOze8"></div>
@@ -587,32 +606,45 @@
       <h2 id="cfModalTitle" data-icon="calendar">收支计划</h2>
       <form id="cashflowForm">
         <input type="hidden" id="cf_id" />
-        <label>类型
-          <select id="cf_type">
-            <option value="income">待入账（工资 / 报销等）</option>
-            <option value="expense">待还款（房贷 / 信用卡等）</option>
-          </select>
+        <input type="hidden" id="cf_type" value="income" />
+        <input type="hidden" id="cf_pattern" value="recurring_fixed" />
+        <input type="hidden" id="cf_liability_id" value="0" />
+        <input type="hidden" id="cf_liability_mode" value="repay" />
+        <div class="f-pills-row">
+          <span class="f-pill-cap">方向</span>
+          <div class="f-pills" id="cfTypePills">
+            <button type="button" class="at-chip-toggle" data-v="income">入账</button>
+            <button type="button" class="at-chip-toggle" data-v="expense">支出</button>
+          </div>
+        </div>
+        <div class="f-pills-row">
+          <span class="f-pill-cap">模式</span>
+          <div class="f-pills" id="cfPatternPills"></div>
+        </div>
+        <label>名称
+          <input id="cf_title" placeholder="名称" maxlength="40" />
         </label>
-        <label>名称（如 工资 / 房贷）
-          <input id="cf_title" placeholder="工资待入账" maxlength="40" />
-        </label>
-        <label>每月日期（1-31）
+        <label id="cfDayWrap">每月日期
           <input id="cf_day" type="number" min="1" max="31" step="1" value="1" />
         </label>
-        <div class="adj-row">
-          <label class="adj-inline">金额<input id="cf_amount" type="number" step="0.01" min="0" placeholder="0.00" /></label>
-        </div>
-        <label id="cfAccountWrap">关联账户（入账 / 还款账户，币种自动取该子账户）
+        <label id="cfDateWrap" hidden>具体日期
+          <input id="cf_one_time_date" type="date" />
+        </label>
+        <label>金额<input id="cf_amount" type="number" step="0.01" min="0" placeholder="0.00" /></label>
+        <label><span id="cfCashCap">还款账户</span>
           <div class="ac-picker" id="cfCashPicker">
             <button type="button" class="ac-picker-btn" id="cfCashBtn">请选择子账户</button>
             <div class="ac-picker-panel" id="cfCashPanel" hidden></div>
           </div>
           <input type="hidden" id="cf_account_id" value="0" />
         </label>
-        <label id="cfLiabilityWrap">关联负债（可选，完成同步记还款流水）
-          <select id="cf_liability_id"><option value="0">（不关联）</option></select>
+        <label id="cfLiabilityWrap">关联负债
+          <div class="ac-picker" id="cfLiabilityPicker">
+            <button type="button" class="ac-picker-btn" id="cfLiabilityBtn">不关联</button>
+            <div class="ac-picker-panel" id="cfLiabilityPanel" hidden></div>
+          </div>
         </label>
-        <label>截止日期（可选，留空=长期有效）
+        <label id="cfEndWrap">截止日期
           <input id="cf_end_date" type="date" />
         </label>
         <label>备注
@@ -623,6 +655,20 @@
           <button class="btn primary" type="submit">保存</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="cfAmtModal" class="modal" hidden>
+    <div class="modal-card" style="width:380px; max-width:94vw;">
+      <h2 id="cfAmtTitle" data-icon="calendar">完成计划</h2>
+      <label id="cfAmtAmtWrap">实际金额
+        <input id="cfAmtInput" type="number" step="0.01" min="0" placeholder="0.00" />
+      </label>
+      <div id="cfAmtErr" class="err"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="cfAmtCancel" type="button">取消</button>
+        <button class="btn primary" id="cfAmtOk" type="button">确认</button>
+      </div>
     </div>
   </div>
 
@@ -674,22 +720,15 @@
     </div>
   </div>
 
-  <!-- ===== 资产全景：构成 / 再平衡 / 设置 三 Tab ===== -->
+  <!-- ===== 资产构成弹框（原「构成/设置」双 Tab；设置已迁设置页「资产设置」页签） ===== -->
   <div id="assetCompModal" class="modal" hidden data-page-node-id="FQAcBMPCCtWFoFkpxlBspz">
     <div class="modal-card" style="width:min(900px, 96vw); max-width:96vw;" data-page-node-id="TtfzV3s4UBign1c1HvBQXy">
-      <h2 id="acModalTitle" data-icon="pie" data-page-node-id="hXbHRYywLV02VDn1mGXrme">资产全景</h2>
+      <h2 id="acModalTitle" data-icon="pie" data-page-node-id="hXbHRYywLV02VDn1mGXrme">资产构成</h2>
       <button class="card-close" type="button" id="acCompClose" title="关闭" aria-label="关闭" data-page-node-id="us9C6i8h5Ajn88WgY5EqVr">✕</button>
-      <div class="ana-tabs ac-tabs" data-page-node-id="OA8t5L5YWRyAGp6qEaEohE">
-        <button id="acTabCompBtn" class="ana-tab-btn active" type="button" data-tab="comp" data-page-node-id="Vfqf1h16D0erfmGtxlnKOz">资产构成</button>
-        <button id="acTabRebalBtn" class="ana-tab-btn" type="button" data-tab="rebal" data-page-node-id="6P5AjBRmBRinj4ZE9ctcEn">资产再平衡</button>
-        <button id="acTabSetBtn" class="ana-tab-btn" type="button" data-tab="settings" data-page-node-id="W6f0Hwe25PkkNUZq9pwHKe">设置</button>
-      </div>
       <div id="acTabComp" class="ac-panel m-body" data-page-node-id="VgOIMI0xgZJPi3lHxQmIi3">
         <h3 id="acCompTitle" data-page-node-id="LyPeHSQIDGr61LGW8kEK4R"></h3>
         <div id="acCompBody" data-page-node-id="yCUeq8smZ9JfoFIDwl5b67"></div>
       </div>
-      <div id="acTabRebal" class="ac-panel m-body" hidden data-page-node-id="8FA2r5uyfbpV7SSv9NRO41"></div>
-      <div id="acTabSet" class="ac-panel m-body" hidden data-page-node-id="H0SQK1QygWpMXncwq3C7Xv"></div>
     </div>
   </div>
 
@@ -813,56 +852,33 @@
   <div id="cashModal" class="modal" hidden data-page-node-id="VIMec8LoRoEGPiaT0aM5kC">
     <div class="modal-card" style="width:480px; max-width:94vw;" data-page-node-id="PeOoYtosHX9gG6K2Ai2tvk">
       <h2 id="cashTitle" data-icon="layers" data-page-node-id="fZMauuLYk2caBEAEe6ZC1a">添加子账户</h2>
-      <!-- 小 tab：添加子账户 / 添加负债（样式同加减仓弹框的连体胶囊 tab） -->
-      <div class="adj-tabs" id="cashTabs" data-page-node-id="yhU5OuVbCWcbX59h0nlhmy">
-        <button type="button" class="adj-tab active" data-tab="cash" data-page-node-id="LO3Q5fxEF0UniV2zKqhaK0">子账户</button>
-        <button type="button" class="adj-tab" data-tab="liability" data-page-node-id="k8oDbXMVCVcwY6yzqrKGts">负债</button>
-      </div>
       <form id="cashForm" data-page-node-id="EOFzQ3T2Sh0VywCOJqb6My">
-        <!-- 编辑子账户（操作按钮所在行）：可改名称 + 对该账户 ± 资金，无 tab、无账户下拉 -->
-        <div id="cashEditFields" hidden data-page-node-id="6tRUyMLcd7cK6PoD2lDWvv">
-          <div class="cash-edit-info" id="cashEditInfo" data-page-node-id="FAnMgco805A3vzOEovJlb9"></div>
-          <label data-page-node-id="6QvHhkuYjuVWje1jMyYWoo">子账户名称 <input id="c_name_edit" placeholder="修改后保存即生效" data-page-node-id="HOHhm0A8gQU89mdTomYlk7"></label>
-          <label data-page-node-id="NNFx6Y92DpaA0neVniqA2y">类型 <input id="c_type_edit" placeholder="如 活期/定期/零钱/保证金（可选）" data-page-node-id="oToNpRCMUb1gzlo1vews7h"></label>
-          <label data-page-node-id="ZcTcMO9ctjJNjKm6uq8M0o">MCP 标记 <input id="c_note_edit" placeholder="MCP 标记（供 AI 客户端识别）" data-page-node-id="qG6VpLDkXSdAL8RvF0xEPe"></label>
-          <!-- 改为新余额：币种下拉 + 金额输入合并为一个组合控件 -->
-          <label data-page-node-id="NinHakuSRUz0UxPwnY4VZA">改为新余额 <div class="combo" data-page-node-id="oUxZo9VomHeVJQcel2ZjHw"><select id="c_currency_edit" data-page-node-id="1RznOalt9EMH9ezhHPFlEr"><option value="rmb" data-page-node-id="h6pSjFcjWjvMcalpnD6fzI">RMB</option><option value="hkd" data-page-node-id="LQ7HC5Enqe2UHlAXqNFKtB">HKD</option><option value="usd" data-page-node-id="wrkvAq4pCJeEjh4BEFO0Ta">USD</option></select><input id="c_amount_edit" type="number" step="0.0001" oninput="clampDecimals(this,4)" placeholder="与 ± 资金二选一" data-page-node-id="5RUtDt5QJgVoL41tOe7jjP"></div></label>
-          <div class="sign-edit" data-page-node-id="Hj4n0YsmXKuQgwOV7EDCj1">
-            <div class="field-label" data-page-node-id="fWvsAlQhHjRc9UfWU3PQ7v">资金变动</div>
-            <span class="seg-flat" id="c_sign_toggle" role="group" aria-label="存入或取出" data-page-node-id="hGS66vAFYV7wxtih2tkEMv">
-              <button type="button" class="sign-opt active" data-sign="in" data-page-node-id="H9SARL8eGopszDcf7UzZqP">＋</button>
-              <span class="seg-sep" data-page-node-id="iYQjYr6ohZ6xQJFbNMjcbI">/</span>
-              <button type="button" class="sign-opt" data-sign="out" data-page-node-id="utaaNymDGirXRWSBdYornx">－</button>
-            </span>
-            <input id="c_delta" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="金额（正数）" data-page-node-id="PrCfPGC2j0Rw7Qb2mV405S">
-          </div>
-          <label id="c_adj_note_row" data-page-node-id="ON79LX5VHIHh4RaYAbaxTW">说明（资金变动备注，可选） <input id="c_adj_note" placeholder="如 发工资 / 还信用卡" data-page-node-id="LT3j056swAgG9AZUcUVDBj"></label>
+        <!-- 统一表单：一个复选框标记「是负债」，不再分子账户/负债两个 tab。
+             新增与编辑都可通过它切换性质（编辑时换性质走后端安全转换：无流水、无引用才允许）。 -->
+        <label class="c-default-row" id="c_isliab_row" data-page-node-id="afuh0AgjLNK3mp0FFiJwWX"><input type="checkbox" id="c_is_liab" data-page-node-id="IuhYSnlR7PkdFkedi0wk6x"> 是负债<span class="ua-hint" data-page-node-id="D0psJyFudbmzUl55dSo0c1">（欠款账户，余额按负数计入净资产）</span></label>
+        <!-- 编辑态才出现：当前余额信息条 -->
+        <div class="cash-edit-info" id="cashEditInfo" hidden data-page-node-id="FAnMgco805A3vzOEovJlb9"></div>
+        <label data-page-node-id="7pcsCeSgBxDBVOJ1GJ1z0j">名称 <input id="c_name" placeholder="如 招行活期 / 房贷" maxlength="40" data-page-node-id="ODdSmKb528CnmUNCK37IId"></label>
+        <label data-page-node-id="fL2P33YoA60JmKPzrvDBbZ">类型 <input id="c_type" placeholder="如 活期/定期/零钱；负债如 房贷/信用卡（可选）" data-page-node-id="U2WCOJ9qyU7C0WDHFiuGri"></label>
+        <!-- 余额：币种下拉 + 金额输入合并为一个组合控件；标签随「是负债」/编辑态切换 -->
+        <label id="c_amount_label" data-page-node-id="Uj1B4oBBgIlnD9nX7NqcAG"><span id="c_amount_cap" data-page-node-id="3s4RZZZhVVkHLjDDB95Wmf">当前余额</span> <div class="combo" data-page-node-id="kRSOuReUjIzWPJFeXDM7KY"><select id="c_currency" data-page-node-id="bQpss8pHz5oAY9tFJpGbf2"><option value="rmb" data-page-node-id="op6Sx3XKqXTE97Wq2r5STg">RMB</option><option value="hkd" data-page-node-id="1E2Gn6YsBAAqW3UO2vDWDc">HKD</option><option value="usd" data-page-node-id="MJn9vU4PWG3neEmxScwRVr">USD</option></select><input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="FMSBHzDZGnINgG8LYVzHjz"></div></label>
+        <!-- 所属账户：从账户行「添加」进入或编辑已有记录时锁定父账户（只读，不可选）；空状态全局入口无父账户上下文时才显示下拉 -->
+        <label id="c_source_fix_row" hidden data-page-node-id="saJnyjHx4RVb0KVf7k0SeE">所属账户 <input id="c_source_fix" readonly placeholder="—" data-page-node-id="k0gy44BxRZ6lDCNBW7bntM"></label>
+        <label id="c_source_sel_row" hidden data-page-node-id="t0necID2OAsBVw0Xn5BvQm">所属账户 <select id="c_source" data-page-node-id="4mBy0As0Qm1ylPgU2IE9rS"></select></label>
+        <label class="c-default-row" id="c_default_row" data-page-node-id="jVUh2zGR8XuTm0Xp9RBA5B"><input type="checkbox" id="c_is_default" data-page-node-id="afuh0AgjLNK3mp0FFiJwWX"> 设为默认子账户<span class="ua-hint" data-page-node-id="IuhYSnlR7PkdFkedi0wk6x">（同币种唯一；加减仓资金默认走此账户）</span></label>
+        <label data-page-node-id="JqPv9b7e6tsnaznyDJurPG">MCP 标记 <input id="c_note" placeholder="MCP 标记（供 AI 客户端识别）" data-page-node-id="D0psJyFudbmzUl55dSo0c1"></label>
+        <!-- 仅编辑态出现（新增时没有可调整的余额）：
+             子账户=±存入/取出，负债=±借入/还款；下方「说明」作为这一笔变动流水的备注 -->
+        <div class="sign-edit" id="c_delta_row" hidden data-page-node-id="Hj4n0YsmXKuQgwOV7EDCj1">
+          <div class="field-label" id="c_delta_cap" data-page-node-id="fWvsAlQhHjRc9UfWU3PQ7v">资金变动</div>
+          <span class="seg-flat" id="c_sign_toggle" role="group" aria-label="存入或取出" data-page-node-id="hGS66vAFYV7wxtih2tkEMv">
+            <button type="button" class="sign-opt active" data-sign="in" data-page-node-id="H9SARL8eGopszDcf7UzZqP">＋</button>
+            <span class="seg-sep" data-page-node-id="iYQjYr6ohZ6xQJFbNMjcbI">/</span>
+            <button type="button" class="sign-opt" data-sign="out" data-page-node-id="utaaNymDGirXRWSBdYornx">－</button>
+          </span>
+          <input id="c_delta" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="金额（正数）" data-page-node-id="PrCfPGC2j0Rw7Qb2mV405S">
         </div>
-        <!-- 添加子账户：干净的新增表单 -->
-        <div id="cashNewFields" hidden data-page-node-id="ZWCbH9vjLxovycLjHJsfFn">
-          <label data-page-node-id="7pcsCeSgBxDBVOJ1GJ1z0j">名称 <input id="c_name" placeholder="如 招行活期 / 微信零钱" data-page-node-id="ODdSmKb528CnmUNCK37IId"></label>
-          <label data-page-node-id="fL2P33YoA60JmKPzrvDBbZ">类型 <input id="c_type" placeholder="如 活期/定期/零钱/保证金（可选）" data-page-node-id="U2WCOJ9qyU7C0WDHFiuGri"></label>
-          <!-- 当前余额：币种下拉 + 金额输入合并为一个组合控件 -->
-          <label data-page-node-id="Uj1B4oBBgIlnD9nX7NqcAG">当前余额 <div class="combo" data-page-node-id="kRSOuReUjIzWPJFeXDM7KY"><select id="c_currency" data-page-node-id="bQpss8pHz5oAY9tFJpGbf2"><option value="rmb" data-page-node-id="op6Sx3XKqXTE97Wq2r5STg">RMB</option><option value="hkd" data-page-node-id="1E2Gn6YsBAAqW3UO2vDWDc">HKD</option><option value="usd" data-page-node-id="MJn9vU4PWG3neEmxScwRVr">USD</option></select><input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="FMSBHzDZGnINgG8LYVzHjz"></div></label>
-          <!-- 所属账户：从账户行「添加子账户」进入时锁定父账户（只读，不可选）；空状态全局入口无父账户上下文时才显示下拉 -->
-          <label id="c_source_fix_row" hidden data-page-node-id="saJnyjHx4RVb0KVf7k0SeE">所属账户 <input id="c_source_fix" readonly placeholder="—" data-page-node-id="k0gy44BxRZ6lDCNBW7bntM"></label>
-          <label id="c_source_sel_row" hidden data-page-node-id="t0necID2OAsBVw0Xn5BvQm">所属账户 <select id="c_source" data-page-node-id="4mBy0As0Qm1ylPgU2IE9rS"></select></label>
-          <label class="c-default-row" data-page-node-id="jVUh2zGR8XuTm0Xp9RBA5B"><input type="checkbox" id="c_is_default" data-page-node-id="afuh0AgjLNK3mp0FFiJwWX"> 设为默认子账户<span class="ua-hint" data-page-node-id="IuhYSnlR7PkdFkedi0wk6x">（同币种唯一；加减仓资金默认走此账户）</span></label>
-          <label data-page-node-id="JqPv9b7e6tsnaznyDJurPG">MCP 标记 <input id="c_note" placeholder="MCP 标记（供 AI 客户端识别）" data-page-node-id="D0psJyFudbmzUl55dSo0c1"></label>
-        </div>
-        <!-- 负债面板：与子账户同弹框，tab 切换（原独立负债弹框并入此处） -->
-        <div id="liabFields" hidden data-page-node-id="5H59mlByFFMXL2K5gAEUxW">
-          <input type="hidden" id="lb_id" data-page-node-id="WrCFAXsJqXd2X2Jla83SQ1">
-          <label data-page-node-id="0xwFcELnjsV6CEfiQdvMNb">名称 <input id="lb_name" placeholder="如 房贷 / 招行信用卡" data-page-node-id="XEWeLRH4d5XdwBmIzjGBPC"></label>
-          <label data-page-node-id="w27dBZwDnF18NyhNWBfAPE">类型 <input id="lb_type" placeholder="房贷/信用卡/消费贷/其他" data-page-node-id="ikWMe7b0N0Fc67UqYIHdCt"></label>
-          <!-- 所属账户：编辑/新增负债时账户由入口父账户或负债自身决定，弹框不展示（与编辑子账户一致） -->
-          <input type="hidden" id="lb_source" data-page-node-id="89yg1r3WYjwHDzZOgAYfxD">
-          <!-- 当前欠款余额：币种下拉 + 金额输入合并为一个组合控件 -->
-          <label data-page-node-id="3s4RZZZhVVkHLjDDB95Wmf">当前欠款余额 <div class="combo" data-page-node-id="tq0HDxll6oZLpIJGVGYdPu"><select id="lb_currency" data-page-node-id="uCbK0shBLOo3n4BU9bUAIi"><option value="rmb" data-page-node-id="jSuqnJ6WRfqQYRrSd05JCa">RMB</option><option value="hkd" data-page-node-id="csbuUKTaGNtZTA2iuLltSF">HKD</option><option value="usd" data-page-node-id="rt1DeCxfsVAP9nrE3ISfcY">USD</option></select><input id="lb_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="e2khC3Tzqu9oqiCAq6H8al"></div></label>
-          <label data-page-node-id="JwGhRczsNVl4zHb1hzacbS">年利率(%) <input id="lb_rate" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="uGCG3DEzZHQC8Qxd48GVqH"></label>
-          <label data-page-node-id="YjMv48xJ3qIjLQWmsaaDZ8">月供 <input id="lb_monthly" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" data-page-node-id="PLjJoEsWZtqegoYApUud6s"></label>
-          <label data-page-node-id="pYzovBjIbMuv6fMMsDwPqc">MCP 标记 <input id="lb_note" placeholder="MCP 标记（供 AI 客户端识别）" data-page-node-id="GvXEQQSv6i1XTKonTEBu8v"></label>
-        </div>
+        <label id="c_adj_note_row" hidden data-page-node-id="ON79LX5VHIHh4RaYAbaxTW"><span id="c_adj_note_cap" data-page-node-id="LT3j056swAgG9AZUcUVDBj">说明（资金变动备注，可选）</span> <input id="c_adj_note" placeholder="如 发工资 / 还信用卡" data-page-node-id="b5mR41UapyQYKGlXNRWu5c"></label>
         <div id="cashErr" class="err" data-page-node-id="rdH06qOgNOYKEnE4yENvq3"></div>
         <div class="modal-actions" data-page-node-id="wQOQT3gSJfCBPYeOsIiwvQ"><button class="btn primary" type="submit" data-page-node-id="ld3noD231SL5EfD0HlInbP">保存</button></div>
       </form>
@@ -993,6 +1009,23 @@
           <button class="btn primary" type="submit" id="ctSubmit" data-page-node-id="qEoMjSMa3QSoGsrx9dbSAw">确认转账</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- 新增类型选择（2026-10-09）：顶部「添加」按钮按胶囊（类别筛选）当前是否落在「理财」决定默认项 -->
+  <div id="addPickModal" class="modal" hidden>
+    <div class="modal-card add-pick-card">
+      <h2 data-icon="plus">新增</h2>
+      <div class="add-pick">
+        <button class="add-pick-item" type="button" data-add-kind="holding">
+          <span class="ap-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="6.6" width="17" height="13.4" rx="2.2"/><path d="M3.5 10.8h17"/><path d="M9 6.6V4.5h6v2.1"/></svg></span>
+          <span class="ap-txt"><b>持仓</b><small>股票 / 基金 / ETF 等</small></span>
+        </button>
+        <button class="add-pick-item" type="button" data-add-kind="wealth">
+          <span class="ap-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.6v8.8M9.3 10.4h5.4M9.3 13.6h5.4"/></svg></span>
+          <span class="ap-txt"><b>理财</b><small>存款 / 理财 / 货基等</small></span>
+        </button>
+      </div>
     </div>
   </div>
 

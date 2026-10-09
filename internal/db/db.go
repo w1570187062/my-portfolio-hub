@@ -616,10 +616,11 @@ func AdjustHolding(id int64, txType string, quantity, price, fee float64, note s
 	return cur, realized, nil
 }
 
-// AdjustDividend 处理一次现金分红：份额不变，成本价按每股分红下调（除息摊薄口径），
-// 并以 tx_type=DIV 在 position_tx 留痕（quantity=当日份额、price=每股分红、amount=分红总额）。
+// AdjustDividend 处理一次现金分红：份额不变、成本价按每股分红下调（除息摊薄口径），
+// 并以 tx_type=DIV 在 position_tx 留痕（quantity=当日份额、price=每股分红、amount=分红总额、
+// fee=扣除的费用）。fee 仅留痕，不参与摊薄（按税前口径摊薄），费用流水由 handler 层单独记。
 // 不做任何买卖，因此 realized_pnl 恒为 0；现金入账由 handler 层联动完成（与本函数解耦，沿用项目无事务风格）。
-func AdjustDividend(id int64, perShare float64, note string) (h *Holding, dividendTotal float64, err error) {
+func AdjustDividend(id int64, perShare, fee float64, note string) (h *Holding, dividendTotal float64, err error) {
 	cur, err := Get(id)
 	if err != nil {
 		return nil, 0, err
@@ -629,6 +630,9 @@ func AdjustDividend(id int64, perShare float64, note string) (h *Holding, divide
 	}
 	if perShare <= 0 {
 		return nil, 0, fmt.Errorf("每股分红必须大于 0")
+	}
+	if fee < 0 {
+		fee = 0
 	}
 	newCost := roundByCategory(cur.Category, cur.CostPrice-perShare)
 	if newCost < 0 {
@@ -645,6 +649,7 @@ func AdjustDividend(id int64, perShare float64, note string) (h *Holding, divide
 		Quantity:    cur.Quantity,
 		Price:       perShare,
 		Amount:      dividendTotal,
+		Fee:         math.Round(fee*100) / 100,
 		RealizedPnl: 0,
 		Note:        note,
 		CreatedAt:   time.Now().Format("2006-01-02 15:04:05"),
@@ -1210,6 +1215,10 @@ func initAssetTables() error {
 				account_id INTEGER NOT NULL DEFAULT 0,
 				liability_id INTEGER NOT NULL DEFAULT 0,
 				note TEXT NOT NULL DEFAULT '',
+				end_date TEXT NOT NULL DEFAULT '',
+				pattern TEXT NOT NULL DEFAULT 'recurring_fixed',
+				one_time_date TEXT NOT NULL DEFAULT '',
+				liability_mode TEXT NOT NULL DEFAULT 'repay',
 				created_at TEXT NOT NULL DEFAULT ''
 			)`,
 			// 完成记录：某计划在某一月份(ym)被勾选完成后落库一条，保证幂等（同 plan+ym 唯一）。
@@ -1253,6 +1262,12 @@ func initAssetTables() error {
 	addColumnIfMissing("liabilities", "currency", "TEXT NOT NULL DEFAULT 'rmb'")
 	// end_date：收支计划截止日期（YYYY-MM-DD，空=长期有效）
 	addColumnIfMissing("cashflow_plans", "end_date", "TEXT NOT NULL DEFAULT ''")
+	// pattern：发生模式 recurring_fixed(固定月供/工资) | recurring_variable(浮动月还) | one_time(一次性)
+	addColumnIfMissing("cashflow_plans", "pattern", "TEXT NOT NULL DEFAULT 'recurring_fixed'")
+	// one_time_date：一次性计划的归属具体日期（YYYY-MM-DD），仅 pattern=one_time 使用
+	addColumnIfMissing("cashflow_plans", "one_time_date", "TEXT NOT NULL DEFAULT ''")
+	// liability_mode：支出关联负债的方式 repay(还款已有负债) | incur(产生新负债)，仅 expense
+	addColumnIfMissing("cashflow_plans", "liability_mode", "TEXT NOT NULL DEFAULT 'repay'")
 	// 存量更名：「现金账户」统一改称「子账户」，自动创建的默认账户名一并更新。
 	_, _ = DB.Exec(`UPDATE cash_accounts SET name='默认子账户' WHERE name='默认现金账户'`)
 	// 清理冗余审计记录（一次性）：旧版整批保存会把未编辑的产品也 upsert 并写审计，两类冗余：
@@ -2187,22 +2202,22 @@ func boolToInt(b bool) int {
 
 // ---- Liabilities (负债) ----
 
+// 注意：liabilities 表仍保留 rate / monthly_payment 两个历史列（SQLite 掉列需重建表，
+// 风险不值得），但已不再读写——统一表单后负债只关心「名称/类型/欠款余额/币种/备注」。
 type Liability struct {
-	ID            int64   `json:"id"`
-	UserID        int64   `json:"user_id"`
-	SourceID      int64   `json:"source_id"`
-	Name          string  `json:"name"`
-	Type          string  `json:"type"`
-	Amount        float64 `json:"amount"`
-	Rate          float64 `json:"rate"`
-	MonthlyPayment float64 `json:"monthly_payment"`
-	Currency      string  `json:"currency"` // rmb | usd | hkd，负债支持多币种（默认 rmb）
-	Note          string  `json:"note"`
-	CreatedAt     string  `json:"created_at"`
+	ID        int64   `json:"id"`
+	UserID    int64   `json:"user_id"`
+	SourceID  int64   `json:"source_id"`
+	Name      string  `json:"name"`
+	Type      string  `json:"type"`
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency"` // rmb | usd | hkd，负债支持多币种（默认 rmb）
+	Note      string  `json:"note"`
+	CreatedAt string  `json:"created_at"`
 }
 
 func ListLiabilities(userID int64) ([]Liability, error) {
-	rows, err := DB.Query(`SELECT id,user_id,source_id,name,type,amount,rate,monthly_payment,currency,note,created_at FROM liabilities WHERE user_id=? ORDER BY id DESC`, userID)
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,type,amount,currency,note,created_at FROM liabilities WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2210,7 +2225,7 @@ func ListLiabilities(userID int64) ([]Liability, error) {
 	var out []Liability
 	for rows.Next() {
 		var l Liability
-		if err := rows.Scan(&l.ID, &l.UserID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Rate, &l.MonthlyPayment, &l.Currency, &l.Note, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.UserID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Currency, &l.Note, &l.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -2223,8 +2238,8 @@ func CreateLiability(l *Liability) (int64, error) {
 		return 0, err
 	}
 	l.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO liabilities(user_id,source_id,name,type,amount,rate,monthly_payment,currency,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Currency, l.Note, l.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO liabilities(user_id,source_id,name,type,amount,currency,note,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Currency, l.Note, l.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -2232,8 +2247,8 @@ func CreateLiability(l *Liability) (int64, error) {
 }
 
 func UpdateLiability(l *Liability) error {
-	_, err := DB.Exec(`UPDATE liabilities SET user_id=?,source_id=?,name=?,type=?,amount=?,rate=?,monthly_payment=?,currency=?,note=? WHERE id=?`,
-		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Rate, l.MonthlyPayment, l.Currency, l.Note, l.ID)
+	_, err := DB.Exec(`UPDATE liabilities SET user_id=?,source_id=?,name=?,type=?,amount=?,currency=?,note=? WHERE id=?`,
+		l.UserID, l.SourceID, l.Name, l.Type, l.Amount, l.Currency, l.Note, l.ID)
 	return err
 }
 
@@ -2261,8 +2276,8 @@ type LiabilityFlow struct {
 
 func GetLiability(id int64) (*Liability, error) {
 	var l Liability
-	err := DB.QueryRow(`SELECT id,user_id,source_id,name,type,amount,rate,monthly_payment,currency,note,created_at FROM liabilities WHERE id=?`, id).
-		Scan(&l.ID, &l.UserID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Rate, &l.MonthlyPayment, &l.Currency, &l.Note, &l.CreatedAt)
+	err := DB.QueryRow(`SELECT id,user_id,source_id,name,type,amount,currency,note,created_at FROM liabilities WHERE id=?`, id).
+		Scan(&l.ID, &l.UserID, &l.SourceID, &l.Name, &l.Type, &l.Amount, &l.Currency, &l.Note, &l.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -2305,18 +2320,21 @@ func ListLiabilityFlows(userID, liabilityID int64) ([]LiabilityFlow, error) {
 // ---- Cashflow plans (月度待入账 / 待还款计划) ----
 
 type CashflowPlan struct {
-	ID          int64   `json:"id"`
-	UserID      int64   `json:"user_id"`
-	Type        string  `json:"type"`         // income 待入账 | expense 待还款
-	Title       string  `json:"title"`
-	DayOfMonth  int     `json:"day_of_month"` // 每月几号（1-31）
-	Amount      float64 `json:"amount"`
-	Currency    string  `json:"currency"`
-	AccountID   int64   `json:"account_id"`   // 关联现金账户（入账/还款账户）
-	LiabilityID int64   `json:"liability_id"` // 关联负债（仅 expense）
-	Note        string  `json:"note"`
-	EndDate     string  `json:"end_date"`    // 截止日期 YYYY-MM-DD，空=长期有效（每月循环到该月为止）
-	CreatedAt   string  `json:"created_at"`
+	ID           int64   `json:"id"`
+	UserID       int64   `json:"user_id"`
+	Type         string  `json:"type"`         // income 待入账 | expense 待还款
+	Title        string  `json:"title"`
+	DayOfMonth   int     `json:"day_of_month"` // 每月几号（1-31），recurring_* 模式使用
+	Amount       float64 `json:"amount"`
+	Currency     string  `json:"currency"`
+	AccountID    int64   `json:"account_id"`    // 关联子账户（入账/还款账户；incur 模式必填）
+	LiabilityID  int64   `json:"liability_id"`  // 关联负债（仅 expense）
+	Note         string  `json:"note"`
+	EndDate      string  `json:"end_date"`      // 截止日期 YYYY-MM-DD，空=长期有效
+	Pattern      string  `json:"pattern"`       // recurring_fixed | recurring_variable | one_time
+	OneTimeDate  string  `json:"one_time_date"` // 一次性计划归属具体日期 YYYY-MM-DD
+	LiabilityMode string `json:"liability_mode"` // repay(还款已有) | incur(产生新负债)，仅 expense
+	CreatedAt    string  `json:"created_at"`
 }
 
 type CashflowDone struct {
@@ -2332,7 +2350,7 @@ type CashflowDone struct {
 }
 
 func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
-	rows, err := DB.Query(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,created_at FROM cashflow_plans WHERE user_id=? ORDER BY day_of_month ASC, id ASC`, uid)
+	rows, err := DB.Query(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,created_at FROM cashflow_plans WHERE user_id=? ORDER BY (CASE WHEN pattern='one_time' THEN 1 ELSE 0 END), day_of_month ASC, id ASC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -2340,11 +2358,11 @@ func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
 	var out []CashflowPlan
 	for rows.Next() {
 		var p CashflowPlan
-		var typ, title, cur, note string
-		if err := rows.Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &p.CreatedAt); err != nil {
+		var typ, title, cur, note, pat, otd, lmode string
+		if err := rows.Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &p.CreatedAt); err != nil {
 			return nil, err
 		}
-		p.Type, p.Title, p.Currency, p.Note = typ, title, cur, note
+		p.Type, p.Title, p.Currency, p.Note, p.Pattern, p.OneTimeDate, p.LiabilityMode = typ, title, cur, note, pat, otd, lmode
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -2352,16 +2370,16 @@ func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
 
 func GetCashflowPlan(id int64) (*CashflowPlan, error) {
 	var p CashflowPlan
-	var typ, title, cur, note string
-	err := DB.QueryRow(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,created_at FROM cashflow_plans WHERE id=?`, id).
-		Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &p.CreatedAt)
+	var typ, title, cur, note, pat, otd, lmode string
+	err := DB.QueryRow(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,created_at FROM cashflow_plans WHERE id=?`, id).
+		Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &p.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	p.Type, p.Title, p.Currency, p.Note = typ, title, cur, note
+	p.Type, p.Title, p.Currency, p.Note, p.Pattern, p.OneTimeDate, p.LiabilityMode = typ, title, cur, note, pat, otd, lmode
 	return &p, nil
 }
 
@@ -2372,9 +2390,15 @@ func CreateCashflowPlan(p *CashflowPlan) (int64, error) {
 	if p.Currency == "" {
 		p.Currency = "rmb"
 	}
+	if p.Pattern == "" {
+		p.Pattern = "recurring_fixed"
+	}
+	if p.LiabilityMode == "" {
+		p.LiabilityMode = "repay"
+	}
 	p.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO cashflow_plans(user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		p.UserID, p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO cashflow_plans(user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		p.UserID, p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, p.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -2385,8 +2409,14 @@ func UpdateCashflowPlan(p *CashflowPlan) error {
 	if p.Currency == "" {
 		p.Currency = "rmb"
 	}
-	_, err := DB.Exec(`UPDATE cashflow_plans SET type=?,title=?,day_of_month=?,amount=?,currency=?,account_id=?,liability_id=?,note=?,end_date=? WHERE id=? AND user_id=?`,
-		p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.ID, p.UserID)
+	if p.Pattern == "" {
+		p.Pattern = "recurring_fixed"
+	}
+	if p.LiabilityMode == "" {
+		p.LiabilityMode = "repay"
+	}
+	_, err := DB.Exec(`UPDATE cashflow_plans SET type=?,title=?,day_of_month=?,amount=?,currency=?,account_id=?,liability_id=?,note=?,end_date=?,pattern=?,one_time_date=?,liability_mode=? WHERE id=? AND user_id=?`,
+		p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, p.ID, p.UserID)
 	return err
 }
 
@@ -2431,6 +2461,30 @@ func UpsertCashflowDone(d *CashflowDone) error {
 }
 
 func DeleteCashflowDone(uid, planID int64, ym string) error {
+	_, err := DB.Exec(`DELETE FROM cashflow_plan_done WHERE user_id=? AND plan_id=? AND ym=?`, uid, planID, ym)
+	return err
+}
+
+// HasCashRollback 判断某条现金流水是否已被回退（存在 ref_type='rollback' 且 ref_id=该流水ID 的反向流水）。
+// 用于回退接口的幂等保护，避免同一笔被重复回退导致余额反冲两次。
+func HasCashRollback(uid, flowID int64) (bool, error) {
+	var n int
+	err := DB.QueryRow(`SELECT COUNT(1) FROM cash_flow WHERE user_id=? AND ref_type='rollback' AND ref_id=?`, uid, flowID).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// DeleteCashflowDoneByFlowRef 按「完成记录引用了这条流水」删除（纯账户扣款/入账类计划：完成记录 ref_type='cash' 且 ref_id=流水ID）。
+func DeleteCashflowDoneByFlowRef(uid, flowID int64) error {
+	_, err := DB.Exec(`DELETE FROM cashflow_plan_done WHERE user_id=? AND ref_type='cash' AND ref_id=?`, uid, flowID)
+	return err
+}
+
+// DeleteCashflowDoneByPlanYM 按「计划+月份」删除完成记录。用于负债类计划：其完成记录的 ref_id 是负债ID
+// （无法用流水ID定位），只能退化为按 计划ID + 流水月份 定位。
+func DeleteCashflowDoneByPlanYM(uid, planID int64, ym string) error {
 	_, err := DB.Exec(`DELETE FROM cashflow_plan_done WHERE user_id=? AND plan_id=? AND ym=?`, uid, planID, ym)
 	return err
 }

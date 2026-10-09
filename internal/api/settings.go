@@ -77,6 +77,22 @@ func loadRiskProfiles(uid int64) ([]riskProfile, error) {
 	return ps, nil
 }
 
+// loadAssetTypeLabels 读取当前用户的资产类型标签定义；无记录时回退内置默认（不落库）。
+func loadAssetTypeLabels(uid int64) ([]string, error) {
+	payload, ok, err := db.GetSetting(settingAssetTypeLabels, uid)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return defaultAssetTypeLabels(), nil
+	}
+	var ls []string
+	if e := json.Unmarshal([]byte(payload), &ls); e != nil {
+		return defaultAssetTypeLabels(), nil
+	}
+	return ls, nil
+}
+
 // settingsGet 返回某类设置的 JSON payload；首次访问时落库默认值。
 func settingsGet(c *gin.Context) {
 	kind := c.Param("kind")
@@ -181,6 +197,15 @@ func assetRebalance(c *gin.Context) {
 
 	// 当前配置：按 asset_type 聚合持仓市值（折算 CNY）
 	// 资产类型支持多标签（逗号分隔）：市值均分到各标签参与再平衡，保证各类占比合计仍为 100%
+	// 持仓上已废弃（不在标签定义内）的标签归入「未分类」：标签删除后再平衡页不再出现旧类目，市值不丢
+	labelSet := map[string]bool{}
+	if ls, e := loadAssetTypeLabels(uid); e == nil {
+		for _, l := range ls {
+			if k := strings.TrimSpace(l); k != "" {
+				labelSet[k] = true
+			}
+		}
+	}
 	hs, _ := db.List(uid)
 	curMap := map[string]float64{}
 	var total float64
@@ -191,9 +216,14 @@ func assetRebalance(c *gin.Context) {
 		parts := strings.Split(h.AssetType, ",")
 		tags := make([]string, 0, len(parts))
 		for _, p := range parts {
-			if k := strings.TrimSpace(p); k != "" {
-				tags = append(tags, k)
+			k := strings.TrimSpace(p)
+			if k == "" {
+				continue
 			}
+			if len(labelSet) > 0 && !labelSet[k] {
+				k = "未分类"
+			}
+			tags = append(tags, k)
 		}
 		if len(tags) == 0 {
 			tags = append(tags, "未分类")

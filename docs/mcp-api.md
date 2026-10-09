@@ -133,7 +133,7 @@ Authorization: Bearer <token>
 | `price` | number | 否 | 加仓/减仓价格 |
 | `fee` | number | 否 | 手续费，默认 0 |
 | `per_share` | number | 否 | 分红每股金额 |
-| `amount` | number | 否 | 现金存取金额 / 理财申赎净额（正=转入，负=转出） |
+| `amount` | number | 否 | 现金存取 / 理财申赎金额（**取绝对值，方向由 `action` 决定**：`withdraw`/`redeem` 记流出、`deposit`/`subscribe` 记流入；传负数按绝对值处理） |
 | `note` | string | 否 | 附加说明，写入账本备注 |
 | `username` / `user_id` | string / int | 否 | 归属用户 |
 

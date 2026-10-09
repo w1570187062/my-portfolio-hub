@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -45,7 +46,7 @@ func (s *Server) registerDefaultTools() {
 				"price":    map[string]interface{}{"type": "number", "description": "持仓加仓/减仓价格（每股/每份）。"},
 				"fee":      map[string]interface{}{"type": "number", "description": "手续费/佣金，默认 0。"},
 				"per_share": map[string]interface{}{"type": "number", "description": "持仓分红每股金额（action=dividend 时使用）。"},
-				"amount":   map[string]interface{}{"type": "number", "description": "现金存取金额，或理财申赎的净流入/流出额（正=转入/存入，负=转出/取出）。"},
+				"amount":   map[string]interface{}{"type": "number", "description": "金额（取绝对值，方向完全由 action 决定）：现金存取额或理财申赎额。action=withdraw/redeem 记为流出、deposit/subscribe 记为流入；传入负数会按绝对值处理（如 withdraw + amount=-17 与 amount=17 等价，均记取出 17）。"},
 				"note":     map[string]interface{}{"type": "string", "description": "附加说明，会写入账本备注。"},
 				"username": map[string]interface{}{"type": "string", "description": "归属用户名：指定后流水记录到该用户账本，必须与系统用户名精确匹配；省略则使用默认（首个）用户。"},
 				"user_id":  map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一，必须与系统中的用户 id 匹配；省略则使用默认用户。"},
@@ -320,7 +321,7 @@ func recordTransaction(args map[string]interface{}) (string, error) {
 		return "", err
 	}
 	note := strings.TrimSpace(stringFrom(args, "note"))
-	mcpNote := "MCP·" + action
+	mcpNote := "MCP·" + actionName(action)
 	if note != "" {
 		mcpNote += "·" + note
 	}
@@ -383,7 +384,7 @@ func recordHoldingTX(uid int64, hit *entityHit, action string, args map[string]i
 		if per < 0 {
 			return "", fmt.Errorf("分红每股金额不能为负")
 		}
-		upd, total, err := db.AdjustDividend(h.ID, per, mcpNote)
+		upd, total, err := db.AdjustDividend(h.ID, per, 0, mcpNote)
 		if err != nil {
 			return "", err
 		}
@@ -408,6 +409,8 @@ func recordCashTX(uid int64, hit *entityHit, action string, args map[string]inte
 	if amount == 0 {
 		return "", fmt.Errorf("现金存取需要 amount（非零）")
 	}
+	// 方向只由 action 决定：amount 统一取绝对值，兼容客户端按「正/负」语义传入的负数。
+	amount = math.Abs(amount)
 	var delta float64
 	switch action {
 	case "deposit":
@@ -433,6 +436,8 @@ func recordWealthTX(uid int64, hit *entityHit, action string, args map[string]in
 	if amount == 0 {
 		return "", fmt.Errorf("理财申赎需要 amount（非零净流入/流出）")
 	}
+	// 方向只由 action 决定：amount 统一取绝对值，兼容客户端按「正/负」语义传入的负数。
+	amount = math.Abs(amount)
 	var cashflow float64
 	switch action {
 	case "subscribe":
