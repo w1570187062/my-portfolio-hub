@@ -1,11 +1,16 @@
 # Portfolio · 持仓侠 / My Folio Hub
 
-[![GitHub stars](https://img.shields.io/github/stars/w1570187062/my-portfolio-hub?style=flat&logo=github&color=yellow)](https://github.com/w1570187062/my-portfolio-hub/stargazers)
-[![GitHub last commit](https://img.shields.io/github/last-commit/w1570187062/my-portfolio-hub?style=flat&logo=github&color=2ea44f)](https://github.com/w1570187062/my-portfolio-hub/commits/main)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](LICENSE)
-[![Go 1.25](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
-[![Image 28.3 MB](https://img.shields.io/badge/image-28.3_MB-2496ED?style=flat&logo=docker&logoColor=white)](https://github.com/w1570187062/my-portfolio-hub/pkgs/container/my-portfolio-hub)
-[![MCP ready](https://img.shields.io/badge/MCP-ready-5A0FC8?style=flat)](docs/mcp-api.md)
+![GitHub stars](https://img.shields.io/github/stars/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=yellow)
+
+![GitHub last commit](https://img.shields.io/github/last-commit/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=2ea44f)
+
+![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)
+
+![Go 1.25](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat\&logo=go\&logoColor=white)
+
+![Image 28.3 MB](https://img.shields.io/badge/image-28.3_MB-2496ED?style=flat\&logo=docker\&logoColor=white)
+
+![MCP ready](https://img.shields.io/badge/MCP-ready-5A0FC8?style=flat)
 
 > **数据私有 · 极致轻量 · AI 原生（MCP）** —— 不是又一个行情看板，而是把 持仓 / 理财 / 现金 / 负债 / 消费 统一成一个**可被 AI 理解与操作**的自托管账本。
 
@@ -28,26 +33,30 @@
 
 ## 🌐 在线 Demo / Live Demo
 
-**<https://www.mrchenyifei.icu:19999>** · 预置了一套模拟数据（8 只持仓 / 多币种账户 / 理财 / 负债 / 近 30 日盈亏历史），行情定时自动刷新。
+**<https://www.mrchenyifei.icu:19999>** · 预置了一套模拟数据（8 只持仓 / 多币种账户 / 理财 / 负债 / 近 30 日盈亏历史），行情定时自动刷新。  
 A pre-seeded demo instance with mock data is live at the link above; quotes refresh automatically.
 
 ## ✨ 功能一览
 
 **持仓与行情**
+
 - 多市场持仓（A 股 / 美股 / 港股 / 场内场外基金）按来源分组统一管理。
 - 一键刷新行情，展示当日 / 总盈亏、盈亏率、持有天数与近 20 日走势。
 - 表格 / 卡片双视图，分组可折叠，支持加减仓、分红与操作笔记。
 
 **盈亏分析**
+
 - 盈亏日历按日热力着色，支持年 / 月跳转与单日持仓级明细。
 - 持仓平衡按设定风格给出资产再平衡建议。
 
 **技术分析**
+
 - 每只持仓提供 K 线 + MA / MACD / RSI / KDJ / BOLL 全指标。
 - 自动信号评级（看多 / 看空）与逐日回测胜率、期望收益，结果按日缓存。
 - 场外基金 / QDII 可关联场内 ETF 代码，直接复用该 ETF 的 K 线与信号。
 
 **资产**
+
 - 来源 / 理财 / 负债 / 现金 / 消费五类资产环形占比并可钻取明细。
 - 理财支持批量更新持仓、申赎流水与快照对比。
 - 现金账户支持多币种、每来源每币种默认子账户与账户间转账。
@@ -55,21 +64,25 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 - 负债支持 0 利率，编辑与历史完整可溯。
 
 **调仓计划**
+
 - 净值刷新时自动为基金 / 亏损股票计算补仓档位，并显示触发徽标。
 - 「标记已补 / 已减」一键落库，联动子账户余额并记流水。
 - 支持手动添加操作计划，与自动档位同屏管理。
 
 **MCP 服务**
+
 - 内建零依赖 MCP 服务端（stdio / HTTP(SSE)），AI 客户端可查询账本并按「MCP 标记」记录流水。
 - 提供 `record_transaction` 写入与 `list_markers` / `list_amount_modifiable` / `list_accounts` / `list_cash_accounts` / `list_holdings` / `list_wealth` 查询工具。
 - MCP 写入的流水在表格中打高亮 **MCP** 标签。
 
 **AI 总结**
+
 - 一键生成全资产 / 权益类总结，支持自定义提示词与多模型配置。
 - 可每日收盘后自动生成，并随净值推送发送。
 - 结果与历史按 Markdown 渲染（支持表格），渲染前做 XSS 转义。
 
 **其他**
+
 - 通知支持钉钉（加签）与邮件（TLS），可按策略推送当日盈亏明细。
 - 内置权益盈亏录入、美元盈亏、汇率与贷款计算器。
 - 多用户隔离（`X-User-Id`，上限 5 人、每类资产每用户 200 条），清空 / 删除需输入确认短语。
@@ -77,36 +90,36 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 ## 界面预览
 
-| 预览图 |
-| :---: |
-| **主页（亮色）**<br><img src="docs/screenshots/home-light.png" width="760" alt="主页（亮色）"> |
-| **资产**<br><img src="docs/screenshots/asset.png" width="760" alt="资产"> |
-| **盈亏日历**<br><img src="docs/screenshots/calendar-pnl.png" width="760" alt="盈亏日历"> |
-| **技术分析（QQQ）**<br><img src="docs/screenshots/analysis.png" width="760" alt="技术分析（QQQ）"> |
-| **更新理财持仓**<br><img src="docs/screenshots/wealth-update.png" width="760" alt="更新理财持仓"> |
-| **动态调仓计划**<br><img src="docs/screenshots/buy-plan.png" width="760" alt="动态调仓计划"> |
-| **编辑收支计划**<br><img src="docs/screenshots/cashflow-plan.png" width="760" alt="编辑收支计划"> |
-| **AI 中枢 · AI 总结**<br><img src="docs/screenshots/ai-modal.png" width="760" alt="AI 中枢 · AI 总结"> |
+|                                                预览图                                               |
+| :----------------------------------------------------------------------------------------------: |
+|       **主页（亮色）**<br /><img src="docs/screenshots/home-light.png" width="760" alt="主页（亮色）">       |
+|              **资产**<br /><img src="docs/screenshots/asset.png" width="760" alt="资产">             |
+|        **盈亏日历**<br /><img src="docs/screenshots/calendar-pnl.png" width="760" alt="盈亏日历">        |
+|     **技术分析（QQQ）**<br /><img src="docs/screenshots/analysis.png" width="760" alt="技术分析（QQQ）">     |
+|      **更新理财持仓**<br /><img src="docs/screenshots/wealth-update.png" width="760" alt="更新理财持仓">     |
+|        **动态调仓计划**<br /><img src="docs/screenshots/buy-plan.png" width="760" alt="动态调仓计划">        |
+|      **编辑收支计划**<br /><img src="docs/screenshots/cashflow-plan.png" width="760" alt="编辑收支计划">     |
+| **AI 中枢 · AI 总结**<br /><img src="docs/screenshots/ai-modal.png" width="760" alt="AI 中枢 · AI 总结"> |
 
 ## 技术栈
 
-| 层 | 选型 |
-|---|---|
-| 后端 | Go 1.25 + Gin + SQLite（`modernc.org/sqlite`，**纯 Go 无 CGO**） |
-| 前端 | 原生 HTML / CSS / JS，经 esbuild 构建到 `web/dist` 后由 `//go:embed web/dist` 内嵌二进制，无需单独部署静态文件 |
-| 行情 | 腾讯 `qt.gtimg.cn`、新浪外汇、公开基金 API |
-| AI 客户端 | 内建 MCP 服务端（`portfolio mcp`，stdio / HTTP(SSE)，默认端口 `9988`） |
-| 部署 | Docker / Docker Compose（主端口 `9989`） |
+| 层      | 选型                                                                                    |
+| ------ | ------------------------------------------------------------------------------------- |
+| 后端     | Go 1.25 + Gin + SQLite（`modernc.org/sqlite`，**纯 Go 无 CGO**）                           |
+| 前端     | 原生 HTML / CSS / JS，经 esbuild 构建到 `web/dist` 后由 `//go:embed web/dist` 内嵌二进制，无需单独部署静态文件 |
+| 行情     | 腾讯 `qt.gtimg.cn`、新浪外汇、公开基金 API                                                        |
+| AI 客户端 | 内建 MCP 服务端（`portfolio mcp`，stdio / HTTP(SSE)，默认端口 `9988`）                             |
+| 部署     | Docker / Docker Compose（主端口 `9989`）                                                   |
 
 ### 实测资源占用
 
 线上实例实测（`docker stats`）：
 
-| 指标 | 实测值 |
-|---|---|
-| 镜像体积 | **28.3 MiB**（Alpine + 静态二进制，无运行时依赖） |
-| 常驻内存 | 空闲 **~10 MiB**，稳态 **~16 MiB** |
-| CPU | 空闲约 **0%**；`/api/home` 聚合请求 ≈ **3.4 ms / 次** |
+| 指标   | 实测值                                          |
+| ---- | -------------------------------------------- |
+| 镜像体积 | **28.3 MiB**（Alpine + 静态二进制，无运行时依赖）          |
+| 常驻内存 | 空闲 **~10 MiB**，稳态 **~16 MiB**                |
+| CPU  | 空闲约 **0%**；`/api/home` 聚合请求 ≈ **3.4 ms / 次** |
 
 > 常驻内存十几 MB、无请求时 CPU 基本为 0，放在 NUC / 软路由级小主机上也能长期零负担运行。
 
@@ -169,6 +182,7 @@ go build -o portfolio .      # 产物 ./portfolio
 数据落在 `./data/portfolio.db`（compose 已挂 volume）。停止：`docker compose down`（保留数据）；`docker compose down -v` 连数据卷一并删除，慎用。
 
 > **提示 / 可能要踩的坑**
+>
 > - 首次启动会自动初始化 SQLite、补齐 `users` 表并预热汇率缓存，随后后台定时刷新行情 —— 需要能访问 腾讯行情 / 新浪外汇 / 公开基金 API 的网络。
 > - **MCP 默认关闭**：不设 `MCP_ENABLED=true` 时不会监听 `9988`、无任何额外开销；开启后为 HTTP(SSE) 传输。
 > - 前端 `/app.js`、`/style.css` 通过 `?v=<VERSION>` 缓存戳加载，`VERSION` 一变旧缓存自动失效，升级后无需让用户手动清缓存。
@@ -176,23 +190,23 @@ go build -o portfolio .      # 产物 ./portfolio
 
 ## 定时任务
 
-| 时间（北京时间） | 任务 |
-|---|---|
-| **07:00** | 美股收盘后（T+1）定时快照 |
-| **15:15** | A 股收盘后定时快照 |
-| **21:00** | 基金净值公布后定时快照 |
+| 时间（北京时间）  | 任务                                       |
+| --------- | ---------------------------------------- |
+| **07:00** | 美股收盘后（T+1）定时快照                           |
+| **15:15** | A 股收盘后定时快照                               |
+| **21:00** | 基金净值公布后定时快照                              |
 | **00:00** | 上一交易日盈亏落库、归零 `prev_close`，使新一天当日盈亏从 0 起算 |
-| **21:30** | 若开启 AI「自动总结」，生成收盘总结并（可选）推送通知 |
+| **21:30** | 若开启 AI「自动总结」，生成收盘总结并（可选）推送通知             |
 
 均跳过周末与中国法定节假日（`cnHolidays`）。
 
 ## 通知策略
 
-| 策略 | 触发 |
-|---|---|
+| 策略       | 触发             |
+| -------- | -------------- |
 | 每次更新（默认） | 任何手动 / 自动刷新都推送 |
-| 仅收盘后 | 仅定时快照推送 |
-| 仅补仓信号 | 仅在有补仓档位触发时推送 |
+| 仅收盘后     | 仅定时快照推送        |
+| 仅补仓信号    | 仅在有补仓档位触发时推送   |
 
 ## 贡献与支持
 

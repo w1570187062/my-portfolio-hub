@@ -1044,26 +1044,6 @@ h2 > svg,
 }
 .cal-nav-wrap[hidden] { display: none; }  /* display:inline-flex 会压过 hidden 的 UA 规则，须显式声明 */
 
-/* 盈亏走势弹框翻页导航 */
-.trend-nav {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-2);
-}
-.trend-nav .trend-range {
-  font-size: var(--fs-md);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  min-width: 200px;
-  text-align: center;
-}
-.trend-nav .cal-nav-btn:disabled {
-  opacity: .35;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
 /* ===== 表格行内操作列 =====
    按钮本体一律走「行内操作按钮族」(.row-act，纯图标)；这里只负责间距与对齐。
    .act-refresh/.act-edit/.act-hist/.act-del 等文字按钮配色规则已随图标化删除。 */
@@ -1231,27 +1211,7 @@ h2 > svg,
   color: var(--text-muted);
   font-size: var(--fs-md);
 }
-.pg-info { color: var(--text-muted); font-size: var(--fs-md); white-space: nowrap; }
-.pg-btn, .pg-num {
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  border-radius: var(--btn-radius);
-  padding: var(--sp-1) var(--sp-3);
-  font-size: var(--fs-base);
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-  font-family: inherit;
-  transition: var(--btn-transition);
-}
-.pg-num { padding: var(--sp-1) 0; width: 36px; text-align: center; }
-.pg-btn:hover:not(:disabled), .pg-num:hover { border-color: var(--btn-primary-hover); color: var(--btn-text-hover); }
 .pg-num.active { background: var(--btn-primary); color: var(--on-primary); border-color: var(--btn-primary); }
-.pg-ellipsis { color: var(--text-faint); padding: 0 2px; user-select: none; }
-.pg-size { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--text-muted); font-size: var(--fs-md); white-space: nowrap; margin-left: var(--sp-1); }
-.pg-size select { border: 1px solid var(--border); background: var(--bg-card); color: var(--text); border-radius: var(--btn-radius); padding: var(--sp-1) var(--sp-2); font-size: var(--fs-md); font-family: inherit; cursor: pointer; transition: var(--btn-transition); }
-.pg-size select:hover { border-color: var(--btn-primary-hover); }
-.pg-size select option { background: var(--bg-card); color: var(--text); }
 
 /* ===== 表格删除按钮 ===== */
 .tool-table .trow .trow-del {
@@ -2090,8 +2050,8 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .filter-row.scroll-row::-webkit-scrollbar { display: none; }
 /* 首页理财视图（2026-10-09 自资产页迁入）：左右间距对齐 list-bar/tbl-meta-bar（28px）；表格超宽时容器内横向滚动 */
 .home-wealth-box { padding: 0 28px var(--sp-2); margin: 0 0 var(--sp-2); overflow-x: auto; }
-/* 首页跟随持仓的理财区块：与上方持仓区用分隔线 + 顶部留白区隔，避免混在一起 */
-#homeWealthInline { margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--border); }
+/* 首页跟随持仓的理财区块：与上方持仓区用分隔线区隔（上 12px / 下 12px，原 20+16=36px 太空） */
+#homeWealthInline { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
 @media (max-width: 639px) {
   .filter-row.cat-row { flex-wrap: wrap; }
   .filter-row.cat-row .mkt-inline { margin-left: 0; padding-left: 0; }
@@ -2149,7 +2109,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .cal-metric-toggle { margin-left: auto; background: var(--bg-input); border: 1px solid var(--border); color: var(--text); font-size: var(--fs-md); padding: var(--sp-1) var(--sp-3); border-radius: var(--r-xs); cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, color .15s; }
 .cal-metric-toggle:hover { background: var(--bg-hover); border-color: var(--primary); }
 .lg { display: inline-block; width: 12px; height: 12px; border-radius: var(--r-xs); }
-.lg-text { margin: 0 2px; }
 .lg-none { background: var(--cal-none); }
 .lg-zero { background: var(--cal-zero); }
 .lg-up1 { background: var(--cal-up-1); } .lg-up2 { background: var(--cal-up-2); } .lg-up3 { background: var(--cal-up-3); } .lg-up4 { background: var(--cal-up-4); }
@@ -2273,25 +2232,11 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   .cal-cell.has-amt:hover .cal-emoji { opacity: 0; max-height: 0; }
 }
 
-/* 盈亏走势：柱子 hover tooltip */
+/* 盈亏曲线：柱子 hover 热区（持仓历史弹框共用） */
 #chartBody svg .trend-hot { pointer-events: all; cursor: pointer; }
 #chartBody svg :not(.trend-hot) { pointer-events: none; }
 #histChartBody svg .trend-hot { pointer-events: all; cursor: pointer; }
 #histChartBody svg :not(.trend-hot) { pointer-events: none; }
-.trend-tip {
-  position: fixed; z-index: 9999; pointer-events: none;
-  display: none; max-width: 240px;
-  background: rgba(20, 24, 32, .96); color: #eef0f3;
-  border: 1px solid rgba(255, 255, 255, .14); border-radius: var(--r-xs);
-  padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); line-height: 1.55;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
-}
-.trend-tip.show { display: block; }
-.trend-tip .t-date { color: #bcc0c7; margin-bottom: var(--sp-1); font-size: var(--fs-xs); }
-.trend-tip .t-row { display: flex; justify-content: space-between; gap: var(--sp-4); }
-.trend-tip .t-up { color: #ff7875; }
-.trend-tip .t-down { color: #95de64; }
-.trend-tip .t-muted { color: #8a8f99; }
 .cal-val {
   font-size: var(--fs-lg);
   font-weight: 600;
@@ -2549,9 +2494,9 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .asset-sumbar .asb-val.debt { color: rgb(var(--cat-debt)); }
 .asset-sumbar .asb-sep { width: 1px; align-self: stretch; background: var(--border); }
 /* 数字组容器：组内数字横向排列；shrink:0 不压缩——宽度不够时交给 .asset-sumbar 的横向滚动 */
-.asset-sumbar .asb-nums { display: flex; align-items: center; gap: var(--sp-4); flex: 0 0 auto; }
-/* 数字组与构成区之间的组间竖线：margin-left:auto 把右侧构成区推到条最右端 */
-.asset-sumbar > .asb-sep { margin-left: auto; }
+.asset-sumbar .asb-nums { display: flex; align-items: center; gap: var(--sp-4); flex: 1 1 0; min-width: 0; }
+/* 数字组与构成区之间的组间竖线：两侧 flex:1 1 0 平分宽度（2026-10-09 由「左自适应+右推满」改为对半分） */
+.asset-sumbar > .asb-sep { flex: 0 0 auto; }
 
 /* 摘要卡内部：资产构成横向堆叠条（权益/理财/现金 + 境内/境外细条）+ 图例。
    桌面态占数字组右侧剩余空间（grow 保持推右；shrink:0 + min-width:240px——窗口再窄
@@ -2559,7 +2504,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
    细横线分隔「数字区 / 构成区」两段（见文末媒体查询）；形态与首页「资产构成」圆环弹框
    区分（横条无圆环、只概览不下钻）。 */
 .asb-compwrap {
-  flex: 1 0 auto;
+  flex: 1 1 0;
   min-width: 240px;
   display: flex;
   flex-direction: column;
@@ -3135,7 +3080,6 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .md-table th:last-child,
 .md-table td:last-child { text-align: right; }
 .md-table tr:last-child td { border-bottom: none; }
-.res-note { color: var(--text-faint); font-size: var(--fs-sm); }
 .tool-result {
   background: var(--bg-glass);
   border: 1px solid var(--border);
@@ -3215,8 +3159,6 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .analysis-body { padding: var(--sp-2) 0; max-height: 70vh; overflow-y: auto; }
 .analysis-loading { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); padding: 40px; color: var(--text-muted); font-size: var(--fs-base); }
 .analysis-err { text-align: center; padding: 28px; color: #f44336; font-size: var(--fs-base); }
-/* 漏斗加载动画：转一圈（0.8s）后停一下（0.6s），循环，避免误以为界面卡死 */
-.ana-funnel { display: inline-block; animation: ana-funnel-spin 1.4s ease-in-out infinite; transform-origin: 50% 50%; }
 @keyframes ana-funnel-spin {
   0%   { transform: rotate(0deg); }
   57%  { transform: rotate(360deg); } /* 0.8s 转完一圈 */
@@ -3799,21 +3741,6 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 /* ===== 推送策略 / 开关行（P1-5 / P1-6） ===== */
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
 
-/* ===== 工具栏首次引导（P2-8） ===== */
-.tool-tip-hint {
-  position: absolute;
-  z-index: 9000;
-  background: var(--bg-card-solid);
-  color: var(--text);
-  border: 1px solid rgba(var(--tint),.5);
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--r-xs);
-  font-size: var(--fs-md);
-  box-shadow: 0 6px 20px rgba(0,0,0,.4);
-  pointer-events: none;
-  max-width: 220px;
-}
-
 /* ===== 盈亏日历月份跳转（P2-9） ===== */
 .cal-title { cursor: pointer; user-select: none; padding: 2px var(--sp-2); border-radius: var(--r-xs); }
 .cal-title:hover { background: var(--bg-hover); }
@@ -3849,9 +3776,6 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 
 /* 可达性：键盘焦点 2px 主色描边 */
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--r-xs); }
-
-/* 二级页统一页头：标题 + 操作区（无返回箭头） */
-.page-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) 0 var(--sp-2); }
 .page-head__title { font-size: var(--fs-lg); font-weight: 700; margin: 0; }
 .page-head__actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
 
@@ -4350,7 +4274,7 @@ textarea::placeholder {
 #cards { min-height: 360px; }
 .table-wrap { min-height: 360px; }
 /* 分析/图表弹框正文预留高度，避免异步内容注入时跳动 */
-.analysis-loading, #analysisBody, .ana-body, .ana-chart { min-height: 180px; }
+.analysis-loading, #analysisBody { min-height: 180px; }
 
 /* ===== 设置 / AI / 工具 页（仿 panwatch 分组卡片：满宽、左右平分、饱满不紧凑，与持仓/资产页对齐） ===== */
 .settings-page {
@@ -4559,6 +4483,11 @@ textarea::placeholder {
   .pano-open #aiPanelSettings { grid-template-columns: 1fr; gap: var(--sp-3); }
 }
 
+/* AI 总结面板占满浏览器可视高度（扣除顶部 header/标题/描述/标签与页面边距），消除大屏下方留白；
+   面板自身 flex 纵向铺开，结果框吃掉剩余空间，输入区保持自然高度 */
+#aiPanelSummary { display: flex; flex-direction: column; height: calc(100vh - 260px); }
+#hubSummaryPanel.ai-compose-panel { flex: 1 1 auto; min-height: 0; }
+
 /* ===== AI 总结：选好即点（三个下拉 → 三行平铺胶囊，零展开成本） =====
    原先是「类型/模板/模型」三个下拉 + 底部按钮：每次生成都要展开-查找-确认，
    而其中模板与模型极少变动。改为「一维一行、全部可见」的单选胶囊后，
@@ -4573,8 +4502,8 @@ textarea::placeholder {
   border-radius: var(--r-lg);
   background: var(--bg-card);
   padding: var(--sp-4) var(--sp-5);
-  min-height: 220px;
-  max-height: 52vh;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
 }
 .ai-result-empty { color: var(--text-muted); font-size: var(--fs-md); }
@@ -4585,7 +4514,7 @@ textarea::placeholder {
 }
 
 /* 下方：输入区 */
-.ai-composer { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ai-composer { display: flex; flex-direction: column; gap: var(--sp-3); flex: 0 0 auto; }
 /* 下拉沿用站点既有 select 外观（描边 + 卡片底 + 圆角 + 内距），与 .pg-size select 同源；宽度随文本自适应 */
 .ai-select {
   border: 1px solid var(--border);
@@ -4647,6 +4576,11 @@ textarea::placeholder {
   .ai-composer-selects { flex-wrap: wrap; gap: var(--sp-3); }
   .ai-send-btn { width: 100%; }
   .ai-select, #aiTplPickSel, #aiModelPickSel { min-width: 0; width: auto; }
+}
+/* 窄屏恢复自然高度，避免强制占满压扁输入区 */
+@media (max-width: 640px) {
+  #aiPanelSummary { height: auto; min-height: 0; }
+  .ai-result-box { min-height: 200px; max-height: 52vh; }
 }
 
 /* ===== AI 设置 → MCP 参数 子面板 ===== */
@@ -4999,44 +4933,29 @@ textarea::placeholder {
 .u-col { display: flex; flex-direction: column; }
 .u-wrap { flex-wrap: wrap; }
 .u-center { align-items: center; justify-content: center; }
-.u-between { justify-content: space-between; }
-/* —— 间距（映射 --sp-*）—— */
-.u-gap-1 { gap: var(--sp-1); }
 .u-gap-2 { gap: var(--sp-2); }
 .u-gap-3 { gap: var(--sp-3); }
-.u-gap-4 { gap: var(--sp-4); }
 .u-gap-6 { gap: var(--sp-6); }
 .u-mt-1 { margin-top: var(--sp-1); }
 .u-mt-2 { margin-top: var(--sp-2); }
-.u-mt-3 { margin-top: var(--sp-3); }
-.u-mb-1 { margin-bottom: var(--sp-1); }
 .u-mb-2 { margin-bottom: var(--sp-2); }
 .u-mb-3 { margin-bottom: var(--sp-3); }
 .u-mx-auto { margin-left: auto; margin-right: auto; }
-.u-py-1 { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
 .u-py-2 { padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
-/* —— 尺寸 / 弹性 —— */
-.u-full { width: 100%; }
 .u-grow { flex: 1 1 auto; min-width: 0; }
 .u-shrink-0 { flex: 0 0 auto; }
 /* —— 文字 —— */
 .u-muted { color: var(--text-muted); }
-.u-faint { color: var(--text-faint); }
 .u-danger { color: var(--danger); }
 .u-bold { font-weight: 600; }
-.u-xs { font-size: var(--fs-xs); }
 .u-sm { font-size: var(--fs-sm); }
 .u-md { font-size: var(--fs-md); }
-.u-base { font-size: var(--fs-base); }
-.u-num { font-variant-numeric: tabular-nums; }
-.u-mono { font-family: var(--font-mono); }
-.u-nowrap { white-space: nowrap; }
 .u-break { overflow-wrap: anywhere; }
+.u-num { font-variant-numeric: tabular-nums; }
 .u-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .u-lh { line-height: 1.6; }
 /* —— 其他 —— */
 .u-block { display: block; }
-.u-pointer { cursor: pointer; }
 .u-va-icon { vertical-align: -2px; }
 .u-va-mid { vertical-align: middle; }
 /* 图例/图表的固定尺寸单元（原为内联 width，46px 归到 4px 网格的 48px） */
@@ -5064,13 +4983,10 @@ textarea::placeholder {
 .cw-18 { width: 18%; } .cw-20 { width: 20%; } .cw-22 { width: 22%; } .cw-24 { width: 24%; }
 .cw-28 { width: 28%; } .cw-32 { width: 32%; } .cw-34 { width: 34%; }
 
-/* 表格单元格对齐（Markdown 表格渲染用，取代 style="text-align:…"） */
-.ta-left { text-align: left; }
-.ta-center { text-align: center; }
 .ta-right { text-align: right; }
 
 /* ============================================================================
-   v3 · 动态值的唯一合法通道：内联只允许写自定义属性（--x: v），具体声明留在本文件
+    v3 · 动态值的唯一合法通道：内联只允许写自定义属性（--x: v），具体声明留在本文件
    ----------------------------------------------------------------------------
    这样宽度/颜色等仍然可被媒体查询与主题覆盖 —— 写内联具体声明做不到这点。
    项目中已有的先例：`--accent-rgb`（app.js 的 --accent-rgb:${...}）。
@@ -5095,19 +5011,12 @@ textarea::placeholder {
 /* 涨跌概率条 */
 .prob-up { width: var(--w); }
 .prob-down { width: var(--w); }
-/* 饼图（图表弹框内的下钻视图） */
-.pie-svg-wrap { display: flex; gap: var(--sp-6); align-items: center; flex-wrap: wrap; justify-content: center; }
-.pie-svg-inner { display: flex; gap: var(--sp-6); align-items: center; flex-wrap: wrap; justify-content: center; }
-.pie-legend-col { display: flex; flex-direction: column; gap: var(--sp-2); }
 .pie-leg-item { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); }
 .pie-leg-item.on-seg { cursor: pointer; }
 .pie-leg-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--bg); }
-.pie-leg-val { font-weight: 600; }
 .pie-seg { fill: var(--st); stroke: var(--bg-card-solid); stroke-width: 2; }
 .pie-drill-wrap { max-width: 440px; margin: var(--sp-3) auto 0; }
 .pie-drill-row { display: flex; justify-content: space-between; gap: var(--sp-4); padding: var(--sp-2) var(--sp-1); border-bottom: 1px solid var(--row-divider); }
-.pie-drill-k { color: var(--text-muted); }
-.pie-drill-v { font-weight: 600; }
 /* PE / PB 百分位图 */
 .pepb-legend i { background: var(--bg); }
 .pepb-poly { stroke: var(--st); fill: none; }
@@ -5153,5 +5062,4 @@ textarea::placeholder {
 .grad-down-bottom { stop-color: var(--down); stop-opacity: .96; }
 .grad-area-top { stop-color: var(--cum-line); stop-opacity: .20; }
 .grad-area-bottom { stop-color: var(--cum-line); stop-opacity: 0; }
-
 

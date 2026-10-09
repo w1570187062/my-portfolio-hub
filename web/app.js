@@ -189,8 +189,6 @@ function clampDecimals(el, max) {
 
 let allHoldings = [];
 let sparkCache = {}; // symbol -> 近20个交易日收盘价序列（时间正序），供表格迷你走势线使用
-let curPage = 1;
-let pageSize = 10;
 let catFilter = new Set(); // selected categories; empty = all
 let mktFilter = new Set(); // selected markets; empty = all
 let sourceFilter = new Set(); // selected source ids (点击表头「来源」筛选); empty = all
@@ -307,8 +305,9 @@ let sortDir = 'desc';      // 'asc' | 'desc'
 
 // Convert a holding's CNY-equivalent value (USD/HKD holdings scaled by exchange rate).
 function toRmb(h, v) {
-  if (h.currency === 'USD') return (v || 0) * usdRate;
-  if (h.currency === 'HKD') return (v || 0) * hkdRate;
+  // toUpperCase 容错：历史数据 'usd'/'USD' 混写，严格比较会把小写美元当人民币（漏乘汇率）
+  if ((h.currency || '').toUpperCase() === 'USD') return (v || 0) * usdRate;
+  if ((h.currency || '').toUpperCase() === 'HKD') return (v || 0) * hkdRate;
   return v || 0;
 }
 
@@ -344,7 +343,6 @@ function setSort(key) {
     sortDir = 'desc';
   }
   updateSortIndicators();
-  curPage = 1;
   renderFiltered();
 }
 
@@ -412,10 +410,10 @@ function renderFiltered() {
     if (srcBox) srcBox.hidden = false;
     renderHoldingsBySource(sorted);
   }
-  // 非「理财」筛选（全部 / 股票 / 基金）时，在持仓下方跟随展示理财区块（理财(N) + 账户分组二级表格）
+  // 仅「全部」（无类目筛选）时在持仓下方跟随展示理财区块；选「股票/基金」时用户关注点在持仓，理财区收起
   if (wInline) {
     const wcount = ((assetData.wealth || {}).products || []).length;
-    if (wcount > 0) { wInline.hidden = false; renderWealthInline(wInline); }
+    if (catFilter.size === 0 && wcount > 0) { wInline.hidden = false; renderWealthInline(wInline); }
     else { wInline.hidden = true; wInline.innerHTML = ''; }
   }
   if (empty) {
@@ -513,7 +511,7 @@ function renderHoldingsBySource(hs) {
   if (!hs.length) { box.innerHTML = ''; return; }
   HOLDINGS_BY_ID = {};
   for (const h of hs) HOLDINGS_BY_ID[h.id] = h;
-  const toCny = (v, cur) => cur === 'USD' ? v * usdRate : cur === 'HKD' ? v * hkdRate : v;
+  const toCny = (v, cur) => (cur || '').toUpperCase() === 'USD' ? v * usdRate : (cur || '').toUpperCase() === 'HKD' ? v * hkdRate : v;
   const groups = new Map();
   for (const h of hs) {
     const sid = h.source_id || 0;
@@ -662,10 +660,12 @@ function renderSummary(hs) {
   let cnyMV = 0, cnyCV = 0, cnyPnl = 0, usdMV = 0, usdCV = 0, usdPnl = 0, hkdMV = 0, hkdCV = 0, hkdPnl = 0, totalCNY = 0, totalCostCNY = 0;
   hs.forEach((h) => {
     const mv = h.market_value || 0, cv = h.cost_value || 0, pnl = h.pnl || 0;
-    if (h.currency === 'USD') {
+    // toUpperCase 容错：币种大小写混写时漏乘汇率（历史 bug：'usd' 走进 CNY 分支）
+    const cur = (h.currency || '').toUpperCase();
+    if (cur === 'USD') {
       usdMV += mv; usdCV += cv; usdPnl += pnl;
       totalCNY += mv * usdRate; totalCostCNY += cv * usdRate;
-    } else if (h.currency === 'HKD') {
+    } else if (cur === 'HKD') {
       hkdMV += mv; hkdCV += cv; hkdPnl += pnl;
       totalCNY += mv * hkdRate; totalCostCNY += cv * hkdRate;
     } else {
@@ -675,7 +675,6 @@ function renderSummary(hs) {
   });
   const totalPnl = totalCNY - totalCostCNY;
   const totalPct = totalCostCNY > 0 ? totalPnl / totalCostCNY * 100 : 0;
-  const rateTxt = (usdRate ? ('1 USD ≈ ' + usdRate.toFixed(4) + ' CNY') : 'USD汇率失败') + (hkdRate ? (' ｜ 1 HKD ≈ ' + hkdRate.toFixed(4) + ' CNY') : '');
   const pCls = cls(totalPnl);
   const today = new Date();
   const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
@@ -1022,7 +1021,6 @@ function onMktChange() {
 })();
 
 function applyFilter() {
-  curPage = 1;
   renderFiltered();
 }
 
@@ -1054,81 +1052,6 @@ function sparkCell(sym, pnl) {
   if (!arr || arr.length < 2) return '<span class="spark-empty">—</span>';
   const color = arr[arr.length - 1] > arr[0] ? 'var(--up)' : 'var(--down)';
   return sparkline(arr, { w: 110, h: 26, stroke: color, fill: color });
-}
-
-function renderRows(hs) {
-  const total = hs.length;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  if (curPage > totalPages) curPage = totalPages;
-  if (curPage < 1) curPage = 1;
-  const start = (curPage - 1) * pageSize;
-  const pageItems = hs.slice(start, start + pageSize);
-  const tb = $('#rows');
-  tb.innerHTML = '';
-  pageItems.forEach((h, i) => {
-    const tr = document.createElement('tr');
-    const isFail = !!failedSymbols[h.symbol];
-    if (isFail) tr.className = 'row-failed';
-    tr.innerHTML = `
-   <td class="num idx">${start + i + 1}${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">' + actIcon('warn') + '</span>' : ''}</td>
-   <td class="name-clickable ${h.day_pnl_pct > 0 ? 'name-up' : (h.day_pnl_pct < 0 ? 'name-down' : '')}" title="${esc(h.name)}">${holdTypeTag(h)}${h.day_pnl_pct > 0 ? '<span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? '<span class="name-arrow-down">▼</span>' : '')}<span class="name-text">${esc(h.name)}</span></td><td>${h.symbol}</td><td>${esc(h.source_name || '')}</td><td class="hide-col">${cat(h.category)}</td><td class="hide-col">${h.market}</td><td class="hide-col">${h.currency}</td>
-     <td class="num">${fmt(h.quantity)}</td>
-     <td class="num">${fmtNav(h.cost_price, h.category)}</td>
-     <td class="num">${fmtNav(h.current_price, h.category)}</td>
-     <td class="num spark-td">${sparkCell(h.symbol, h.pnl)}</td>
-     <td class="num"${mvOrigTitle(h)}>${fmt(toRmb(h, h.market_value))}</td>
-     <td class="num ${cls(h.day_pnl)}">${fmtPnl(toRmb(h, h.day_pnl))}</td>
-     <td class="num" title="当日盈亏率">${pct(h.day_pnl_pct)}</td>
-     <td class="num ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
-     <td class="num ${cls(h.pnl_pct)}">${pct(h.pnl_pct)}</td>
-     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
-     <td class="hide-col u-sm u-muted u-ellipsis td-note" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
-     <td class="row-actions">${actBtn('adjust', `data-adjust="${h.id}"`, '加减仓')}${actBtn('edit', `data-edit="${h.id}"`, '编辑')}${actBtn('hist', `data-hist="${h.id}"`, '历史')}${actBtn('del', `data-del="${h.id}"`, '删除', { danger: true })}</td>`;
-    tb.appendChild(tr);
-  });
-  tb.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { editHolding(b.dataset.edit); }));
-  tb.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => { delHolding(b.dataset.del); }));
-  tb.querySelectorAll('[data-adjust]').forEach((b) => (b.onclick = () => { openAdjust(b.dataset.adjust); }));
-  tb.querySelectorAll('[data-hist]').forEach((b) => (b.onclick = () => { openHoldingHistory(b.dataset.hist); }));
-  tb.querySelectorAll('[data-fail]').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); }));
-  renderPager(total, totalPages);
-}
-
-// 分页栏：每页 pageSize 条，底部分页控件，样式与现有 slider/tab 一致。
-function renderPager(total, totalPages) {
-  const el = $('#pager');
-  if (!el) return;
-  if (totalPages <= 1) { el.innerHTML = ''; return; } // 单页不显示分页栏
-  // 页码窗口：始终含首/尾/当前±1，超出用「…」省略
-  const raw = new Set([1, totalPages, curPage, curPage - 1, curPage + 1].filter((p) => p >= 1 && p <= totalPages));
-  const sorted = [...raw].sort((a, b) => a - b);
-  let nums = [];
-  let prev = 0;
-  sorted.forEach((p) => {
-    if (p - prev > 1) nums.push('…');
-    nums.push(p);
-    prev = p;
-  });
-  let html = `<span class="pg-info">共 ${total} 条</span>`;
-  html += `<button class="btn pg-btn pg-prev" data-pg="${curPage - 1}" ${curPage <= 1 ? 'disabled' : ''}>‹ 上一页</button>`;
-  nums.forEach((n) => {
-    if (n === '…') html += `<span class="pg-ellipsis">…</span>`;
-    else html += `<button class="btn pg-num ${n === curPage ? 'active' : ''}" data-pg="${n}">${n}</button>`;
-  });
-  html += `<button class="btn pg-btn pg-next" data-pg="${curPage + 1}" ${curPage >= totalPages ? 'disabled' : ''}>下一页 ›</button>`;
-  html += `<span class="pg-info">第 ${curPage} / ${totalPages} 页</span>`;
-  const sizes = [5, 10, 20];
-  const sizeOpts = sizes.map((s) => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}</option>`).join('');
-  html += `<label class="pg-size">每页<select id="pgSize">${sizeOpts}</select>条</label>`;
-  el.innerHTML = html;
-  el.querySelectorAll('[data-pg]').forEach((b) => {
-    b.onclick = () => {
-      const p = parseInt(b.dataset.pg, 10);
-      if (p >= 1 && p <= totalPages) { curPage = p; renderFiltered(); }
-    };
-  });
-  const sz = $('#pgSize');
-  if (sz) sz.onchange = () => { pageSize = parseInt(sz.value, 10) || 10; curPage = 1; renderFiltered(); };
 }
 
 // 单只持仓手动刷新逻辑已移除：行情改由定时快照（refreshAllQuotes）自动更新。
@@ -1579,7 +1502,6 @@ document.querySelectorAll('#adjustModal .adj-tab').forEach((b) => {
   });
 });
 
-
 let pendingDelId = null;
 let pendingSnapDelete = null;
 let pendingExport = false;
@@ -1824,7 +1746,7 @@ $('#emptyAddBtn').onclick = () => openModal(null);
 (function wireFilter() {
   const fi = document.getElementById('filterInput');
   if (!fi) return;
-  const apply = () => { textFilter = fi.value.trim().toLowerCase(); curPage = 1; renderFiltered(); };
+  const apply = () => { textFilter = fi.value.trim().toLowerCase(); renderFiltered(); };
   fi.addEventListener('input', apply);
   fi.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
 })();
@@ -1850,7 +1772,6 @@ function renderSourceFilterList() {
 function applySourceFilter() {
   sourceFilter = new Set([...document.querySelectorAll('#sourceFilterList input:checked')].map((i) => i.value));
   updateSourceBadge();
-  curPage = 1;
   renderFiltered();
 }
 function updateSourceBadge() {
@@ -1966,9 +1887,6 @@ $('#form').onsubmit = async (e) => {
 
 function openChart() {
   $('#chartModal').hidden = false;
-}
-function closeChart() {
-  $('#chartModal').hidden = true;
 }
 
 // Asset composition pie: 现金 / 股票 / 基金 / 理财 across the WHOLE portfolio,
@@ -2180,40 +2098,6 @@ function showPieDrill(key) {
     onBack: () => renderPie({ target: pieTargetSel }),
     center: key,
   });
-}
-
-// Second-level click: show a single sub-item's full details (same modal layout as level-1).
-function showItemDetail(key, label) {
-  const d = pieData || assetData || {};
-  const sub = getSubSegs(d, key);
-  const total = sub.reduce((a, s) => a + s.value, 0);
-  const it = sub.find((x) => x.label === label);
-  if (!it) { toast('未找到该明细', 'err'); return; }
-  const raw = it._item || {};
-  const cat = key === '股票' ? 'stock' : key === '基金' ? 'fund' : key;
-  $('#chartTitle').textContent = `资产构成 › ${key} › ${esc(label)}`;
-  const rows = [];
-  if (cat === 'stock' || cat === 'fund') {
-    const h = raw;
-    rows.push(['分类', key]);
-    if (h.symbol) rows.push(['代码', h.symbol]);
-    rows.push(['占本类', (it.value / total * 100).toFixed(1) + '%']);
-    rows.push(['市值 (CNY)', '¥' + fmt(toRmb(h, h.market_value || 0))]);
-    rows.push(['成本 (CNY)', '¥' + fmt(toRmb(h, h.cost_value || 0))]);
-    rows.push(['累计盈亏', `${fmt(toRmb(h, h.pnl || 0))}（${pct(h.pnl_pct || 0)}）`, cls(h.pnl || 0)]);
-    rows.push(['数量', fmt(h.quantity || 0)]);
-    rows.push(['成本价', fmtNav(h.cost_price, h.category)]);
-    rows.push(['现价 / 净值', fmtNav(h.current_price, h.category)]);
-    rows.push(['当日盈亏', `${fmtPnl(toRmb(h, h.day_pnl || 0))}（${pct(h.day_pnl_pct || 0)}）`, cls(h.day_pnl || 0)]);
-  } else if (cat === 'wealth') {
-    rows.push(['分类', '理财']);
-    if (raw.code) rows.push(['代码', raw.code]);
-    rows.push(['金额 (CNY)', '¥' + fmt(it.value)]);
-  }
-  const body = rows.map(([k, v, c]) => `<div class="pie-drill-row"><span class="u-muted">${k}</span><span class="u-bold${c ? ' ' + c : ''}">${v}</span></div>`).join('');
-  document.querySelector(pieTargetSel).innerHTML = `<div class="pie-drill-wrap">${body}</div>`;
-  setPieBackArrow(() => showPieDrill(key));
-  if (pieTargetSel === '#chartBody') openChart();
 }
 
 // ===== 彩色组合圆环（donut）=====
@@ -2475,35 +2359,6 @@ function bindSettingsEvents(set, d) {
   };
 }
 
-// Daily P&L history: bar (daily P&L) + overlaid line (cumulative P&L).
-// 支持左右翻页（每页 15 天），导航时复用缓存数据不重复请求接口。
-let trendHist = null;    // 缓存的盈亏历史
-let trendEndDate = null; // null=最新(今天)；否则为当前查看页的结束日期 YYYY-MM-DD
-let trendTargetSel = null; // 当前走势渲染目标容器（翻页沿用）
-
-async function renderTrend() { return renderTrendInto(pieTargetSel); }
-// 渲染盈亏走势到指定容器（默认 #chartBody 图表弹框）
-async function renderTrendInto(targetSel) {
-  const r = await api('/api/pnl/history');
-  if (!r.ok) { toast('加载盈亏历史失败 (HTTP ' + r.status + ')', 'err'); return; }
-  const d = await r.json();
-  trendHist = d.history || [];
-  trendEndDate = null; // 每次打开回到最新
-  drawTrend(targetSel);
-}
-
-// 翻页：dir=-1 前 15 天，dir=+1 后 15 天；不超过今天
-function shiftTrend(dir) {
-  const PAGE = 15;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const cur = trendEndDate ? parseYmd(trendEndDate) : new Date(today);
-  cur.setHours(0, 0, 0, 0);
-  let nxt = addDays(cur, dir * PAGE);
-  if (nxt > today) nxt = new Date(today);
-  trendEndDate = ymd(nxt);
-  drawTrend(trendTargetSel || pieTargetSel); // 沿用当前渲染容器（嵌入/独立）
-}
-
 // 盈亏走势 / 持仓历史 的 SVG 渐变 id 序号：两个渲染容器可能同时在 DOM 中，id 必须唯一
 let trendUidSeq = 0;
 
@@ -2538,187 +2393,7 @@ function trendDefs(uid) {
     + `</defs>`;
 }
 
-function drawTrend(targetSel) {
-  const tgt = document.querySelector(targetSel || pieTargetSel);
-  trendTargetSel = targetSel || pieTargetSel; // 翻页时沿用同一容器
-  const standalone = !targetSel || targetSel === pieTargetSel; // 独立图表弹框模式
-  const hist = trendHist || [];
-  if (hist.length === 0) {
-    tgt.innerHTML = '<p class="u-muted u-lh">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；之后此处显示每日盈亏柱状图与累计折线。<br>从记录之日起，每个交易日会生成一个数据点。</p>';
-    if (standalone) openChart();
-    return;
-  }
-  // 始终以 trendEndDate（默认今天）为终点展示最近 15 个日期槽位；无快照的日期用浅色占位柱补齐，
-  // 保证一页固定 15 条、柱宽一致，缺失数据一目了然。
-  const PAGE = 15;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const end = trendEndDate ? parseYmd(trendEndDate) : new Date(today);
-  end.setHours(0, 0, 0, 0);
-  if (end > today) end.setTime(today.getTime());
-  const byDate = {};
-  hist.forEach((h) => { byDate[h.date] = h; });
-  const slots = [];
-  for (let i = PAGE - 1; i >= 0; i--) {
-    const ds = ymd(addDays(end, -i));
-    const rec = byDate[ds];
-    slots.push(rec ? { ...rec, hasData: true } : { date: ds, total_cny: 0, hasData: false });
-  }
-  let cum = 0;
-  const data = slots.map((s) => { if (s.hasData) cum += s.total_cny; return { ...s, cum }; });
-  const W = 720, H = 356, mL = 58, mR = 58, mT = 22, mB = 40;
-  const plotW = W - mL - mR, plotH = H - mT - mB;
-  const n = data.length;
-  const maxBar = Math.max(1, ...data.map((x) => Math.abs(x.total_cny)));
-  const cVals = data.map((x) => x.cum);
-  // 累计盈亏与当日盈亏共用中央零基线、同半幅归一化，消除双轴割裂感
-  const cMaxAbs = Math.max(1, ...cVals.map((v) => Math.abs(v)));
-  const zeroY = mT + plotH / 2;
-  const yBar = (v) => zeroY - (v / maxBar) * (plotH / 2);
-  const yLine = (v) => zeroY - (v / cMaxAbs) * (plotH / 2);
-  const slot = plotW / n;
-  // 柱宽随列宽收敛并封顶：列少时不被拉成方块，列多时保住最小可见宽度
-  const bw = Math.max(3, Math.min(24, slot * 0.46));
-  // 渐变 id 需唯一：两个容器（独立图表弹框 / 盈亏分析 Tab）可能同时在 DOM 中
-  const uid = 'tg' + (++trendUidSeq);
-  let lastDataIdx = -1;
-  data.forEach((x, i) => { if (x.hasData) lastDataIdx = i; });
-  const linePts = [];
-  let bars = '', ghosts = '', line = '', area = '', dots = '', hotspots = '';
-  data.forEach((x, i) => {
-    const cx = mL + (i + 0.5) * slot;
-    const ly = yLine(x.cum);
-    // 交互热区：覆盖整列，hover 显示金额；顺带把柱心与折线坐标带在 dataset 上，
-    // 供悬停指示线/指示点定位（无需把坐标函数暴露到闭包外）
-    hotspots += `<rect class="trend-hot" data-i="${i}" data-x="${cx.toFixed(2)}" data-y="${ly.toFixed(2)}"`
-      + ` x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
-    linePts.push([cx, ly]);
-    if (!x.hasData) {
-      // 占位：基线上一道极淡短横。原实现是亮色小方块，暗色主题下非常刺眼
-      ghosts += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${(zeroY - 1).toFixed(2)}"`
-        + ` width="${bw.toFixed(2)}" height="2" rx="1" class="chart-fill-div"/>`;
-      line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
-      return;
-    }
-    const isUp = x.total_cny > 0;
-    const hgt = Math.abs(yBar(x.total_cny) - zeroY);
-    if (hgt < 0.6) {
-      // 当日恰好为 0：一条中性细线，不参与红/绿语义
-      bars += `<rect x="${(cx - bw / 2).toFixed(2)}" y="${(zeroY - 1).toFixed(2)}"`
-        + ` width="${bw.toFixed(2)}" height="2" rx="1" class="chart-empty"/>`;
-    } else {
-      bars += `<path d="${trendBarPath(cx, bw, zeroY, hgt, isUp)}" fill="url(#${uid}${isUp ? 'Up' : 'Down'})"/>`;
-    }
-    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
-    // 只在最新一天画实心圆点：15 个点全画会让折线显得毛躁，逐点信息交给悬停指示点
-    if (i === lastDataIdx) {
-      dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3.4"`
-        + ` class="chart-dot"/>`;
-    }
-  });
-  // 面积：折线到中央零线的闭合带。用渐变（顶部 20% → 底部 0）代替平铺淡紫，
-  // 折线越靠上体量感越强，贴零线时自然消隐
-  if (linePts.length) {
-    let ap = `M ${linePts[0][0].toFixed(2)} ${zeroY.toFixed(2)} `;
-    linePts.forEach((p) => { ap += `L ${p[0].toFixed(2)} ${p[1].toFixed(2)} `; });
-    ap += `L ${linePts[linePts.length - 1][0].toFixed(2)} ${zeroY.toFixed(2)} Z`;
-    area = `<path d="${ap}" fill="url(#${uid}Area)" stroke="none"/>`;
-  }
-  // defs：三组渐变。SVG 的 presentation attribute 不认 var()，须走内联 style
-  const defs = trendDefs(uid);
-  // 折线双层：底层粗而极淡做柔光，上层细实线定形，替代原先的单根硬线
-  const lineEl = `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
-    + ` class="chart-line-glow"/>`
-    + `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
-    + ` class="chart-line"/>`;
-  // 悬停指示：竖虚线 + 折线上的指示点，默认隐藏
-  const cursor = `<line class="trend-cursor" x1="0" y1="${mT}" x2="0" y2="${(mT + plotH).toFixed(2)}" visibility="hidden"`
-    + ` class="chart-guide"/>`
-    + `<circle class="trend-cursor-dot" cx="0" cy="0" r="4" visibility="hidden"`
-    + ` class="chart-dot"/>`;
-  // axes & grid
-  const xLabelStep = Math.max(1, Math.ceil(n / 10));
-  // 末位标签只在与前一个标签拉开足够间距时才补，否则会出现「09-08 09-10」叠字
-  const lastTick = Math.floor((n - 1) / xLabelStep) * xLabelStep;
-  let xlabels = '';
-  data.forEach((x, i) => {
-    if (i % xLabelStep === 0 || (i === n - 1 && n - 1 - lastTick >= 2)) {
-      const cx = mL + (i + 0.5) * slot;
-      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="11" text-anchor="middle"`
-        + ` class="chart-label">${x.date.slice(5)}</text>`;
-    }
-  });
-  const yLabels = `
-    <text x="${mL - 8}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="end" class="chart-label-up">+${fmt(maxBar)}</text>
-    <text x="${mL - 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="end" class="chart-label">0</text>
-    <text x="${mL - 8}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="end" class="chart-label-down">-${fmt(maxBar)}</text>
-    <text x="${W - mR + 8}" y="${(zeroY - plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label-cum">+${fmt(cMaxAbs)}</text>
-    <text x="${W - mR + 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label">0</text>
-    <text x="${W - mR + 8}" y="${(zeroY + plotH / 2 + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label-cum">-${fmt(cMaxAbs)}</text>`;
-  // 网格：上下四分位各一条极淡参考线（读图有刻度感），零线单独加重
-  const q1 = (mT + plotH * 0.25).toFixed(2), q3 = (mT + plotH * 0.75).toFixed(2);
-  const grid = `<line x1="${mL}" y1="${q1}" x2="${W - mR}" y2="${q1}" class="chart-hline"/>`
-    + `<line x1="${mL}" y1="${q3}" x2="${W - mR}" y2="${q3}" class="chart-hline"/>`
-    + `<line x1="${mL}" y1="${zeroY}" x2="${W - mR}" y2="${zeroY}" class="chart-zero"/>`;
-  const legend = `
-    <div class="chart-legend">
-      <span><span class="chart-swatch"></span>当日盈亏 (红涨绿跌)</span>
-      <span><span class="chart-line-key"></span>累计盈亏</span>
-      <span><span class="chart-line-key muted"></span>无数据日 (占位)</span>
-    </div>`;
-  // 翻页导航：‹ 前15天 | 日期范围 | 后15天 › | 回最新
-  const startLabel = data[0].date, endLabel = data[n - 1].date;
-  const atLatest = end.getTime() >= today.getTime();
-  const nav = `<div class="trend-nav">
-    <button type="button" id="trendPrev" class="btn cal-nav-btn" title="前 15 天">‹</button>
-    <span class="trend-range">${startLabel} ~ ${endLabel}</span>
-    <button type="button" id="trendNext" class="btn cal-nav-btn" title="后 15 天"${atLatest ? ' disabled' : ''}>›</button>
-    ${atLatest ? '' : '<button type="button" id="trendLatest" class="btn btn-sm" title="回到最新">最新</button>'}
-  </div>`;
-  tgt.innerHTML = `
-    ${nav}<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      ${defs}${grid}${area}${ghosts}${bars}${cursor}
-      ${lineEl}
-      ${dots}${yLabels}${xlabels}${hotspots}
-    </svg>${legend}`;
-  // 绑定柱子交互热区 tooltip + 悬停指示线/指示点
-  const curEl = tgt.querySelector('.trend-cursor');
-  const curDot = tgt.querySelector('.trend-cursor-dot');
-  tgt.querySelectorAll('.trend-hot').forEach((r) => {
-    const i = +r.dataset.i;
-    r.addEventListener('mouseenter', (e) => {
-      const cx = r.dataset.x, cy = r.dataset.y;
-      if (curEl) { curEl.setAttribute('x1', cx); curEl.setAttribute('x2', cx); curEl.setAttribute('visibility', 'visible'); }
-      if (curDot) { curDot.setAttribute('cx', cx); curDot.setAttribute('cy', cy); curDot.setAttribute('visibility', 'visible'); }
-      showTrendTip(e, data[i]);
-    });
-    r.addEventListener('mousemove', moveTrendTip);
-    r.addEventListener('mouseleave', () => {
-      if (curEl) curEl.setAttribute('visibility', 'hidden');
-      if (curDot) curDot.setAttribute('visibility', 'hidden');
-      hideTrendTip();
-    });
-  });
-  // 绑定翻页按钮
-  const p = document.getElementById('trendPrev'); if (p) p.onclick = () => shiftTrend(-1);
-  const nx = document.getElementById('trendNext'); if (nx) nx.onclick = () => shiftTrend(1);
-  const lt = document.getElementById('trendLatest'); if (lt) lt.onclick = () => { trendEndDate = null; drawTrend(trendTargetSel); };
-  if (standalone) openChart();
-}
-
 // 盈亏走势 tooltip：hover 柱子显示当日/累计盈亏
-function showTrendTip(e, x) {
-  let tip = document.getElementById('trendTip');
-  if (!tip) { tip = document.createElement('div'); tip.id = 'trendTip'; tip.className = 'trend-tip'; document.body.appendChild(tip); }
-  const cls = x.total_cny > 0 ? 't-up' : x.total_cny < 0 ? 't-down' : 't-muted';
-  const sign = x.total_cny > 0 ? '+' : '';
-  const dayStr = x.hasData ? sign + fmt(x.total_cny) : '—';
-  const cumCls = x.cum > 0 ? 't-up' : x.cum < 0 ? 't-down' : 't-muted';
-  tip.innerHTML = '<div class="t-date">' + x.date + (x.hasData ? '' : '（无数据）') + '</div>'
-    + '<div class="t-row"><span>当日盈亏</span><span class="' + cls + '">' + dayStr + '</span></div>'
-    + '<div class="t-row"><span>累计盈亏</span><span class="' + cumCls + '">' + fmt(x.cum) + '</span></div>';
-  tip.classList.add('show');
-  moveTrendTip(e);
-}
 function moveTrendTip(e) {
   const tip = document.getElementById('trendTip'); if (!tip) return;
   const r = tip.getBoundingClientRect();
@@ -3861,29 +3536,6 @@ async function aiSaveSettings() {
   }
 }
 
-async function aiSummarize(tplIdx) {
-  const req = prepareSummarize(tplIdx);
-  if (!req) return;
-  setPickBusy(true);
-  setAIResultLoading('生成中…（模型思考中，请稍候，最长约 3 分钟）');
-  try {
-    const r = await api('/api/ai/summary', { method: 'POST', body: JSON.stringify({ model: req.model, base_url: req.base_url, api_key: req.api_key, template: req.content }) });
-    if (!r.ok) {
-      let m = '生成失败';
-      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
-      pickError(m);
-      return;
-    }
-    const d = await r.json();
-    setAIResult(d.content);
-    toast('AI 总结已生成', 'ok');
-  } catch (e) {
-    pickError('请求异常：' + e.message);
-  } finally {
-    setPickBusy(false);
-  }
-}
-
 // AI 事件绑定
 $('#ai_save').onclick = aiSaveSettings;
 $('#ai_tpl_sel').onchange = (e) => selectTpl(parseInt(e.target.value, 10));
@@ -3987,7 +3639,7 @@ async function openHoldingHistory(id) {
   const d = await r.json();
   histData = d;
   const h = d.holding || {};
-  const cur = (d.currency === 'USD' ? 'USD ' : d.currency === 'HKD' ? 'HK$ ' : '¥');
+  const cur = ((d.currency || '').toUpperCase() === 'USD' ? 'USD ' : (d.currency || '').toUpperCase() === 'HKD' ? 'HK$ ' : '¥');
   $('#histTitle').textContent = (h.name || '') + '（' + (h.symbol || '') + '）历史盈亏';
   renderHistTable(d, cur);
   renderHistChart(d, cur);
@@ -4237,16 +3889,6 @@ function curSymbolJS(cur) {
 }
 const moneyCur = (n, cur) => curSymbolJS(cur) + fmt(n == null ? 0 : n);
 
-// 二级页统一页头（设计系统：标题 + 操作区；不显示返回箭头）
-function injectPageHead(viewId, title) {
-  const v = document.getElementById(viewId);
-  if (!v || v.querySelector(':scope > .page-head')) return;
-  const h = document.createElement('div');
-  h.className = 'page-head';
-  h.innerHTML = '<h2 class="page-head__title">' + (title || '') + '</h2>'
-    + '<div class="page-head__actions"></div>';
-  v.insertBefore(h, v.firstChild);
-}
 async function showAssetView() {
   $('#holdingsView').hidden = true;
   $('#assetView').hidden = false;
@@ -4261,24 +3903,6 @@ async function showAssetView() {
     if (savedTab) assetTab = savedTab;
   } catch (_) {}
   await loadAsset();
-}
-
-// 工具栏引导动画已按需求取消（不再首次进入时依次提示）
-async function showToolbarGuide() {
-  return;
-}
-function showToolTip(el, text) {
-  const tip = document.getElementById('toolTipHint');
-  if (!tip || !text) return;
-  const r = el.getBoundingClientRect();
-  tip.textContent = text;
-  tip.hidden = false;
-  tip.style.top = (window.scrollY + r.bottom + 8) + 'px';
-  tip.style.left = Math.max(8, window.scrollX + r.left) + 'px';
-}
-function hideToolTip() {
-  const tip = document.getElementById('toolTipHint');
-  if (tip) tip.hidden = true;
 }
 
 // ===== 小工具：权益/美元资产盈亏计算器 =====
@@ -4345,9 +3969,6 @@ async function showToolsView() {
   $('#settingsView').hidden = true;
   $('#toolsView').hidden = false;
   bindToolsTabs();
-  const tv = document.getElementById('toolsView');
-  const tph = tv.querySelector(':scope > .page-head');
-  if (tph) tph.querySelector('[data-home]').onclick = (e) => { e.preventDefault(); navigate('holdings'); };
   // 五个工具以 tab 切换，整体在一个卡片内（默认显示第一个「资产再平衡」，2026-10-10 由汇率计算改）
   renderRebalTab();
   await loadToolsFx();
@@ -4368,9 +3989,6 @@ async function showAiView() {
   $('#toolsView').hidden = true;
   $('#settingsView').hidden = true;
   $('#aiView').hidden = false;
-  const v = document.getElementById('aiView');
-  const ph = v.querySelector(':scope > .page-head');
-  if (ph) ph.querySelector('[data-home]').onclick = (e) => { e.preventDefault(); navigate('holdings'); };
   // loadAISettings 内部会渲染总结面板下拉并组装输入框，这里不必重复调用旧胶囊函数
   await loadAISettings();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4382,9 +4000,6 @@ async function showSettingsView() {
   $('#toolsView').hidden = true;
   $('#aiView').hidden = true;
   $('#settingsView').hidden = false;
-  const v = document.getElementById('settingsView');
-  const ph = v.querySelector(':scope > .page-head');
-  if (ph) ph.querySelector('[data-home]').onclick = (e) => { e.preventDefault(); navigate('holdings'); };
   await loadNotifySettings();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -4966,7 +4581,6 @@ document.addEventListener('click', (e) => {
   }
 });
 
-
 function calcAdd() {
   const P0 = parseFloat($('#addOldPrice').value);
   const Q0 = parseFloat($('#addOldQty').value);
@@ -5316,14 +4930,6 @@ $('#assetSourceForm').onsubmit = async (e) => {
 };
 
 // ---- 理财 ----
-// 统一折算成 RMB 金额用于排序（不同币种可比较"总金额"）
-function wealthAmount(p) {
-  const a = Number(p.amount) || 0;
-  const c = (p.currency || 'rmb').toLowerCase();
-  if (c === 'usd') return a * (usdRate || 1);
-  if (c === 'hkd') return a * (hkdRate || 1);
-  return a;
-}
 // 任意理财金额折算成 RMB（总金额 / 今日收益 / 累计收益通用）
 function wCny(p, v) {
   const a = Number(v) || 0;
@@ -5910,7 +5516,7 @@ async function openCashTransfer(fromId) {
   $('#ct_from_id').value = String(fromId);
   $('#ct_from_name').value = `${src.name}（余额 ${moneyCur(src.amount || 0, src.currency)} ${src.currency}）`;
   // 仅同币种、非自身账户可作为转入方
-  const targets = list.filter((x) => x.id !== fromId && x.currency === src.currency);
+  const targets = list.filter((x) => x.id !== fromId && (x.currency || '').toUpperCase() === (src.currency || '').toUpperCase());
   const sel = $('#ct_to_id');
   sel.innerHTML = targets.length
     ? targets.map((x) => `<option value="${x.id}">${esc(x.name)}（${esc(x.source_name || '')}）</option>`).join('')
@@ -6590,7 +6196,6 @@ $('#ntTabPolicy').onclick = () => switchNotifyTab('policy');
 // 资产工具页：贷款计算器按钮（tab 切换已废弃，面板常驻）
 $('#loanCalc').onclick = calcLoan;
 
-
 // 盈亏日历弹框的关闭/遮罩点击已在 openPnlModal 内绑定，此处无需重复
 
 async function openSnapModal() {
@@ -6748,24 +6353,6 @@ $('#snapConfirmOk').onclick = async () => {
   } catch (err) { toast('保存异常：' + err.message, 'err'); }
 };
 $('#snapConfirmCancel').onclick = () => { pendingSnapSave = null; $('#snapConfirmModal').hidden = true; };
-
-// ---- 一键 AI 总结（汇总全部资产） ----
-async function assetAiSummarize(tplIdx) {
-  const req = prepareSummarize(tplIdx);
-  if (!req) return;
-  setPickBusy(true);
-  setAIResultLoading('生成中…（正在汇总全部资产并调用模型，请稍候）');
-  try {
-    const r = await api('/api/asset/summary', { method: 'POST', body: JSON.stringify({ model: req.model, base_url: req.base_url, api_key: req.api_key, template: req.content }) });
-    if (!r.ok) { let m = '生成失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} pickError(m); return; }
-    const d = await r.json();
-    setAIResult(d.content);
-  } catch (err) {
-    pickError('异常：' + err.message);
-  } finally {
-    setPickBusy(false);
-  }
-}
 
 // ── 技术分析 ──────────────────────────────────────────
 let analysisGenId = 0; // 防止并发打开时旧请求覆盖新请求渲染
@@ -8563,19 +8150,6 @@ function syncCfForm() {
   if (cap) cap.textContent = isExp ? '还款账户' : '入账账户';
   // 负债方式：支出+一次性→产生新负债(incur)，其余→还款已有(repay)
   document.getElementById('cf_liability_mode').value = (isExp && isOneTime) ? 'incur' : 'repay';
-}
-
-function renderCfAccountSelect(selId) {
-  const sel = document.getElementById('cf_account_id');
-  if (!sel) return;
-  const opts = (cashAccountsCache || []).map((c) => {
-    const cur = c.currency === 'usd' ? '＄' : (c.currency === 'hkd' ? 'HK＄' : '¥');
-    const star = c.is_default ? '★ ' : '';
-    return `<option value="${c.id}">${star}${esc(c.name)}（${cur}${fmt(c.amount || 0)}）</option>`;
-  }).join('');
-  sel.innerHTML = '<option value="0">（默认子账户 ★）</option>' + opts;
-  sel.value = selId ? String(selId) : '0';
-  // 币种不再单独选择：保存时自动取所选子账户自带币种（见 cashflowForm 提交）。
 }
 
 async function loadLiabilitiesForCf() {

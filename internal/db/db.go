@@ -836,6 +836,7 @@ func Create(h *Holding) (int64, error) {
 		return 0, err
 	}
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
+	h.Currency = strings.ToUpper(strings.TrimSpace(h.Currency)) // 币种统一大写，防 'usd'/'USD' 混写导致前端漏折算
 	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost,asset_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost, h.AssetType)
 	if err != nil {
@@ -857,6 +858,7 @@ func roundByCategory(cat string, v float64) float64 {
 
 func Update(h *Holding) error {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
+	h.Currency = strings.ToUpper(strings.TrimSpace(h.Currency)) // 币种统一大写，防 'usd'/'USD' 混写导致前端漏折算
 	h.CostPrice = roundByCategory(h.Category, h.CostPrice)
 	h.CurrentPrice = roundByCategory(h.Category, h.CurrentPrice)
 	h.PrevClose = roundByCategory(h.Category, h.PrevClose)

@@ -72,6 +72,9 @@ func nthSundayUTC(year, month, n int) time.Time {
 }
 
 func enrich(h db.Holding, userID int64) HoldingView {
+	// 币种归一化：历史数据存在 'usd'/'USD' 混写（录入/编辑路径不一），统一大写输出。
+	// 否则前端严格比较 h.currency === 'USD' 会把小写美元持仓当人民币——收益金额漏乘汇率。
+	h.Currency = strings.ToUpper(strings.TrimSpace(h.Currency))
 	mv := h.Quantity * h.CurrentPrice
 	cv := h.Quantity * h.CostPrice
 	pnl := mv - cv
