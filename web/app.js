@@ -129,6 +129,7 @@ function applyRoute() {
   else if (v === 'ai') showAiView();
   else if (v === 'settings') showSettingsView();
   else showHoldingsView();
+  const banner = document.getElementById("heroBanner"); if (banner) banner.hidden = v !== "holdings";
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function navigate(view) {
@@ -898,7 +899,14 @@ async function renderRateSpark(totalCNY, totalPct) {
       const last30Pct = cum[cum.length - 1];  // 30 天累计盈亏
       const trendCls = last30Pct > 0 ? 'up' : (last30Pct < 0 ? 'down' : 'flat');
       const strokeColor = trendCls === 'up' ? 'var(--up)' : (trendCls === 'down' ? 'var(--down)' : 'var(--text-muted)');
-      heroBox.innerHTML = sparkline(cum, { w: 300, h: 72, stroke: strokeColor, fill: strokeColor, responsive: true });
+      // v3.6：先测 heroBox 实际像素尺寸 → 用精确匹配的 viewBox + 硬编码 width/height，
+      // 让 SVG 1:1 填满容器，不截断不留白（之前 responsive:true + meet 导致比例不匹配）
+      let svgW = 300, svgH = 72;
+      try {
+        const r = heroBox.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) { svgW = Math.round(r.width); svgH = Math.round(r.height); }
+      } catch (_) {}
+      heroBox.innerHTML = sparkline(cum, { w: svgW, h: svgH, stroke: strokeColor, fill: strokeColor });
       // 趋势文案：近30日 +X.X%（按总市值折算），或 ¥X 盈亏（简化显示）
       if (heroTrend) {
         const base = Math.max((totalCNY || 0) - last30Pct, 1);
@@ -1079,20 +1087,25 @@ function sparkline(data, opts) {
   const w = (opts && opts.w) || 100, h = (opts && opts.h) || 28;
   const stroke = (opts && opts.stroke) || 'currentColor';
   const fill = (opts && opts.fill) || stroke;
+  const strokeWidth = (opts && opts.strokeWidth) || 1.5;
   const vals = (data || []).filter(v => Number.isFinite(v));
   if (vals.length < 2) return '';
   let min = Math.min(...vals), max = Math.max(...vals);
   if (max - min < 1e-9) { max += 1; min -= 1; }
   const padY = Math.max(1.5, h * 0.12), innerH = h - padY * 2;
-  const xAt = i => (w * i) / (vals.length - 1);
+  // v3.6: 两端 padding 和圆点半径都按 h 等比缩放，避免小容器里圆点太小/大容器里圆点太大
+  const xPad = Math.max(1.5, h * 0.08);
+  const dotR = Math.max(1.2, Math.min(3.5, h * 0.06));
+  const xAt = i => xPad + ((w - xPad * 2) * i) / (vals.length - 1);
   const yAt = v => padY + innerH - (innerH * (v - min)) / (max - min);
   const pts = vals.map((v, i) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ');
   const last = pts.split(' ').pop();
   const gid = 'spk' + (++sparkUid);
-  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stroke}" stop-opacity=".32"/><stop offset="100%" stop-color="${stroke}" stop-opacity="0"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(#${gid})"/>`;
-  // responsive:true → 去掉硬编码 width/height，只留 viewBox，由 CSS 容器控制尺寸（让 SVG 填满容器宽度）
+  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stroke}" stop-opacity=".20"/><stop offset="100%" stop-color="${stroke}" stop-opacity="0"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(${gid})"/>`;
+  // responsive:true → 去掉硬编码 width/height，只留 viewBox，由 CSS 容器控制尺寸
   const dimAttrs = (opts && opts.responsive) ? '' : ` width="${w}" height="${h}"`;
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"${dimAttrs} class="u-block u-va-mid" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="2.2" fill="${stroke}"/></svg>`;
+  const par = (opts && opts.nonUniform) ? 'none' : 'xMidYMid meet';
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="${par}"${dimAttrs} class="u-block u-va-mid" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth || 1.5}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="${dotR.toFixed(1)}" fill="${stroke}"/></svg>`;
 }
 
 // 表格迷你走势单元格：线条为近20日收盘价走势，颜色按首尾收盘价对比（尾>首=涨红，否则=跌绿，
@@ -1574,11 +1587,14 @@ function confirmExport() {
   $('#confirmModal').hidden = false;
 }
 // 通用确认弹框（复用导出数据用的 #confirmModal）：按需显示 标题/正文/按钮文案，确认后执行 onOk 回调
-function openConfirm({ title = '确认操作', msg = '', okText = '确定', danger = false, onOk } = {}) {
+function openConfirm({ title = '确认操作', msg = '', okText = '确定', cancelText, danger = false, onOk, onCancel } = {}) {
   pendingConfirmCb = onOk || null;
-  const btn = $('#confirmOk');
-  btn.textContent = okText;
-  btn.classList.toggle('danger', !!danger);
+  pendingCancelCb = onCancel || null;
+  const ok = $('#confirmOk');
+  ok.textContent = okText;
+  ok.classList.toggle('danger', !!danger);
+  const cb = $('#confirmCancel');
+  if (cancelText) cb.textContent = cancelText; else cb.textContent = '取消';
   $('#confirmTitle').textContent = title;
   $('#confirmMsg').textContent = msg;
   $('#confirmModal').hidden = false;
@@ -1592,13 +1608,23 @@ function resetConfirm() {
   pendingImport = null;
   pendingApplyAdd = false;
   pendingConfirmCb = null;
+  pendingCancelCb = null;
   const btn = $('#confirmOk');
   btn.textContent = '删除';
   btn.classList.remove('primary');
   btn.classList.add('danger');
   $('#confirmTitle').textContent = '确认删除';
+  const cb = $('#confirmCancel');
+  cb.textContent = '取消';
+  cb.classList.remove('primary');
 }
-$('#confirmCancel').onclick = () => { resetConfirm(); };
+let pendingCancelCb = null;
+$('#confirmCancel').onclick = () => {
+  const cb = pendingCancelCb;
+  pendingCancelCb = null;
+  resetConfirm();
+  if (cb) cb();
+};
 $('#confirmOk').onclick = async () => {
   if (pendingConfirmCb) {
     const cb = pendingConfirmCb;
@@ -7995,6 +8021,68 @@ function cfDueInfo(p) {
   const soon = diff <= 2; // 提前 2 天、当天、过期未完成，均标红
   return { day, soon };
 }
+// v3.6：收支计划 → SVG 柱状图。每个计划一根柱子，收入红色、支出绿色，按日排序。
+// listEl：cf-list 容器，用于测实际宽度做动态布局
+function renderCfBars(plans, listEl) {
+  if (!plans || !plans.length) {
+    return `<div class="cf-empty">暂未收支计划<button class="link-btn cf-empty-add" id="cfQuickAdd" type="button">＋ 添加</button></div>`;
+  }
+  // 提取日数字 + 排序
+  const bars = plans.map((p) => {
+    let day;
+    if (p.pattern === 'one_time' && p.one_time_date) {
+      day = Number(p.one_time_date.split('-')[2]) || 1;
+    } else {
+      day = Number(p.day_of_month) || 1;
+    }
+    return {
+      id: p.id, day,
+      amount: Math.abs(Number(p.amount) || 0),
+      isIncome: p.type === 'income',
+      done: !!cashflowDone[p.id],
+      title: p.title || '',
+      currency: p.currency || 'rmb',
+    };
+  }).sort((a, b) => a.day - b.day);
+
+  const H = 100;     // 总高固定（撑满 cf-list flex:1）
+  const padTop = 8, padBot = 20;
+  const chartH = H - padTop - padBot;
+  const maxV = Math.max(...bars.map((b) => b.amount), 1);
+  const incomeColor = 'var(--up)';
+  const expenseColor = 'var(--down)';
+
+  // 动态测容器宽度：优先用 getBoundingClientRect，否则估算
+  let containerW = 280;
+  try { if (listEl) { const r = listEl.getBoundingClientRect(); if (r.width > 0) containerW = Math.round(r.width); } } catch (_) {}
+  // 窄屏最小宽
+  containerW = Math.max(200, containerW);
+
+  // 根据柱子数量和容器宽算每柱 slot（柱宽+间距）
+  const minBarW = 16, maxBarW = 30;       // 柱宽范围（v3.6 加宽）
+  const slot = Math.floor((containerW - 16) / bars.length);  // 每柱可用空间（减去左右各 8px padding）
+  const barW = Math.max(minBarW, Math.min(maxBarW, slot - 4));  // 柱宽 = slot - 4px gap
+  const gap = Math.max(2, slot - barW);                          // 实际间距
+  const contentW = bars.length * (barW + gap) - gap;              // 柱子总宽（不含 padding）
+  const sidePad = Math.max(8, Math.floor((containerW - contentW) / 2));  // 左右相等 padding 让柱子居中
+  const W = Math.max(containerW, contentW + sidePad * 2);        // SVG 总宽（至少容器宽，多则滚动）
+
+  let x = sidePad;
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="cf-bars">`];
+  // 基线
+  parts.push(`<line x1="0" y1="${padTop + chartH}" x2="${W}" y2="${padTop + chartH}" stroke="rgba(var(--tint),.15)" stroke-width="1"/>`);
+  bars.forEach((b) => {
+    const h = Math.max(2, (b.amount / maxV) * chartH);
+    const y = padTop + chartH - h;
+    const fill = b.isIncome ? incomeColor : expenseColor;
+    const opacity = b.done ? 'fill-opacity="0.4"' : '';
+    parts.push(`<rect class="cf-bar" data-id="${b.id}" x="${x}" y="${y}" width="${barW}" height="${h}" rx="2" ry="2" fill="${fill}" ${opacity} title="${esc(b.title)} ${b.isIncome ? '＋' : '－'}${curSymbolJS(b.currency)}${fmt(b.amount)} / ${b.day}日"/>`);
+    parts.push(`<text x="${x + barW / 2}" y="${H - 4}" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.5">${b.day}</text>`);
+    x += barW + gap;
+  });
+  parts.push('</svg>');
+  return parts.join('');
+}
 function renderCashflowCard() {
   const card = document.getElementById('cashflowCard');
   const list = document.getElementById('cfList');
@@ -8035,18 +8123,33 @@ function renderCashflowCard() {
   if (sub) {
     sub.innerHTML = `${cashflowMonth || ''} · 净 <b class="${net >= 0 ? 'up' : 'down'}">${net >= 0 ? '＋' : '－'}${curSymbolJS('rmb')}${fmt(Math.abs(net))}</b>`;
   }
-  if (!monthPlans.length) {
-    list.innerHTML = '<div class="cf-empty"><button class="link-btn" id="cfQuickAdd" type="button">＋ 添加</button></div>';
-    const qa = document.getElementById('cfQuickAdd');
-    if (qa) qa.onclick = () => openCashflowModal(null);
-    return;
-  }
-  // 全部当月计划平铺进同一滚动列表；已完成的带删除线置灰（不再折叠），排在未完成之后。
+  // 全部当月计划 → SVG 柱状图（空态也在 renderCfBars 里统一处理）
   const ordered = pendingPlans.concat(donePlans);
-  list.innerHTML = ordered.map(rowHtml).join('');
-  list.querySelectorAll('[data-act="cf-toggle"]').forEach((b) => { b.onclick = () => cfToggle(Number(b.dataset.id)); });
-  list.querySelectorAll('[data-act="cf-edit"]').forEach((b) => {
-    b.onclick = () => { const p = cashflowPlans.find((x) => x.id === Number(b.dataset.id)); openCashflowModal(p); };
+  list.innerHTML = renderCfBars(ordered, list);
+  // 空态：添加按钮；有数据：柱子点击 → openConfirm 让用户选「编辑 / 标记完成」
+  const qa = document.getElementById('cfQuickAdd');
+  if (qa) qa.onclick = () => openCashflowModal(null);
+  list.querySelectorAll('.cf-bar').forEach((el) => {
+    el.onclick = () => {
+      const id = Number(el.dataset.id);
+      const p = cashflowPlans.find((x) => x.id === id);
+      if (!p) return;
+      const done = !!cashflowDone[id];
+      const sign = p.type === 'income' ? '＋' : '－';
+      let day;
+      if (p.pattern === 'one_time' && p.one_time_date) day = Number(p.one_time_date.split('-')[2]) || 1;
+      else day = Number(p.day_of_month) || 1;
+      const line2 = `${sign}${curSymbolJS(p.currency || 'rmb')}${fmt(Math.abs(Number(p.amount) || 0))} · ${day}日`;
+      openConfirm({
+        title: p.title || '收支计划',
+        msg: `${line2}`,
+        okText: done ? '撤销完成' : '标记完成',
+        cancelText: '编辑收支',
+        danger: done,
+        onOk: () => cfToggle(id),
+        onCancel: () => openCashflowModal(p),
+      });
+    };
   });
 }
 

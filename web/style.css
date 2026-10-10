@@ -613,6 +613,7 @@ w {
 .pano-home .cf-card .cf-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; position: relative; z-index: 1; }
 /* 空状态：在卡片内垂直 + 水平居中 */
 .pano-home .cf-card .cf-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2); text-align: center; padding: var(--sp-2); }
+.cf-empty-add { margin-left: var(--sp-2); }
 .pano-sum {
   position: relative; overflow: visible; /* 圆环需越出卡片边界（穿透效果），不可裁剪 */
   border: 1px solid var(--border);
@@ -1355,8 +1356,8 @@ header h1 { display: none; }
 /* v3.5：三栏等高 stretch（cf-hero 内部自己限高滚动） */
 .hero-content {
   position: absolute; inset: 0; z-index: 1;
-  display: grid; grid-template-columns: 1fr 1.5fr 1.5fr;
-  padding: var(--sp-3) var(--sp-6) var(--sp-4);
+  display: grid; grid-template-columns: 1fr 2fr 1fr;  /* center:right = 2:1 */
+  padding: var(--sp-3) var(--sp-6) var(--sp-3);   /* 上下对称 sp-3=12px */
   gap: var(--sp-5);
   align-items: stretch;
 }
@@ -1405,10 +1406,69 @@ header h1 { display: none; }
 .hero-slogan { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); letter-spacing: .3px; font-weight: 400; }
 /* v3.3 Hero 右栏：总市值 + 收益率 双 panel + 下方 sparkline 横条 */
 /* v3.5：三栏中栏 — 撑满高度（spark-wrap 吃剩余空间，跟右栏 cf-hero 等高） */
-.hero-center { display: flex; flex-direction: column; gap: var(--sp-3); align-items: stretch; min-width: 0; flex: 1 1 auto; }
+/* v3.6：加 min-height:0 防止 flex 子项（spark-wrap）撑破 center 列溢出 banner */
+.hero-center { display: flex; flex-direction: column; gap: var(--sp-3); align-items: stretch; min-width: 0; min-height: 0; }
 /* v3.5：三栏右栏 — 撑满高度（cf-hero flex:1 跟中栏 spark-wrap 同步） */
 .hero-right {
-  display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto;
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+}
+/* ===== 手机窄屏（≤ 640px）：三栏 → 上中下三行，banner 高度由内容撑开 ===== */
+@media (max-width: 640px) {
+  .hero-banner {
+    height: auto;              /* 不再固定 220px，由内容撑开 */
+    min-height: 0;
+    margin: var(--sp-2) var(--sp-3) 0;
+    border-radius: var(--r);
+  }
+  .hero-content {
+    position: relative;        /* 不再 absolute，让 banner 由内容撑开 */
+    inset: auto;
+    display: grid;
+    grid-template-columns: 1fr;       /* 单列 */
+    grid-template-rows: auto auto auto;
+    padding: var(--sp-3);
+    gap: var(--sp-3);
+  }
+  .hero-left {
+    min-height: 0;
+    padding: var(--sp-1) 0;
+  }
+  .hero-left .hero-title {
+    font-size: var(--fs-2xl);   /* 44px → 28px（token --fs-2xl） */
+    line-height: 1.2;
+  }
+  .hero-left .hero-slogan {
+    font-size: var(--fs-xs);
+  }
+  .hero-center {
+    gap: var(--sp-2);
+  }
+  .hero-summary-pair {
+    flex: 0 0 auto;            /* 不再固定 72px，让内部 panel 自然高 */
+    gap: var(--sp-2);
+  }
+  .hero-panel {
+    padding: var(--sp-2) var(--sp-3);
+  }
+  .hero-panel-value {
+    font-size: var(--fs-base); /* 12px → 14px（手机可接受更大一点） */
+  }
+  .hero-panel-pnl-big {
+    font-size: var(--fs-sm);
+  }
+  .hero-spark-wrap {
+    /* 手机上 spark-wrap 也不 flex:1，固定跟桌面同高 100px */
+    flex: 0 0 100px;
+    min-height: 100px;
+    padding: var(--sp-2);
+  }
+  /* cf-hero 手机上不 flex:1，固定高让柱子也有地方画 */
+  .cf-card.cf-hero {
+    flex: 0 0 auto;
+  }
+  .cf-card.cf-hero .cf-list {
+    max-height: 128px;          /* 4px 网格：4 × 32 */
+  }
 }
 .hero-summary-pair {
   display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3);
@@ -1425,8 +1485,8 @@ header h1 { display: none; }
 }
 .hero-panel::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-  width: 4px; /* 4px 网格 */
-  background: linear-gradient(to right, rgb(var(--accent-rgb, var(--tint))), transparent);
+  width: 4px;
+  background: rgb(var(--accent-rgb, var(--tint)));
   pointer-events: none;
 }
 :root[data-theme="light"] .hero-panel {
@@ -1482,13 +1542,25 @@ header h1 { display: none; }
 
 /* sparkline 横条 — v3.4 内嵌 label+trend 到卡片内部，删掉独立的 hero-mini-stats */
 .hero-spark-wrap {
-  flex: 0 0 108px;            /* 固定 = 1.5 × summary-pair(72px)，不再吃剩余空间 */
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;          /* 给伪元素（左侧描边）定位 */
   border-radius: var(--r);
-  background: linear-gradient(180deg, rgba(var(--tint), .05) 0%, transparent 100%);
-  border: 1px solid rgba(var(--tint), .12);
+  background:
+    radial-gradient(ellipse 80% 120% at 10% 100%, rgba(124, 58, 237, .10) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 90% 0%, rgba(var(--tint), .08) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(var(--tint), .04) 0%, transparent 100%);
+  border: 1px solid rgba(var(--tint), .15);
   padding: var(--sp-2) var(--sp-3);
   display: flex; flex-direction: column; gap: 2px;
   overflow: hidden;
+}
+/* spark-wrap 左侧纯色描边（延续 hero-panel 设计语言） */
+.hero-spark-wrap::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: rgb(var(--accent-rgb, var(--tint)));
+  pointer-events: none;
 }
 .hero-spark-head {
   display: flex; justify-content: space-between; align-items: center;
@@ -1500,8 +1572,8 @@ header h1 { display: none; }
 .hero-spark-trend.down { color: var(--down); }
 .hero-spark-trend.flat { color: var(--text-muted); }
 .hero-spark { flex: 1 1 auto; width: 100%; height: 100%; display: block; overflow: hidden; }
-/* v3.4：responsive SVG 无子元素 width/height → 强制填满父容器 */
-.hero-spark svg { width: 100% !important; height: 100% !important; display: block; }
+/* v3.6: SVG 已由 JS 用精确容器尺寸生成 viewBox+硬编码 width/height，CSS 100% 填满，meet 等比 = 完美无变形 */
+.hero-spark svg { width: 100%; height: 100%; display: block; }
 
 /* 卡片 hover：只升 shadow + 边框色亮，不做 transform 位移（spec §3.2） */
 .hero-banner:hover {
@@ -4954,22 +5026,32 @@ textarea::placeholder {
 }
 
 /* v3.5 方案 A：收支计划卡 → hero banner 右栏完整卡片 */
+/* v3.6：结构完全镜像 center → cf-head 跟 summary-pair 同高(72px)，cf-list 跟 spark-wrap 都是 flex:1 吃剩余 */
 .cf-card.cf-hero {
-  flex: 1 1 auto;               /* 撑满右栏高度 */
-  padding: var(--sp-2) var(--sp-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;           /* 左侧描边伪元素 */
+  padding: 0 var(--sp-3);
   border-radius: var(--r);
   border: 1px solid rgba(var(--tint), .12);
   background: linear-gradient(180deg, rgba(var(--tint), .05) 0%, transparent 100%);
   box-shadow: none;
   overflow: hidden;
   display: flex; flex-direction: column;
-  gap: var(--sp-3);              /* 跟 center 的子项 gap 相同，保证第二行顶部对齐 */
+  gap: var(--sp-3);
 }
-/* cf-head 合理高度（标题 + 上下 padding），不用硬撑 56px */
+/* cf-hero 左侧纯色描边 */
+.cf-card.cf-hero::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: rgb(var(--tint));
+  pointer-events: none;
+}
+/* cf-head 用内容自然高度 + 跟其他卡片一致的 sp-2 上下 padding */
 .cf-card.cf-hero .cf-head {
   flex: 0 0 auto;
   display: flex; align-items: center;
-  padding: var(--sp-1) 0;
+  padding: var(--sp-2) 0;
   border-bottom: none;
   gap: var(--sp-1);
 }
@@ -4987,12 +5069,24 @@ textarea::placeholder {
 /* cf-sub 不展示 */
 .cf-card.cf-hero .cf-sub { display: none; }
 /* cf-list flex:1 跟 spark-wrap 同步吃剩余空间 → 两边底部对齐 */
+/* v3.6：cf-list 改成横向滚动的柱状图容器 */
 .cf-card.cf-hero .cf-list {
   flex: 1 1 auto;
-  overflow-y: auto;
-  padding-top: 0;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: var(--sp-1) 0 0;
   gap: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--tint), .3) transparent;
 }
+.cf-card.cf-hero .cf-list::-webkit-scrollbar { height: 4px; }
+.cf-card.cf-hero .cf-list::-webkit-scrollbar-thumb { background: rgba(var(--tint), .3); border-radius: 2px; }
+.cf-card.cf-hero .cf-list::-webkit-scrollbar-track { background: transparent; }
+/* SVG 柱状图撑满容器高度 */
+.cf-card.cf-hero .cf-list .cf-bars { display: block; height: 100%; min-width: 100%; }
+.cf-card.cf-hero .cf-list .cf-bar { cursor: pointer; transition: opacity .15s; }
+.cf-card.cf-hero .cf-list .cf-bar:hover { fill-opacity: .85; }
 /* row 间距调小 */
 .cf-card.cf-hero .cf-row {
   padding: 1px 0;
