@@ -47,16 +47,11 @@
   <section id="heroBanner" class="hero-banner" aria-label="持仓侠 品牌横幅">
     <div class="hero-bg-blob hero-bg-blob-a"></div>
     <div class="hero-bg-blob hero-bg-blob-b"></div>
-    <div class="hero-grid-overlay" aria-hidden="true"></div>
     <div class="hero-content">
-      <!-- 左栏：品牌信息 -->
+      <!-- 左栏：品牌信息 + 核心数据（总市值 / 收益率 双 panel 已迁至品牌区下方） -->
       <div class="hero-left">
-        <div class="hero-badge"><span class="hero-badge-dot"></span> 实时 · 本地数据</div>
         <h2 class="hero-title">持仓<span>侠</span></h2>
         <p class="hero-slogan">一站式持仓管理 · 盈亏追踪 · AI 智能分析</p>
-      </div>
-      <!-- 中栏：核心数据（总市值 + 收益率 双 panel + sparkline） -->
-      <div class="hero-center">
         <div class="hero-summary-pair">
           <div class="hero-panel hero-panel-mv" id="heroMvSummary">
             <div class="hero-panel-head">
@@ -73,6 +68,9 @@
             <div class="hero-pnl-detail" id="heroPnlDetail"></div>
           </div>
         </div>
+      </div>
+      <!-- 中栏：近30日权益曲线（总市值 / 收益率 双 panel 已迁至左栏品牌区下方） -->
+      <div class="hero-center">
         <!-- sparkline 卡片顶部内嵌 label + trend -->
         <div class="hero-spark-wrap" id="heroSparkWrap">
           <div class="hero-spark-head">
@@ -1082,6 +1080,7 @@
     <div class="modal-card" style="width:720px; max-width:94vw;" data-page-node-id="w7OTMkePZILkBHl2YBMZKs">
       <h2 data-icon="refresh" data-page-node-id="XQDct9eKYBV7MdQZTnGEij">更新理财持仓</h2>
       <div id="snapBody" class="snap-body m-body" data-page-node-id="hGBjIHu0b4a9Av2AxpjbZS"></div>
+      <div id="snapTotal" class="snap-total" hidden></div>
       <div class="modal-actions" data-page-node-id="xTaEOs46Hi7UPSKtF8saLo"><button type="button" id="snapSave" class="btn primary" data-page-node-id="N7NIz4Y7U2vfpenBrbJD7j">保存</button></div>
     </div>
   </div>
