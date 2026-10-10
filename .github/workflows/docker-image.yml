@@ -27,6 +27,12 @@ jobs:
       - name: Lint UI (design spec §5 / P3-0)
         run: npm --prefix web run lint:ui
 
+      # 前端构建：CI 用 git checkout 不含 web/dist（被 .gitignore 忽略），
+      # 而 Dockerfile 的 fe 阶段对“无预构建 dist”按设计直接报错（优化本地 tar 部署、避免拉 node 镜像）。
+      # 故此处用已 setup 的 node 现场构建 web/dist，供后续 docker build 直接 COPY。
+      - name: Build frontend (web/dist)
+        run: npm --prefix web install && npm --prefix web run build
+
       - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
