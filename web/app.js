@@ -526,6 +526,12 @@ function renderHoldingsBySource(hs) {
     g.pnl += toCny(h.pnl || 0, h.currency);
   }
   const arr = [...groups.values()].sort((a, b) => b.mv - a.mv);
+  // 每组内部持仓占比归一化的最大值（组内 max MV，防止极端值把 bar 撑爆）
+  arr.forEach((g) => {
+    let m = 0;
+    g.items.forEach((h) => { const v = toRmb(h, h.market_value); if (v > m) m = v; });
+    g.maxItemMV = m;
+  });
   let html = '';
   for (const g of arr) {
     const pnlPct = g.cost > 0 ? (g.pnl / g.cost) * 100 : 0;
@@ -544,12 +550,12 @@ function renderHoldingsBySource(hs) {
       + `</div>`
       + `<div class="collapse-body source-group-body">`
       + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
-      + `<thead><tr><th>名称</th><th>代码</th><th class="hide-col">市场</th><th class="hide-col">币种</th>`
-      + `<th class="num hide-col">份额</th><th class="num hide-col">成本价</th><th class="num">现价</th>`
-      + `<th class="num hide-col">市值</th><th class="num">当日</th><th class="num">当日%</th>`
-      + `<th class="num hide-col">总盈亏</th><th class="num">盈亏%</th><th class="num">持仓</th><th class="hide-col">备注</th>`
+      + `<thead><tr><th>名称</th><th class="num">现价</th>`
+      + `<th class="num">市值</th><th class="num bpb-col" title="该持仓占本账户持仓的比例">占比</th>`
+      + `<th class="num">当日</th><th class="num">当日%</th>`
+      + `<th class="num">盈亏%</th><th class="num">持仓</th>`
       + `<th class="num" title="近20个交易日收盘价走势">近20日</th><th>操作</th>`
-      + `</tr></thead><tbody>${g.items.map((h, i) => renderGroupRow(h, i)).join('')}</tbody>`
+      + `</tr></thead><tbody>${g.items.map((h, i) => renderGroupRow(h, i, g.maxItemMV || 1)).join('')}</tbody>`
       + `</table></div></div></div>`;
   }
   box.innerHTML = html;
@@ -590,32 +596,36 @@ function holdTypeTag(h) {
   if (h.market === '港股') return '<span class="type-tag tag-hk">港</span>';
   return '<span class="type-tag tag-a">A</span>';
 }
-function renderGroupRow(h, i) {
+function renderGroupRow(h, i, maxItemMV) {
   const isFail = !!failedSymbols[h.symbol];
   const dayPnl = Number(h.day_pnl) || 0;
   const dirCls = dayPnl > 0 ? 'up' : (dayPnl < 0 ? 'down' : 'flat');
   const dirArrow = dirCls === 'up' ? '▲' : (dirCls === 'down' ? '▼' : '');
+  const mvCny = toRmb(h, h.market_value);
+  const pctOfGroup = (maxItemMV > 0) ? (mvCny / maxItemMV * 100) : 0;
+  const popHtml = `<div class="row-pop-content">`
+    + `<div><b>代码</b> ${esc(h.symbol || '-')}</div>`
+    + `<div><b>市场</b> ${esc(h.market || '-')} <b>币种</b> ${esc(h.currency || '-')}</div>`
+    + `<div><b>份额</b> ${fmt(h.quantity)} <b>成本价</b> ${fmtNav(h.cost_price, h.category)}</div>`
+    + `<div><b>总盈亏</b> <span class="${cls(h.pnl)}">${fmtPnl(toRmb(h, h.pnl))}</span> <b>持有期</b> ${pct(h.pnl_pct)}</div>`
+    + (h.note ? `<div><b>备注</b> ${esc(h.note)}</div>` : '')
+    + `</div>`;
   return `<tr${isFail ? ' class="row-failed"' : ''}>
-    <td class="name-cell">
+    <td class="name-cell row-pop">
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">' + actIcon('warn') + '</span>' : ''}
       <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : ''}">${dirArrow}</span>
       ${holdTypeTag(h)}<span class="name-cap"><span class="name-clickable" data-copy="${esc(h.name)}" title="${esc(h.name)}">${esc(h.name)}</span>${supportsAnalysis(h) ? anaBadge(h.analysis_signal) : ''}</span>
       ${actBtn('edit', `data-adjust="${h.id}"`, '修改', { cls: 'push-right' })}
       ${supportsAnalysis(h) ? actBtn('analysis', 'data-ana="' + h.id + '"', '技术分析') : ''}
+      ${popHtml}
     </td>
-    <td>${h.symbol}</td>
-    <td class="hide-col">${h.market}</td>
-    <td class="hide-col">${h.currency}</td>
-    <td class="num hide-col">${fmt(h.quantity)}</td>
-    <td class="num hide-col">${fmtNav(h.cost_price, h.category)}</td>
     <td class="num">${fmtNav(h.current_price, h.category)}</td>
-    <td class="num hide-col"${mvOrigTitle(h)}>${fmt(toRmb(h, h.market_value))}</td>
+    <td class="num"${mvOrigTitle(h)}>¥${fmt(mvCny)}</td>
+    <td class="num bpb-td"><span class="bpb-bar" style="--bpb-w:${Math.max(0, Math.min(100, pctOfGroup)).toFixed(0)}%"></span><span class="bpb-pct">${pctOfGroup.toFixed(0)}%</span></td>
     <td class="num ${cls(h.day_pnl)}">${fmtPnl(toRmb(h, h.day_pnl))}</td>
     <td class="num" title="当日盈亏率">${pct(h.day_pnl_pct)}</td>
-    <td class="num hide-col ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
     <td class="num ${cls(h.pnl_pct)}" title="持有期总盈亏率">${pct(h.pnl_pct)}</td>
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
-    <td class="hide-col u-sm u-muted u-ellipsis td-note" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
     <td class="num spark-td">${sparkCell(h.symbol, h.pnl)}</td>
     <td class="row-act-cell">
       ${actBtn('edit', `data-edit="${h.id}"`, '编辑持仓')}
@@ -1795,7 +1805,9 @@ function positionIndicator() {
 document.querySelectorAll('#viewToggle .vt-btn').forEach((b) => {
   b.onclick = () => {
     holdingsView = b.dataset.view;
+    wealthView = holdingsView;
     localStorage.setItem('pf_view', holdingsView);
+    localStorage.setItem('pf_wealth_view', holdingsView);
     syncViewToggle();
     renderFiltered();
   };
@@ -5074,7 +5086,27 @@ function renderWealthInline(container) {
   const raw = (assetData.wealth || {}).products || [];
   const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount));
   let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3></div>`;
-  if (w.length) html += renderWealthTable(w);
+  if (!w.length) html += '';
+  else if (wealthView === 'card' && window.innerWidth >= 640) {
+    html += `<div class="asset-list wealth-list">`;
+    w.forEach((p, i) => {
+      const pnl = p.today_pnl || 0;
+      const cum = p.cum_pnl || 0;
+      html += `<div class="asset-card wealth-card"><div class="ac-head">
+          <div class="ac-idx">${i + 1}</div>
+          <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span></div>
+            <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
+        <div class="ac-sub">总金额：<span class="ac-amount"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
+        <div class="ac-actions">
+          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('hist')} 每日盈亏</button>
+          <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">${actIcon('edit')} 编辑</button>
+          <button class="btn btn-icon" data-act="redeem-wealth" data-id="${p.id}">${actIcon('exit')} 减仓</button>
+        </div></div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += renderWealthTable(w);
+  }
   container.innerHTML = html;
   container.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
   container.querySelectorAll('[data-act="redeem-wealth"]').forEach((b) => b.onclick = () => openWealthRedeem(Number(b.dataset.id)));
@@ -5116,19 +5148,21 @@ function renderWealthTable(w) {
     const rows = g.items.map((p, i) => {
       const pnl = p.today_pnl || 0;
       const cum = p.cum_pnl || 0;
+      const wPop = `<div class="row-pop-content">`
+        + `<div><b>代码</b> ${esc(p.code || '-')}</div>`
+        + `<div><b>持有期</b> ${p.holding_days > 0 ? p.holding_days + '天' : '—'} <b>已录入</b> ${(p.snap_count || 0) + '天'}</div>`
+        + (p.note ? `<div><b>备注</b> ${esc(p.note)}</div>` : '')
+        + `</div>`;
       return `<tr>
-      <td class="name-cell"><span class="wn-idx">${i + 1}</span><span class="name-cap"><span class="name-clickable" data-copy="${esc(p.name)}" title="${esc(p.name)}">${esc(p.name)}</span></span><span class="cur-badge">${curSymbolJS(p.currency)}</span></td>
-      <td>${esc(p.code || '-')}</td>
+      <td class="name-cell row-pop"><span class="wn-idx">${i + 1}</span><span class="name-cap"><span class="name-clickable" data-copy="${esc(p.name)}" title="${esc(p.name)}">${esc(p.name)}</span></span><span class="cur-badge">${curSymbolJS(p.currency)}</span>${wPop}</td>
       <td class="num"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</td>
       <td class="num ${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</td>
       <td class="num ${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
-      <td class="num" title="从首次录入快照起算">${p.holding_days > 0 ? p.holding_days + '天' : '—'}</td>
-      <td class="num" title="已录入快照的天数">${(p.snap_count || 0) > 0 ? p.snap_count + '天' : '—'}</td>
-      <td class="hide-col u-sm u-muted u-ellipsis td-note" title="${esc(p.note || '')}">${esc(p.note || '')}</td>
-      <td class="row-actions">
+      <td class="num u-sm u-muted" title="从首次录入快照起算">${p.holding_days > 0 ? p.holding_days + '天' : '—'}</td>
+      <td class="row-act-cell">
         ${actBtn('hist', `data-act="wealth-hist" data-id="${p.id}"`, '每日盈亏')}
         ${actBtn('edit', `data-act="edit-wealth" data-id="${p.id}"`, '编辑')}
-        ${actBtn('exit', `data-act="redeem-wealth" data-id="${p.id}"`, '减仓/清仓')}
+        ${actBtn('exit', `data-act="redeem-wealth" data-id="${p.id}"`, '减仓/清仓', { danger: true })}
       </td>
     </tr>`;
     }).join('');
@@ -5147,9 +5181,9 @@ function renderWealthTable(w) {
       </div>
       <div class="collapse-body source-group-body">
         <div class="subtable-wrap"><table class="asset-table holdings-subtable wealth-subtable">
-        <thead><tr><th>名称</th><th>代码</th>
+        <thead><tr><th>名称</th>
         <th class="num">总金额</th><th class="num">今日收益</th><th class="num">累计收益</th>
-        <th class="num">持有天数</th><th class="num">录入天数</th><th class="hide-col">备注</th><th>操作</th>
+        <th class="num">持有天数</th><th>操作</th>
         </tr></thead><tbody>${rows}</tbody>
         </table></div></div></div>`;
   }).join('') + `</div>`;
@@ -5218,7 +5252,7 @@ function renderFlowsTable(flows) {
   const t = document.getElementById('flowsTitle');
   if (t) t.textContent = '流水（' + (flows ? flows.length : 0) + '）';
   if (!flows.length) { wrap.innerHTML = '<p class="empty">该区间内暂无资金流水。</p>'; return; }
-  const rows = flows.map((f) => {
+  const rows = flows.map((f, idx) => {
     const amt = f.amount || 0;
     // 负债流水的方向看类型（借入=入 / 还款=出），现金流水看金额正负
     const dir = f.kind === 'liability'
@@ -5234,7 +5268,7 @@ function renderFlowsTable(flows) {
     const refCol = f.ref_name ? '<span class="flow-ref">· ' + esc(f.ref_name) + '</span>' : '';
     const key = f.kind + ':' + f.id;
     return `<tr>
-      <td class="num">${f.id}</td>
+      <td class="num">${idx + 1}</td>
       <td>${nameCol}${refCol}</td>
       <td>${cashFlowTypeTag(f)}${flowSourceTag(f.source)}</td>
       <td class="num ${dir}">${sign}${moneyCur(Math.abs(amt), cur)}</td>
@@ -7999,6 +8033,14 @@ function cfPlanDay(p) {
   }
   return String(p.day_of_month);
 }
+// 柱状图排序用：返回 1..31 日的数字，用于稳定排序（pending/done 切换不跳序）
+function cfSortDay(p) {
+  if (p.pattern === 'one_time' && p.one_time_date) {
+    const d = p.one_time_date.split('-');
+    return Number(d[2]) || 1;
+  }
+  return Number(p.day_of_month) || 1;
+}
 // 截止日小字：返回 { day, soon }
 // day：截止日在当月的「日」数字（一次性计划取 one_time_date 的日；循环计划取当月 cashflowMonth 的 day_of_month）
 // soon：当月截止日距今 <= 2 天（含提前 2 天、当天、以及过期未完成，均为红），否则默认灰。
@@ -8089,7 +8131,8 @@ function renderCashflowCard() {
   if (!card || !list) return;
   // 首页紧凑卡片展示「当月仍有效」的计划；已完成的不再隐藏，而是整体置灰 + 单选框选中效果（可回看/撤销）。
   // （已过截止日期且仍未完成的仍不显示）
-  const monthPlans = cashflowPlans.filter((p) => cfPlanActive(p, cashflowMonth));
+  const monthPlans = cashflowPlans.filter((p) => cfPlanActive(p, cashflowMonth))
+    .sort((a, b) => cfSortDay(a) - cfSortDay(b));
   const pendingPlans = monthPlans.filter((p) => !cashflowDone[p.id]);
   const donePlans = monthPlans.filter((p) => cashflowDone[p.id]);
   const rowHtml = (p) => {
