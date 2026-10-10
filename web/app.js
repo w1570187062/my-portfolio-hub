@@ -1,4 +1,4 @@
-﻿﻿const $ = (s) => document.querySelector(s);
+﻿const $ = (s) => document.querySelector(s);
 
 // ===== 主题切换（日间/夜间） =====
 // 默认夜间模式；读取 localStorage 持久化偏好。
@@ -544,9 +544,9 @@ function renderHoldingsBySource(hs) {
       + `<div class="collapse-body source-group-body">`
       + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
       + `<thead><tr><th>名称</th><th>代码</th><th class="hide-col">市场</th><th class="hide-col">币种</th>`
-      + `<th class="num">份额</th><th class="num">成本价</th><th class="num">现价</th>`
-      + `<th class="num">市值</th><th class="num">当日</th><th class="num">当日%</th>`
-      + `<th class="num">总盈亏</th><th class="num">盈亏%</th><th class="num">持仓</th><th class="hide-col">备注</th>`
+      + `<th class="num hide-col">份额</th><th class="num hide-col">成本价</th><th class="num">现价</th>`
+      + `<th class="num hide-col">市值</th><th class="num">当日</th><th class="num">当日%</th>`
+      + `<th class="num hide-col">总盈亏</th><th class="num">盈亏%</th><th class="num">持仓</th><th class="hide-col">备注</th>`
       + `<th class="num" title="近20个交易日收盘价走势">近20日</th><th>操作</th>`
       + `</tr></thead><tbody>${g.items.map((h, i) => renderGroupRow(h, i)).join('')}</tbody>`
       + `</table></div></div></div>`;
@@ -605,13 +605,13 @@ function renderGroupRow(h, i) {
     <td>${h.symbol}</td>
     <td class="hide-col">${h.market}</td>
     <td class="hide-col">${h.currency}</td>
-    <td class="num">${fmt(h.quantity)}</td>
-    <td class="num">${fmtNav(h.cost_price, h.category)}</td>
+    <td class="num hide-col">${fmt(h.quantity)}</td>
+    <td class="num hide-col">${fmtNav(h.cost_price, h.category)}</td>
     <td class="num">${fmtNav(h.current_price, h.category)}</td>
-    <td class="num"${mvOrigTitle(h)}>${fmt(toRmb(h, h.market_value))}</td>
+    <td class="num hide-col"${mvOrigTitle(h)}>${fmt(toRmb(h, h.market_value))}</td>
     <td class="num ${cls(h.day_pnl)}">${fmtPnl(toRmb(h, h.day_pnl))}</td>
     <td class="num" title="当日盈亏率">${pct(h.day_pnl_pct)}</td>
-    <td class="num ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
+    <td class="num hide-col ${cls(h.pnl)}">${fmt(toRmb(h, h.pnl))}</td>
     <td class="num ${cls(h.pnl_pct)}" title="持有期总盈亏率">${pct(h.pnl_pct)}</td>
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
     <td class="hide-col u-sm u-muted u-ellipsis td-note" title="${esc(h.note || '')}">${esc(h.note || '')}</td>
@@ -727,8 +727,12 @@ function renderSummary(hs) {
   // 首页总览：账户父卡片内，仅 2 张卡片（总市值 / 盈亏涨跌），沿用资产全景的 .pano-sum 风格。
   const card = document.getElementById('accountCard');
   const el = document.getElementById('acSummaryData');
-  if (!el) return;
-  if (card) card.hidden = false;
+  if (!el) {
+    // v3.4：accountCard + acSummaryData DOM 已删除，所有 summary 数据
+    // 统一由 hero banner 双 panel 承载；这里不 return，让后面的 hero 绑定继续执行
+  } else {
+    if (card) card.hidden = false;
+  }
   // 总市值分类堆叠条（股票/基金/理财/其他）。理财段（2026-10-09 迁入）：
   // 仅「全部 / 理财」筛选口径下显示（选中股票/基金时保持纯持仓口径）；分母同步含理财。
   const showWealthSeg = catFilter.size === 0 || catFilter.has('wealth');
@@ -754,7 +758,8 @@ function renderSummary(hs) {
   const pieMini = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M12 3.4 V12 L18.1 17.9"/></svg>`;
   const cardMV =
     `<div class="pano-sum has-donut card-link" style="--accent-rgb:${topSeg ? topSeg.rgb : 'var(--tint)'}" title="点击查看资产构成">` +
-      `<div class="ps-head">${psHeadIcon('mv')}总市值<span class="ps-link-hint">${pieMini}资产构成</span></div>` +
+      `<div class="ps-head">总市值</div>` +
+      `<span class="ps-link-hint">${pieMini}资产构成</span>` +
       `<div class="pano-body">` +
         `<div class="donut-wrap donut-clickable" title="点击弧段跳转：基金→理财视图、其他→账户">${donutSVG(mvSegs, { size: 150, center: '¥' + fmtShort(mvAll), sub: (topSeg ? topSeg.name + ' ' + (topSeg.v / Math.max(mvAll, 1) * 100).toFixed(0) + '%' : '') })}</div>` +
         `<div class="comp-legend">${mvLeg}</div>` +
@@ -765,7 +770,8 @@ function renderSummary(hs) {
   const calMini = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>`;
   const cardPnl =
     `<div class="pano-sum card-link" style="--accent-rgb:${totalPnl >= 0 ? 'var(--up-rgb)' : 'var(--down-rgb)'}" title="点击查看盈亏日历">` +
-      `<div class="ps-head">${psHeadIcon('pnl')}收益率<span class="ps-link-hint">${calMini}盈亏日历</span></div>` +
+      `<div class="ps-head">收益率</div>` +
+      `<span class="ps-link-hint">${calMini}盈亏日历</span>` +
       `<div class="pano-body">` +
         `<div class="ps-big-row">` +
           `<div class="ps-big ${pCls}">¥${fmt(totalPnl)} <small>(${pct(totalPct)})</small></div>` +
@@ -778,42 +784,59 @@ function renderSummary(hs) {
         `</div>` +
       `</div>` +
     `</div>`;
-  el.className = 'pano-home';
-  // 把「收支计划」卡片移动到「收益率」卡片之后，作为首页概览第 3 张卡（同等高度，条目过多时列表内部滚动）
+  // v3.4：el (acSummaryData) 可能已删除 — 只在存在时才设置 class 和 innerHTML
+  if (el) {
+    el.className = 'pano-home';
+    // v3.3：cardMV（donut+legend）和 cardPnl 都已合并到 hero banner 的双 panel 里，这里渲染空
+    el.innerHTML = '';
+  }
+  // v3.5：收支计划卡片迁到 hero banner 右栏（#heroCfSlot），不再放 header act-group
   const cfCard = document.getElementById('cashflowCard');
   if (cfCard && cfCard.parentNode) cfCard.parentNode.removeChild(cfCard);
-  el.innerHTML = cardMV + cardPnl;
-  if (cfCard) el.appendChild(cfCard);
-  syncCfCardHeight(el);
-  // 总市值卡整卡可点 → 资产构成弹框（同收益率卡盈亏日历效果：ps-head 右侧常驻小字提示）；
-  // hover 二级明细已删，二级占比统一在弹框内下钻查看。
-  const mvCard = el.querySelector('.pano-sum.has-donut');
-  if (mvCard) mvCard.addEventListener('click', () => openAssetCompModal());
-  // 收益率卡整卡可点 → 盈亏日历（与收益率同源 pnl_daily，入口上提不再藏在资产页工具条）
-  const pnlCard = el.querySelector('.pano-sum.card-link:not(.has-donut)');
-  if (pnlCard) pnlCard.addEventListener('click', () => openPnlModal());
-  // 总市值卡圆环弧段点击（2026-10-09 理财迁首页后调整）：基金/理财 → 首页筛选切到对应类别；
-  // 其他 → 资产页「账户」tab（股票已在首页，不跳）。命中可跳转弧段时 stopPropagation，
-  // 避免冒泡触发整卡的「资产构成」弹框；股票弧段不拦截，冒泡走整卡打开弹框。
-  const mvDonut = el.querySelector('.donut-clickable');
-  if (mvDonut) mvDonut.addEventListener('click', (e) => {
-    const seg = e.target.closest('circle[data-seg]');
-    if (!seg) return;
-    const name = seg.getAttribute('data-seg');
-    if (name === '基金' || name === '理财') {
-      e.stopPropagation();
-      const btn = document.querySelector('#catSlider .atab[data-cat="' + (name === '基金' ? 'fund' : 'wealth') + '"]');
-      if (btn) btn.click();
-      return;
-    }
-    if (name === '其他') {
-      e.stopPropagation();
-      assetTab = 'sources';
-      try { sessionStorage.setItem('assetTab', 'sources'); } catch (_) {}
-      navigate('asset');
-    }
-  });
-  // 近20日收益率 mini 折线（异步填充，不阻塞卡片渲染）：样式同持仓表格「近20日」列的 sparkline
+  const heroCfSlot = document.getElementById('heroCfSlot');
+  if (cfCard && heroCfSlot) {
+    // 去掉 v3.3 的 cf-compact pill 样式，恢复完整卡片形态
+    cfCard.classList.remove('cf-compact');
+    cfCard.classList.add('cf-hero');
+    heroCfSlot.appendChild(cfCard);
+  }
+  // v3.3 Hero Panel 1：总市值（复用原 cardMV 数据）
+  const heroMv = $('#heroMvValue');
+  if (heroMv) heroMv.textContent = '¥' + fmtShort(mvAll);
+  const heroSegs = $('#heroMvSegs');
+  if (heroSegs) {
+    heroSegs.innerHTML = mvSegs.map((s) => {
+      const pctV = (s.v / Math.max(mvAll, 1) * 100).toFixed(0);
+      return `<span class="hero-mv-seg"><span class="hero-mv-seg-dot" style="--dot-color:${s.c}"></span><span class="hero-mv-seg-name">${esc(s.name)}</span><span class="hero-mv-seg-pct">${pctV}%</span></span>`;
+    }).join('');
+  }
+  // v3.4 Hero Panel 2：收益率精简 — pnl-big 只显示 %（删除金额），pnl-detail 只留当日/本月（删除涨跌家数）
+  const pnlBig = $('#heroPnlBig');
+  if (pnlBig) {
+    pnlBig.textContent = pct(totalPct);
+    pnlBig.className = 'hero-pnl-big ' + pCls;
+  }
+  const pnlDetail = $('#heroPnlDetail');
+  if (pnlDetail) {
+    pnlDetail.innerHTML =
+      `<span class="hero-pnl-item">当日<b class="${dpCls}">¥${fmt(dayPnlCNY)}</b></span>` +
+      `<span class="hero-pnl-item">本月<b class="${mpCls}">¥${fmt(monthPnlCNY)}</b></span>`;
+  }
+  // v3.4 header 盈亏日历按钮（替代 hero panel 点击入口）
+  const calBtn = $('#pnlCalBtn');
+  if (calBtn && !calBtn._bound) {
+    calBtn._bound = true;
+    calBtn.addEventListener('click', () => openPnlModal());
+  }
+  // panel 也保留点击 → 日历（双入口）
+  const pnlPanel = $('#heroPnlSummary');
+  if (pnlPanel) pnlPanel.addEventListener('click', () => openPnlModal());
+  // 总市值 panel 主色跟随 topSeg 分类色
+  const mvPanel = $('#heroMvSummary');
+  if (mvPanel && topSeg) mvPanel.style.setProperty('--accent-rgb', topSeg.rgb);
+  // 收益率 panel 主色跟随盈亏正负
+  const pnlPanel2 = $('#heroPnlSummary');
+  if (pnlPanel2) pnlPanel2.style.setProperty('--accent-rgb', totalPnl >= 0 ? 'var(--up-rgb)' : 'var(--down-rgb)');
   renderRateSpark(totalCNY, totalPct);
 }
 
@@ -844,6 +867,7 @@ function syncCfCardHeight(root) {
 // 收益率卡片右上角 mini 走势：近 20 个有数据的交易日，每日盈亏累计 ÷ 期初总市值（≈当前总市值-近20日累计盈亏）
 // 得到收益率变化序列；颜色跟随卡片总收益率正负（盈红/亏绿，与持仓表格 sparkCell 同款规则）。
 // 数据复用盈亏日历的 /api/pnl/history（含理财），calData 已加载时不再重复请求。
+// v3.1 同时渲染 Hero Banner 的大尺寸 sparkline（近 30 天数据，同数据源，不额外请求）。
 async function renderRateSpark(totalCNY, totalPct) {
   try {
     if (!Object.keys(calData).length) {
@@ -852,16 +876,40 @@ async function renderRateSpark(totalCNY, totalPct) {
       const d = await r.json();
       (d.history || []).forEach((h) => { calData[h.date] = h; });
     }
-    const box = document.getElementById('rateSpark');
-    if (!box) return;
-    const arr = Object.keys(calData).sort().slice(-20).map((ds) => calData[ds].total_cny || 0);
-    if (arr.length < 2) { box.innerHTML = '<span class="spark-empty">—</span>'; return; }
-    const cum = []; let s = 0;
-    arr.forEach((v) => { s += v; cum.push(s); });
-    const base = Math.max((totalCNY || 0) - cum[cum.length - 1], 1);  // 期初总市值近似
-    const rates = cum.map((c) => c / base * 100);
-    const color = (totalPct || 0) >= 0 ? 'var(--up)' : 'var(--down)';
-    box.innerHTML = sparkline(rates, { w: 96, h: 24, stroke: color, fill: color });
+    const sortedDates = Object.keys(calData).sort();
+    // 收益率卡片：近 20 天
+    const arr20 = sortedDates.slice(-20).map((ds) => calData[ds].total_cny || 0);
+    if (arr20.length >= 2) {
+      const cum = []; let s = 0;
+      arr20.forEach((v) => { s += v; cum.push(s); });
+      const base = Math.max((totalCNY || 0) - cum[cum.length - 1], 1);
+      const rates = cum.map((c) => c / base * 100);
+      const color = (totalPct || 0) >= 0 ? 'var(--up)' : 'var(--down)';
+      const box = document.getElementById('rateSpark');
+      if (box) box.innerHTML = sparkline(rates, { w: 96, h: 24, stroke: color, fill: color });
+    }
+    // v3.1 Hero Banner 大 sparkline：近 30 天（同样的权益曲线，但用累计盈亏 cum 序列，更直观）
+    const arr30 = sortedDates.slice(-30).map((ds) => calData[ds].total_cny || 0);
+    const heroBox = document.getElementById('heroSpark');
+    const heroTrend = document.getElementById('heroSparkTrend');
+    if (heroBox && arr30.length >= 2) {
+      const cum = []; let s = 0;
+      arr30.forEach((v) => { s += v; cum.push(s); });
+      const last30Pct = cum[cum.length - 1];  // 30 天累计盈亏
+      const trendCls = last30Pct > 0 ? 'up' : (last30Pct < 0 ? 'down' : 'flat');
+      const strokeColor = trendCls === 'up' ? 'var(--up)' : (trendCls === 'down' ? 'var(--down)' : 'var(--text-muted)');
+      heroBox.innerHTML = sparkline(cum, { w: 300, h: 72, stroke: strokeColor, fill: strokeColor, responsive: true });
+      // 趋势文案：近30日 +X.X%（按总市值折算），或 ¥X 盈亏（简化显示）
+      if (heroTrend) {
+        const base = Math.max((totalCNY || 0) - last30Pct, 1);
+        const pctV = (last30Pct / base * 100);
+        const sign = pctV > 0 ? '+' : '';
+        heroTrend.textContent = `${sign}${pctV.toFixed(2)}%`;
+        heroTrend.className = `hero-mini-trend ${trendCls}`;
+      }
+    } else if (heroBox) {
+      heroBox.innerHTML = '<span class="hero-spark-empty">—</span>';
+    }
   } catch (e) { /* 走势失败不影响卡片主信息 */ }
 }
 
@@ -1042,7 +1090,9 @@ function sparkline(data, opts) {
   const last = pts.split(' ').pop();
   const gid = 'spk' + (++sparkUid);
   const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stroke}" stop-opacity=".32"/><stop offset="100%" stop-color="${stroke}" stop-opacity="0"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(#${gid})"/>`;
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="${w}" height="${h}" class="u-block u-va-mid" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="2.2" fill="${stroke}"/></svg>`;
+  // responsive:true → 去掉硬编码 width/height，只留 viewBox，由 CSS 容器控制尺寸（让 SVG 填满容器宽度）
+  const dimAttrs = (opts && opts.responsive) ? '' : ` width="${w}" height="${h}"`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"${dimAttrs} class="u-block u-va-mid" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="2.2" fill="${stroke}"/></svg>`;
 }
 
 // 表格迷你走势单元格：线条为近20日收盘价走势，颜色按首尾收盘价对比（尾>首=涨红，否则=跌绿，

@@ -31,15 +31,64 @@
       </button>
     </nav>
     <div class="act-group" data-page-node-id="j0WesIALWHLc5b4Knx70Hd">
-      <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式" data-page-node-id="K4gfVjHEsivjTa5FhNox9z"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto" data-page-node-id="kGkiXw6KJloE55MHxCZTPH"><path d="M21 12.79 A9 9 0 1 1 11.21 3 A7 7 0 0 0 21 12.79 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" data-page-node-id="qsB0P2lsM1dGBX4C9LB0OG"/></svg></button>
+      <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式" aria-label="切换主题"></button>
+      <button id="pnlCalBtn" class="btn theme-toggle" type="button" title="盈亏日历" aria-label="查看盈亏日历">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto">
+          <rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/>
+          <path d="M8 3v4M16 3v4M3 10h18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+        </svg>
+      </button>
       <button id="userBtn" class="btn act-user" type="button" title="用户切换" data-page-node-id="HFt15nJsQL0qjTTP8Lx7KV"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto" data-page-node-id="ID4NSVY35T069QYO63WqEW"><circle cx="12" cy="8.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.9" data-page-node-id="kQu7CzheqdpBw4GiNl6AcO"/><path d="M4.8 19.2 C4.8 15.3 8 13.6 12 13.6 C16 13.6 19.2 15.3 19.2 19.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="sJpfJfDPBs4bWNojDgZvQl"/></svg><span id="userNameText" style="display:none" data-page-node-id="3T24uP1BsS2CK2XUqL2eOg">默认</span></button>
     </div>
   </header>
 
+  <!-- v3.3 Hero Summary Banner：320px 高双栏式，左品牌 + 右数据（总市值 + 收益率 + sparkline 三合一）
+       原独立的总市值 donut 卡、收益率卡都已合并进来；收支计划移 header。 -->
+  <section id="heroBanner" class="hero-banner" aria-label="持仓侠 品牌横幅">
+    <div class="hero-bg-blob hero-bg-blob-a"></div>
+    <div class="hero-bg-blob hero-bg-blob-b"></div>
+    <div class="hero-grid-overlay" aria-hidden="true"></div>
+    <div class="hero-content">
+      <!-- 左栏：品牌信息 -->
+      <div class="hero-left">
+        <div class="hero-badge"><span class="hero-badge-dot"></span> 实时 · 本地数据</div>
+        <h2 class="hero-title">持仓<span>侠</span></h2>
+        <p class="hero-slogan">一站式持仓管理 · 盈亏追踪 · AI 智能分析</p>
+      </div>
+      <!-- 中栏：核心数据（总市值 + 收益率 双 panel + sparkline） -->
+      <div class="hero-center">
+        <div class="hero-summary-pair">
+          <div class="hero-panel hero-panel-mv" id="heroMvSummary">
+            <div class="hero-panel-head">
+              <span class="hero-panel-label">总市值</span>
+              <span id="heroMvValue" class="hero-panel-value">—</span>
+            </div>
+            <div id="heroMvSegs" class="hero-mv-segs"></div>
+          </div>
+          <div class="hero-panel hero-panel-pnl" id="heroPnlSummary">
+            <div class="hero-panel-head">
+              <span class="hero-panel-label">收益率</span>
+              <span id="heroPnlBig" class="hero-pnl-big">—</span>
+            </div>
+            <div class="hero-pnl-detail" id="heroPnlDetail"></div>
+          </div>
+        </div>
+        <!-- sparkline 卡片顶部内嵌 label + trend -->
+        <div class="hero-spark-wrap" id="heroSparkWrap">
+          <div class="hero-spark-head">
+            <span class="hero-spark-label">近30日权益曲线</span>
+            <span id="heroSparkTrend" class="hero-spark-trend">—</span>
+          </div>
+          <div id="heroSpark" class="hero-spark" aria-label="近30日权益曲线"></div>
+        </div>
+      </div>
+      <!-- 右栏：收支计划卡片（原 header 右上角 pill 迁回 hero） -->
+      <div class="hero-right" id="heroCfSlot"></div>
+    </div>
+  </section>
+
   <div id="holdingsView" data-page-node-id="eA9BnVqpDmsG5ENvSFkU7H">
-  <div id="accountCard" class="account-card" hidden data-page-node-id="Q2KXN0H2U4sG8LNbPr5Dgv">
-    <div class="ac-summary-cards" id="acSummaryData" data-page-node-id="D2uZFnIvK6wTfrRVbqefLN"></div>
-  </div>
+  <!-- accountCard (总市值/收益率卡) v3.3 已迁移到 hero banner 双 panel，整块删除 -->
   <div id="cashflowCard" class="cf-card" hidden>
     <div class="cf-head">
       <span class="cf-title" data-icon="calendar">收支计划</span>

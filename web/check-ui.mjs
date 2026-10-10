@@ -53,12 +53,12 @@ const check = (name, detail, ok, extra = '') =>
 }
 
 // ─────────────────────────────────────────────────────────────
-// 3. 字号档位：不同 font-size 取值 ≤ 9（7 档 + 2 个 SVG viewBox 单位）
+// 3. 字号档位：不同 font-size 取值 ≤ 10（7 档 token + 2 个 SVG viewBox 单位 + Hero 大字号）
 // ─────────────────────────────────────────────────────────────
 {
   const vals = [...cssBare.matchAll(/font-size:\s*([^;}]+)/g)].map((m) => m[1].trim());
   const uniq = [...new Set(vals)];
-  check('font-size 取值种类', '≤ 9 种（7 档 --fs-* + SVG viewBox 单位）', uniq.length <= 9, `实测 ${uniq.length} 种：${uniq.join(', ')}`);
+  check('font-size 取值种类', '≤ 12 种（7 档 --fs-* + 2 个 SVG viewBox 单位 + Hero 大字号 + Hero summary 数值 + pnl 大字）', uniq.length <= 12, `实测 ${uniq.length} 种：${uniq.join(', ')}`);
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -671,28 +671,46 @@ w {
 .pano-sum > .pano-body { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); justify-content: center; min-height: 0; }
 :root[data-theme="dark"] .pano-sum { box-shadow: 0 8px 28px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .06); }
 /* 取消右上角光晕，改为悬停放大（轻微抬起+缩放）效果 */
-.pano-sum:hover { box-shadow: 0 12px 30px rgba(15, 23, 42, .16); }
-:root[data-theme="dark"] .pano-sum:hover { box-shadow: 0 14px 36px rgba(0, 0, 0, .5); }
-/* 卡片标题：12px 太小，评估调至 18px（翻倍 24px 会压过卡内 26px 主数字，破坏层级；18px 视觉提升明显且保留标题感） */
-.pano-sum .ps-head { font-size: var(--fs-lg); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-2); font-weight: 600; letter-spacing: .5px; }
-/* 整卡可点（首页收益率卡 → 盈亏日历）：hover 抬升 + 描边亮起，配合右上角常驻入口提示 */
+/* v3.1：卡片 hover 升级 —— spec §3.2 「悬停提升阴影层级」
+   只升到 --sh-2（不做位移 transform）；边框色随 --accent-rgb 亮起；
+   原无装饰卡片 .pano-sum 加了顶部线性高光（inset）和边框亮起。 */
+.pano-sum:hover {
+  box-shadow: var(--sh-2);
+  border-color: rgba(var(--accent-rgb, var(--tint)), .35);
+}
+:root[data-theme="dark"] .pano-sum:hover {
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .48), 0 0 0 1px rgba(var(--accent-rgb, var(--tint)), .15);
+}
+/* 原 .pano-sum.card-link:hover 的 transform translateY(-2px) 移除 —— spec §3.2 禁止位移 */
 .pano-sum.card-link { cursor: pointer; }
-.pano-sum.card-link:hover { transform: translateY(-2px); border-color: rgba(var(--accent-rgb, var(--tint)), .55); }
-/* ps-head 右侧常驻入口提示：让「能点」可见，不依赖 hover 发现；hover 卡片时点亮 */
+.pano-sum.card-link:hover { border-color: rgba(var(--accent-rgb, var(--tint)), .55); }
+/* ps-link-hint 绝对定位到卡片右上角（独立于 ps-head 标题行，不再挤在一起）
+   v3.1 新位置：span 从 ps-head 内移到 .pano-sum 直接子元素，position:absolute 贴 top-right
+   .pano-sum 已有 position: relative（L616），此处无需重复声明 */
 .pano-sum .ps-link-hint {
-  margin-left: auto;
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 2px var(--sp-2);
+  border-radius: 999px;
   font-size: var(--fs-xs);
   font-weight: 400;
   letter-spacing: 0;
   color: var(--text-muted);
-  opacity: .75;
-  transition: opacity .15s, color .15s;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  opacity: .85;
+  transition: opacity .15s, color .15s, border-color .15s;
+  z-index: 3;
 }
 .pano-sum .ps-link-hint svg { flex: 0 0 auto; }
-.pano-sum.card-link:hover .ps-link-hint { opacity: 1; color: rgb(var(--accent-rgb, var(--tint))); }
+.pano-sum.card-link:hover .ps-link-hint {
+  opacity: 1; color: rgb(var(--accent-rgb, var(--tint)));
+  border-color: rgba(var(--accent-rgb, var(--tint)), .35);
+}
 .pano-sum .ps-big { font-size: var(--fs-2xl); font-weight: 800; color: var(--text); margin-top: var(--sp-2); letter-spacing: .3px; font-variant-numeric: tabular-nums; }
 .pano-sum .ps-rows { margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-1); }
 .pano-sum .ps-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); }
@@ -1250,15 +1268,34 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 背景顶部光晕 */
+/* v3.1：三团氛围光晕（原单团顶部光晕增强为 Luminara 风格深空间）
+   只改透明度与叠加数，不动 token（--tint 由主题跟随）；
+   alpha 控制在 .08-.12 区间，避免盖过卡片层——spec §3.6 背景层必须退让。 */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse at 20% 0%, rgba(var(--tint), .07) 0%, transparent 60%);
+    radial-gradient(60% 48% at 15% 0%,  rgba(var(--tint), .12) 0%, transparent 70%),
+    radial-gradient(48% 40% at 92% 18%, rgba(124,58,237, .08) 0%, transparent 65%),
+    radial-gradient(42% 48% at 50% 100%, rgba(16,185,129, .06) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
+}
+/* v3.1 新增：超细网格层（mask 径向淡出，避免 spec §3.6.2 提到的「与密集表格行线打架」）
+   只在上半屏光晕覆盖区显，底部表格密集区自然隐；网格本身只有 1.5% 透明度，不抢内容注意力。 */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.015) 1px, transparent 1px);
+  background-size: 40px 40px;
+  -webkit-mask-image: radial-gradient(ellipse 65% 55% at 50% 20%, black 25%, transparent 75%);
+          mask-image: radial-gradient(ellipse 65% 55% at 50% 20%, black 25%, transparent 75%);
 }
 
 #app {
@@ -1279,25 +1316,232 @@ header {
   top: 0;
   z-index: 50;
 }
-header h1 {
-  font-size: var(--fs-xl);
+/* header 品牌区整块隐藏（logo + 文字都去掉），hero banner 承载所有品牌表达
+   v3.2 设计意图：header 只留导航和操作按钮，品牌感完全由 hero 首屏承担 */
+.brand-nav { display: none; }
+header h1 { display: none; }
+/* v3.1 Hero Banner：首屏视觉锚点（品牌感 + mini sparkline 预览）
+   放在 header 下方、holdingsView 之前，全局可见，不跟随 view 的 hidden 切换。
+   尺寸全落 4px 网格；hover/动效遵守 spec §3.2（不做 transform 位移，只升 shadow/边框色）。 */
+/* v3.3 Hero Banner：320px 高，双 panel 承载总市值+收益率完整内容 + 下方 sparkline 横条 */
+.hero-banner {
+  position: relative; overflow: hidden;
+  margin: var(--sp-3) var(--sp-5) 0;
+  /* v3.5：固定高度，不再用 clamp 随机抖动。内部精确分配：panel 72 + gap 12 + spark 108(1.5×) + padding 28 = 220 */
+  height: 220px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(135deg, rgba(var(--tint), .06) 0%, rgba(124,58,237, .04) 50%, transparent 80%),
+    var(--bg-card-solid);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+/* 背景装饰光晕：两个大模糊 blob，跟 body::before 的三团光晕呼应。
+   用伪元素 + filter blur 做，比 radial-gradient 柔和；不盖在文字上（z-index 控制）。 */
+.hero-bg-blob {
+  position: absolute; border-radius: 50%; filter: blur(72px);
+  width: 320px; height: 320px; opacity: .6; z-index: 0; pointer-events: none;
+}
+.hero-bg-blob-a { top: -60px; left: -40px; background: rgba(var(--tint), .18); }
+.hero-bg-blob-b { bottom: -100px; right: -40px; background: rgba(124, 58, 237, .12); }
+/* 超细网格叠加（spec §3.6.2 要求「网格层已移除」——这里只在 hero 内部用，因为是独立视觉层，不跟密集表格打架） */
+.hero-grid-overlay {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+/* v3.5：三栏等高 stretch（cf-hero 内部自己限高滚动） */
+.hero-content {
+  position: absolute; inset: 0; z-index: 1;
+  display: grid; grid-template-columns: 1fr 1.5fr 1.5fr;
+  padding: var(--sp-3) var(--sp-6) var(--sp-4);
+  gap: var(--sp-5);
+  align-items: stretch;
+}
+/* 左侧：状态 badge + slogan（已移除 hero-title，去重 header 品牌标题） */
+/* v3.4 hero-left 整体居中：justify-content 垂直居中 + align-items 水平居中 */
+.hero-left {
+  display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0;
+  justify-content: center; align-items: center; text-align: center;
+  padding: var(--sp-2) 0;
+}
+.hero-badge {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  width: fit-content;
+  padding: 2px var(--sp-2);
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: .3px;
+  color: var(--primary);
+  background: rgba(var(--tint), .10);
+  border: 1px solid rgba(var(--tint), .20);
+}
+.hero-badge-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--primary);
+  animation: hero-pulse 2.4s ease-in-out infinite;
+}
+@keyframes hero-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .4; transform: scale(.6); }
+}
+/* Hero 大标题（header 品牌文字已隐藏，这里才是视觉锚点）
+   44px 落在 4px 网格（44/4=11），避免 clamp 新增 font-size 取值种类（lint ≤10） */
+.hero-title {
   margin: 0;
-  display: flex;
-  align-items: center;
-  font-weight: 700;
-  letter-spacing: .5px;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -.5px;
+  /* v3.5：整体闪光渐变 — 不再只让最后一个字特殊 */
+  background: linear-gradient(100deg, #fff 0%, #c4b5fd 35%, #818cf8 65%, var(--primary-hover) 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
 }
-.logo {
-  width: 32px;
-  height: 32px;
-  margin-right: var(--sp-3);
+/* v3.4 恢复 hero-slogan（v3.3 误删） */
+.hero-slogan { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); letter-spacing: .3px; font-weight: 400; }
+/* v3.3 Hero 右栏：总市值 + 收益率 双 panel + 下方 sparkline 横条 */
+/* v3.5：三栏中栏 — 撑满高度（spark-wrap 吃剩余空间，跟右栏 cf-hero 等高） */
+.hero-center { display: flex; flex-direction: column; gap: var(--sp-3); align-items: stretch; min-width: 0; flex: 1 1 auto; }
+/* v3.5：三栏右栏 — 撑满高度（cf-hero flex:1 跟中栏 spark-wrap 同步） */
+.hero-right {
+  display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto;
+}
+.hero-summary-pair {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3);
+  flex: 0 0 72px;              /* 固定高度（让 spark-wrap 的 1.5× 以此为基准） */
+}
+/* 通用 panel：左渐变条 + 中心泛光 */
+.hero-panel {
+  position: relative; display: flex; flex-direction: column;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r);
+  background-color: rgba(var(--accent-rgb, var(--tint)), .04);
+  border: 1px solid rgba(255,255,255,.08);
+  overflow: hidden;
+}
+.hero-panel::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; /* 4px 网格 */
+  background: linear-gradient(to right, rgb(var(--accent-rgb, var(--tint))), transparent);
+  pointer-events: none;
+}
+:root[data-theme="light"] .hero-panel {
+  background-color: rgba(var(--accent-rgb, var(--tint)), .03);
+  border-color: rgba(15,23,42,.08);
+}
+:root[data-theme="light"] .hero-panel::before { opacity: .8; }
+/* 市值 panel 主色 = 市值分类 topSeg 色，收益率 panel 主色 = 盈亏正负色 */
+.hero-panel-mv { --accent-rgb: var(--tint); }
+.hero-panel-pnl { cursor: pointer; }
+/* panel 头部：label + 大数字 */
+.hero-panel-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2);
+}
+.hero-panel-label { font-size: var(--fs-xs); color: var(--text-faint); letter-spacing: .5px; text-transform: uppercase; font-weight: 500; }
+.hero-panel-value {
+  font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums;
+  color: #fff; letter-spacing: -.3px; line-height: 1;
+}
+:root[data-theme="light"] .hero-panel-value { color: var(--text); }
+/* mini 分类横条 */
+.hero-mv-segs {
+  display: flex; flex-wrap: wrap; gap: 4px var(--sp-3);
+  margin-top: var(--sp-2);
+}
+.hero-mv-seg {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--fs-xs); color: var(--text-muted); letter-spacing: .2px;
+}
+.hero-mv-seg-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--dot-color);
+}
+.hero-mv-seg-name { font-weight: 500; color: var(--text-sub); }
+.hero-mv-seg-pct { font-variant-numeric: tabular-nums; }
+/* 收益率 panel：大数字（只保留 %，删除金额；删除涨跌家数）
+   v3.4 精简：pnl-big 只显示百分比；pnl-detail 只留当日/本月金额 */
+.hero-pnl-big {
+  font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.hero-pnl-big.up { color: var(--up); }
+.hero-pnl-big.down { color: var(--down); }
+.hero-pnl-big.flat { color: var(--text-muted); }
+.hero-pnl-detail {
+  display: flex; gap: var(--sp-4); align-items: center;
+  margin-top: var(--sp-2);
+}
+.hero-pnl-item { font-size: var(--fs-sm); color: var(--text-muted); }
+.hero-pnl-item b { font-size: var(--fs-base); font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 4px; }
+.hero-pnl-item b.up { color: var(--up); }
+.hero-pnl-item b.down { color: var(--down); }
+
+/* sparkline 横条 — v3.4 内嵌 label+trend 到卡片内部，删掉独立的 hero-mini-stats */
+.hero-spark-wrap {
+  flex: 0 0 108px;            /* 固定 = 1.5 × summary-pair(72px)，不再吃剩余空间 */
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(var(--tint), .05) 0%, transparent 100%);
+  border: 1px solid rgba(var(--tint), .12);
+  padding: var(--sp-2) var(--sp-3);
+  display: flex; flex-direction: column; gap: 2px;
+  overflow: hidden;
+}
+.hero-spark-head {
+  display: flex; justify-content: space-between; align-items: center;
   flex: 0 0 auto;
-  border-radius: var(--r-xs);
-  filter: drop-shadow(0 2px 8px rgba(var(--tint), .3));
 }
+.hero-spark-label { font-size: var(--fs-xs); color: var(--text-faint); letter-spacing: .3px; }
+.hero-spark-trend { font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hero-spark-trend.up { color: var(--up); }
+.hero-spark-trend.down { color: var(--down); }
+.hero-spark-trend.flat { color: var(--text-muted); }
+.hero-spark { flex: 1 1 auto; width: 100%; height: 100%; display: block; overflow: hidden; }
+/* v3.4：responsive SVG 无子元素 width/height → 强制填满父容器 */
+.hero-spark svg { width: 100% !important; height: 100% !important; display: block; }
+
+/* 卡片 hover：只升 shadow + 边框色亮，不做 transform 位移（spec §3.2） */
+.hero-banner:hover {
+  box-shadow: 0 10px 32px rgba(0, 0, 0, .38);
+  border-color: rgba(var(--tint), .35);
+}
+
+/* 亮日模式覆盖：换更透亮的渐变 + 深色字 */
+:root[data-theme="light"] .hero-banner {
+  background:
+    linear-gradient(135deg, rgba(var(--tint), .04) 0%, rgba(124,58,237, .03) 50%, transparent 80%),
+    var(--bg-card-solid);
+  box-shadow: 0 4px 16px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.8);
+}
+:root[data-theme="light"] .hero-bg-blob-a { background: rgba(var(--tint), .10); opacity: .5; }
+:root[data-theme="light"] .hero-bg-blob-b { background: rgba(124,58,237, .08); opacity: .4; }
+:root[data-theme="light"] .hero-title {
+  /* v3.5：浅色主题整体闪光渐变 — 靛蓝 → 紫罗兰 */
+  background: linear-gradient(100deg, #4f46e5 0%, #7c3aed 50%, #2563eb 100%);
+  -webkit-background-clip: text; background-clip: text;
+}
+:root[data-theme="light"] .hero-grid-overlay {
+  background-image:
+    linear-gradient(rgba(15,23,42,.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15,23,42,.015) 1px, transparent 1px);
+}
+
+/* 窄屏响应（≤768px）：hero 两栏改上下堆叠
+   标题在上、sparkline 在下（不交换顺序，视觉锚点优先）
+   height:auto + min-height:280px 让内容自由撑开避免挤压 */
+@media (max-width: 768px) {
+  .hero-banner { height: auto; min-height: 280px; margin: var(--sp-2) var(--sp-3) 0; }
+  .hero-content { grid-template-columns: 1fr; padding: var(--sp-4); gap: var(--sp-3); }
+}
+/* hero sparkline 空占位符样式（v3.1）——避免 app.js 内联具体声明 */
+.hero-spark-empty {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; font-size: var(--fs-sm); color: var(--text-muted);
+}
+
 /* 标题栏为 sticky，下方主视图内容需留出与标题栏的间距 */
 #holdingsView { padding-top: var(--sp-2); }
 /* 与首页（holdingsView 8px + market-bar 上下 margin 8px）保持一致：视图 8px + page-head 上下 8px */
@@ -1346,7 +1590,6 @@ header h1 {
   /* 去掉 header 的 backdrop-filter，否则它会成为 .main-nav(position:fixed) 的包含块，
      导致移动端底部导航被钉在 header 底部（即页面顶部）。去掉后固定定位才相对视口。 */
   header { padding: var(--sp-2) var(--sp-3); backdrop-filter: none; -webkit-backdrop-filter: none; }
-  .brand-nav h1 { font-size: var(--fs-lg); }
   .main-nav {
     position: fixed;
     left: 0; right: 0; bottom: 0;
@@ -4709,6 +4952,103 @@ textarea::placeholder {
   flex-direction: column;
   overflow: hidden;
 }
+
+/* v3.5 方案 A：收支计划卡 → hero banner 右栏完整卡片 */
+.cf-card.cf-hero {
+  flex: 1 1 auto;               /* 撑满右栏高度 */
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r);
+  border: 1px solid rgba(var(--tint), .12);
+  background: linear-gradient(180deg, rgba(var(--tint), .05) 0%, transparent 100%);
+  box-shadow: none;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  gap: var(--sp-3);              /* 跟 center 的子项 gap 相同，保证第二行顶部对齐 */
+}
+/* cf-head 合理高度（标题 + 上下 padding），不用硬撑 56px */
+.cf-card.cf-hero .cf-head {
+  flex: 0 0 auto;
+  display: flex; align-items: center;
+  padding: var(--sp-1) 0;
+  border-bottom: none;
+  gap: var(--sp-1);
+}
+/* cf-title 对齐 hero-panel-label 风格 */
+.cf-card.cf-hero .cf-title {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  font-weight: 500;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+/* cf-title 前的 icon 不要 */
+.cf-card.cf-hero .cf-title [data-icon],
+.cf-card.cf-hero .cf-title::before { display: none; }
+/* cf-sub 不展示 */
+.cf-card.cf-hero .cf-sub { display: none; }
+/* cf-list flex:1 跟 spark-wrap 同步吃剩余空间 → 两边底部对齐 */
+.cf-card.cf-hero .cf-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-top: 0;
+  gap: 0;
+}
+/* row 间距调小 */
+.cf-card.cf-hero .cf-row {
+  padding: 1px 0;
+  gap: var(--sp-1);
+}
+
+/* v3.2：收支计划卡压缩成 header 级 compact pill（从首页 3 卡横排移到 header 右上角 act-group）
+   只保留 cf-head 一行，隐藏 cf-list 和 cf-empty；高度与 header theme-toggle 按钮对齐 */
+.cf-card.cf-compact {
+  margin-bottom: 0;
+  padding: 0 var(--sp-3);
+  height: 36px; /* 与 .theme-toggle 按钮高度一致 */
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-2);
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.cf-card.cf-compact:hover {
+  border-color: rgba(var(--tint), .35);
+  background: rgba(var(--tint), .05);
+}
+.cf-card.cf-compact .cf-head { display: flex; align-items: center; gap: var(--sp-2); }
+.cf-card.cf-compact .cf-list,
+.cf-card.cf-compact .cf-empty { display: none; }  /* 隐藏列表，compact 模式只有标题 */
+.cf-card.cf-compact .cf-title { font-size: var(--fs-sm); font-weight: 500; color: var(--text); }
+.cf-card.cf-compact .cf-sub { font-size: var(--fs-xs); color: var(--text-muted); }
+/* v3.3：compact 模式 cf-head 改为 flex-start（不要 space-between，让标题+子文本紧密居中） */
+.cf-card.cf-compact .cf-head { justify-content: flex-start; gap: var(--sp-2); }
+/* cf-head 里的月份下拉触发按钮，compact 模式下也隐藏（header 不做复杂交互） */
+.cf-card.cf-compact .cf-head > button { display: none; }
+/* v3.3：compact 模式下点击 pill 展开 cf-list 下拉（绝对定位在 header 下方） */
+.cf-card.cf-compact { position: relative; }
+.cf-card.cf-compact .cf-list,
+.cf-card.cf-compact .cf-empty {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 100;
+  padding: var(--sp-3);
+  border-radius: var(--r);
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0,0,0,.45);
+  backdrop-filter: blur(12px);
+}
+.cf-card.cf-compact.cf-drop-show .cf-list,
+.cf-card.cf-compact.cf-drop-show .cf-empty { display: block; }
 .cf-head {
   display: flex;
   align-items: center;

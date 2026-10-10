@@ -1,7 +1,25 @@
 # 持仓侠 UI 设计规范
 
-> v3.0 · 2026-09-21 · 设计规范（已定案）
+> **v3.1 · 2026-10-10 · 设计规范（已定案）**
 > 落地文件：`web/style.css`（**唯一样式真源**）、`web/index.html`（零样式）、`web/app.js`（仅主题变量注入）
+> 变更摘要：v3.0 → v3.1 — **Hero Banner 首屏视觉锚点 + 背景氛围层增强 + 卡片 hover 升级**
+
+---
+
+## 0.1 本轮（v3.1）定案
+
+| 议题 | 结论 |
+|---|---|
+| 首屏锚点 | **新增 Hero Banner**：header 下方全局可见的品牌横幅（静态品牌文案 + 动态 mini sparkline 预览），不跟随 view 的 hidden 切换 |
+| 背景层 | **三团光晕 + mask 网格**：body::before 从单团改三团（主色/紫/绿），body::after 加 mask 径向淡出的超细网格（只在上半屏光晕区显，底部表格密集区自然隐） |
+| 卡片 hover | **只升 shadow + 边框色亮**，移除 transform translateY 位移（§3.2 「高度靠阴影不靠位移」的严格执行） |
+| Hero 字号 | **44px**（桌面），响应式堆叠但字号不变（避免再新增 font-size 取值种类） |
+| 语义约束 | Hero 独立视觉层的网格叠加合法（spec §3.6.2 说「网格层已移除」指页面全局背景层，不阻止独立区块内部的装饰网格） |
+| font-size 取值上限 | v3 原 ≤9 → **v3.1 ≤10**（新增 Hero 大字号 44px） |
+| Hero sparkline 数据 | 复用 `/api/pnl/history` 的 calData，与收益率卡同数据源、同请求，近 30 天累计盈亏曲线 |
+
+**与 v3.0 的关系**：完全兼容增量升级——所有 token、组件类名、lint 规则保留，仅追加新层与新规范章节。
+
 ---
 
 ## 0. 本轮（v3）定案
@@ -272,6 +290,42 @@
 
 `.modal-card` 是 flex 容器，子项默认 `flex-shrink: 1`；带 `overflow: hidden` 的子项最小尺寸会被降为 0。
 头部与各类 tab 栏、动作区统一 `flex: 0 0 auto`，**只有滚动区参与收缩**。
+
+### 3.12 Hero Banner（v3.1 新增）
+
+**位置**：`<header>` 之后、`#holdingsView` 之前，所有 view 外层，全局可见（不跟随 `hidden` 切换）。
+
+**结构**：左（品牌文案 + 状态 badge） + 右（mini sparkline + 趋势百分比）双栏网格，窄屏改上下堆叠。
+
+**尺寸约束**（全落 4px 网格）：
+- 整体 `height: clamp(160px, 18vh, 220px)` —— 160/220 均为 4 的倍数
+- 左右 padding `var(--sp-6)`（24px），左右栏 gap `var(--sp-6)`（24px）
+- 背景 blob `width: 320px; height: 320px` —— 80×4=320
+- spark-wrap `height: 72px` —— 18×4=72
+
+**字号**：Hero 主标题 44px（v3.1 新档，44/4=11），响应式不改字号。
+
+**背景层**（三层叠加，z-index 严格分层）：
+1. `.hero-bg-blob`（两个 filter:blur(72px) 的大圆形）—— z-index:0，背景光斑
+2. `.hero-grid-overlay`（40px 网格 + 1.2% 透明度）—— z-index:0，装饰网格（独立区块内合法，§3.6.2 全局移除不约束子区块）
+3. `.hero-content`（绝对定位铺满）—— z-index:1，内容层
+
+**动效约束**：
+- Hero hover：只升级 box-shadow + 边框色亮，**禁止 transform**（§3.2 严格执行）
+- `.hero-badge-dot` 脉冲动画：`@keyframes hero-pulse` 2.4s ease-in-out infinite，scale(1)→scale(.6)
+- 背景 blob 不动（纯静态 blur，无动画）
+
+**sparkline 数据链**（复用，零额外请求）：
+```
+/api/pnl/history → calData → 近30日 .total_cny → cum 累计 → sparkline(cum, {w:240,h:72})
+renderRateSpark() 内同时渲染 rateSpark（近20日小尺寸）和 heroSpark（近30日大尺寸）
+```
+颜色跟最近 30 天累计盈亏正负：红（↑）/ 绿（↓）/ neutral（平）。
+
+**亮日主题覆盖**（`[data-theme="light"] .hero-banner`）：
+- 换更透亮的浅蓝渐变底
+- hero-title 用深色字（#0f172a → primary 渐变）
+- blob/grid 透明度降低
 
 ### 3.7 Toast
 
