@@ -1,22 +1,12 @@
 # Portfolio · 持仓侠 / My Folio Hub
 
-![GitHub stars](https://img.shields.io/github/stars/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=yellow)
+![GitHub stars](https://img.shields.io/github/stars/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=yellow) ![GitHub last commit](https://img.shields.io/github/last-commit/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=2ea44f) ![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat) ![MCP ready](https://img.shields.io/badge/MCP-ready-5A0FC8?style=flat)
 
-![GitHub last commit](https://img.shields.io/github/last-commit/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=2ea44f)
+> **数据私有 · 极致轻量 · AI 原生（MCP）** —— 不是又一个行情看板，而是把 股票、基金持仓（含理财）/ 现金 / 负债 / 流水 统一成一个**可被 AI 理解与操作**的自托管账本。
 
-![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)
-
-![Go 1.25](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat\&logo=go\&logoColor=white)
-
-![Image 28.3 MB](https://img.shields.io/badge/image-28.3_MB-2496ED?style=flat\&logo=docker\&logoColor=white)
-
-![MCP ready](https://img.shields.io/badge/MCP-ready-5A0FC8?style=flat)
-
-> **数据私有 · 极致轻量 · AI 原生（MCP）** —— 不是又一个行情看板，而是把 持仓（含理财）/ 现金 / 负债 / 流水 统一成一个**可被 AI 理解与操作**的自托管账本。
-
-> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓（含理财）/ 现金 / 负债 / 流水全景资产。自动刷新行情（不含理财）、计算盈亏、记录历史，提供盈亏日历、技术分析/**基金关联股票代码**、动态调仓计划与 AI 总结。桌面与移动端自适应。
+> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓（含理财）/ 现金 / 负债 / 流水 / 收支等。自动刷新行情（不含理财）、计算盈亏、记录历史，提供盈亏日历、技术分析/**基金关联股票代码**、动态调仓计划与 AI 总结。桌面与移动端自适应。
 >
-> **English**: A self-hosted, multi-user personal investment dashboard for tracking **A-share / US / HK stocks and funds**, plus wealth products (within holdings), cash, liabilities and cash flows. Auto-refreshes quotes, computes P/L, records history, and offers a P/L calendar, technical analysis, dynamic rebuy plans, and AI summaries. Responsive on desktop and mobile. **Ultra-lightweight: a single pure-Go binary (no CGO); ~28 MB image and only 10–16 MB resident memory.**
+> **English**: A self-hosted, multi-user personal investment holdings dashboard that unifies **A-share / US / HK stock and fund holdings** (including wealth products), cash, liabilities, cash flows, and income/expense into one view. It auto-refreshes market quotes (excluding wealth products), computes profit/loss, and records history, while offering a P/L calendar, technical analysis / fund-linked stock codes, dynamic rebalancing plans, and AI summaries. Responsive on both desktop and mobile.
 
 ## 📖 目录
 
