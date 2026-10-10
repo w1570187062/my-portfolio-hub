@@ -12,11 +12,11 @@
 
 ![MCP ready](https://img.shields.io/badge/MCP-ready-5A0FC8?style=flat)
 
-> **数据私有 · 极致轻量 · AI 原生（MCP）** —— 不是又一个行情看板，而是把 持仓 / 理财 / 现金 / 负债 / 消费 统一成一个**可被 AI 理解与操作**的自托管账本。
+> **数据私有 · 极致轻量 · AI 原生（MCP）** —— 不是又一个行情看板，而是把 持仓（含理财）/ 现金 / 负债 / 流水 统一成一个**可被 AI 理解与操作**的自托管账本。
 
-> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓与**理财 / 现金 / 负债 / 消费**全景资产。自动刷新行情、计算盈亏、记录历史，提供盈亏日历、技术分析/**基金关联ETF**、动态调仓计划与 AI 总结。桌面与移动端自适应。
+> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓（含理财）/ 现金 / 负债 / 流水全景资产。自动刷新行情（不含理财）、计算盈亏、记录历史，提供盈亏日历、技术分析/**基金关联股票代码**、动态调仓计划与 AI 总结。桌面与移动端自适应。
 >
-> **English**: A self-hosted, multi-user personal investment dashboard for tracking **A-share / US / HK stocks and funds**, plus wealth products, cash, liabilities and consumption. Auto-refreshes quotes, computes P/L, records history, and offers a P/L calendar, technical analysis, dynamic rebuy plans, and AI summaries. Responsive on desktop and mobile. **Ultra-lightweight: a single pure-Go binary (no CGO); ~28 MB image and only 10–16 MB resident memory.**
+> **English**: A self-hosted, multi-user personal investment dashboard for tracking **A-share / US / HK stocks and funds**, plus wealth products (within holdings), cash, liabilities and cash flows. Auto-refreshes quotes, computes P/L, records history, and offers a P/L calendar, technical analysis, dynamic rebuy plans, and AI summaries. Responsive on desktop and mobile. **Ultra-lightweight: a single pure-Go binary (no CGO); ~28 MB image and only 10–16 MB resident memory.**
 
 ## 📖 目录
 
@@ -33,21 +33,21 @@
 
 ## 🌐 在线 Demo / Live Demo
 
-**<https://www.mrchenyifei.icu:19999>** · 预置了一套模拟数据（8 只持仓 / 多币种账户 / 理财 / 负债 / 近 30 日盈亏历史），行情定时自动刷新。  
+**<https://www.mrchenyifei.icu:19999>** · 预置了一套模拟数据（8 只持仓 / 多币种账户 / 理财 / 负债 / 近 30 日盈亏历史），行情定时自动刷新。
+
 A pre-seeded demo instance with mock data is live at the link above; quotes refresh automatically.
 
 ## ✨ 功能一览
 
 **持仓与行情**
 
-- 多市场持仓（A 股 / 美股 / 港股 / 场内场外基金）按来源分组统一管理。
-- 一键刷新行情，展示当日 / 总盈亏、盈亏率、持有天数与近 20 日走势。
+- 多市场持仓（A 股 / 美股 / 港股 / 场内场外基金 + 理财）按来源分组统一管理；理财支持批量更新持仓、申赎流水与快照对比（顶部「更新理财持仓」刷新快照）。
+- 行情由每日定时快照自动刷新；首页展示当日 / 总盈亏、盈亏率、持有天数与近 20 日走势。
 - 表格 / 卡片双视图，分组可折叠，支持加减仓、分红与操作笔记。
 
 **盈亏分析**
 
 - 盈亏日历按日热力着色，支持年 / 月跳转与单日持仓级明细。
-- 持仓平衡按设定风格给出资产再平衡建议。
 
 **技术分析**
 
@@ -57,11 +57,18 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 **资产**
 
-- 来源 / 理财 / 负债 / 现金 / 消费五类资产环形占比并可钻取明细。
-- 理财支持批量更新持仓、申赎流水与快照对比。
+- 资产概览：权益 / 理财 / 现金 按类别构成横向条，并拆分境内 / 境外净资产。
 - 现金账户支持多币种、每来源每币种默认子账户与账户间转账。
-- 流水汇总现金与负债并可按期筛选，支持行内修改 / 删除。
-- 负债支持 0 利率，编辑与历史完整可溯。
+- 收支计划支持一次性 / 循环模式，逐月还款构成可视化；流水汇总现金与负债并可按期筛选，支持行内修改 / 删除。
+- 负债支持利率，编辑与历史完整可溯。
+
+**🛠 工具箱**
+
+- 资产再平衡：按风险偏好设定各类资产目标占比，对比实际分布并标注达标状态。
+- 汇率计算：CNY / HKD / USD 实时汇率互换算。
+- 权益盈亏：记录并计算权益类资产的买入成本与盈亏。
+- 美元盈亏：记录并计算美元资产的买入成本与盈亏（自动折算人民币）。
+- 贷款计算器：等额本息 / 等额本金，逐月还款与本金利息构成可视化。
 
 **调仓计划**
 
@@ -79,12 +86,11 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 - 一键生成全资产 / 权益类总结，支持自定义提示词与多模型配置。
 - 可每日收盘后自动生成，并随净值推送发送。
-- 结果与历史按 Markdown 渲染（支持表格），渲染前做 XSS 转义。
+- 结果按 Markdown 渲染（支持表格），渲染前做 XSS 转义。
 
 **其他**
 
 - 通知支持钉钉（加签）与邮件（TLS），可按策略推送当日盈亏明细。
-- 内置权益盈亏录入、美元盈亏、汇率与贷款计算器。
 - 多用户隔离（`X-User-Id`，上限 5 人、每类资产每用户 200 条），清空 / 删除需输入确认短语。
 - 暗黑 / 亮色双主题与可自定义主题色。
 
@@ -94,6 +100,7 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 | :----------------------------------------------------------------------------------------------: |
 |       **主页（亮色）**<br /><img src="docs/screenshots/home-light.png" width="760" alt="主页（亮色）">       |
 |              **资产**<br /><img src="docs/screenshots/asset.png" width="760" alt="资产">             |
+|    **资产再平衡（工具箱）**<br /><img src="docs/screenshots/rebalance.png" width="760" alt="资产再平衡（工具箱）">   |
 |        **盈亏日历**<br /><img src="docs/screenshots/calendar-pnl.png" width="760" alt="盈亏日历">        |
 |     **技术分析（QQQ）**<br /><img src="docs/screenshots/analysis.png" width="760" alt="技术分析（QQQ）">     |
 |      **更新理财持仓**<br /><img src="docs/screenshots/wealth-update.png" width="760" alt="更新理财持仓">     |
@@ -162,9 +169,14 @@ docker compose up -d
 
 ### 从源码构建
 
+> 前端 `web/dist` 不入库（见 `.gitignore`），构建前必须先在本地编译前端，否则 `Dockerfile` 的 `fe` 阶段会因缺少 `web/dist` 直接报错。
+
 ```bash
-docker compose up -d --build
-# 或强制无缓存重建
+# 1) 编译前端（生成 web/dist/，main.go 通过 //go:embed 内嵌）
+npm --prefix web install   # 仅首次或依赖变动时需要
+npm --prefix web run build
+
+# 2) 构建并启动（--no-cache 确保重新嵌入最新前端）
 docker compose build --no-cache && docker compose up -d --force-recreate
 ```
 
@@ -173,6 +185,8 @@ docker compose build --no-cache && docker compose up -d --force-recreate
 ### 本地运行
 
 ```bash
+# 前端仍需先编译（见上方「从源码构建」第 1 步），否则 go:embed 找不到 web/dist
+npm --prefix web install && npm --prefix web run build
 go mod tidy
 go build -o portfolio .      # 产物 ./portfolio
 ./portfolio                  # 监听 :9989，可用 PORT 环境变量覆盖
@@ -180,13 +194,6 @@ go build -o portfolio .      # 产物 ./portfolio
 ```
 
 数据落在 `./data/portfolio.db`（compose 已挂 volume）。停止：`docker compose down`（保留数据）；`docker compose down -v` 连数据卷一并删除，慎用。
-
-> **提示 / 可能要踩的坑**
->
-> - 首次启动会自动初始化 SQLite、补齐 `users` 表并预热汇率缓存，随后后台定时刷新行情 —— 需要能访问 腾讯行情 / 新浪外汇 / 公开基金 API 的网络。
-> - **MCP 默认关闭**：不设 `MCP_ENABLED=true` 时不会监听 `9988`、无任何额外开销；开启后为 HTTP(SSE) 传输。
-> - 前端 `/app.js`、`/style.css` 通过 `?v=<VERSION>` 缓存戳加载，`VERSION` 一变旧缓存自动失效，升级后无需让用户手动清缓存。
-> - 所有运行状态只落在数据卷 `/data`（容器可写层 0 B）；**升级只需 `docker pull` + 重建容器，数据不动**。
 
 ## 定时任务
 
