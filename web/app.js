@@ -1080,10 +1080,24 @@ function applyFilter() {
 let sparkUid = 0;
 // 迷你走势线（借鉴 PanWatch Sparkline）：纯 SVG polyline + 渐变面积 + 尾端点圆。
 // 涨红跌绿（中国惯例），w/h 固定 1:1 用 viewBox 精确匹配，避免拉伸变形。
+// 将 CSS 变量（var(--up) 等）解析为具体颜色：SVG <stop> 的 stop-color 不支持 presentation 属性里的 var()，
+// 直接传 var() 会回退成黑色，在深色 hero 下渐变填充几乎不可见；这里统一解析成真实色值。
+function resolveColor(c) {
+  if (typeof c === 'string' && c.indexOf('var(') === 0) {
+    const name = c.slice(c.indexOf('(') + 1, c.lastIndexOf(')')).trim();
+    try {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      if (v) return v;
+    } catch (_) {}
+  }
+  return c;
+}
+
 function sparkline(data, opts) {
   const w = (opts && opts.w) || 100, h = (opts && opts.h) || 28;
   const stroke = (opts && opts.stroke) || 'currentColor';
   const fill = (opts && opts.fill) || stroke;
+  const strokeColor = resolveColor(stroke);
   const strokeWidth = (opts && opts.strokeWidth) || 1.5;
   const vals = (data || []).filter(v => Number.isFinite(v));
   if (vals.length < 2) return '';
@@ -1103,11 +1117,11 @@ function sparkline(data, opts) {
   const grad = (opts && opts.gradient) || 'fade';
   let topOp = '.20', botOp = '0';
   if (grad === 'panwatch') { topOp = '.26'; botOp = '.13'; }
-  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stroke}" stop-opacity="${topOp}"/><stop offset="100%" stop-color="${stroke}" stop-opacity="${botOp}"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(${gid})"/>`;
+  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity="${topOp}"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="${botOp}"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(${gid})"/>`;
   // responsive:true → 去掉硬编码 width/height，只留 viewBox，由 CSS 容器控制尺寸
   const dimAttrs = (opts && opts.responsive) ? '' : ` width="${w}" height="${h}"`;
   const par = (opts && opts.nonUniform) ? 'none' : 'xMidYMid meet';
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="${par}"${dimAttrs} class="u-block u-va-mid" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth || 1.5}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="${dotR.toFixed(1)}" fill="${stroke}"/></svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="${par}"${dimAttrs} class="u-block u-va-mid" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth || 1.5}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="${dotR.toFixed(1)}" fill="${strokeColor}"/></svg>`;
 }
 
 // 表格迷你走势单元格：线条为近20日收盘价走势，颜色按首尾收盘价对比（尾>首=涨红，否则=跌绿，
