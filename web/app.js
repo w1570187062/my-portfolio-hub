@@ -903,7 +903,8 @@ async function renderRateSpark(totalCNY, totalPct) {
         const r = heroBox.getBoundingClientRect();
         if (r.width > 0 && r.height > 0) { svgW = Math.round(r.width); svgH = Math.round(r.height); }
       } catch (_) {}
-      heroBox.innerHTML = sparkline(cum, { w: svgW, h: svgH, stroke: strokeColor, fill: strokeColor, gradient: 'panwatch' });
+      // 近30日权益曲线蒙版：与持仓表格「近20日」迷你走势保持一致，采用默认 fade（顶 .20 → 底透明）
+      heroBox.innerHTML = sparkline(cum, { w: svgW, h: svgH, stroke: strokeColor, fill: strokeColor });
       // 趋势文案：近30日 +X.X%（按总市值折算），或 ¥X 盈亏（简化显示）
       if (heroTrend) {
         const base = Math.max((totalCNY || 0) - last30Pct, 1);
@@ -1082,6 +1083,12 @@ let sparkUid = 0;
 // 涨红跌绿（中国惯例），w/h 固定 1:1 用 viewBox 精确匹配，避免拉伸变形。
 // 将 CSS 变量（var(--up) 等）解析为具体颜色：SVG <stop> 的 stop-color 不支持 presentation 属性里的 var()，
 // 直接传 var() 会回退成黑色，在深色 hero 下渐变填充几乎不可见；这里统一解析成真实色值。
+// 已知 CSS 变量的兜底色值：当 getComputedStyle 因故取不到时（极端时序/沙箱）仍能拿到真实色，
+// 避免 SVG stop-color 拿到 var() 字符串后回退为 black 而在深色卡片上「看不见」。
+const CSS_VAR_FALLBACK = {
+  '--up': '#f87171', '--down': '#4ade80', '--text-muted': '#94a3b8',
+  '--primary': '#0a84ff', '--tint': '#0a84ff', '--danger': '#f87171',
+};
 function resolveColor(c) {
   if (typeof c === 'string' && c.indexOf('var(') === 0) {
     const name = c.slice(c.indexOf('(') + 1, c.lastIndexOf(')')).trim();
@@ -1089,6 +1096,7 @@ function resolveColor(c) {
       const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
       if (v) return v;
     } catch (_) {}
+    if (CSS_VAR_FALLBACK[name]) return CSS_VAR_FALLBACK[name];
   }
   return c;
 }
@@ -1116,8 +1124,10 @@ function sparkline(data, opts) {
   // 自上而下近乎均匀、底部保留可见色（不淡出到透明），仅紧贴曲线处略深
   const grad = (opts && opts.gradient) || 'fade';
   let topOp = '.20', botOp = '0';
-  if (grad === 'panwatch') { topOp = '.26'; botOp = '.13'; }
-  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity="${topOp}"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="${botOp}"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(${gid})"/>`;
+  // panwatch：曲线下方同色柔和底色，自上而下近乎均匀、底部保留可见色（不淡出到透明）。
+  // 此前 .26/.13 在深色卡片上几乎不可见，这里提高到可清晰辨识的强度。
+  if (grad === 'panwatch') { topOp = '.30'; botOp = '.22'; }
+  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity="${topOp}"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="${botOp}"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(#${gid})"/>`;
   // responsive:true → 去掉硬编码 width/height，只留 viewBox，由 CSS 容器控制尺寸
   const dimAttrs = (opts && opts.responsive) ? '' : ` width="${w}" height="${h}"`;
   const par = (opts && opts.nonUniform) ? 'none' : 'xMidYMid meet';
@@ -1833,7 +1843,13 @@ function syncWealthToggle() {
   positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator');
   setTimeout(() => positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator'), 0);
 }
-window.addEventListener('resize', () => { positionIndicator(); positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator'); });
+window.addEventListener('resize', () => { positionIndicator(); positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator'); positionIndicatorFor('wealthInlineViewToggle', 'wealthInlineVtIndicator'); });
+// 首页「全部」下跟随展示的理财块切换器（与专属理财视图同款，仅在理财有产品时渲染）
+function syncWealthInlineToggle() {
+  document.querySelectorAll('#wealthInlineViewToggle .vt-btn').forEach((x) => x.classList.toggle('active', x.dataset.wview === wealthView));
+  positionIndicatorFor('wealthInlineViewToggle', 'wealthInlineVtIndicator');
+  setTimeout(() => positionIndicatorFor('wealthInlineViewToggle', 'wealthInlineVtIndicator'), 0);
+}
 setTimeout(positionIndicator, 0); // 字体/布局稳定后校正初始位置
 $('#emptyAddBtn').onclick = () => openModal(null);
 // 文本筛选（设计系统：搜索框 + 「/」聚焦 + Enter 提交）
@@ -2364,7 +2380,7 @@ async function renderRebalance(profileId) {
       <div class="rebal-bars">${bars}</div>
     </div>
     <h4 class="rebal-tbl-h">调仓建议</h4>
-    <table class="tbl rebal-tbl"><thead><tr><th>资产类别</th><th>当前占比</th><th>目标占比</th><th>偏离</th><th>建议调整</th></tr></thead><tbody>${tblRows}</tbody></table>`;
+    <div class="rebal-tbl-wrap"><table class="tbl rebal-tbl"><thead><tr><th>资产类别</th><th>当前占比</th><th>目标占比</th><th>偏离</th><th>建议调整</th></tr></thead><tbody>${tblRows}</tbody></table></div>`;
 }
 
 // ===== 资产设置（设置页「资产设置」页签）：风险偏好 / 资产类型标签 =====
@@ -5056,7 +5072,7 @@ function renderWealth(body) {
   // 「添加理财」同样收敛到顶部 #addBtn（弹框内二选一），标题行只留视图切换器，避免同屏两个「添加」重复。
   let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3>${toggleHtml ? `<div class="sec-actions">${toggleHtml}</div>` : ''}</div>`;
   if (!w.length) html += `<div class="empty-state"><p>还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn" data-empty-add="wealth" type="button">＋ 添加第一笔理财</button></div>`;
-  else if (wealthView === 'table' && window.innerWidth >= 640) html += renderWealthTable(w);
+  else if (wealthView === 'table') html += renderWealthTable(w);
   else {
     html += `<div class="asset-list wealth-list">`;
     w.forEach((p, i) => {
@@ -5096,9 +5112,16 @@ function renderWealth(body) {
 function renderWealthInline(container) {
   const raw = (assetData.wealth || {}).products || [];
   const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount));
-  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3></div>`;
+  // 与专属「理财」视图一致的表格/卡片切换器：首页「全部」下跟随展示的理财块此前无切换器，
+  // 若 wealthView 在桌面端被记为 table，手机窄屏上会卡在表格且无入口切回卡片（见用户反馈）。
+  const toggleHtml = w.length ? `<div class="view-toggle" id="wealthInlineViewToggle">
+      <span class="vt-indicator" id="wealthInlineVtIndicator"></span>
+      <button class="btn vt-btn ${wealthView === 'table' ? 'active' : ''}" data-wview="table" type="button">表格</button>
+      <button class="btn vt-btn ${wealthView === 'card' ? 'active' : ''}" data-wview="card" type="button">卡片</button>
+    </div>` : '';
+  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3>${toggleHtml ? `<div class="sec-actions">${toggleHtml}</div>` : ''}</div>`;
   if (!w.length) html += '';
-  else if (wealthView === 'card' && window.innerWidth >= 640) {
+  else if (wealthView === 'card') {
     html += `<div class="asset-list wealth-list">`;
     w.forEach((p, i) => {
       const pnl = p.today_pnl || 0;
@@ -5122,6 +5145,15 @@ function renderWealthInline(container) {
   container.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
   container.querySelectorAll('[data-act="redeem-wealth"]').forEach((b) => b.onclick = () => openWealthRedeem(Number(b.dataset.id)));
   container.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHistory(Number(b.dataset.id)));
+  // 理财块自带表格/卡片切换器（与专属理财视图同款），点击仅改 wealthView 并就地重渲染本块
+  container.querySelectorAll('#wealthInlineViewToggle .vt-btn').forEach((b) => {
+    b.onclick = () => {
+      wealthView = b.dataset.wview;
+      localStorage.setItem('pf_wealth_view', wealthView);
+      renderWealthInline(container);
+    };
+  });
+  syncWealthInlineToggle();
   bindCopyDelegation(container);
 }
 

@@ -3197,6 +3197,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .asset-section-head .sec-actions .asset-add { margin-left: 0; }
 /* 资产全景理财表格视图，复用全局 table 样式，仅约束内边距 */
 .asset-table { width: 100%; }
+/* 理财分组表格（含来源分组表）：窄屏横向滚动而非撑破布局；与持仓来源分组表一致 */
+.wealth-groups { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .cur-badge {
   display: inline-block;
   font-size: var(--fs-xs);
@@ -4369,7 +4371,9 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .bar-foot .up { color: var(--up); }
 .bar-foot .down { color: var(--down); }
 .rebal-tbl-h { margin: var(--sp-5) 0 var(--sp-2); font-size: var(--fs-base); color: var(--text); }
-.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+/* 调仓建议表：窄屏下外层横向滚动，避免表格被挤压变形（min-width 保证列不被压扁、可左右滑） */
+.rebal-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.rebal-tbl { width: 100%; min-width: 480px; border-collapse: collapse; font-size: var(--fs-md); }
 .tbl th, .tbl td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--row-divider); text-align: left; }
 .tbl th { color: var(--text-muted); font-weight: 600; background: var(--bg-input); }
 .tbl td { color: var(--text); font-variant-numeric: tabular-nums; }
