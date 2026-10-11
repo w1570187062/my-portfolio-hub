@@ -903,7 +903,7 @@ async function renderRateSpark(totalCNY, totalPct) {
         const r = heroBox.getBoundingClientRect();
         if (r.width > 0 && r.height > 0) { svgW = Math.round(r.width); svgH = Math.round(r.height); }
       } catch (_) {}
-      heroBox.innerHTML = sparkline(cum, { w: svgW, h: svgH, stroke: strokeColor, fill: strokeColor });
+      heroBox.innerHTML = sparkline(cum, { w: svgW, h: svgH, stroke: strokeColor, fill: strokeColor, gradient: 'panwatch' });
       // 趋势文案：近30日 +X.X%（按总市值折算），或 ¥X 盈亏（简化显示）
       if (heroTrend) {
         const base = Math.max((totalCNY || 0) - last30Pct, 1);
@@ -1098,7 +1098,12 @@ function sparkline(data, opts) {
   const pts = vals.map((v, i) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ');
   const last = pts.split(' ').pop();
   const gid = 'spk' + (++sparkUid);
-  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stroke}" stop-opacity=".20"/><stop offset="100%" stop-color="${stroke}" stop-opacity="0"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(${gid})"/>`;
+  // 渐变方向：默认 fade（顶深→底透明）；'panwatch' = PanWatch 权益曲线风格：曲线下方同色柔和底色，
+  // 自上而下近乎均匀、底部保留可见色（不淡出到透明），仅紧贴曲线处略深
+  const grad = (opts && opts.gradient) || 'fade';
+  let topOp = '.20', botOp = '0';
+  if (grad === 'panwatch') { topOp = '.26'; botOp = '.13'; }
+  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stroke}" stop-opacity="${topOp}"/><stop offset="100%" stop-color="${stroke}" stop-opacity="${botOp}"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(${gid})"/>`;
   // responsive:true → 去掉硬编码 width/height，只留 viewBox，由 CSS 容器控制尺寸
   const dimAttrs = (opts && opts.responsive) ? '' : ` width="${w}" height="${h}"`;
   const par = (opts && opts.nonUniform) ? 'none' : 'xMidYMid meet';
@@ -4823,6 +4828,8 @@ function renderAssetSummary() {
         `<div class="asb-nums">` +
           asbSeg('净资产', net, 'main') +
           `<div class="asb-sep"></div>` +
+          asbSeg('总资产', total) +
+          `<div class="asb-sep"></div>` +
           asbSeg('负债', lTotal, 'debt') +
           (hasRegion
             ? `<div class="asb-sep"></div>` + asbSeg('境内', domNet) + asbSeg('境外', ovsNet)
@@ -8113,11 +8120,20 @@ function renderCfBars(plans, listEl) {
   }).sort((a, b) => (a.day - b.day) || (a.id - b.id));
 
   const H = 100;     // 总高固定（撑满 cf-list flex:1）
-  const padTop = 8, padBot = 20;
+  const padTop = 14, padBot = 20;   // padTop 加大，给柱顶金额小字留空间
   const chartH = H - padTop - padBot;
   const maxV = Math.max(...bars.map((b) => b.amount), 1);
   const incomeColor = 'var(--up)';
   const expenseColor = 'var(--down)';
+  // 柱顶金额小字：¥1.1k 紧凑格式（按各柱币种取符号；>=1000 才带 k，否则整数）
+  const kfmt = (v, cur) => {
+    const sym = curSymbolJS(cur);
+    if (v >= 1000) {
+      const k = v / 1000;
+      return sym + (k >= 100 ? Math.round(k) : k.toFixed(1)) + 'k';
+    }
+    return sym + Math.round(v);
+  };
 
   // 动态测容器宽度：优先用 getBoundingClientRect，否则估算
   let containerW = 280;
@@ -8144,6 +8160,8 @@ function renderCfBars(plans, listEl) {
     const fill = b.isIncome ? incomeColor : expenseColor;
     const opacity = b.done ? 'fill-opacity="0.4"' : '';
     parts.push(`<rect class="cf-bar" data-id="${b.id}" x="${x}" y="${y}" width="${barW}" height="${h}" rx="2" ry="2" fill="${fill}" ${opacity} title="${esc(b.title)} ${b.isIncome ? '＋' : '－'}${curSymbolJS(b.currency)}${fmt(b.amount)} / ${b.day}日"/>`);
+    // 柱顶金额小字（￥1.1k 格式）；满高柱 y 贴近 padTop，文字基线 y-4 仍在 viewBox 内
+    parts.push(`<text x="${(x + barW / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="7.5" fill="${fill}" opacity="0.9">${kfmt(b.amount, b.currency)}</text>`);
     parts.push(`<text x="${x + barW / 2}" y="${H - 4}" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.5">${b.day}</text>`);
     x += barW + gap;
   });
