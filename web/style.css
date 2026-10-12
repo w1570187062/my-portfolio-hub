@@ -5,6 +5,7 @@
   /* 背景 & 表面 */
   --bg: #0a0e14;
   --bg-card: rgba(20, 26, 36, .82);
+  --card-bg: rgba(20, 26, 36, .82);
   --bg-card-solid: #141a24;
   --bg-glass: rgba(20, 26, 36, .6);
   --bg-hover: rgba(var(--tint), .08);
@@ -189,6 +190,7 @@
 :root[data-theme="light"] {
   --bg: #f4f6f9;
   --bg-card: rgba(255, 255, 255, .85);
+  --card-bg: rgba(255, 255, 255, .85);
   --bg-card-solid: #ffffff;
   --bg-glass: rgba(255, 255, 255, .72);
   --bg-hover: rgba(var(--tint), .07);
@@ -744,15 +746,13 @@ w {
 .src-region.ovs { background: rgba(var(--cat-overseas),.18); color: rgb(var(--cat-overseas)); }
 .source-group.holdings-group {
   margin-bottom: var(--sp-3);
-  border: 1px solid var(--border);
+  border: var(--card-border); /* 卡片自身外边框：与子表行分割线形成统一视觉边界 */
   border-radius: var(--r);
   overflow: hidden;
-  /* 只加角光，不加网格 —— 卡片里是密集表格，网格会和行线打架。
-     帽子底是 97% 透明的 rgba(255,255,255,.03)，角光可透过帽子显出来。 */
   background-color: var(--bg-card);
   background-image: var(--card-glow);
 }
-/* 首页持仓可折叠卡片：外边框由 .source-group 基类统一提供（浅色可辨边界） */
+/* 首页持仓可折叠卡片：卡片自身外边框 + collapse-hat border-bottom + 子表行分割线，形成统一视觉边界 */
 .holdings-group .collapse-hat.holdings-group-head {
   display: flex;
   align-items: center;
@@ -764,6 +764,7 @@ w {
   cursor: pointer;
   user-select: none;
   flex-wrap: wrap;
+  /* 分组头全宽、单一底色：与卡片背景同宽（底色不再只覆盖居中块），内容左缘随卡片内边距，与下方子表左对齐 */
 }
 /* 分组标题固定宽度 + 省略号：让每个卡片的标题盒等宽，统计列(市值/当日/总盈亏/盈亏率)跨卡片严格左对齐 */
 .holdings-group .collapse-hat .hat-title { font-weight: 600; font-size: var(--fs-base); flex: 0 0 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
@@ -786,11 +787,17 @@ w {
 .holdings-group .hat-side .hat-stat:nth-child(4) { min-width: 80px; }
 .holdings-group.collapsed .hat-chevron { transform: rotate(-90deg); }
 .holdings-group.collapsed .collapse-body { display: none; }
-/* holdings-group 的 collapse-body 必须允许 overflow: visible，否则 popover 会被父级剪掉。
-   subtable-wrap 自己有 overflow-x: auto 负责表格横向滚动，不依赖 collapse-body 的 hidden。 */
-.holdings-group .collapse-body { overflow: visible; }
-.wealth-group .collapse-body { overflow: visible; }
-.holdings-group .subtable-wrap { overflow-x: auto; overflow-y: visible; }
+/* holdings-group / wealth-group 的 collapse-body：
+   - 左右 padding 与分组头 padding 对齐（var(--sp-3) = 12px），确保表头左边缘与组名左边缘对齐
+   - 上下 padding 取消，让子表紧贴分组头的 border-bottom
+   - overflow: visible 允许 popover 弹出 */
+.holdings-group .collapse-body,
+.wealth-group .collapse-body {
+  overflow: visible;
+  padding: 0 var(--sp-3);
+}
+/* 子表容器：margin auto 让表格在卡片内水平居中 */
+.holdings-group .subtable-wrap { overflow-x: auto; overflow-y: visible; max-width: 1008px; margin: 0 auto; }
 /* 表头背景：沿用分组头(var(--card-bg))但略浅一档（暗色叠微白提亮，亮色叠白更透），与分组头呼应又区别于表体；
    表头下缘即 thead 与表体之间的横向分割线，用加深一档的 --sub-divider */
 .holdings-group .holdings-subtable thead th {
@@ -800,13 +807,17 @@ w {
 }
 .holdings-group .holdings-subtable td { padding: var(--sp-1) var(--sp-1); border-top: 1px solid var(--sub-divider); }
 /* 首页持仓子表：固定列宽，确保各来源子表的列头/列宽跨卡片完全一致对齐 */
-/* 持仓子表（精简后 10 列）：固定布局，**所有列都给固定像素** — 名称列不再 auto 吸满剩余空间，
-   大屏上不会出现名称列 1000px 宽、中间全是空白的情况。总宽 = 260+80+120+96+80+72+80+56+132+108 = 1084px。
+/* 持仓子表（9 列）：固定布局，**所有列都给固定像素** — 名称列不再 auto 吸满剩余空间。
+   列宽和 = 280+80+120+80+72+80+56+132+108 = 1008px。
+   **关键**：`max-width` 必须挂在 block 容器 `.subtable-wrap`（本文件 796 行 = 1008px），
+   不能挂在 <table> 上 —— Chrome 对 `table{width:100%;max-width:X}` 会忽略 max-width、仍撑满父宽，
+   多余宽度按比例摊给每列（曾导致表头第1列被放大到 376px、而数据第1列 td 仍按 280px 渲染、
+   两行错开 95px 形成跨列大空隙）。容器窄于 1008 时整表等比缩小（width:100% 生效）。
    所有数值列统一 text-align: right + tabular-nums，保证跨组竖向对齐。 */
-.holdings-group .holdings-subtable { table-layout: fixed; width: 100%; min-width: 0; margin: 0; }
+.holdings-group .holdings-subtable { table-layout: fixed; width: 100%; }
 .holdings-group .holdings-subtable th, .holdings-group .holdings-subtable td { overflow: hidden; text-overflow: ellipsis; }
 .holdings-group .holdings-subtable th.num, .holdings-group .holdings-subtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: 260px; }  /* 名称：固定 260px，不再 auto */
+.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: 280px; }  /* 名称：固定 280px，不再 auto */
 .holdings-group .holdings-subtable :is(th, td):nth-child(2) { width: 80px; }    /* 现价 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(3) { width: 120px; }   /* 市值：加宽到 120px 保证 ¥1,234,567.89 不截断 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(4) { width: 80px; }    /* 当日 */
@@ -814,19 +825,23 @@ w {
 .holdings-group .holdings-subtable :is(th, td):nth-child(6) { width: 80px; }    /* 盈亏% */
 .holdings-group .holdings-subtable :is(th, td):nth-child(7) { width: 56px; }    /* 持仓天数 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(8) { width: 132px; }   /* 近20日 sparkline */
-.holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: 108px; }   /* 操作 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: 108px; }   /* 操作：3 个图标按钮 + 间距 */
+/* 操作列左右内边距收到 2px：90px 按钮 + 4px padding = 94px ≤ 96px 列宽，按钮不被截断 */
+.holdings-group .holdings-subtable td.row-act-cell { padding-left: 2px; padding-right: 2px; }
 .holdings-group .holdings-subtable .name-cell .name-cap { flex: 0 1 auto; max-width: 100%; }
 .holdings-group .holdings-subtable .name-cell .name-clickable { flex: 0 1 auto; max-width: none; min-width: 0; }
 
-/* 父 source-group 保持全宽（hat + collapse-body 都占满），
-   子表自己 margin:auto 在 subtable-wrap 中居中 — 保证分组头跨全宽、内容横向居中 */
-.source-group.holdings-group { }
+/* 分组卡背景跟随浏览器全宽（.source-group 基类 + .holdings-group 角光背景）；
+   卡片自身边框已去除（见 747 行与 3031 行），改由子表(.asset-table)外边框作唯一视觉边界；
+   内部「分组头 + 子表」随 collapse-body 的左右内边距(var(--sp-3))左对齐，
+   分组头文字左缘与子表表头左缘严格对齐（背景铺满全宽、内容整体左对齐） */
 
 /* 理财子表（精简后 6 列）：名称 / 总金额 / 今日收益 / 累计收益 / 持有天数 / 操作 */
-.wealth-group .wealth-subtable { table-layout: fixed; width: 100%; min-width: 0; margin: 0; }
+.wealth-group .wealth-subtable { table-layout: fixed; width: 100%; }
+.wealth-group .subtable-wrap { max-width: 784px; margin: 0 auto; overflow-x: auto; overflow-y: visible; }
 .wealth-group .wealth-subtable th, .wealth-group .wealth-subtable td { overflow: hidden; text-overflow: ellipsis; }
 .wealth-group .wealth-subtable th.num, .wealth-group .wealth-subtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.wealth-group .wealth-subtable :is(th, td):nth-child(1) { width: 260px; }  /* 名称 */
+.wealth-group .wealth-subtable :is(th, td):nth-child(1) { width: 280px; }  /* 名称 */
 .wealth-group .wealth-subtable :is(th, td):nth-child(2) { width: 120px; }   /* 总金额 */
 .wealth-group .wealth-subtable :is(th, td):nth-child(3) { width: 100px; }   /* 今日收益 */
 .wealth-group .wealth-subtable :is(th, td):nth-child(4) { width: 104px; }   /* 累计收益 */
@@ -838,14 +853,14 @@ w {
 .wealth-group .wealth-subtable .wn-idx { flex: 0 0 auto; color: var(--text-muted); font-size: var(--fs-sm); min-width: 20px; }
 .wealth-group .wealth-subtable td.name-cell { overflow: visible; }
 /* #2 持仓/理财子表：表头与表内数据水平居中（背景已由上方 width:100% 撑满分组容器） */
-.holdings-group .holdings-subtable th,
+/* 表头统一左对齐（与分组头 / 名称列首列左缘对齐，整体不再居中漂浮）；
+   数值数据列保持右对齐，保证金额竖向对齐 */
+.holdings-group .holdings-subtable thead th,
+.wealth-group .wealth-subtable thead th { text-align: left; }
 .holdings-group .holdings-subtable td,
-.wealth-group .wealth-subtable th,
-.wealth-group .wealth-subtable td { text-align: center; }
-.holdings-group .holdings-subtable th.num,
+.wealth-group .wealth-subtable td { text-align: left; }
 .holdings-group .holdings-subtable td.num,
-.wealth-group .wealth-subtable th.num,
-.wealth-group .wealth-subtable td.num { text-align: center; }  /* 覆盖数值列默认右对齐 */
+.wealth-group .wealth-subtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* 第 1 列（名称列）：左对齐，名称长短不一时更整齐，不居中（2026-10-10） */
 .holdings-group .holdings-subtable :is(th, td):nth-child(1),
 .wealth-group .wealth-subtable :is(th, td):nth-child(1) { text-align: left; }
@@ -860,10 +875,7 @@ w {
 .holdings-group .collapse-hat.holdings-group-head:focus-within .hat-side-extra { max-width: 720px; }
 .wealth-group .hat-stat-mv b.mix-amt { font-weight: 500; font-size: var(--fs-sm); white-space: normal; }
 /* 理财表格底部：多于 1 款产品时显示合计市值（多币种折合人民币 + 分币种明细） */
-.wealth-total { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; justify-content: flex-end; margin-top: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--card-radius); background: var(--bg-card); font-size: var(--fs-md); color: var(--text-muted); }
-.wealth-total .wt-lbl { font-weight: 600; color: var(--text); }
-.wealth-total .wt-cny { font-size: var(--fs-lg); font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; }
-.wealth-total .wt-break { font-variant-numeric: tabular-nums; }
+/* （理财表格底部合计市值条已删除：分组头已有各组合计，底部总市值信息重复） */
 
 /* 行内 hover popover 已移除（2026-10-10）：首页持仓/理财表格名称列不再悬停弹框 */
 
@@ -1337,19 +1349,23 @@ header {
   top: 0;
   z-index: 50;
 }
-/* header 品牌区整块隐藏（logo + 文字都去掉），hero banner 承载所有品牌表达
-   v3.2 设计意图：header 只留导航和操作按钮，品牌感完全由 hero 首屏承担 */
-.brand-nav { display: none; }
-header h1 { display: none; }
+/* 左上角品牌（logo + 项目名）：所有页面（含移动端）均在 header 显示，点击回首页 */
+.brand-nav h1 {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: 0; font-size: var(--fs-lg); font-weight: 700;
+  color: var(--text); letter-spacing: .5px; white-space: nowrap;
+}
+.brand-nav h1 .logo { width: 24px; height: 24px; flex: 0 0 auto; display: block; }
 /* v3.1 Hero Banner：首屏视觉锚点（品牌感 + mini sparkline 预览）
    放在 header 下方、holdingsView 之前，全局可见，不跟随 view 的 hidden 切换。
    尺寸全落 4px 网格；hover/动效遵守 spec §3.2（不做 transform 位移，只升 shadow/边框色）。 */
-/* v3.3 Hero Banner：320px 高，双 panel 承载总市值+收益率完整内容 + 下方 sparkline 横条 */
+/* v3.3 Hero Banner：双 panel 承载总市值+收益率完整内容 + 下方 sparkline 横条 */
+/* v3.7 压缩高度：220 → 192（标题与标语合一行 + 标题 44→32，左栏内容 119px ≤ 168 富余） */
 .hero-banner {
   position: relative; overflow: hidden;
   margin: var(--sp-3) var(--sp-5) 0;
-  /* v3.5：固定高度，不再用 clamp 随机抖动。内部精确分配：panel 72 + gap 12 + spark 108(1.5×) + padding 28 = 220 */
-  height: 220px;
+  /* v3.7：固定高度。内部分配：padding 24 + 标题行 35 + gap 12 + panel 72 = 143，中/右栏 flex 吃满 168 */
+  height: 192px;
   border-radius: var(--r-lg);
   border: 1px solid var(--border);
   background:
@@ -1368,7 +1384,7 @@ header h1 { display: none; }
 /* v3.5：三栏等高 stretch（cf-hero 内部自己限高滚动） */
 .hero-content {
   position: absolute; inset: 0; z-index: 1;
-  display: grid; grid-template-columns: 2fr 2fr 1fr;  /* 左:中:右 = 2:2:1 */
+  display: grid; grid-template-columns: 2fr 1.4fr 1.6fr;  /* 左:中:右 = 2:1.4:1.6；中栏(权益曲线)让出宽度给右栏(收支计划) */
   padding: var(--sp-3) var(--sp-6) var(--sp-3);   /* 上下对称 sp-3=12px */
   gap: var(--sp-5);
   align-items: stretch;
@@ -1401,11 +1417,16 @@ header h1 { display: none; }
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .4; transform: scale(.6); }
 }
+/* Hero 标题行（v3.7）：大标题与标语合并一行，垂直基线对齐，窄屏允许换行 */
+.hero-headline {
+  display: flex; align-items: baseline; justify-content: center;
+  gap: var(--sp-3); flex-wrap: wrap;
+}
 /* Hero 大标题（header 品牌文字已隐藏，这里才是视觉锚点）
-   44px 落在 4px 网格（44/4=11），避免 clamp 新增 font-size 取值种类（lint ≤10） */
+   v3.7：44 → 32px（与标语同行后不再需要超大字号压场；32 仍落在 4px 网格） */
 .hero-title {
   margin: 0;
-  font-size: 44px;
+  font-size: 32px;
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -.5px;
@@ -1414,8 +1435,8 @@ header h1 { display: none; }
   -webkit-background-clip: text; background-clip: text;
   color: transparent;
 }
-/* v3.4 恢复 hero-slogan（v3.3 误删） */
-.hero-slogan { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); letter-spacing: .3px; font-weight: 400; }
+/* v3.4 恢复 hero-slogan（v3.3 误删）；v3.7 与标题同行，nowrap 防断行 */
+.hero-slogan { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); letter-spacing: .3px; font-weight: 400; white-space: nowrap; }
 /* v3.3 Hero 右栏：总市值 + 收益率 双 panel + 下方 sparkline 横条 */
 /* v3.5：三栏中栏 — 撑满高度（spark-wrap 吃剩余空间，跟右栏 cf-hero 等高） */
 /* v3.6：加 min-height:0 防止 flex 子项（spark-wrap）撑破 center 列溢出 banner */
@@ -1446,7 +1467,7 @@ header h1 { display: none; }
     padding: var(--sp-1) 0;
   }
   .hero-left .hero-title {
-    font-size: var(--fs-2xl);   /* 44px → 28px（token --fs-2xl） */
+    font-size: var(--fs-2xl);   /* 桌面 32px → 手机 28px（token --fs-2xl），与标语同行 */
     line-height: 1.2;
   }
   .hero-left .hero-slogan {
@@ -1531,7 +1552,9 @@ header h1 { display: none; }
   width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
   background: var(--dot-color);
 }
-.hero-mv-seg-name { font-weight: 500; color: var(--text-sub); }
+/* --text-sub 是未定义 token（var() 失效时 color 退化为继承父级 .hero-mv-seg 的 muted），
+   显式写 valid token 保持既有渲染：muted + 500 字重 */
+.hero-mv-seg-name { font-weight: 500; color: var(--text-muted); }
 .hero-mv-seg-pct { font-variant-numeric: tabular-nums; }
 /* 收益率 panel：大数字（只保留 %，删除金额；删除涨跌家数）
    v3.4 精简：pnl-big 只显示百分比；pnl-detail 只留当日/本月金额 */
@@ -1585,6 +1608,16 @@ header h1 { display: none; }
 .hero-spark { flex: 1 1 auto; width: 100%; height: 100%; display: block; overflow: hidden; }
 /* v3.6: SVG 已由 JS 用精确容器尺寸生成 viewBox+硬编码 width/height，CSS 100% 填满，meet 等比 = 完美无变形 */
 .hero-spark svg { width: 100%; height: 100%; display: block; }
+/* 近30日权益曲线迷你图末端圆点：呼吸效果（缩放 + 透明度脉冲），仅作用于 hero spark 的圆点，
+   不影响表格内其它迷你走势；prefers-reduced-motion 全局兜底会自动停用动画 */
+@keyframes hero-spark-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .45; transform: scale(1.6); }
+}
+#heroSpark circle {
+  transform-box: fill-box; transform-origin: center;
+  animation: hero-spark-breathe 2.2s ease-in-out infinite;
+}
 
 /* 卡片 hover：只升 shadow + 边框色亮，不做 transform 位移（spec §3.2） */
 .hero-banner:hover {
@@ -1858,9 +1891,6 @@ th .sort-ind { font-size: var(--fs-xs); margin-left: 2px; }
 .name-down { color: var(--down); font-weight: 600; }
 .name-arrow-down { color: var(--down); font-size: var(--fs-xs); margin-right: var(--sp-1); }
 
-/* 名称可点击（技术分析入口） */
-.name-clickable { cursor: pointer; transition: background .15s cubic-bezier(.32,.72,0,1), color .15s cubic-bezier(.32,.72,0,1); }
-.name-clickable:hover { text-decoration: underline; opacity: .85; }
 .name-text { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 
 /* ===== 饼图 ===== */
@@ -2558,6 +2588,24 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 #chartBody svg :not(.trend-hot) { pointer-events: none; }
 #histChartBody svg .trend-hot { pointer-events: all; cursor: pointer; }
 #histChartBody svg :not(.trend-hot) { pointer-events: none; }
+/* 历史盈亏曲线：柱子 hover / 点按 弹出的当日数据浮框（此前无样式，补全套皮肤） */
+.trend-tip {
+  position: fixed; z-index: 9999; pointer-events: none;
+  min-width: 180px; max-width: 264px;
+  background: var(--bg-card-solid); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .26);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm); line-height: 1.5;
+  opacity: 0; visibility: hidden; transition: opacity .12s ease;
+}
+.trend-tip.show { opacity: 1; visibility: visible; }
+.trend-tip .t-date { font-weight: 600; margin-bottom: 4px; color: var(--text); }
+.trend-tip .t-row { display: flex; justify-content: space-between; gap: var(--sp-3); }
+.trend-tip .t-row > span:first-child { color: var(--text-muted); }
+.trend-tip .t-up { color: var(--up); font-weight: 600; }
+.trend-tip .t-down { color: var(--down); font-weight: 600; }
+.trend-tip .t-muted { color: var(--text-muted); }
 .cal-val {
   font-size: var(--fs-lg);
   font-weight: 600;
@@ -2982,22 +3030,33 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 }
 :root[data-theme="light"] .source-group { border: 1px solid rgba(15, 23, 42, .22); }
 .source-group .collapse-hat { padding: var(--sp-2) var(--sp-3); }
-/* 分组子表与卡片左右对齐（去掉左右留白），并去除与卡片边框重叠的首尾行分隔线 */
-.source-group .collapse-body { padding: 0; }
-.source-group .collapse-body .asset-table { margin-bottom: 0; }
+/* 分组子表 body 与分组头左对齐：左右内边距与分组头(var(--sp-3))一致，使子表左缘对齐分组头文字左缘；
+   overflow: visible 覆盖 1806 行 .collapsible .collapse-body 的 overflow:hidden，否则 popover 会被剪掉 */
+.source-group .collapse-body { padding: 0 var(--sp-3); overflow: visible; }
+.source-group .collapse-body .asset-table { margin-bottom: 0; border: none; }
+/* 持仓/理财分组卡：卡片自身外边框(var(--card-border) / 亮色主题显式 border) + collapse-hat border-bottom + 子表行分割线，
+   形成统一视觉边界；背景仍全宽（见 .holdings-group 角光背景） */
 .holdings-group .holdings-subtable tbody tr:first-child td { border-top: none; }
 .holdings-group .holdings-subtable tbody tr:last-child td { border-bottom: none; }
 
-/* 资产全景「来源」分组卡片：头部套用首页账户卡片效果（账户名左 + 横排统计右），默认折叠 */
-.source-group.asset-pano > .collapse-hat { padding: var(--sp-3) var(--sp-4); }
-.source-group.asset-pano > .collapse-hat .ac-name { color: var(--primary); }
-.source-group.asset-pano > .collapse-hat .hat-chevron { color: var(--text-muted); margin-left: var(--sp-3); transition: transform .2s; }
-.source-group.asset-pano .src-ico { color: var(--primary); margin-right: var(--sp-1); vertical-align: -1px; }
+/* 资产全景「来源」账户表单表化（2026-10-12）：组间分隔行（grp-sep）替代原「每组一张表各带 thead」
+   （13 个账户分 4 组时表头重复 4 次）。分隔行复用账户卡片的 .ac-left/.ac-right 统计布局，
+   点击折叠该组所有行（沿用原 .collapsible 折叠语义，状态在重渲染后保持）。 */
+.asset-pano-tbl tr.grp-sep { cursor: pointer; background: rgba(255, 255, 255, .03); }
+:root[data-theme="light"] .asset-pano-tbl tr.grp-sep { background: #f1f3f6; }
+.asset-pano-tbl tr.grp-sep:hover { background: var(--bg-hover); }
+.asset-pano-tbl tr.grp-sep > td { padding: var(--sp-3) var(--sp-4); }
+.asset-pano-tbl tr.grp-sep .grp-sep-in { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; }
+.asset-pano-tbl tr.grp-sep .ac-name { color: var(--primary); }
+.asset-pano-tbl tr.grp-sep .src-ico { color: var(--primary); margin-right: var(--sp-1); }
+.asset-pano-tbl tr.grp-sep .hat-chevron { color: var(--text-muted); margin-left: var(--sp-3); transition: transform .2s; }
+.asset-pano-tbl tr.grp-sep.collapsed .hat-chevron { transform: rotate(-90deg); }
+.asset-pano-wrap { margin-bottom: var(--sp-2); }
 /* 账户-子账户嵌套表（来源 tab）：
    1) 子表与主表之间不留白、无阴影、无圆角，直接贴合；
    2) 三层色深区分：账户行(浅) → 子表头(中) → 子行(深)；
    3) 列宽优化：操作列贴内容收窄(width:1%)，消除行尾大片留白，余量给备注列。 */
-#assetTabBody .source-group-body > .asset-table > tbody > tr:not(.cash-sub-tr) > td { background: rgba(var(--tint), .05); }
+#assetTabBody .asset-pano-tbl > tbody > tr:not(.cash-sub-tr):not(.grp-sep) > td { background: rgba(var(--tint), .05); }
 #assetTabBody .cash-sub-tr > td { padding: 0; border-bottom: 0; }
 #assetTabBody .cash-sub-table { border-radius: 0; box-shadow: none; }
 #assetTabBody .cash-sub-table thead th {
@@ -3059,7 +3118,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 #assetTabBody .asset-table th.num,
 #assetTabBody .asset-table td.num { white-space: nowrap; }
 
-.asset-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
+.asset-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); border: 1px solid var(--border); border-radius: var(--radius); }
 /* 首页持仓/资产全景表格：去掉表格圆角，避免表头背景被裁出圆角显得不协调 */
 #tbl, .asset-table { border-radius: 0; }
 /* 表头与数据对齐一致（左对齐；.num 列右对齐），避免上下错位 */
@@ -3068,6 +3127,12 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   padding: var(--sp-1) var(--sp-3);
   /* 用主题感知的分割线：暗色=白6%，亮色=黑6%（原先硬编码白色5%在白底上不可见） */
   border-bottom: 1px solid var(--row-divider);
+}
+/* 资产页表格：表头背景与首页持仓子表一致（比分组头略浅一档），下缘用加深一档的 --sub-divider，
+   呼应持仓子表的「表头背景 + 表体分割线」视觉，使各页表格风格统一 */
+.asset-table thead th {
+  background: color-mix(in srgb, var(--card-bg) 82%, #ffffff 18%);
+  border-bottom: 1px solid var(--sub-divider);
 }
 .asset-table td { text-align: left; }
 .asset-table td.num, .asset-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -3085,11 +3150,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 }
 .asset-table td.row-actions { white-space: nowrap; }
 .snap-body { max-height: 62vh; overflow: auto; }
-/* 更新理财持仓弹框底部：实时合计市值（多于 1 款产品时显示），与 .modal-actions 上沿分隔 */
-.snap-total { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; padding: var(--sp-3) var(--sp-2) 0; margin-top: var(--sp-2); border-top: 1px dashed var(--border); font-size: var(--fs-md); color: var(--text-muted); }
-.snap-total .st-lbl { font-weight: 600; color: var(--text); }
-.snap-total .st-cny { font-size: var(--fs-lg); font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; }
-.snap-total .st-break { font-variant-numeric: tabular-nums; }
+/* （更新理财持仓弹框底部合计市值已删除：按银行分组的组头已含各组合计） */
 /* 按来源分组：外层一个银行框，组内产品行改用分隔线（不再各自描边，避免双层边框嵌套） */
 .snap-group { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: var(--sp-3); background: rgba(255, 255, 255, .02); }
 .snap-group:last-child { margin-bottom: 0; }
@@ -3214,7 +3275,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 /* ===== 小工具面板：撑满浏览器宽度（突破 920px 内容区限制 + 去掉 560px 面板限宽） ===== */
 #toolsView.page-view { max-width: none; }
 #toolsView .ac-panel { max-width: none; }
-/* 资产再平衡页签同样拉通整页宽度（圆环 + 占比条 + 调仓建议表都受益于宽屏） */
+/* 资产再平衡页签同样拉通整页宽度（圆环 + 占比条都受益于宽屏；v3.7 起建议调整并入条内，无独立表） */
 #tlPanelRebal { max-width: none; }
 
 /* 汇率计算工具 */
@@ -3359,6 +3420,10 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 }
 .combo > select,
 .tool-table .trow .combo > select { flex: 0 0 auto; border-right: 1px solid var(--border); }
+/* 权益盈亏行：币种下拉 / 备注框移出组合控件（原与金额并入同一 combo，
+   备注里填数字时会被误读成第二个无标签金额字段） */
+.tool-table .trow .eq-cur { flex: 0 0 auto; width: 88px; }
+.tool-table .trow .eq-note { flex: 1 1 0; min-width: 0; }
 .combo > input,
 .tool-table .trow .combo > input { flex: 1 1 0; }
 .combo > select:focus,
@@ -4067,13 +4132,15 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 }
 .holding-card:hover { border-color: rgba(var(--tint),.4); }
 .hc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-2); }
-.hc-name { font-weight: 600; font-size: var(--fs-base); color: var(--text); }
+.hc-name { font-weight: 600; font-size: var(--fs-base); color: var(--text); word-break: keep-all; overflow-wrap: anywhere; }
 /* 卡片名称跟随当日涨跌变色（与表格 name-up/name-down 一致；提高优先级以免被上方默认色覆盖） */
 .hc-name.name-up { color: var(--up); }
 .hc-name.name-down { color: var(--down); }
 :root[data-theme="light"] .hc-name.name-up { color: var(--up); }
 :root[data-theme="light"] .hc-name.name-down { color: var(--down); }
 .hc-code { color: var(--text-muted); font-size: var(--fs-sm); margin: 2px 0 var(--sp-2); }
+/* 账户名（v3.7 P0-1）：卡片视图补回表格视图有的账户维度，加粗提色便于多账户分辨 */
+.hc-acct { color: var(--text); font-weight: 600; }
 .hc-row { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-md); padding: 2px 0; }
 .hc-label { color: var(--text-faint); }
 .hc-val { color: var(--text); font-weight: 500; margin-right: var(--sp-1); }
@@ -4370,10 +4437,7 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .bar-foot { display: flex; justify-content: space-between; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
 .bar-foot .up { color: var(--up); }
 .bar-foot .down { color: var(--down); }
-.rebal-tbl-h { margin: var(--sp-5) 0 var(--sp-2); font-size: var(--fs-base); color: var(--text); }
-/* 调仓建议表：窄屏下外层横向滚动，避免表格被挤压变形（min-width 保证列不被压扁、可左右滑） */
-.rebal-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.rebal-tbl { width: 100%; min-width: 480px; border-collapse: collapse; font-size: var(--fs-md); }
+/* v3.7 P0-3：「调仓建议」独立表已删除，建议调整并入 bar-foot 第四项（上方 .bar-foot .up/.down 上色） */
 .tbl th, .tbl td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--row-divider); text-align: left; }
 .tbl th { color: var(--text-muted); font-weight: 600; background: var(--bg-input); }
 .tbl td { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -4557,6 +4621,17 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .f-pills-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
 .f-pill-cap { flex: 0 0 auto; min-width: 28px; font-size: var(--fs-sm); color: var(--text-muted); }
 .f-pills { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+/* 添加持仓弹框：类别 + 市场合并同一行（中间加分隔线，省一行高度） */
+.f-pills-row.f-pills-duo { gap: var(--sp-3); }
+.f-pills-duo .f-pill-cap-2 { margin-left: var(--sp-2); padding-left: var(--sp-3); border-left: 1px solid var(--border); }
+/* 添加持仓弹框：高级选项折叠（MCP 标记 / 资产类型标签）——主流程只留高频字段 */
+.f-adv { margin: var(--sp-2) 0; border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--bg-card); }
+.f-adv > summary { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); cursor: pointer; font-size: var(--fs-sm); color: var(--text-muted); list-style: none; user-select: none; }
+.f-adv > summary::-webkit-details-marker { display: none; }
+.f-adv > summary .hat-chevron { font-size: var(--fs-md); transition: transform .2s var(--e-back); }
+.f-adv:not([open]) > summary .hat-chevron { transform: rotate(-90deg); }
+.f-adv-body { padding: 0 var(--sp-3) var(--sp-3); }
+.f-adv-cap { font-size: var(--fs-sm); color: var(--text-muted); margin: var(--sp-1) 0; }
 
 /* ---------- 导航区 ---------- */
 .brand-nav { position: relative; display: flex; align-items: center; gap: var(--sp-2); }
@@ -4856,7 +4931,7 @@ textarea::placeholder {
   min-height: 0;
   overflow: auto;
 }
-.ai-result-empty { color: var(--text-muted); font-size: var(--fs-md); }
+/* （AI 页空态提示已删除：与面板自身功能重复） */
 /* 结果区置于边框框内，抵消 .ai-result 自带的边框/底色/外边距，避免双重边框 */
 .ai-result-box #aiPickResult {
   border: none; background: none; border-radius: 0; padding: 0;

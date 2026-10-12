@@ -50,8 +50,10 @@
     <div class="hero-content">
       <!-- 左栏：品牌信息 + 核心数据（总市值 / 收益率 双 panel 已迁至品牌区下方） -->
       <div class="hero-left">
-        <h2 class="hero-title">持仓<span>侠</span></h2>
-        <p class="hero-slogan">一站式持仓管理 · 盈亏追踪 · AI 智能分析</p>
+        <div class="hero-headline">
+          <h2 class="hero-title">持仓<span>侠</span></h2>
+          <p class="hero-slogan">一站式持仓管理 · 盈亏追踪 · AI 智能分析</p>
+        </div>
         <div class="hero-summary-pair">
           <div class="hero-panel hero-panel-mv" id="heroMvSummary">
             <div class="hero-panel-head">
@@ -260,7 +262,7 @@
             <button class="ana-tab-btn" type="button" data-tab="fx">汇率计算</button>
             <button class="ana-tab-btn" type="button" data-tab="eq">权益盈亏</button>
             <button class="ana-tab-btn" type="button" data-tab="usd">美元盈亏</button>
-            <button class="ana-tab-btn" type="button" data-tab="loan">贷款计算器</button>
+            <button class="ana-tab-btn" type="button" data-tab="loan">贷款计算</button>
           </div>
       <!-- 汇率计算 -->
       <div id="tlPanelFx" class="ac-panel" data-tab="fx" hidden data-page-node-id="lkquxcsGjxitJU2tHQ368y">
@@ -397,7 +399,6 @@
       <div id="hubSummaryPanel" class="more-panel ai-compose-panel" data-page-node-id="VDdSQ8ch0jLAUpzimqYa4r">
         <!-- 上方：AI 返回的总结结果展示区（带外边框，长文可滚动，复用 .ai-result 的 Markdown 排版） -->
         <div id="aiResultBox" class="ai-result-box" data-page-node-id="aiResultBox01">
-          <div id="aiResultEmpty" class="ai-result-empty" data-page-node-id="aiResultEmpty01">在下方选择提示词模板，确认数据后即可生成总结。</div>
           <div id="aiPickResult" class="ai-result md" hidden data-page-node-id="uvJv1ZdXOtC6wOxmFtNAYS"></div>
         </div>
 
@@ -526,12 +527,11 @@
           <input type="hidden" id="f_symbol" data-page-node-id="01aotgHBoYTEN1mTINcHpA">
           <input type="hidden" id="f_category" data-page-node-id="cPh0VsMrRza4hC6lRrnyNZ">
           <input type="hidden" id="f_market" data-page-node-id="rKk4WGAZsnERqDZchTpHHC">
-          <div class="f-pills-row" data-page-node-id="VswC0OY9qKjirI7tmRxeVG">
+          <!-- 类别 + 市场合并一行（原两行各带一个 cap），弹框高度再省一行 -->
+          <div class="f-pills-row f-pills-duo" data-page-node-id="VswC0OY9qKjirI7tmRxeVG">
             <span class="f-pill-cap">类别</span>
             <div id="fCatPills" class="f-pills"></div>
-          </div>
-          <div class="f-pills-row" data-page-node-id="Ga3M1Gp7Q34CyuUwpZeeKs">
-            <span class="f-pill-cap">市场</span>
+            <span class="f-pill-cap f-pill-cap-2">市场</span>
             <div id="fMktPills" class="f-pills"></div>
           </div>
           <!-- 交易日期紧跟交易成本：四格等宽（手机端两格×两行），与其余输入框同宽 -->
@@ -553,10 +553,17 @@
                 </label>
               </div>
             </div>
-            <label data-page-node-id="eDNvbZVZJAzpNmCL3PUV5T">MCP 标记 <input id="f_note" placeholder="MCP 标记（供 AI 客户端识别）" data-page-node-id="rrnlGiAaInYR5XAoLFYdpT"></label>
-          <label id="linked_symbol_row" style="display:none" data-page-node-id="nVR796SFtFwUSFAJsYZiQV">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL" data-page-node-id="f38RGALsoViGU0Oog3Ix3F"></label>
+            <label id="linked_symbol_row" style="display:none" data-page-node-id="nVR796SFtFwUSFAJsYZiQV">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL" data-page-node-id="f38RGALsoViGU0Oog3Ix3F"></label>
+          <!-- 低频字段收进高级折叠：主流程只留 名称/类别/数量成本/账户，弹框高度降约 30% -->
+          <details class="f-adv" id="fAdv">
+            <summary><span class="hat-chevron">▾</span>高级选项 · MCP 标记 / 资产类型标签</summary>
+            <div class="f-adv-body">
+              <label data-page-node-id="eDNvbZVZJAzpNmCL3PUV5T">MCP 标记 <input id="f_note" placeholder="MCP 标记（供 AI 客户端识别）" data-page-node-id="rrnlGiAaInYR5XAoLFYdpT"></label>
+              <div class="f-adv-cap">资产类型标签（可多选）</div>
+              <div id="f_at_chips" class="at-chips-row" data-page-node-id="YVMoRQvULOWPDUt8w1pC2n"></div>
+            </div>
+          </details>
           <div id="formErr" class="err" data-page-node-id="Rmg6GFYhfrpr9T1HBcaAYU"></div>
-          <div id="f_at_chips" class="at-chips-row" title="资产类型标签（可多选）" data-page-node-id="YVMoRQvULOWPDUt8w1pC2n"></div>
           <div class="modal-actions" data-page-node-id="0ABCfO5qwI46aOp9jrfskI">
             <button class="btn primary" type="submit" data-page-node-id="CvHzma5CS6iXkt9Mb5FgKR">保存</button>
           </div>
@@ -790,16 +797,23 @@
   </div>
 
 
-  <div id="histModal" class="modal" hidden data-page-node-id="J4Dzkg9IQScICe6BRDTyRA">
-    <div class="modal-card" style="width:720px; max-width:94vw;" data-page-node-id="iUrymcTnUOdqgyXOcHmm5e">
-      <h2 id="histTitle" data-icon="hist" data-page-node-id="MogLDKc8kVl03gdCzdK4XW">历史盈亏</h2>
-      <div class="ana-tabs ac-tabs" data-page-node-id="5c4zuOrOhVFtBRyBAUeOxF">
-        <button id="histTabTable" class="ana-tab-btn active" type="button" data-page-node-id="elAbfSHPBctlCNwMaNfEUn">每日盈亏</button>
-        <button id="histTabChart" class="ana-tab-btn" type="button" data-page-node-id="x5YQwGF6fC7JpK45GfuZsU">盈亏曲线</button>
-        <button id="histTabAudit" class="ana-tab-btn" type="button" data-page-node-id="6Y9ET7d8XFE1BOKDqCg3Wg">审计记录</button>
+  <!-- ===== 持仓历史盈亏弹框（独立，无 tab，直接展示盈亏曲线）===== -->
+  <div id="histModal" class="modal" hidden>
+    <div class="modal-card" style="width:720px; max-width:94vw;">
+      <h2 id="histTitle" data-icon="hist">历史盈亏</h2>
+      <div id="histChartWrap" class="m-body"><div id="histChartBody"></div></div>
+    </div>
+  </div>
+
+  <!-- ===== 理财历史盈亏弹框（独立，带 每日盈亏 / 审计记录 tab）===== -->
+  <div id="wealthHistModal" class="modal" hidden>
+    <div class="modal-card" style="width:720px; max-width:94vw;">
+      <h2 id="wealthHistTitle" data-icon="hist">理财每日盈亏</h2>
+      <div class="ana-tabs ac-tabs">
+        <button id="wealthHistTabTable" class="ana-tab-btn active" type="button">每日盈亏</button>
+        <button id="wealthHistTabAudit" class="ana-tab-btn" type="button">审计记录</button>
       </div>
-      <div id="histTableWrap" class="m-body" data-page-node-id="GawvrNfJQUfA0qoJjbfKAz"><div id="histTable" class="hist-table" data-page-node-id="ZsOBAS2aT0oryCThhmbhHh"></div></div>
-      <div id="histChartWrap" class="m-body" hidden data-page-node-id="NFhJjnliDAlKzTOpPmaz2b"><div id="histChartBody" data-page-node-id="HCZyWS9kRBNOnmF9szLGpM"></div></div>
+      <div id="wealthHistTableWrap" class="m-body"><div id="wealthHistTable" class="hist-table"></div></div>
     </div>
   </div>
 
@@ -1080,7 +1094,6 @@
     <div class="modal-card" style="width:720px; max-width:94vw;" data-page-node-id="w7OTMkePZILkBHl2YBMZKs">
       <h2 data-icon="refresh" data-page-node-id="XQDct9eKYBV7MdQZTnGEij">更新理财持仓</h2>
       <div id="snapBody" class="snap-body m-body" data-page-node-id="hGBjIHu0b4a9Av2AxpjbZS"></div>
-      <div id="snapTotal" class="snap-total" hidden></div>
       <div class="modal-actions" data-page-node-id="xTaEOs46Hi7UPSKtF8saLo"><button type="button" id="snapSave" class="btn primary" data-page-node-id="N7NIz4Y7U2vfpenBrbJD7j">保存</button></div>
     </div>
   </div>

@@ -13,9 +13,9 @@
 | 首屏锚点 | **新增 Hero Banner**：header 下方全局可见的品牌横幅（静态品牌文案 + 动态 mini sparkline 预览），不跟随 view 的 hidden 切换 |
 | 背景层 | **三团光晕 + mask 网格**：body::before 从单团改三团（主色/紫/绿），body::after 加 mask 径向淡出的超细网格（只在上半屏光晕区显，底部表格密集区自然隐） |
 | 卡片 hover | **只升 shadow + 边框色亮**，移除 transform translateY 位移（§3.2 「高度靠阴影不靠位移」的严格执行） |
-| Hero 字号 | **44px**（桌面），响应式堆叠但字号不变（避免再新增 font-size 取值种类） |
+| Hero 字号 | **32px**（桌面，v3.7 由 44px 下调：标题与标语合并一行后不再需要超大字号压场；32/4=8 仍落 4px 网格），手机 28px（`--fs-2xl`） |
 | 语义约束 | Hero 独立视觉层的网格叠加合法（spec §3.6.2 说「网格层已移除」指页面全局背景层，不阻止独立区块内部的装饰网格） |
-| font-size 取值上限 | v3 原 ≤9 → **v3.1 ≤10**（新增 Hero 大字号 44px） |
+| font-size 取值上限 | v3 原 ≤9 → **v3.1 ≤10**（新增 Hero 大字号；v3.7 该档取值 44px → 32px，档数不变） |
 | Hero sparkline 数据 | 复用 `/api/pnl/history` 的 calData，与收益率卡同数据源、同请求，近 30 天累计盈亏曲线 |
 
 **与 v3.0 的关系**：完全兼容增量升级——所有 token、组件类名、lint 规则保留，仅追加新层与新规范章节。
@@ -298,12 +298,12 @@
 **结构**：左（品牌文案 + 状态 badge） + 右（mini sparkline + 趋势百分比）双栏网格，窄屏改上下堆叠。
 
 **尺寸约束**（全落 4px 网格）：
-- 整体 `height: clamp(160px, 18vh, 220px)` —— 160/220 均为 4 的倍数
+- 整体固定 `height: 192px`（v3.7 由 220px 压缩：标题与标语合行 + 标题降字号；192/4=48）
 - 左右 padding `var(--sp-6)`（24px），左右栏 gap `var(--sp-6)`（24px）
 - 背景 blob `width: 320px; height: 320px` —— 80×4=320
-- spark-wrap `height: 72px` —— 18×4=72
+- spark-wrap 由 flex 吃满剩余高度（无固定值）
 
-**字号**：Hero 主标题 44px（v3.1 新档，44/4=11），响应式不改字号。
+**字号**：Hero 主标题 32px（v3.7 由 44px 下调，与右侧标语 `.hero-slogan` 同行基线对齐），手机 28px（`--fs-2xl`）。
 
 **背景层**（三层叠加，z-index 严格分层）：
 1. `.hero-bg-blob`（两个 filter:blur(72px) 的大圆形）—— z-index:0，背景光斑

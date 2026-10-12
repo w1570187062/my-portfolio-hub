@@ -542,8 +542,8 @@ function renderHoldingsBySource(hs) {
       + `<span class="hat-side">`
       + `<span class="hat-stat hat-stat-mv" title="该账户持仓折合人民币市值"><span class="hat-stat-lbl">市值</span><b>¥${fmt(g.mv)}</b></span>`
       + `<span class="hat-side-extra" title="悬停展开：当日 / 总盈亏 / 盈亏率">`
-      + `<span class="hat-stat" title="该账户当日盈亏合计"><span class="hat-stat-lbl">当日</span><b class="${cls(g.dayPnl)}">${fmt(g.dayPnl)} <small>(${pct(dayPctV)})</small></b></span>`
-      + `<span class="hat-stat" title="该账户累计盈亏合计"><span class="hat-stat-lbl">总盈亏</span><b class="${cls(g.pnl)}">${fmt(g.pnl)}</b></span>`
+      + `<span class="hat-stat" title="该账户当日盈亏合计"><span class="hat-stat-lbl">当日</span><b class="${cls(g.dayPnl)}">¥${fmtPnl(g.dayPnl)} <small>(${pct(dayPctV)})</small></b></span>`
+      + `<span class="hat-stat" title="该账户累计盈亏合计"><span class="hat-stat-lbl">总盈亏</span><b class="${cls(g.pnl)}">¥${fmtPnl(g.pnl)}</b></span>`
       + `<span class="hat-stat" title="该账户累计盈亏率"><span class="hat-stat-lbl">盈亏率</span><b class="${cls(pnlPct)}">${pct(pnlPct)}</b></span>`
       + `</span>`
       + `<span class="hat-chevron">▾</span></span>`
@@ -568,10 +568,10 @@ function renderHoldingsBySource(hs) {
     gEl.querySelectorAll('[data-fail]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); });
     gEl.querySelectorAll('[data-ana]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openAnalysis(b.dataset.ana); });
   });
-  bindCopyDelegation(box);
 }
 
-// 名称点击复制（持仓子表 / 理财子表共用）：优先 Clipboard API，非安全上下文回退 execCommand。
+// 通用点击复制委托：容器内所有 [data-copy] 元素点击即复制其 data-copy 文本；
+// 持仓/理财名称单元格已不再带 data-copy（取消点击复制），此处仅服务于其它带 data-copy 的入口。
 function bindCopyDelegation(root) {
   root.querySelectorAll('[data-copy]').forEach((el) => el.onclick = (e) => {
     e.stopPropagation();
@@ -606,13 +606,13 @@ function renderGroupRow(h, i, maxItemMV) {
     <td class="name-cell">
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">' + actIcon('warn') + '</span>' : ''}
       <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : ''}">${dirArrow}</span>
-      ${holdTypeTag(h)}<span class="name-cap"><span class="name-clickable" data-copy="${esc(h.name)}" title="${esc(h.name)}">${esc(h.name)}</span>${supportsAnalysis(h) ? anaBadge(h.analysis_signal) : ''}</span>
+      ${holdTypeTag(h)}<span class="name-cap"><span class="name-clickable" title="${esc(h.name)}">${esc(h.name)}</span>${supportsAnalysis(h) ? anaBadge(h.analysis_signal) : ''}</span>
       ${actBtn('edit', `data-adjust="${h.id}"`, '修改', { cls: 'push-right' })}
       ${supportsAnalysis(h) ? actBtn('analysis', 'data-ana="' + h.id + '"', '技术分析') : ''}
     </td>
     <td class="num">${fmtNav(h.current_price, h.category)}</td>
     <td class="num"${mvOrigTitle(h)}>¥${fmt(mvCny)}</td>
-    <td class="num ${cls(h.day_pnl)}">${fmtPnl(toRmb(h, h.day_pnl))}</td>
+    <td class="num ${cls(h.day_pnl)}">¥${fmtPnl(toRmb(h, h.day_pnl))}</td>
     <td class="num" title="当日盈亏率">${pct(h.day_pnl_pct)}</td>
     <td class="num ${cls(h.pnl_pct)}" title="持有期总盈亏率">${pct(h.pnl_pct)}</td>
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
@@ -640,7 +640,7 @@ function renderCards(hs) {
         <div class="hc-name${h.day_pnl_pct > 0 ? ' name-up' : (h.day_pnl_pct < 0 ? ' name-down' : '')}">${h.day_pnl_pct > 0 ? '<span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? '<span class="name-arrow-down">▼</span>' : '')}${esc(h.name)}</div>
         ${fail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">' + actIcon('warn') + '</span>' : ''}
       </div>
-      <div class="hc-code">${esc(h.symbol)} · ${cat(h.category)} · ${h.market} · ${h.currency}</div>
+      <div class="hc-code" title="${esc(h.symbol)} · ${cat(h.category)} · ${h.market} · ${h.currency}${h.source_name ? ' · ' + esc(h.source_name) : ''}">${esc(h.symbol)} · ${cat(h.category)} · ${h.market} · ${h.currency}${h.source_name ? ' · <b class="hc-acct">' + esc(h.source_name) + '</b>' : ''}</div>
       <div class="hc-row"><span class="hc-label">现价</span><span class="hc-val">${fmtNav(h.current_price, h.category)}</span><span class="hc-label">当日</span>${dayHtml}</div>
       <div class="hc-row"><span class="hc-label">市值</span><span class="hc-val">¥${fmt(toRmb(h, h.market_value))}${mvOrigNote(h)}</span></div>
       <div class="hc-row"><span class="hc-label">累计盈亏</span><span class="hc-val ${pCls}">¥${fmt(toRmb(h, h.pnl))} (${pct(h.pnl_pct)})</span></div>
@@ -1283,6 +1283,8 @@ async function openModal(h) {
   fillAssetTypeChips(h ? (h.asset_type || '') : '');
   toggleLinkedSymbol($('#f_category').value);
   $('#formErr').textContent = '';
+  // 编辑时若已选资产类型标签，自动展开高级区，避免用户不知道标签已存于折叠内
+  const adv = $('#fAdv'); if (adv) adv.open = !!(h && h.asset_type);
   $('#modal').hidden = false;
 }
 
@@ -1746,7 +1748,7 @@ $('#confirmOk').onclick = async () => {
       const onAudit = !$('#whAuditPanel').hidden;
       await openWealthHistory(wealth_id);
       // 从「审计记录」里发起的删除：删完回到审计 tab 并刷新列表
-      if (onAudit) { switchHistTab('audit'); await loadWealthAudit(); }
+      if (onAudit) { switchWealthHistTab('audit'); await loadWealthAudit(); }
       await loadAsset();
     } catch (e) { toast('删除异常：' + e.message, 'err'); }
     return;
@@ -2357,6 +2359,10 @@ async function renderRebalance(profileId) {
     // 达标阈值：偏离严格小于 ±5% 才算达标——恰好 -5%（如黄金目标 5% 实际 0%）应判低配而非达标
     const driftCls = noTgt ? 'flat' : (Math.abs(dp) < 5 ? 'flat' : (dp > 0 ? 'up' : 'down'));
     const driftTxt = noTgt ? '未配置' : (Math.abs(dp) < 5 ? '达标' : (dp > 0 ? '超配' : '低配'));
+    // 建议调整（v3.7 P0-3：由独立「调仓建议」表并入条内，表删除）：增持=红(up)/减持=绿(down)，<¥0.5 视为无需调整
+    const adj = r.adjust || 0;
+    const adjCls = noTgt ? 'flat' : (Math.abs(adj) < 0.5 ? 'flat' : (adj > 0 ? 'up' : 'down'));
+    const adjTxt = noTgt ? '建议 —' : (Math.abs(adj) < 0.5 ? '建议 无需调整' : (adj > 0 ? '增持 ¥' + fmt(adj) : '减持 ¥' + fmt(-adj)));
     const c = colorOf(r.label);
     return `<div class="bar-block">
       <div class="bar-head"><span class="bl-name">${esc(r.label)}</span><span class="drift ${driftCls}">${driftTxt}</span></div>
@@ -2364,23 +2370,13 @@ async function renderRebalance(profileId) {
         ${noTgt ? '' : `<div class="fill-target" style="--x:${tp.toFixed(2)}%"></div>`}
         <div class="fill-cur" style="--w:${Math.min(cp, 100).toFixed(2)}%;--bg:${c}"></div>
       </div>
-      <div class="bar-foot"><span>当前 ${cp.toFixed(1)}% · ¥${fmt(r.current_value || 0)}</span><span>${noTgt ? '目标 未配置' : '目标 ' + tp.toFixed(1) + '%'}</span><span class="${driftCls}">${noTgt ? '偏离 —' : '偏离 ' + (dp > 0 ? '+' : '') + dp.toFixed(1) + '%'}</span></div>
+      <div class="bar-foot"><span>当前 ${cp.toFixed(1)}% · ¥${fmt(r.current_value || 0)}</span><span>${noTgt ? '目标 未配置' : '目标 ' + tp.toFixed(1) + '%'}</span><span class="${driftCls}">${noTgt ? '偏离 —' : '偏离 ' + (dp > 0 ? '+' : '') + dp.toFixed(1) + '%'}</span><span class="${adjCls}">${adjTxt}</span></div>
     </div>`;
-  }).join('');
-  const tblRows = rows.map((r) => {
-    const dp = r.deviation_pct || 0, adj = r.adjust || 0;
-    const noTgt = !r.has_target;
-    if (noTgt) return `<tr><td>${esc(r.label)}</td><td>${r.current_pct.toFixed(1)}%</td><td class="u-muted">—</td><td class="u-muted">—</td><td class="u-muted">—</td></tr>`;
-    const adjCls = Math.abs(adj) < 0.5 ? 'flat' : (adj > 0 ? 'up' : 'down');
-    const adjTxt = Math.abs(adj) < 0.5 ? '—' : (adj > 0 ? '增持 ¥' + fmt(adj) : '减持 ¥' + fmt(-adj));
-    return `<tr><td>${esc(r.label)}</td><td>${r.current_pct.toFixed(1)}%</td><td>${r.target_pct.toFixed(1)}%</td><td class="${dp > 0 ? 'up' : 'down'}">${dp > 0 ? '+' : ''}${dp.toFixed(1)}%</td><td class="${adjCls}">${adjTxt}</td></tr>`;
   }).join('');
   body.innerHTML = `<div class="rebal-grid">
       <div class="rebal-donut">${donut}<div class="rebal-donut-cap">当前资产配置</div></div>
       <div class="rebal-bars">${bars}</div>
-    </div>
-    <h4 class="rebal-tbl-h">调仓建议</h4>
-    <div class="rebal-tbl-wrap"><table class="tbl rebal-tbl"><thead><tr><th>资产类别</th><th>当前占比</th><th>目标占比</th><th>偏离</th><th>建议调整</th></tr></thead><tbody>${tblRows}</tbody></table></div>`;
+    </div>`;
 }
 
 // ===== 资产设置（设置页「资产设置」页签）：风险偏好 / 资产类型标签 =====
@@ -2518,6 +2514,7 @@ function hideTrendTip() { const tip = document.getElementById('trendTip'); if (t
 // 关闭按钮已移除：右上角 ✕ 与点击遮罩均可关闭
 $('#chartModal').addEventListener('click', (e) => { if (e.target === $('#chartModal')) $('#chartModal').hidden = true; });
 $('#histModal').addEventListener('click', (e) => { if (e.target === $('#histModal')) $('#histModal').hidden = true; });
+$('#wealthHistModal').addEventListener('click', (e) => { if (e.target === $('#wealthHistModal')) $('#wealthHistModal').hidden = true; });
 // 资金变动方向切换：选中段置 active（CSS 负责主题色/灰色），方向由 data-sign 决定
 const cashSignToggle = document.getElementById('c_sign_toggle');
 if (cashSignToggle) {
@@ -2953,14 +2950,16 @@ function drawCalMonth() {
       if (calMetric === 'rate') {
         const avgBase = monthBaseDays ? monthBaseSum / monthBaseDays : 0;
         const rate = avgBase > 0 ? (monthPnl / avgBase) * 100 : 0;
+        const rZero = Math.abs(rate) < 1e-9;
         msCls = rate > 0 ? 'up' : rate < 0 ? 'down' : 'flat';
-        msVal = (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
-        mark = rate > 0 ? '▲' : rate < 0 ? '▼' : '—';
+        // 零值与日格口径统一：只显示「—」，不出现「—+0.00%」这种标记+数值并存的怪显示
+        msVal = rZero ? '—' : (rate > 0 ? '+' : '') + rate.toFixed(2) + '%';
+        mark = rZero ? '' : (rate > 0 ? '▲' : '▼');
       } else {
+        const mZero = Math.abs(monthPnl) < 1e-9;
         msCls = monthPnl > 0 ? 'up' : monthPnl < 0 ? 'down' : 'flat';
-        const sign = monthPnl >= 0 ? '+' : '';
-        msVal = '¥' + sign + fmt(monthPnl);
-        mark = monthPnl > 0 ? '▲' : monthPnl < 0 ? '▼' : '—';
+        msVal = mZero ? '—' : '¥' + (monthPnl > 0 ? '+' : '') + fmt(monthPnl);
+        mark = mZero ? '' : (monthPnl > 0 ? '▲' : '▼');
       }
       const msLabel = calMetric === 'rate' ? '本月收益率' : '本月总盈亏';
       // 方向标记用全站统一的 ▲ / ▼ / —（跟随 up/down/flat 的涨跌色），不用彩色 emoji
@@ -2992,22 +2991,22 @@ function drawCalMonth() {
       } else {
         const rec = calData[ds];
         const v = calActiveVal(rec);
+        // 零盈亏与无快照统一显示「—」（底色区分：lg-zero=有记录但平盘，lg-none=无记录）
+        const isZero = !!rec && Math.abs(v) < 1e-9;
         let color, emoji = '';
         if (!rec) color = 'lg-none';
+        else if (isZero) { color = 'lg-zero'; }
         else {
-          if (Math.abs(v) < 1e-9) { color = 'lg-zero'; emoji = '😐'; }
-          else {
-            const t = Math.min(1, Math.abs(v) / cellMax);
-            const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
-            color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
-            // 情绪脸方案：盈/亏各 4 档，从微笑😊到狂喜😍、从皱眉🙁到惊恐😱，风格统一且直觉
-            emoji = v > 0 ? ['😊', '😄', '😁', '😍'][lvl - 1] : ['🙁', '😟', '😣', '😱'][lvl - 1];
-          }
+          const t = Math.min(1, Math.abs(v) / cellMax);
+          const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
+          color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
+          // 情绪脸方案：盈/亏各 4 档，从微笑😊到狂喜😍、从皱眉🙁到惊恐😱，风格统一且直觉
+          emoji = v > 0 ? ['😊', '😄', '😁', '😍'][lvl - 1] : ['🙁', '😟', '😣', '😱'][lvl - 1];
         }
         const isToday = cur.getTime() === today.getTime();
-        const pnlTxt = rec ? calActiveFmt(v) : '—';
+        const pnlTxt = (!rec || isZero) ? '—' : calActiveFmt(v);
         const unit = calMetric === 'rate' ? '收益率' : '盈亏';
-        const title = ds + (rec ? (': 当日' + unit + ' ' + pnlTxt) : '：无快照数据');
+        const title = ds + (rec ? (': 当日' + unit + ' ' + calActiveFmt(v)) : '：无快照数据');
         const dayNum = cur.getDate();
         const valHtml = '<span class="cal-val">' + pnlTxt + '</span>';
         cells += '<div class="cal-cell ' + color + ' has-amt' + (isToday ? ' cal-today' : '') + '" data-date="' + ds + '" title="' + title + '"><span class="cal-day">' + dayNum + '</span><span class="cal-emoji">' + emoji + '</span>' + valHtml + '</div>';
@@ -3052,15 +3051,17 @@ function drawCalYear() {
     const a = monthAgg[m - 1];
     const v = calMetric === 'rate' ? (a.avgBase > 0 ? a.pnl / a.avgBase * 100 : 0) : a.pnl;
     let color, txt;
+    const isZero = a.days > 0 && Math.abs(v) < 1e-9;
     if (a.days === 0) { color = 'lg-none'; txt = '—'; }
-    else if (Math.abs(v) < 1e-9) { color = 'lg-zero'; txt = '😐'; }
+    else if (isZero) { color = 'lg-zero'; txt = ''; }
     else {
       const t = Math.min(1, Math.abs(v) / mx);
       const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
       color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
       txt = v > 0 ? ['😊', '😄', '😁', '😍'][lvl - 1] : ['🙁', '😟', '😣', '😱'][lvl - 1];
     }
-    const valTxt = a.days === 0 ? '—' : calActiveFmt(v);
+    // 与日格口径统一：无记录 / 零盈亏都显示「—」
+    const valTxt = (a.days === 0 || isZero) ? '—' : calActiveFmt(v);
     cells += `<div class="cal-cell cal-year-cell ${color} has-amt" data-month="${m}">
       <span class="cal-day">${m}月</span>
       <span class="cal-emoji">${txt}</span>
@@ -3730,78 +3731,43 @@ $('#importFile').onchange = async (e) => {
   } catch (err) { toast('文件解析失败：' + err.message, 'err'); }
 };
 
-// ---- 持仓历史盈亏（每日表格 + 盈亏曲线，tab 切换） ----
-$('#histTabTable').onclick = () => switchHistTab('table');
-$('#histTabChart').onclick = () => switchHistTab('chart');
-$('#histTabAudit').onclick = () => { switchHistTab('audit'); loadWealthAudit(); };
+// ---- 理财历史盈亏 tab（持仓历史弹框已独立且无 tab）----
+$('#wealthHistTabTable').onclick = () => switchWealthHistTab('table');
+$('#wealthHistTabAudit').onclick = () => { switchWealthHistTab('audit'); loadWealthAudit(); };
 
 let histData = null; // 当前持仓历史原始返回
 
 async function openHoldingHistory(id) {
   $('#histModal').hidden = false;
-  switchHistTab('table');
-  $('#histTabAudit').hidden = true; // 审计记录仅理财快照有，持仓历史隐藏该 tab
-  $('#histTabChart').hidden = false; // 持仓历史保留「盈亏曲线」
-  $('#histTable').innerHTML = '<p class="u-muted u-py-2">加载中…</p>';
-  $('#histChartBody').innerHTML = '';
+  // 持仓历史弹框无 tab，盈亏曲线直接展示；每日数据改悬停/点按柱子查看
+  $('#histChartBody').innerHTML = '<p class="u-muted u-py-2">加载中…</p>';
   const r = await api('/api/holdings/' + id + '/pnl-history');
-  if (!r.ok) { $('#histTable').innerHTML = '<p class="u-danger">加载失败 (HTTP ' + r.status + ')</p>'; return; }
+  if (!r.ok) { $('#histChartBody').innerHTML = '<p class="u-danger">加载失败 (HTTP ' + r.status + ')</p>'; return; }
   const d = await r.json();
   histData = d;
   const h = d.holding || {};
   const cur = ((d.currency || '').toUpperCase() === 'USD' ? 'USD ' : (d.currency || '').toUpperCase() === 'HKD' ? 'HK$ ' : '¥');
   $('#histTitle').textContent = (h.name || '') + '（' + (h.symbol || '') + '）历史盈亏';
-  renderHistTable(d, cur);
   renderHistChart(d, cur);
 }
 
-function switchHistTab(which) {
+function switchWealthHistTab(which) {
   const isTable = which === 'table';
   const isAudit = which === 'audit';
-  $('#histTableWrap').hidden = !isTable;
-  $('#histChartWrap').hidden = isTable || isAudit;
+  $('#wealthHistTableWrap').hidden = !isTable;
   const auditPanel = $('#whAuditPanel');
   if (auditPanel) auditPanel.hidden = !isAudit;
-  $('#histTabTable').classList.toggle('active', isTable);
-  $('#histTabChart').classList.toggle('active', which === 'chart');
-  const auditTab = $('#histTabAudit');
-  if (auditTab) auditTab.classList.toggle('active', isAudit);
+  $('#wealthHistTabTable').classList.toggle('active', isTable);
+  $('#wealthHistTabAudit').classList.toggle('active', isAudit);
 }
 
-function renderHistTable(d, cur) {
-  const s = (d.series || []).slice().reverse(); // 从新到旧展示（曲线仍用原升序）
-  if (s.length === 0) {
-    $('#histTable').innerHTML = '<p class="u-muted u-lh u-py-2">暂无历史数据。系统每个交易日 15:15 自动记录（周末及法定节假日不记录），或点「刷新行情」即记录当日；从记录之日起每个交易日生成一个数据点。</p>';
-    return;
-  }
-  const rows = s.map((x, i) => {
-    const isBase = (i === s.length - 1); // 最早一天无"当日盈亏"
-    return `
-    <tr>
-      <td>${x.date}</td>
-      <td class="num">${fmtNav(x.close, (d.holding || {}).category)}</td>
-      <td class="num ${cls(x.day_pnl)}">${isBase ? '—' : fmt(x.day_pnl)}</td>
-      <td class="num ${cls(x.day_pnl_pct)}">${isBase ? '—' : pct(x.day_pnl_pct)}</td>
-      <td class="num ${cls(x.total_pnl)}">${fmt(x.total_pnl)}</td>
-      <td class="num ${cls(x.total_pnl_pct)}">${pct(x.total_pnl_pct)}</td>
-      <td class="num">${fmt(x.market_value)}</td>
-    </tr>`;
-  }).join('');
-  $('#histTable').innerHTML = `
-    <table class="hist-tbl">
-      <thead><tr>
-        <th>日期</th><th>收盘价</th><th>当日盈亏</th><th>当日%</th><th>累计盈亏</th><th>累计%</th><th>市值</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div class="u-muted u-sm u-mt-1">金额单位 ${cur}（USD 持仓已按汇率折算人民币口径，红涨绿跌）</div>`;
-}
+// （持仓历史不再渲染每日表格；曲线悬停/点按柱子弹框展示，见 drawPnlCurve / showHistTip）
 
 // 复用全局盈亏走势的 SVG 双轴风格：当日盈亏柱状（左轴，红涨绿跌）+ 累计盈亏折线（右轴）
 // 持仓历史盈亏 / 理财每日盈亏 共用绘制器（数据结构统一为 { date, day_pnl, total_pnl }）。
 // 这两处此前各写一份近乎相同的 SVG 逻辑，改视觉时极易只改一半（曾导致柱子静默不渲染），
 // 合并后只需改这一处。视觉规格见 docs/ui-design-spec.md §3.11。
-function drawPnlCurve(s) {
+function drawPnlCurve(s, cur) {
   const body = $('#histChartBody');
   if (!s || s.length === 0) { body.innerHTML = '<p class="u-muted">暂无历史数据。</p>'; return; }
   const W = 720, H = 356, mL = 58, mR = 58, mT = 22, mB = 40;
@@ -3891,42 +3857,64 @@ function drawPnlCurve(s) {
       ${lineEl}
       ${dots}${yLabels}${xlabels}${hotspots}
     </svg>${legend}`;
-  // 绑定柱子交互热区 tooltip + 悬停指示线/指示点
+  // 绑定柱子交互热区 tooltip + 悬停指示线/指示点；支持桌面悬停 / 触屏点按（点击固定，再次点击或点空白区取消）
   const curEl = body.querySelector('.trend-cursor');
   const curDot = body.querySelector('.trend-cursor-dot');
+  let pinnedI = -1;
+  const focusBar = (i) => {
+    const r2 = body.querySelectorAll('.trend-hot')[i];
+    const cx = r2.dataset.x, cy = r2.dataset.y;
+    if (curEl) { curEl.setAttribute('x1', cx); curEl.setAttribute('x2', cx); curEl.setAttribute('visibility', 'visible'); }
+    if (curDot) { curDot.setAttribute('cx', cx); curDot.setAttribute('cy', cy); curDot.setAttribute('visibility', 'visible'); }
+  };
   body.querySelectorAll('.trend-hot').forEach((r) => {
     const i = +r.dataset.i;
     r.addEventListener('mouseenter', (e) => {
-      const cx = r.dataset.x, cy = r.dataset.y;
-      if (curEl) { curEl.setAttribute('x1', cx); curEl.setAttribute('x2', cx); curEl.setAttribute('visibility', 'visible'); }
-      if (curDot) { curDot.setAttribute('cx', cx); curDot.setAttribute('cy', cy); curDot.setAttribute('visibility', 'visible'); }
-      showHistTip(e, s[i]);
+      if (pinnedI !== -1) return;
+      focusBar(i);
+      showHistTip(e, s[i], cur);
     });
     r.addEventListener('mousemove', moveTrendTip);
     r.addEventListener('mouseleave', () => {
       if (curEl) curEl.setAttribute('visibility', 'hidden');
       if (curDot) curDot.setAttribute('visibility', 'hidden');
-      hideTrendTip();
+      if (pinnedI === -1) hideTrendTip();
+    });
+    r.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (pinnedI === i) { pinnedI = -1; hideTrendTip(); }
+      else { pinnedI = i; focusBar(i); showHistTip(e, s[i], cur); moveTrendTip(e); }
     });
   });
+  // 点击曲线图空白区取消固定（触屏再次点按时收起浮框）
+  const svgEl = body.querySelector('svg');
+  if (svgEl) svgEl.addEventListener('click', () => { if (pinnedI !== -1) { pinnedI = -1; hideTrendTip(); } });
 }
 
 // 持仓历史盈亏：series 已含 day_pnl / total_pnl，直接交给共用绘制器
-function renderHistChart(d) { drawPnlCurve(d.series || []); }
+function renderHistChart(d, cur) { drawPnlCurve(d.series || [], cur); }
 
-// 历史盈亏曲线 tooltip：hover 柱子显示当日/累计盈亏
-function showHistTip(e, x) {
+// 历史盈亏曲线 tooltip：悬停/点按柱子显示当日盈亏、涨跌幅、累计盈亏等
+function showHistTip(e, x, cur) {
   let tip = document.getElementById('trendTip');
   if (!tip) { tip = document.createElement('div'); tip.id = 'trendTip'; tip.className = 'trend-tip'; document.body.appendChild(tip); }
+  const cur0 = cur || '¥';
   const day = (x.day_pnl !== undefined ? x.day_pnl : (x.pnl || 0));
   const cum = (x.total_pnl !== undefined ? x.total_pnl : (x.cum_pnl || 0));
   const cls = day > 0 ? 't-up' : day < 0 ? 't-down' : 't-muted';
-  const sign = day > 0 ? '+' : '';
-  const dayStr = sign + fmt(day);
   const cumCls = cum > 0 ? 't-up' : cum < 0 ? 't-down' : 't-muted';
-  tip.innerHTML = '<div class="t-date">' + x.date + '</div>'
-    + '<div class="t-row"><span>当日盈亏</span><span class="' + cls + '">' + dayStr + '</span></div>'
-    + '<div class="t-row"><span>累计盈亏</span><span class="' + cumCls + '">' + fmt(cum) + '</span></div>';
+  let html = '<div class="t-date">' + x.date + '</div>'
+    + '<div class="t-row"><span>当日盈亏</span><span class="' + cls + '">' + (day > 0 ? '+' : '') + fmt(day) + '</span></div>';
+  if (x.day_pnl_pct !== undefined && x.day_pnl_pct !== null)
+    html += '<div class="t-row"><span>当日涨跌幅</span><span class="' + cls + '">' + pct(x.day_pnl_pct) + '</span></div>';
+  html += '<div class="t-row"><span>累计盈亏</span><span class="' + cumCls + '">' + fmt(cum) + '</span></div>';
+  if (x.total_pnl_pct !== undefined && x.total_pnl_pct !== null)
+    html += '<div class="t-row"><span>累计涨跌幅</span><span class="' + cumCls + '">' + pct(x.total_pnl_pct) + '</span></div>';
+  if (x.market_value !== undefined && x.market_value !== null)
+    html += '<div class="t-row"><span>市值</span><span>' + cur0 + fmt(x.market_value) + '</span></div>';
+  if (x.close !== undefined && x.close !== null)
+    html += '<div class="t-row"><span>收盘价</span><span>' + cur0 + fmt(x.close) + '</span></div>';
+  tip.innerHTML = html;
   tip.classList.add('show');
   moveTrendTip(e);
 }
@@ -4346,14 +4334,12 @@ function addEqRow(init) {
       </select>
       <input class="eq-amt" name="eq-amt" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="盈亏金额（正盈负亏）">
     </div>
-    <div class="combo">
-      <select class="eq-cur" name="eq-cur">
-        <option value="USD">USD</option>
-        <option value="HKD">HKD</option>
-        <option value="RMB" selected>RMB</option>
-      </select>
-      <input class="eq-note" name="eq-note" type="text" placeholder="备注（可选）">
-    </div>
+    <select class="eq-cur" name="eq-cur">
+      <option value="USD">USD</option>
+      <option value="HKD">HKD</option>
+      <option value="RMB" selected>RMB</option>
+    </select>
+    <input class="eq-note" name="eq-note" type="text" placeholder="备注（可选）">
     <button class="trow-del btn btn-sm danger" type="button" title="删除" aria-label="删除该行">${actIcon('del')}</button>`;
   if (init) {
     if (init.kind) row.querySelector('.eq-kind').value = init.kind;
@@ -4949,8 +4935,9 @@ function renderSources(body) {
   // 避免编辑/转账等操作触发全局刷新时把所有已展开的二级卡片表格收回折叠。
   const openSubs = new Set();
   body.querySelectorAll('tr.cash-sub-tr:not([hidden])').forEach((tr) => { if (tr.dataset && tr.dataset.sub) openSubs.add(tr.dataset.sub); });
+  // 分组折叠状态按 grp-sep 分隔行记录（单表化前记的是 .source-group 外壳）
   const groupCollapsed = {};
-  body.querySelectorAll('.source-group').forEach((g) => { if (g.dataset && g.dataset.gtype) groupCollapsed[g.dataset.gtype] = g.classList.contains('collapsed'); });
+  body.querySelectorAll('tr.grp-sep.collapsed').forEach((tr) => { if (tr.dataset && tr.dataset.gtype) groupCollapsed[tr.dataset.gtype] = true; });
   const prevScroll = body.scrollTop;
   let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="addFlowBtn" type="button" title="添加流水" aria-label="添加流水">${actIcon('receipt')}</button><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div></div>`;
   if (!list.length) html += `<div class="empty-state"><p>还没有账户，先添加一个银行、证券或软件吧。</p><button class="btn" data-empty-add="source" type="button">＋ 添加账户</button></div>`;
@@ -4961,27 +4948,29 @@ function renderSources(body) {
     const groups = ['bank', 'securities', 'software', 'platform']
       .map((t) => ({ t, items: list.filter((s) => typeOf(s) === t).sort((a, b) => (b.funds_cny || 0) - (a.funds_cny || 0)) }))
       .filter((g) => g.items.length);
+    // 单表 + 组间分隔行：thead 只渲染一次（原「每组一张表各带 thead」在 4 组时重复 4 次，浪费纵向空间）。
+    // 组分隔行可点击折叠该组所有行（沿用原 .collapsible 的折叠语义；分组默认展开，用户折叠状态重渲染仍保留）。
+    html += `<div class="asset-pano-wrap"><table class="asset-table asset-pano-tbl"><colgroup><col class="cw-6"><col class="cw-34"><col class="cw-14"><col class="cw-18"><col class="cw-28"></colgroup><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联资金(CNY)</th><th>备注</th><th>操作</th></tr></thead><tbody>`;
     for (const g of groups) {
       const gTotal = g.items.reduce((a, s) => a + (s.funds_cny || 0), 0);
       // 组头统计：子账户/负债数量（有才显示负债段），填充折叠头右侧信息
       const gSubs = g.items.reduce((a, s) => a + cashListOf(s.id).length, 0);
       const gLbs = g.items.reduce((a, s) => a + liabListOf(s.id).length, 0);
-      // 分组默认展开（2026-10-10）：折叠壳导致整页只剩几行组头显得空；用户折叠状态重渲染仍保留
-      html += `<div class="collapsible source-group asset-pano" data-gtype="${g.t}"><div class="collapse-hat asset-pano-head">`;
-      html += `<div class="ac-left"><span class="ac-name"><span class="src-ico">${srcTypeIcon(g.t)}</span> ${typeName[g.t]}（${g.items.length}）</span></div>`;
-      html += `<div class="ac-right">${gLbs ? `<div class="ac-stat"><span class="ac-stat-lbl">负债</span><b>${gLbs}</b></div>` : ''}<div class="ac-stat"><span class="ac-stat-lbl">子账户</span><b>${gSubs}</b></div><div class="ac-stat"><span class="ac-stat-lbl">关联资金</span><b>${money(gTotal)}</b></div><span class="hat-chevron">▾</span></div></div>`;
-      html += `<div class="collapse-body source-group-body"><table class="asset-table"><colgroup><col class="cw-6"><col class="cw-34"><col class="cw-14"><col class="cw-18"><col class="cw-28"></colgroup><thead><tr><th class="num">#</th><th>名称</th><th>类型</th><th class="num">关联资金(CNY)</th><th>备注</th><th>操作</th></tr></thead><tbody>`;
+      html += `<tr class="grp-sep" data-gtype="${g.t}"><td colspan="6"><div class="grp-sep-in">`
+        + `<div class="ac-left"><span class="ac-name"><span class="src-ico">${srcTypeIcon(g.t)}</span> ${typeName[g.t]}（${g.items.length}）</span></div>`
+        + `<div class="ac-right">${gLbs ? `<div class="ac-stat"><span class="ac-stat-lbl">负债</span><b>${gLbs}</b></div>` : ''}<div class="ac-stat"><span class="ac-stat-lbl">子账户</span><b>${gSubs}</b></div><div class="ac-stat"><span class="ac-stat-lbl">关联资金</span><b>${money(gTotal)}</b></div><span class="hat-chevron">▾</span></div>`
+        + `</div></td></tr>`;
       for (let i = 0; i < g.items.length; i++) {
         const s = g.items[i];
         const subCnt = cashListOf(s.id).length + liabListOf(s.id).length;
-        html += `<tr><td class="num">${i + 1}</td><td><span class="src-ico">${srcTypeIcon(typeOf(s))}</span> ${esc(s.name)}</td><td>${typeName[typeOf(s)]} <span class="src-region ${s.region === 'overseas' ? 'ovs' : 'dom'}">${s.region === 'overseas' ? '境外' : '境内'}</span></td>
+        html += `<tr data-g="${g.t}"><td class="num">${i + 1}</td><td><span class="src-ico">${srcTypeIcon(typeOf(s))}</span> ${esc(s.name)}</td><td>${typeName[typeOf(s)]} <span class="src-region ${s.region === 'overseas' ? 'ovs' : 'dom'}">${s.region === 'overseas' ? '境外' : '境内'}</span></td>
           <td class="num" title="该账户下持仓市值+理财金额+现金余额−负债（折算 CNY，负债为资金占用）">¥${fmt(s.funds_cny || 0)}</td><td>${esc(s.note || '')}</td>
           <td class="row-actions">${actBtn('toggle', `data-act="sub-toggle" data-id="${s.id}"`, '展开/收起子账户', { count: subCnt, cls: 'always-on' })}${actBtn('addSub', `data-act="add-sub" data-id="${s.id}"`, '添加子账户或负债')}${actBtn('edit', `data-act="edit-source" data-id="${s.id}"`, '编辑账户')}${actBtn('del', `data-act="del-source" data-id="${s.id}"`, '删除账户', { danger: true })}</td></tr>`;
         // 子账户折叠行：现金与负债作为该账户的子账户，下拉折叠显示（无留白/阴影/圆角，贴合主表）
-        html += `<tr class="cash-sub-tr" data-sub="${s.id}" hidden><td colspan="6">${cashSubRowsHtml(s.id)}</td></tr>`;
+        html += `<tr class="cash-sub-tr" data-g="${g.t}" data-sub="${s.id}" hidden><td colspan="6">${cashSubRowsHtml(s.id)}</td></tr>`;
       }
-      html += `</tbody></table></div></div>`;
     }
+    html += `</tbody></table></div>`;
   }
   body.innerHTML = html;
   // 恢复刷新前的展开/折叠状态与滚动位置（实现局部刷新：数据更新但保持当前视图状态）
@@ -4990,8 +4979,9 @@ function renderSources(body) {
     if (tr) { tr.hidden = false; const btn = body.querySelector(`[data-act="sub-toggle"][data-id="${id}"]`); if (btn) btn.classList.add('open'); }
   });
   Object.keys(groupCollapsed).forEach((t) => {
-    const g = body.querySelector(`.source-group[data-gtype="${t}"]`);
-    if (g) g.classList.toggle('collapsed', groupCollapsed[t]);
+    const sep = body.querySelector(`tr.grp-sep[data-gtype="${t}"]`);
+    if (sep) sep.classList.add('collapsed');
+    body.querySelectorAll(`tr[data-g="${t}"]`).forEach((tr) => { tr.hidden = true; });
   });
   body.scrollTop = prevScroll;
   $('#addSourceBtn').onclick = () => openAssetSourceModal(null);
@@ -5011,6 +5001,14 @@ function renderSources(body) {
   body.querySelectorAll('[data-act="lb-hist"]').forEach((b) => b.onclick = () => openLiabHistory(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="edit-lb"]').forEach((b) => b.onclick = () => openLiabilityModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="del-lb"]').forEach((b) => b.onclick = () => assetDel('liability', Number(b.dataset.id)));
+  // 分组折叠：点击组间分隔行收起/展开该组所有行（含子账户行）
+  body.querySelectorAll('tr.grp-sep').forEach((sep) => {
+    sep.onclick = () => {
+      const t = sep.dataset.gtype;
+      const collapsed = sep.classList.toggle('collapsed');
+      body.querySelectorAll(`tr[data-g="${t}"]`).forEach((tr) => { tr.hidden = collapsed; });
+    };
+  });
   bindCashActions(body);
 }
 
@@ -5192,7 +5190,7 @@ function renderWealthTable(w) {
       const pnl = p.today_pnl || 0;
       const cum = p.cum_pnl || 0;
       return `<tr>
-      <td class="name-cell"><span class="wn-idx">${i + 1}</span><span class="name-cap"><span class="name-clickable" data-copy="${esc(p.name)}" title="${esc(p.name)}">${esc(p.name)}</span></span><span class="cur-badge">${curSymbolJS(p.currency)}</span></td>
+      <td class="name-cell"><span class="wn-idx">${i + 1}</span><span class="name-cap"><span class="name-clickable" title="${esc(p.name)}">${esc(p.name)}</span></span><span class="cur-badge">${curSymbolJS(p.currency)}</span></td>
       <td class="num"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</td>
       <td class="num ${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</td>
       <td class="num ${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
@@ -5224,17 +5222,7 @@ function renderWealthTable(w) {
         <th class="num">持有天数</th><th>操作</th>
         </tr></thead><tbody>${rows}</tbody>
         </table></div></div></div>`;
-  }).join('') + (w.length > 1 ? wealthTotalBar(w) : '') + `</div>`;
-}
-// 理财表格底部：多于 1 款产品时显示合计市值（多币种折合人民币 + 分币种明细）
-function wealthTotalBar(w) {
-  const rmb = w.reduce((s, p) => s + wCny(p, Number(p.amount || 0)), 0);
-  const curs = [...new Set(w.map((p) => (p.currency || 'rmb').toLowerCase()))];
-  const parts = curs.map((c) => {
-    const amt = w.filter((p) => (p.currency || 'rmb').toLowerCase() === c).reduce((s, p) => s + Number(p.amount || 0), 0);
-    return curSymbolJS(c) + fmt(amt);
-  }).join(' ＋ ');
-  return `<div class="wealth-total"><span class="wt-lbl">合计市值</span><b class="wt-cny">¥${fmt(rmb)}</b>${curs.length > 1 ? `<span class="wt-break">${parts}</span>` : ''}</div>`;
+  }).join('') + `</div>`;
 }
 
 // ---- 资金流水（资产全景「流水」tab）----
@@ -6076,10 +6064,9 @@ async function openWealthHistory(id) {
       const p = assetData.wealth.products.find((x) => x.id === id);
       if (p) title = (p.name || ('理财 #' + id)) + ' 每日盈亏';
     }
-    $('#histTitle').textContent = title;
-    $('#histModal').hidden = false;
-    switchHistTab('table');
-    $('#histTabChart').hidden = true; // 理财每日盈亏弹框移除「盈亏曲线」tab（子页面一并隐藏）
+    $('#wealthHistTitle').textContent = title;
+    $('#wealthHistModal').hidden = false;
+    switchWealthHistTab('table');
     // 表格面板内只保留流水表；审计记录通过顶部并排小 tab（审计记录）进入
     let html = '';
     if (!rows.length) { html += '<p class="empty">暂无录入记录。</p>'; }
@@ -6093,9 +6080,8 @@ async function openWealthHistory(id) {
       }
       html += '</tbody></table>';
     }
-    $('#histTabAudit').hidden = false;
-    $('#histTable').innerHTML = html;
-    // 审计面板必须挂在 histTableWrap 的兄弟位置：切到审计 tab 时 histTableWrap 整体隐藏，
+    $('#wealthHistTable').innerHTML = html;
+    // 审计面板必须挂在 wealthHistTableWrap 的兄弟位置：切到审计 tab 时 wealthHistTableWrap 整体隐藏，
     // 面板若嵌在内部会连带被隐藏，导致「审计记录」tab 下一片空白。
     let panel = $('#whAuditPanel');
     if (!panel) {
@@ -6103,7 +6089,7 @@ async function openWealthHistory(id) {
       panel.id = 'whAuditPanel';
       panel.hidden = true;
       panel.innerHTML = '<h3>审计记录（修改/删除均可撤销；「删除」= 删当日快照）</h3><div id="whAuditBody"></div>';
-      $('#histTableWrap').after(panel);
+      $('#wealthHistTableWrap').after(panel);
     }
     // 理财每日盈亏弹框已移除「盈亏曲线」子页面，不再绘制曲线
   } catch (err) { toast('异常：' + err.message, 'err'); }
@@ -6399,7 +6385,7 @@ async function openSnapModal() {
       <div class="sr-fields">
         <div class="sr-field">
           <label class="sr-label" for="amt-${p.id}">① 今日持仓金额 ${curSymbolJS(p.currency)}</label>
-          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2);this.dataset.touched=1;syncSnapTotal()" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" data-cur="${p.currency || 'rmb'}" data-base="${round2(p.amount || 0)}" value="${round2(p.amount || 0)}" placeholder="今天收盘后的总市值">
+          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2);this.dataset.touched=1" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" data-cur="${p.currency || 'rmb'}" data-base="${round2(p.amount || 0)}" value="${round2(p.amount || 0)}" placeholder="今天收盘后的总市值">
         </div>
         <div class="sr-cash-slot">
           <label class="sr-label" for="cash-${p.id}">② 资金账户 ${curSymbolJS(p.currency)}</label>
@@ -6412,12 +6398,12 @@ async function openSnapModal() {
       </div>
     </div>`;
   body.innerHTML = groups.map((g) => {
-    // 单币种直接显示合计；多币种显示「折合人民币」总额（不跨币种相加，但给出整体市值参考）
+    // 单币种直接合计；多币种按人民币折算后也显示「合计」总额（不跨币种相加，仅给出整体市值参考）
     const curs = [...new Set(g.items.map((p) => p.currency || 'rmb'))];
     const sum = curs.length === 1
       ? moneyCur(g.items.reduce((s, p) => s + Number(p.amount || 0), 0), curs[0])
       : moneyCur(g.items.reduce((s, p) => s + wCny(p, Number(p.amount || 0)), 0), 'rmb');
-    const sumLabel = curs.length === 1 ? '合计 ' + sum : '折合 ' + sum;
+    const sumLabel = '合计 ' + sum;
     return `<div class="snap-group">
       <div class="sg-head"><span class="sg-name">${esc(g.name)}</span><span class="sg-meta">${g.items.length} 款 ｜ ${sumLabel}</span></div>
       <div class="sg-body">${g.items.map(rowHtml).join('')}</div>
@@ -6425,7 +6411,6 @@ async function openSnapModal() {
   }).join('');
   $('#snapModal').dataset.date = today;
   $('#snapModal').hidden = false;
-  syncSnapTotal();
 }
 
 // 净存入联动持仓金额：持仓金额未手动改过时，今日持仓自动 = 上次值 + 净存入，
@@ -6437,30 +6422,6 @@ function snapCfSync(input) {
     amt.value = round2(Number(amt.dataset.base || 0) + Number(input.value || 0));
   }
   syncSnapCash(input);
-  syncSnapTotal();
-}
-// 更新理财持仓弹框：实时统计合计市值（多币种按实时汇率折合人民币），仅在多于 1 款产品时显示
-function syncSnapTotal() {
-  const el = document.getElementById('snapTotal');
-  if (!el) return;
-  const rows = document.querySelectorAll('#snapBody .snap-row');
-  if (rows.length <= 1) { el.hidden = true; el.innerHTML = ''; return; }
-  const perCur = {};
-  let rmb = 0;
-  rows.forEach((row) => {
-    const inp = row.querySelector('.sr-amt');
-    if (!inp) return;
-    const v = Number(inp.value || 0);
-    const cur = (inp.dataset.cur || 'rmb').toLowerCase();
-    perCur[cur] = (perCur[cur] || 0) + v;
-    if (cur === 'usd') rmb += v * (usdRate || 1);
-    else if (cur === 'hkd') rmb += v * (hkdRate || 1);
-    else rmb += v;
-  });
-  const order = ['rmb', 'usd', 'hkd'].filter((c) => perCur[c] != null);
-  const parts = order.map((c) => curSymbolJS(c) + fmt(perCur[c])).join(' ＋ ');
-  el.hidden = false;
-  el.innerHTML = `<span class="st-lbl">合计市值</span><b class="st-cny">¥${fmt(rmb)}</b><span class="st-break">${parts}</span>`;
 }
 // 净存入输入联动：下拉常显，按正/负切换提示——正（转入理财）= 从此账户扣款；负（取出理财）= 回款转入此账户
 function syncSnapCash(input) {
@@ -8166,7 +8127,7 @@ function renderCfBars(plans, listEl) {
   }).sort((a, b) => (a.day - b.day) || (a.id - b.id));
 
   const H = 100;     // 总高固定（撑满 cf-list flex:1）
-  const padTop = 14, padBot = 20;   // padTop 加大，给柱顶金额小字留空间
+  const padTop = 16, padBot = 20;   // padTop 给柱顶金额小字留空间（字号 7.5→10 后需再+2）
   const chartH = H - padTop - padBot;
   const maxV = Math.max(...bars.map((b) => b.amount), 1);
   const incomeColor = 'var(--up)';
@@ -8206,9 +8167,9 @@ function renderCfBars(plans, listEl) {
     const fill = b.isIncome ? incomeColor : expenseColor;
     const opacity = b.done ? 'fill-opacity="0.4"' : '';
     parts.push(`<rect class="cf-bar" data-id="${b.id}" x="${x}" y="${y}" width="${barW}" height="${h}" rx="2" ry="2" fill="${fill}" ${opacity} title="${esc(b.title)} ${b.isIncome ? '＋' : '－'}${curSymbolJS(b.currency)}${fmt(b.amount)} / ${b.day}日"/>`);
-    // 柱顶金额小字（￥1.1k 格式）；满高柱 y 贴近 padTop，文字基线 y-4 仍在 viewBox 内
-    parts.push(`<text x="${(x + barW / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="7.5" fill="${fill}" opacity="0.9">${kfmt(b.amount, b.currency)}</text>`);
-    parts.push(`<text x="${x + barW / 2}" y="${H - 4}" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.5">${b.day}</text>`);
+    // 柱顶金额小字（￥1.1k 格式）；字号 7.5→10（原偏小几乎看不清）。满高柱 y 贴近 padTop，文字基线 y-4 仍在 viewBox 内
+    parts.push(`<text x="${(x + barW / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="${fill}" opacity="0.9">${kfmt(b.amount, b.currency)}</text>`);
+    parts.push(`<text x="${x + barW / 2}" y="${H - 4}" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.5">${b.day}</text>`);
     x += barW + gap;
   });
   parts.push('</svg>');

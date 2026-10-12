@@ -1991,7 +1991,7 @@ func holdingPnlHistory(c *gin.Context) {
 		rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"holding": gin.H{"id": h.ID, "name": h.Name, "symbol": h.Symbol, "currency": h.Currency, "quantity": h.Quantity, "cost_price": h.CostPrice},
+		"holding": gin.H{"id": h.ID, "name": h.Name, "symbol": h.Symbol, "currency": h.Currency, "quantity": h.Quantity, "cost_price": h.CostPrice, "category": h.Category},
 		"currency": h.Currency,
 		"fx":       fx,
 		"series":   rows,
