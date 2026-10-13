@@ -1,16 +1,17 @@
-# Portfolio · 持仓侠 / My Folio Hub
+# 持仓侠 / MoneyComes
 
 ![GitHub stars](https://img.shields.io/github/stars/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=yellow) ![GitHub last commit](https://img.shields.io/github/last-commit/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=2ea44f) ![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat) ![MCP ready](https://img.shields.io/badge/MCP-ready-5A0FC8?style=flat)
 
-> **数据私有 · 极致轻量 · AI 原生（MCP）** —— 不是又一个行情看板，而是把 股票、基金持仓（含理财）/ 现金 / 负债 / 流水 统一成一个**可被 AI 理解与操作**的自托管账本。
-
-> **中文**：自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓（含理财）/ 现金 / 负债 / 流水 / 收支等。自动刷新行情（不含理财）、计算盈亏、记录历史，提供盈亏日历、技术分析/**基金关联股票代码**、动态调仓计划与 AI 总结。桌面与移动端自适应。
+> 「牛来：妈妈，我的账户又绿了，牛还来吗？」
+> 「妈妈：牛会回来的。」
 >
-> **English**: A self-hosted, multi-user personal investment holdings dashboard that unifies **A-share / US / HK stock and fund holdings** (including wealth products), cash, liabilities, cash flows, and income/expense into one view. It auto-refreshes market quotes (excluding wealth products), computes profit/loss, and records history, while offering a P/L calendar, technical analysis / fund-linked stock codes, dynamic rebalancing plans, and AI summaries. Responsive on both desktop and mobile.
+> 在牛回来之前，先把家底交给 **持仓侠（MoneyComes）**：股票、基金、理财、现金、负债、收支一个账本全收；盈亏自动算、历史天天记；房贷车贷到点自动提醒你别逾期。牛来牛去，心里有数。
+
+> 自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓（含理财）/ 现金 / 负债 / 流水 / 收支等。自动刷新行情（不含理财）、计算盈亏、记录历史，提供盈亏日历、技术分析/**基金关联股票代码**、动态调仓计划与 AI 助手。桌面与移动端自适应。
 
 ## 📖 目录
 
-- [🌐 在线 Demo / Live Demo](#-在线-demo--live-demo)
+- [🌐 在线 Demo](#-在线-demo)
 - [✨ 功能一览](#-功能一览)
 - [界面预览](#界面预览)
 - [技术栈](#技术栈)
@@ -21,11 +22,9 @@
 - [贡献与支持](#贡献与支持)
 - [许可](#许可)
 
-## 🌐 在线 Demo / Live Demo
+## 🌐 在线 Demo
 
 **<https://www.mrchenyifei.icu:19999>** · 预置了一套模拟数据（8 只持仓 / 多币种账户 / 理财 / 负债 / 近 30 日盈亏历史），行情定时自动刷新。
-
-A pre-seeded demo instance with mock data is live at the link above; quotes refresh automatically.
 
 ## ✨ 功能一览
 
@@ -72,7 +71,7 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 - 提供 `record_transaction` 写入与 `list_markers` / `list_amount_modifiable` / `list_accounts` / `list_cash_accounts` / `list_holdings` / `list_wealth` 查询工具。
 - MCP 写入的流水在表格中打高亮 **MCP** 标签。
 
-**AI 总结**
+**AI 助手**
 
 - 一键生成全资产 / 权益类总结，支持自定义提示词与多模型配置。
 - 可每日收盘后自动生成，并随净值推送发送。
@@ -96,7 +95,7 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 |      **更新理财持仓**<br /><img src="docs/screenshots/wealth-update.png" width="760" alt="更新理财持仓">     |
 |        **动态调仓计划**<br /><img src="docs/screenshots/buy-plan.png" width="760" alt="动态调仓计划">        |
 |      **编辑收支计划**<br /><img src="docs/screenshots/cashflow-plan.png" width="760" alt="编辑收支计划">     |
-| **AI 中枢 · AI 总结**<br /><img src="docs/screenshots/ai-modal.png" width="760" alt="AI 中枢 · AI 总结"> |
+|        **AI 助手**<br /><img src="docs/screenshots/ai-assistant.png" width="760" alt="AI 助手">        |
 
 ## 技术栈
 
@@ -124,7 +123,7 @@ A pre-seeded demo instance with mock data is live at the link above; quotes refr
 
 内建**零依赖 MCP 服务端**（stdio / HTTP(SSE)，默认端口 `9988`）：hermes 等 AI 客户端可先查询账本（账户 / 子账户 / 持仓 / 理财），再按「MCP 标记」记录流水（加仓 / 减仓 / 分红、现金存取、理财申赎）。
 
-- **配置**：**AI 中枢 → AI 设置 → MCP 参数** 页一键开关、选传输方式、填地址与令牌，并可复制 hermes 客户端配置；HTTP 模式保存后重启 MCP 服务生效（stdio 用 `portfolio mcp` 启动）。
+- **配置**：**设置 → AI → MCP 参数** 页一键开关、选传输方式、填地址与令牌，并可复制 hermes 客户端配置；HTTP 模式保存后重启 MCP 服务生效（stdio 用 `portfolio mcp` 启动）。
 - **启用（环境变量）**：`MCP_ENABLED=true` / `MCP_TRANSPORT=http` / `MCP_HTTP_ADDR=:9988`；不设则默认关闭、零开销。
 - **打标记**：在新增/编辑子账户 / 持仓 / 理财 / 负债的弹框中填写「**MCP 标记**」（如 `hermes-券商A`），AI 即可按标记（精确）或名称 / 代码（模糊）定位目标。
 - **工具**：写 `record_transaction`；读 `list_markers` / `list_amount_modifiable` / `list_accounts` / `list_cash_accounts` / `list_holdings` / `list_wealth`。均可选 `username` / `user_id` 指定归属用户。
