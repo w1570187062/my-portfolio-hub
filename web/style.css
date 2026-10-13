@@ -5330,6 +5330,17 @@ textarea::placeholder {
   padding-right: 28px;
 }
 .cf-sub > b { font-weight: 700; }
+.cf-net {
+  margin-left: auto;
+  font-size: var(--fs-base);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cf-card.cf-hero .cf-net {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
 .link-btn {
   background: none;
   border: none;
@@ -5664,7 +5675,26 @@ textarea::placeholder {
   width: 28px; height: 28px; border: none; border-radius: var(--r-sm);
   background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--fs-lg); line-height: 1;
 }
-.acp-close:hover { background: var(--bg-hover); color: var(--text); }
+.acp-fs {
+  width: 28px; height: 28px; border: none; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0;
+}
+.acp-fs:hover { background: var(--bg-hover); color: var(--text); }
+.ai-chat-panel.fullscreen {
+  position: fixed;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
 .acp-list-toggle { display: none; }
 
 .acp-body { flex: 1 1 auto; min-height: 0; display: flex; }
@@ -5766,8 +5796,19 @@ textarea::placeholder {
 .acp-welcome-note { font-size: var(--fs-sm); color: var(--text-faint); margin: 0; }
 
 /* 消息气泡 */
-.ai-msg { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.ai-msg { display: flex; gap: var(--sp-2); align-items: flex-start; flex-wrap: wrap; }
 .ai-msg.user { justify-content: flex-end; }
+.ai-time {
+  width: 100%;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.2;
+  padding: 0 var(--sp-1);
+  margin-bottom: 2px;
+}
+.ai-msg.user .ai-time { text-align: right; }
+.ai-msg.ai .ai-time { text-align: left; }
 .ai-msg .ai-bubble {
   max-width: 82%;
   padding: var(--sp-3) var(--sp-4);
@@ -5780,12 +5821,34 @@ textarea::placeholder {
 .ai-msg.user .ai-bubble {
   background: var(--primary);
   color: var(--on-primary);
-  border-bottom-right-radius: var(--r-xs);
 }
 .ai-msg.ai .ai-bubble {
-  background: var(--bg-input);
+  /* --bg-input 是半透明色，三角会双重叠加显形；这里压实成等视觉纯色，气泡与三角共用 */
+  --ai-bubble-bg: color-mix(in srgb, var(--bg-card-solid) 95%, #fff 5%);
+  background: var(--ai-bubble-bg);
   color: var(--text);
-  border-bottom-left-radius: var(--r-xs);
+}
+:root[data-theme="light"] .ai-msg.ai .ai-bubble {
+  --ai-bubble-bg: color-mix(in srgb, var(--bg-card-solid) 97%, #000 3%);
+}
+/* 尾巴：伪元素 border 三角，顶部对准头像（.ai-msg 为 align-items:flex-start）。
+   基部内收 2px 与气泡同色重叠：圆角弧线区(top<16px)+DPR 取整会让贴边三角出现细缝 */
+.ai-msg .ai-bubble { position: relative; }
+.ai-msg.ai .ai-bubble::before {
+  content: '';
+  position: absolute;
+  left: -6px; top: 12px;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 8px solid var(--ai-bubble-bg, var(--bg-input));
+}
+.ai-msg.user .ai-bubble::before {
+  content: '';
+  position: absolute;
+  right: -6px; top: 12px;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid var(--primary);
 }
 .ai-avatar {
   flex: 0 0 28px;
@@ -5796,6 +5859,10 @@ textarea::placeholder {
   color: var(--on-primary);
   background: var(--primary);
   margin-top: 2px;
+}
+.ai-avatar.user-avatar {
+  background: var(--text-muted);
+  color: var(--bg-card-solid);
 }
 /* 思考中：三点跳动手势 */
 .acp-typing { display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-3) var(--sp-4); }
