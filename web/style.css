@@ -874,6 +874,15 @@ w {
 .holdings-group .collapse-hat.holdings-group-head:hover .hat-side-extra,
 .holdings-group .collapse-hat.holdings-group-head:focus-within .hat-side-extra { max-width: 720px; }
 .wealth-group .hat-stat-mv b.mix-amt { font-weight: 500; font-size: var(--fs-sm); white-space: normal; }
+/* 理财分组头的「今日 / 累计收益」不再靠 hover 展开：
+   触屏点一下会把 :hover / :focus-within 挂住（无处取消），小弹框会一直顶在分组头右侧。
+   改为常显内联，点哪儿都不会残留；同时去掉过渡，避免展开/收起的抖动。 */
+.wealth-group .hat-side-extra {
+  max-width: none !important;
+  opacity: 1 !important;
+  overflow: visible !important;
+  transition: none !important;
+}
 /* 理财表格底部：多于 1 款产品时显示合计市值（多币种折合人民币 + 分币种明细） */
 /* （理财表格底部合计市值条已删除：分组头已有各组合计，底部总市值信息重复） */
 
@@ -2718,6 +2727,51 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   background: var(--bg-input); font-weight: 600; color: var(--text);
 }
 .ai-result.md tbody tr:nth-child(even) {
+  background: rgba(var(--tint), 0.05);
+}
+
+.ai-bubble.md {
+  white-space: normal;
+  word-break: break-word;
+}
+.ai-bubble.md > *:first-child { margin-top: 0; }
+.ai-bubble.md > *:last-child { margin-bottom: 0; }
+.ai-bubble.md h1, .ai-bubble.md h2, .ai-bubble.md h3, .ai-bubble.md h4 {
+  line-height: 1.35; font-weight: 700; margin: var(--sp-3) 0 var(--sp-2);
+}
+.ai-bubble.md h1 { font-size: var(--fs-xl); }
+.ai-bubble.md h2 { font-size: var(--fs-lg); }
+.ai-bubble.md h3 { font-size: var(--fs-base); }
+.ai-bubble.md h4 { font-size: var(--fs-base); }
+.ai-bubble.md ul, .ai-bubble.md ol { padding-left: var(--sp-5); margin: var(--sp-2) 0; }
+.ai-bubble.md li { margin: var(--sp-1) 0; }
+.ai-bubble.md code {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--r-xs);
+  padding: 1px var(--sp-1); font-size: var(--fs-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.ai-bubble.md pre {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--r-xs);
+  padding: var(--sp-2) var(--sp-3); overflow: auto; margin: var(--sp-2) 0;
+}
+.ai-bubble.md pre code { background: none; border: none; padding: 0; }
+.ai-bubble.md blockquote {
+  margin: var(--sp-2) 0; padding: var(--sp-1) var(--sp-3); border-left: 3px solid var(--primary);
+  color: var(--text-muted); background: var(--bg-glass); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.ai-bubble.md a { color: var(--primary); text-decoration: underline; }
+.ai-bubble.md hr { border: none; border-top: 1px solid var(--border); margin: var(--sp-3) 0; }
+.ai-bubble.md table {
+  border-collapse: collapse; width: 100%; margin: var(--sp-2) 0; font-size: var(--fs-md);
+  display: block; overflow-x: auto;
+}
+.ai-bubble.md th, .ai-bubble.md td {
+  border: 1px solid var(--border); padding: var(--sp-1) var(--sp-2); text-align: left; vertical-align: top;
+}
+.ai-bubble.md th {
+  background: var(--bg-input); font-weight: 600; color: var(--text);
+}
+.ai-bubble.md tbody tr:nth-child(even) {
   background: rgba(var(--tint), 0.05);
 }
 
@@ -4753,10 +4807,7 @@ textarea::placeholder {
    此处补齐（设置页 + AI 页），复用与弹框一致的 inset 描边 + 焦点环画法 */
 #settingsView .settings-group-body input,
 #settingsView .settings-group-body select,
-#settingsView .settings-group-body textarea,
-#aiView .settings-group-body input,
-#aiView .settings-group-body select,
-#aiView .settings-group-body textarea {
+#settingsView .settings-group-body textarea {
   width: 100%;
   padding: var(--sp-2) var(--sp-3);
   border: none;
@@ -4771,40 +4822,29 @@ textarea::placeholder {
 }
 #settingsView .settings-group-body input:hover,
 #settingsView .settings-group-body select:hover,
-#settingsView .settings-group-body textarea:hover,
-#aiView .settings-group-body input:hover,
-#aiView .settings-group-body select:hover,
-#aiView .settings-group-body textarea:hover {
+#settingsView .settings-group-body textarea:hover {
   box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 #settingsView .settings-group-body input:focus,
 #settingsView .settings-group-body select:focus,
-#settingsView .settings-group-body textarea:focus,
-#aiView .settings-group-body input:focus,
-#aiView .settings-group-body select:focus,
-#aiView .settings-group-body textarea:focus {
+#settingsView .settings-group-body textarea:focus {
   outline: none;
   box-shadow: inset 0 0 0 1.5px var(--primary), inset 0 0 0 5px var(--primary-soft);
 }
 #settingsView .settings-group-body input::placeholder,
-#settingsView .settings-group-body textarea::placeholder,
-#aiView .settings-group-body input::placeholder,
-#aiView .settings-group-body textarea::placeholder {
+#settingsView .settings-group-body textarea::placeholder {
   font-size: var(--fs-sm);
   letter-spacing: 0;
   color: var(--text-faint);
 }
-#settingsView .settings-group-body select option,
-#aiView .settings-group-body select option {
+#settingsView .settings-group-body select option {
   background: var(--bg-card);
   color: var(--text);
 }
-#settingsView .settings-group-body textarea,
-#aiView .settings-group-body textarea {
+#settingsView .settings-group-body textarea {
   resize: vertical;
 }
-#settingsView .settings-group-body input[readonly],
-#aiView .settings-group-body input[readonly] {
+#settingsView .settings-group-body input[readonly] {
   cursor: default;
   opacity: .8;
   background: transparent;
@@ -4889,129 +4929,27 @@ textarea::placeholder {
   margin-top: var(--sp-1);
 }
 /* AI 子页：标签页切换的两个面板整行铺开；AI 设置面板内部保持两列网格 */
-.pano-open .settings-group-body > #aiPanelSummary,
-.pano-open .settings-group-body > #aiPanelSettings { grid-column: 1 / -1; }
-.pano-open #aiPanelSettings {
+.pano-open .settings-group-body > #stPanelAi { grid-column: 1 / -1; }
+.pano-open #stPanelAi {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-4) var(--sp-5);
   align-items: start;
 }
-.pano-open #aiPanelSettings > .span2,
-.pano-open #aiPanelSettings > .switch-row,
-.pano-open #aiPanelSettings > .modal-actions,
-.pano-open #aiPanelSettings > #aiErr { grid-column: 1 / -1; }
+.pano-open #stPanelAi > .span2,
+.pano-open #stPanelAi > .switch-row,
+.pano-open #stPanelAi > .modal-actions,
+.pano-open #stPanelAi > #aiErr { grid-column: 1 / -1; }
 /* hidden 切换：面板自身 display 由上面的规则指定，需显式覆盖 UA 的 [hidden] */
-#aiPanelSummary[hidden],
-#aiPanelSettings[hidden] { display: none; }
+#stPanelAi[hidden] { display: none; }
 @media (max-width: 880px) {
-  .pano-open #aiPanelSettings { grid-template-columns: 1fr; gap: var(--sp-3); }
-}
-
-/* AI 总结面板占满浏览器可视高度（扣除顶部 header/标题/描述/标签与页面边距），消除大屏下方留白；
-   面板自身 flex 纵向铺开，结果框吃掉剩余空间，输入区保持自然高度 */
-#aiPanelSummary { display: flex; flex-direction: column; height: calc(100vh - 260px); }
-#hubSummaryPanel.ai-compose-panel { flex: 1 1 auto; min-height: 0; }
-
-/* ===== AI 总结：选好即点（三个下拉 → 三行平铺胶囊，零展开成本） =====
-   原先是「类型/模板/模型」三个下拉 + 底部按钮：每次生成都要展开-查找-确认，
-   而其中模板与模型极少变动。改为「一维一行、全部可见」的单选胶囊后，
-   切换任一维度＝点一下，当前组合由下方状态行一句话兜住。 */
-#hubSummaryPanel { display: flex; flex-direction: column; gap: var(--sp-3); }
-/* ===== AI 总结面板：上方结果框 + 下方输入区（下拉 + 可编辑 prompt + 发送按钮） ===== */
-.ai-compose-panel { display: flex; flex-direction: column; gap: var(--sp-4); }
-
-/* 上方：AI 返回结果展示区，带外边框，长文可滚动 */
-.ai-result-box {
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--bg-card);
-  padding: var(--sp-4) var(--sp-5);
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-}
-/* （AI 页空态提示已删除：与面板自身功能重复） */
-/* 结果区置于边框框内，抵消 .ai-result 自带的边框/底色/外边距，避免双重边框 */
-.ai-result-box #aiPickResult {
-  border: none; background: none; border-radius: 0; padding: 0;
-  margin-top: 0; max-height: none; overflow: visible;
-}
-
-/* 下方：输入区 */
-.ai-composer { display: flex; flex-direction: column; gap: var(--sp-3); flex: 0 0 auto; }
-/* 下拉沿用站点既有 select 外观（描边 + 卡片底 + 圆角 + 内距），与 .pg-size select 同源；宽度随文本自适应 */
-.ai-select {
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text);
-  border-radius: var(--r);
-  padding: var(--sp-1) var(--sp-2);
-  font-size: var(--fs-md);
-  font-family: inherit;
-  cursor: pointer;
-  transition: var(--btn-transition);
-  min-width: 152px;
-  width: auto;
-  margin-top: 0;
-}
-/* 模板/模型下拉：各自的宽度下限（均为 4px 网格倍数），长标签仍随 width:auto 展开 */
-#aiTplPickSel { min-width: 100px; }
-#aiModelPickSel { min-width: 200px; }
-/* 模板/模型下拉 + 生成按钮：同一行，左下下拉、右下按钮，均不覆盖输入框内容 */
-.ai-composer-bar {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-.ai-composer-selects {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--sp-3);
-  min-width: 0;
-}
-.ai-select:hover { border-color: var(--btn-border); }
-.ai-select:focus { border-color: var(--btn-border); outline: none; }
-.ai-select option { background: var(--bg-card); color: var(--text); }
-
-/* 输入框：独立占据上方，不再为内嵌控件预留底部空间 */
-.ai-prompt-box {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--bg-card);
-  color: var(--text);
-  padding: var(--sp-3);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: var(--fs-md);
-  line-height: 1.55;
-  resize: vertical;
-  min-height: 200px;
-}
-.ai-prompt-box:focus { border-color: var(--btn-border); outline: none; }
-/* 生成按钮随行排布（不再绝对定位于输入框内） */
-.ai-send-btn { margin: 0; }
-/* 空错误行不占位 */
-#hubSummaryPanel #aiPickErr:empty { display: none; }
-
-@media (max-width: 640px) {
-  .ai-composer-bar { flex-direction: column; align-items: stretch; gap: var(--sp-3); }
-  .ai-composer-selects { flex-wrap: wrap; gap: var(--sp-3); }
-  .ai-send-btn { width: 100%; }
-  .ai-select, #aiTplPickSel, #aiModelPickSel { min-width: 0; width: auto; }
-}
-/* 窄屏恢复自然高度，避免强制占满压扁输入区 */
-@media (max-width: 640px) {
-  #aiPanelSummary { height: auto; min-height: 0; }
-  .ai-result-box { min-height: 200px; max-height: 52vh; }
+  .pano-open #stPanelAi { grid-template-columns: 1fr; gap: var(--sp-3); }
 }
 
 /* ===== AI 设置 → MCP 参数 子面板 ===== */
-.pano-open #aiPanelSettings > .mcp-sub-tabs,
-.pano-open #aiPanelSettings > #aiSubPanelModel,
-.pano-open #aiPanelSettings > #aiSubPanelMcp { grid-column: 1 / -1; }
+.pano-open #stPanelAi > .mcp-sub-tabs,
+.pano-open #stPanelAi > #aiSubPanelModel,
+.pano-open #stPanelAi > #aiSubPanelMcp { grid-column: 1 / -1; }
 .pano-open #aiSubPanelModel {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5608,3 +5546,354 @@ textarea::placeholder {
 .grad-area-top { stop-color: var(--cum-line); stop-opacity: .20; }
 .grad-area-bottom { stop-color: var(--cum-line); stop-opacity: 0; }
 
+/* ==========================================================================
+   内置 AI 助手：右下角悬浮按钮（带动效）+ 聊天面板
+   悬浮按钮常驻右下角 24px；点击弹出面板（左侧会话列表 / 右侧消息与输入区）。
+   ========================================================================== */
+
+/* ---- 悬浮按钮 ---- */
+.ai-fab {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 60;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-primary);
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 68%, #ffffff 32%));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--primary) 42%, transparent), 0 2px 6px rgba(0, 0, 0, .22);
+  transition: transform .22s var(--e-back), box-shadow .22s var(--e);
+  /* 宽屏可拖动：禁掉浏览器默认的触摸手势（滚动/缩放），改用 JS 自己接管 */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+/* 拖动中：跟随手指，去掉所有位移过渡与 hover 形变 */
+.ai-fab.dragging {
+  cursor: grabbing;
+  transition: none;
+  transform: none !important;
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--primary) 52%, transparent), 0 2px 8px rgba(0, 0, 0, .28);
+}
+.ai-fab.dragging::before { animation: none; opacity: .35; }
+.ai-fab svg { width: 24px; height: 24px; display: block; }
+/* 呼吸光环：只做在伪元素上，避免与按钮自身的 hover 位移打架 */
+.ai-fab::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+  opacity: .55;
+  animation: aiFabRing 2.6s cubic-bezier(.32, .72, 0, 1) infinite;
+  pointer-events: none;
+}
+.ai-fab::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, .45), transparent 62%);
+  pointer-events: none;
+}
+.ai-fab:hover { transform: translateY(-2px) scale(1.06); }
+.ai-fab:active { transform: scale(.93); }
+.ai-fab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--primary-soft), 0 8px 22px color-mix(in srgb, var(--primary) 42%, transparent); }
+/* 面板展开时按钮轻微收拢，视觉上让位给面板 */
+.ai-fab.open { transform: scale(.9); opacity: .9; }
+.ai-fab.open::before { animation: none; opacity: 0; }
+@keyframes aiFabRing {
+  0%   { transform: scale(.92); opacity: .55; }
+  70%  { transform: scale(1.28); opacity: 0; }
+  100% { transform: scale(1.28); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-fab::before { animation: none; opacity: .35; }
+}
+
+/* ---- 聊天面板 ---- */
+.ai-chat-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 96px;
+  z-index: 61;
+  width: min(900px, calc(100vw - 32px));
+  height: min(640px, calc(100vh - 140px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, .30);
+  transform-origin: bottom right;
+  animation: aiPanelIn .22s cubic-bezier(.32, .72, 0, 1);
+}
+.ai-chat-panel[hidden] { display: none; }
+@keyframes aiPanelIn {
+  from { opacity: 0; transform: translateY(14px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-chat-panel { animation: none; }
+}
+
+.acp-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-card-solid) 88%, var(--primary) 12%);
+}
+.acp-title { font-size: var(--fs-lg); font-weight: 700; color: var(--text); }
+.acp-sub {
+  font-size: var(--fs-sm); color: var(--text-muted);
+  max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.acp-head-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
+.acp-close {
+  width: 28px; height: 28px; border: none; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--fs-lg); line-height: 1;
+}
+.acp-close:hover { background: var(--bg-hover); color: var(--text); }
+.acp-list-toggle { display: none; }
+
+.acp-body { flex: 1 1 auto; min-height: 0; display: flex; }
+
+/* 左侧：会话历史 */
+.acp-side {
+  flex: 0 0 220px;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-card-solid) 94%, var(--bg-input) 6%);
+}
+.acp-side-head {
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  letter-spacing: .04em;
+}
+.acp-list { flex: 1 1 auto; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
+.acp-empty { padding: var(--sp-3); font-size: var(--fs-sm); color: var(--text-faint); }
+.acp-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--text);
+  font-size: var(--fs-base);
+}
+.acp-item:hover { background: var(--bg-hover); }
+.acp-item.active { background: color-mix(in srgb, var(--primary) 16%, transparent); color: var(--text); }
+.acp-item-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acp-item-del {
+  flex: 0 0 auto;
+  width: 20px; height: 20px; line-height: 1;
+  border: none; border-radius: var(--r-xs);
+  background: transparent; color: var(--text-faint);
+  cursor: pointer; font-size: var(--fs-sm); opacity: 0;
+  transition: opacity .15s var(--e);
+}
+.acp-item-edit {
+  flex: 0 0 auto;
+  width: 20px; height: 20px;
+  border: none; border-radius: var(--r-xs);
+  background: transparent; color: var(--text-faint);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity .15s var(--e);
+}
+.acp-item:hover .acp-item-edit, .acp-item.active .acp-item-edit { opacity: .75; }
+.acp-item-edit:hover { opacity: 1 !important; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+.acp-item:hover .acp-item-del, .acp-item.active .acp-item-del { opacity: .8; }
+.acp-item-del:hover { opacity: 1; background: var(--danger-soft); color: var(--danger); }
+.acp-item-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg-input, var(--bg-elev));
+  border: 1px solid var(--primary);
+  border-radius: var(--r-xs);
+  padding: 2px 4px;
+  font: inherit;
+  color: var(--text);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+/* 右侧：消息区 + 输入区 */
+.acp-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.acp-msgs {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.acp-loading { display: flex; justify-content: center; padding: var(--sp-5) 0; }
+
+/* 欢迎态 + 建议问题 */
+.acp-welcome { max-width: 620px; }
+.acp-welcome-h { font-size: var(--fs-lg); font-weight: 700; margin: 0 0 var(--sp-2); color: var(--text); }
+.acp-welcome-p { font-size: var(--fs-base); color: var(--text-muted); margin: 0 0 var(--sp-3); line-height: 1.7; }
+.acp-suggest { list-style: none; padding: 0; margin: 0 0 var(--sp-3); display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.acp-suggest li {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: border-color .18s var(--e), color .18s var(--e);
+}
+.acp-suggest li:hover { border-color: var(--primary); color: var(--primary); }
+.acp-welcome-note { font-size: var(--fs-sm); color: var(--text-faint); margin: 0; }
+
+/* 消息气泡 */
+.ai-msg { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.ai-msg.user { justify-content: flex-end; }
+.ai-msg .ai-bubble {
+  max-width: 82%;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-lg);
+  font-size: var(--fs-base);
+  line-height: 1.75;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.ai-msg.user .ai-bubble {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-bottom-right-radius: var(--r-xs);
+}
+.ai-msg.ai .ai-bubble {
+  background: var(--bg-input);
+  color: var(--text);
+  border-bottom-left-radius: var(--r-xs);
+}
+.ai-avatar {
+  flex: 0 0 28px;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--fs-xs); font-weight: 700;
+  color: var(--on-primary);
+  background: var(--primary);
+  margin-top: 2px;
+}
+/* 思考中：三点跳动手势 */
+.acp-typing { display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-3) var(--sp-4); }
+.acp-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-faint);
+  animation: acpBlink 1.2s infinite ease-in-out;
+}
+.acp-dot:nth-child(2) { animation-delay: .18s; }
+.acp-dot:nth-child(3) { animation-delay: .36s; }
+@keyframes acpBlink {
+  0%, 80%, 100% { opacity: .28; transform: translateY(0); }
+  40%           { opacity: 1;  transform: translateY(-3px); }
+}
+
+/* 输入区 */
+.acp-input {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  padding: var(--sp-3) var(--sp-4) var(--sp-3);
+  background: color-mix(in srgb, var(--bg-card-solid) 92%, var(--bg-input) 8%);
+}
+.acp-input textarea {
+  width: 100%;
+  resize: none;
+  padding: var(--sp-2) var(--sp-3);
+  border: none;
+  border-radius: var(--btn-radius);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: var(--fs-base);
+  font-family: inherit;
+  line-height: 1.6;
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: box-shadow .2s var(--e);
+}
+.acp-input textarea:focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--primary), inset 0 0 0 5px var(--primary-soft); }
+.acp-input textarea::placeholder { color: var(--text-faint); font-size: var(--fs-sm); }
+.acp-input-bar { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+.acp-model {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--btn-radius);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+}
+.acp-model:focus { outline: none; border-color: var(--primary); }
+.acp-send { flex: 0 0 auto; min-width: 84px; }
+.acp-input .err { margin-top: var(--sp-2); font-size: var(--fs-sm); }
+
+/* ---- 窄屏（手机）：与底部 tab 栏（.main-nav，断点同为 768px）协同 ---- */
+@media (max-width: 768px) {
+  /* 禁止整页左右滑动，页面只可上下滚。
+     用 clip 而不是 hidden：hidden 会让 body 变成滚动容器，页面上表格头 / 分组头的
+     position:sticky 会失效；clip 不创建滚动容器，sticky 照常工作（旧浏览器不支持时只是不裁剪，无害）。
+     overscroll-behavior-x:none 再兜一层：iOS 上内部横向滚动容器（表格）滚到边界后
+     继续滑会把横向橡皮筋传给整个文档，加上它才真正"滑不动"。 */
+  html, body { overflow-x: clip; overscroll-behavior-x: none; }
+  /* 手机按钮同样可拖动：位置由 JS 写内联 left/top，未拖过时落在 tab 栏上方；
+     不再用 !important 钉死（那会压过内联坐标，导致手机上永远拖不动）。 */
+  .ai-fab {
+    left: 16px;
+    right: auto;
+    /* tab 栏约 58px + safe-area，再留 12px 间距，避免挡住底部功能切换 */
+    bottom: calc(70px + env(safe-area-inset-bottom));
+    width: 52px; height: 52px;
+    z-index: 70; /* 高于底部 tab 栏(60)与面板(61)，拖动/点击不被吞 */
+    touch-action: none; /* 手势交给 JS：手机也能拖动，不与页面滚动打架 */
+  }
+  .ai-chat-panel {
+    left: 12px;
+    right: 12px;
+    /* 面板整体抬到悬浮按钮上方：70(按钮底) + 52(按钮高) + 12(间距) + safe-area */
+    bottom: calc(134px + env(safe-area-inset-bottom));
+    top: auto;
+    width: auto;
+    height: min(70vh, calc(100vh - 150px - env(safe-area-inset-bottom)));
+    max-width: none;
+    touch-action: pan-y; /* 面板内只允许上下滚动，禁止左右滑动 */
+  }
+  /* 内部横向滚动容器：滚到边界后不要把横向橡皮筋传给整个文档 */
+  .table-wrap, .subtable-wrap, .slider, .filter-row.scroll-row,
+  .asset-tabs, .asset-table, .home-wealth-box,
+  .ai-result.md table, .ai-bubble.md table { overscroll-behavior-x: contain; }
+  .acp-list-toggle { display: inline-flex; }
+  .ai-chat-panel .acp-side { display: none; }
+  .ai-chat-panel.side-open .acp-side {
+    display: flex;
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 74%;
+    max-width: 280px;
+    z-index: 2;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .32);
+  }
+  .ai-msg .ai-bubble { max-width: 92%; }
+}

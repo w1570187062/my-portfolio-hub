@@ -163,6 +163,14 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/ai/summary", aiSummary)
 		g.GET("/ai/data", aiData)
 
+		// 内置 AI 助手（右下角悬浮聊天面板）：会话 CRUD + 工具调用式对话
+		g.GET("/ai/chats", aiChatsList)
+		g.POST("/ai/chats", aiChatCreate)
+		g.GET("/ai/chats/:id", aiChatGet)
+		g.PUT("/ai/chats/:id", aiChatRename)
+		g.DELETE("/ai/chats/:id", aiChatDelete)
+		g.POST("/ai/chat", aiChatPost)
+
 		// 通知渠道：配置读写 + 测试发送
 		g.GET("/version", versionGet)
 		g.GET("/notify/settings", notifySettingsGet)

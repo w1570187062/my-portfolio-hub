@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ---- 视图路由（hash）：每个常驻视图都有后缀 URL，刷新保持当前路径 ----
-const VIEWS = ['holdings', 'asset', 'tools', 'ai', 'settings'];
+const VIEWS = ['holdings', 'asset', 'tools', 'settings'];
 function viewFromHash() {
   const h = (location.hash || '').replace(/^#\/?/, '');
   return VIEWS.includes(h) ? h : 'holdings';
@@ -114,7 +114,7 @@ function setActiveNav(view) {
 }
 // 隐藏全部常驻视图（含已废弃的 notifyView，避免残留显示）
 function hideAllViews() {
-  ['holdingsView', 'assetView', 'toolsView', 'aiView', 'settingsView'].forEach((id) => {
+  ['holdingsView', 'assetView', 'toolsView', 'settingsView'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
@@ -126,7 +126,6 @@ function applyRoute() {
   hideAllViews();
   if (v === 'asset') showAssetView();
   else if (v === 'tools') showToolsView();
-  else if (v === 'ai') showAiView();
   else if (v === 'settings') showSettingsView();
   else showHoldingsView();
   const banner = document.getElementById("heroBanner"); if (banner) banner.hidden = v !== "holdings";
@@ -2726,7 +2725,6 @@ async function openPnlModal() {
 function showHoldingsView() {
   $('#assetView').hidden = true;
   $('#toolsView').hidden = true;
-  $('#aiView').hidden = true;
   $('#settingsView').hidden = true;
   $('#holdingsView').hidden = false;
   syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
@@ -2755,7 +2753,7 @@ document.addEventListener('keydown', (e) => {
     openModals.forEach((m) => { m.hidden = true; });
     return;
   }
-  const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#aiView').hidden || !$('#settingsView').hidden;
+  const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#settingsView').hidden;
   if (inSubView) {
     navigate('holdings');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3336,15 +3334,11 @@ async function exportHoldingsJSON() {
   toast('数据已导出：持仓 ' + holdings.length + ' / 理财 ' + wealth.length + ' / 现金 ' + cash.length + ' 条' + extra, 'ok');
 }
 
-// ---- AI 持仓总结 ----
+// ---- AI 配置（模型 / 提示词模板 / MCP）+ 内置 AI 助手聊天面板 ----
 let aiCfg = { api_key: '', model: 'deepseek-v4-pro', base_url: 'https://api.deepseek.com', templates: [] };
 let aiSelIdx = 0;
 let aiModelIdx = 0; // 当前选中的模型配置下标（settings 面板，models 数组）
-let aiPickModelIdx = 0; // 总结面板独立的模型选择下标（不与 settings 共享）
-let aiPickTplIdx = 0;   // 总结面板独立的提示词模板下标（不与 settings 共享）
-// 总结面板的两个「独立选择」是否已初始化：loadAISettings 会被 showApp（启动）与
-// showAiView（每次进 AI 页）各调一次，只在首次对齐设置面板，之后不再回写。
-let aiPickInited = false;
+let aiChatModelIdx = 0; // AI 助手聊天面板选中的模型下标（独立维护，不与设置面板互相回写）
 
 function defaultAITemplates() {
   return [
@@ -3376,15 +3370,8 @@ async function loadAISettings() {
   $('#aiAutoSend').checked = !!aiCfg.auto_send;
   renderModelSelect();
   renderTplSelect(); // 之前漏调 → AI 设置的「提示词模板」下拉为空、模板名/内容不回填
-  // 仅「首次加载」把总结面板对齐到设置面板，此后保留用户自己的选择。
-  // 若每次都无条件回写，用户在总结面板换的模板 / 模型一切页就被打回原样。
-  if (!aiPickInited) {
-    aiPickTplIdx = aiSelIdx;
-    aiPickModelIdx = aiModelIdx;
-    aiPickInited = true;
-  }
-  renderAiComposer();
-  refreshAIPrompt();
+  // AI 助手聊天面板的模型下拉与设置面板共享 aiCfg.models
+  renderAiChatModelSelect();
   loadMcpConfig(); // 预拉取 MCP 参数（切到对应子页时也会再拉一次）
 }
 
@@ -3440,166 +3427,6 @@ function selectTpl(i) {
   $('#ai_tpl_content').value = t.content;
 }
 
-// 总结面板（改造后）：范围 / 提示词模板 / 模型 用「已有样式的下拉」承载。
-// 下拉改选后，下方输入框的 {{DATA}} 会展开为服务端实时统计，用户可看可改。
-//
-// 渲染下拉：模板来自 aiCfg.templates，模型来自 aiCfg.models，范围二选一静态写死。
-// 与「AI 设置」面板共享同一份配置，设置里增删模板 / 模型后回到总结面板会同步刷新。
-function renderAiComposer() {
-  // 模板下拉
-  const tplSel = document.getElementById('aiTplPickSel');
-  if (!tplSel) return;
-  if (!aiCfg.templates.length) aiCfg.templates = defaultAITemplates();
-  if (aiPickTplIdx >= aiCfg.templates.length || aiPickTplIdx < 0) aiPickTplIdx = 0;
-  tplSel.innerHTML = aiCfg.templates.map((t, i) => `<option value="${i}">${esc(t.name)}</option>`).join('');
-  tplSel.value = String(aiPickTplIdx);
-  // 模型下拉
-  const mSel = document.getElementById('aiModelPickSel');
-  if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) {
-    aiCfg.models = [{ name: '默认', model: 'deepseek-v4-pro', api_key: '', base_url: 'https://api.deepseek.com' }];
-  }
-  if (aiPickModelIdx >= aiCfg.models.length || aiPickModelIdx < 0) aiPickModelIdx = 0;
-  mSel.innerHTML = aiCfg.models.map((m, i) => {
-    const label = (m.name || ('模型' + (i + 1))) + (m.model ? ` · ${m.model}` : '');
-    return `<option value="${i}">${esc(label)}</option>`;
-  }).join('');
-  mSel.value = String(aiPickModelIdx);
-}
-
-// 取总结面板当前选中的模型配置（下标非法时回退到第一条）
-function getPickModelConfig() {
-  if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) return null;
-  const i = (aiPickModelIdx >= 0 && aiPickModelIdx < aiCfg.models.length) ? aiPickModelIdx : 0;
-  return aiCfg.models[i] || null;
-}
-
-// 解析本次生成实际要用的 model / base_url / api_key（生成链路同源，杜绝跨模型串 Key）。
-//
-// 多模型下的铁律：**Key 必须来自所选模型自己**。原先的取值顺序是
-// 「设置面板输入框 || 全局 localStorage || 所选模型 || 顶层配置」，而输入框里永远是
-// 设置面板那个模型的 Key，于是「总结面板选 B、设置面板停在 A」会发出
-// B 的 model + B 的 base_url 配 A 的 Key —— 跨厂商必 401。
-// 唯一的例外：所选模型正是设置面板正在编辑的那个时，优先用输入框的值，
-// 让「刚填的 Key 不点保存也能立即生效」这个老行为在多模型下继续成立。
-// 另外：localStorage 的全局单键是单模型时代的产物，无法表达多个 Key，
-// 因此只在「只有一条模型配置」时作为丢失 Key 的恢复通道参与兜底。
-function resolvePickModel() {
-  const pick = getPickModelConfig() || {};
-  const single = (aiCfg.models || []).length === 1;
-  const editing = (aiPickModelIdx === aiModelIdx);
-  const boxKey = ($('#ai_apikey') ? $('#ai_apikey').value : '').trim();
-  const localKey = single ? ((localStorage.getItem('pf_ai_key') || '').trim() || (aiCfg.api_key || '').trim()) : '';
-  return {
-    name: pick.name || '默认',
-    model: (pick.model || '').trim() || (($('#ai_model').value || '').trim() || 'deepseek-v4-pro'),
-    base_url: (pick.base_url || '').trim() || (($('#ai_baseurl').value || '').trim() || 'https://api.deepseek.com'),
-    api_key: (pick.api_key || '').trim() || (editing ? boxKey : '') || localKey,
-  };
-}
-
-// 下拉改选（范围 / 模板）后，把输入框内容联动为「模板 + 实时 {{DATA}}」：
-// 服务端 /api/ai/data 返回与后端一致的统计文本（范围不同内容不同），前端就地展开占位符。
-// 这样用户既能看到带入的 DATA、也能直接编辑后再发送（发送时带 resolved:true，后端不再二次注入）。
-async function refreshAIPrompt() {
-  const tplSel = document.getElementById('aiTplPickSel');
-  const box = document.getElementById('aiPromptBox');
-  if (!tplSel || !box) return;
-  aiPickTplIdx = parseInt(tplSel.value, 10) || 0;
-  const tpl = aiCfg.templates[aiPickTplIdx];
-  const tplContent = tpl ? tpl.content : '';
-  let data = '';
-  try {
-    const r = await api('/api/ai/data?scope=all');
-    if (r.ok) { const d = await r.json(); data = d.data || ''; }
-  } catch (_) { /* 网络异常时退化为占位，仍可手动编辑 */ }
-  if (tplContent.indexOf('{{DATA}}') >= 0) {
-    box.value = tplContent.replace(/\{\{DATA\}\}/g, data);
-  } else {
-    box.value = tplContent + (tplContent.trim() ? '\n\n【我的持仓数据】\n' : '') + data;
-  }
-}
-
-// 发送：把输入框里已解析好的完整 prompt 直接发给模型（resolved:true 跳过服务端二次注入），
-// 保证用户编辑过的 DATA 真实生效。默认按全部资产分析，路由到 /api/asset/summary。
-async function aiSendComposed() {
-  const box = document.getElementById('aiPromptBox');
-  const m = resolvePickModel();
-  const content = (box ? (box.value || '') : '').trim();
-  if (!m.api_key) { toast(`模型「${m.name}」未配置 API Key，请到「AI 设置」补全`, 'err'); return; }
-  // 全局单键只在单模型配置下维护（多模型下它无法表达多个 Key）
-  if ((aiCfg.models || []).length === 1) localStorage.setItem('pf_ai_key', m.api_key);
-  if (!content) { toast('提示词为空，请先选择模板或手动填写后再生成', 'err'); return; }
-  setPickBusy(true);
-  setAIResultLoading('生成中…（模型思考中，请稍候，最长约 3 分钟）');
-  const endpoint = '/api/asset/summary';
-  try {
-    const r = await api(endpoint, { method: 'POST', body: JSON.stringify({ model: m.model, base_url: m.base_url, api_key: m.api_key, template: content, resolved: true }) });
-    if (!r.ok) {
-      let msg = '生成失败';
-      try { const d = await r.json(); if (d && d.error) msg = d.error; } catch (_) {}
-      pickError(msg);
-      return;
-    }
-    const d = await r.json();
-    setAIResult(d.content);
-    toast('AI 总结已生成', 'ok');
-  } catch (e) {
-    pickError('请求异常：' + e.message);
-  } finally {
-    setPickBusy(false);
-  }
-}
-
-// 结果就地输出在上方结果框（带外边框）：生成中显示旋转环，完成后渲染 Markdown
-function setAIResultLoading(msg) {
-  const box = $('#aiPickResult');
-  if (!box) return;
-  const empty = document.getElementById('aiResultEmpty');
-  if (empty) empty.hidden = true;
-  box.hidden = false;
-  box.classList.remove('md');
-  box.innerHTML = '';
-  const wrap = document.createElement('div');
-  wrap.className = 'ai-loading';
-  const sp = document.createElement('span');
-  sp.className = 'ana-spinner';
-  const tx = document.createElement('span');
-  tx.textContent = msg;
-  wrap.appendChild(sp);
-  wrap.appendChild(tx);
-  box.appendChild(wrap);
-}
-
-// 把模型返回的 content 安全地写入结果区；空/纯空白时显式占位，避免“看似没反显”
-function setAIResult(text) {
-  const box = $('#aiPickResult');
-  if (!box) return;
-  const empty = document.getElementById('aiResultEmpty');
-  if (empty) empty.hidden = true;
-  box.hidden = false;
-  const t = (text != null) ? String(text) : '';
-  if (t.trim()) { box.innerHTML = renderMarkdown(t); box.classList.add('md'); }
-  else { box.textContent = '（模型返回为空）'; box.classList.remove('md'); }
-  // 结果在上方结果框，生成完直接带进视野，省一次手动下拉
-  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-// 生成按钮忙碌态：文案与禁用同步，避免「点了没反应」的错觉
-function setPickBusy(on) {
-  const b = $('#aiPickGo');
-  if (b) { b.disabled = on; b.textContent = on ? '生成中…' : '生成总结'; }
-  if (on) { const e = $('#aiPickErr'); if (e) e.textContent = ''; }
-}
-
-// 失败只在下拉下方提示（结果区收起并恢复空态），不再弹框
-function pickError(msg) {
-  const el = $('#aiPickErr');
-  if (el) el.textContent = msg;
-  const box = $('#aiPickResult');
-  const empty = document.getElementById('aiResultEmpty');
-  if (box) { box.hidden = true; box.innerHTML = ''; box.classList.remove('md'); }
-  if (empty) empty.hidden = false;
-}
 
 async function aiSaveSettings() {
   $('#aiErr').textContent = '';
@@ -3641,7 +3468,7 @@ async function aiSaveSettings() {
     }
     toast('AI 设置已保存', 'ok');
     // 设置里改了模板名 / 增删了模型配置，总结面板的下拉立即跟随
-    renderAiComposer();
+    renderAiChatModelSelect();
   } catch (e) {
     $('#aiErr').textContent = '保存异常：' + e.message;
   }
@@ -3651,12 +3478,11 @@ async function aiSaveSettings() {
 $('#ai_save').onclick = aiSaveSettings;
 $('#ai_tpl_sel').onchange = (e) => selectTpl(parseInt(e.target.value, 10));
 // 增删模板后同步刷新总结面板的模板下拉；splice 会让后续下标左移，选中的下标必须跟着挪，
-// 否则「下拉选中的模板」与「实际取到的模板」会错位（越界由 renderAiComposer 兜底钳位）。
+// 否则「下拉选中的模板」与「实际取到的模板」会错位（越界由 renderAiChatModelSelect 兜底钳位）。
 $('#ai_tpl_new').onclick = () => {
   aiCfg.templates.push({ name: '新模板' + (aiCfg.templates.length + 1), content: '请基于以下我的持仓数据，给出总结：\n{{DATA}}' });
   aiSelIdx = aiCfg.templates.length - 1;
   renderTplSelect();
-  renderAiComposer();
   $('#ai_tpl_name').focus();
 };
 $('#ai_tpl_del').onclick = () => {
@@ -3664,9 +3490,7 @@ $('#ai_tpl_del').onclick = () => {
   const k = aiSelIdx;
   aiCfg.templates.splice(k, 1);
   aiSelIdx = Math.max(0, k - 1);
-  if (aiPickTplIdx >= k) aiPickTplIdx = Math.max(0, aiPickTplIdx - 1);
   renderTplSelect();
-  renderAiComposer();
 };
 // 多模型配置：切换 / 新增 / 删除（同样要同步刷新总结面板的模型下拉）
 $('#ai_model_sel').onchange = (e) => selectModel(parseInt(e.target.value, 10));
@@ -3675,7 +3499,7 @@ $('#ai_model_new').onclick = () => {
   aiCfg.models.push({ name: '新模型' + (aiCfg.models.length + 1), model: 'deepseek-v4-pro', api_key: '', base_url: 'https://api.deepseek.com' });
   aiModelIdx = aiCfg.models.length - 1;
   renderModelSelect();
-  renderAiComposer();
+  renderAiChatModelSelect();
   $('#ai_cfg_name').focus();
 };
 $('#ai_model_del').onclick = () => {
@@ -3683,9 +3507,8 @@ $('#ai_model_del').onclick = () => {
   const k = aiModelIdx;
   aiCfg.models.splice(k, 1);
   aiModelIdx = Math.max(0, k - 1);
-  if (aiPickModelIdx >= k) aiPickModelIdx = Math.max(0, aiPickModelIdx - 1);
   renderModelSelect();
-  renderAiComposer();
+  renderAiChatModelSelect();
 };
 $('#ai_toggleKey').onclick = () => {
   const inp = $('#ai_apikey');
@@ -3693,11 +3516,6 @@ $('#ai_toggleKey').onclick = () => {
   else { inp.type = 'password'; $('#ai_toggleKey').textContent = '显示'; }
 };
 $('#ai_tpl_sel').onchange = (e) => selectTpl(parseInt(e.target.value, 10));
-// 总结面板下拉联动：范围 / 模板改选 → 重新组装输入框（{{DATA}} 展开为实时数据）；
-// 模型改选只更新选中下标，不影响数据。生成按钮走 aiSendComposed（已解析 prompt 直发）。
-$('#aiTplPickSel').onchange = () => { refreshAIPrompt(); };
-$('#aiModelPickSel').onchange = () => { aiPickModelIdx = parseInt($('#aiModelPickSel').value, 10) || 0; };
-$('#aiPickGo').onclick = () => aiSendComposed();
 // ai_export_json 已迁至用户抽屉（见 wireUserUI 中绑定）
 
 // ---- 数据导入（格式与导出一致，入库当前用户）----
@@ -3990,10 +3808,9 @@ const moneyCur = (n, cur) => curSymbolJS(cur) + fmt(n == null ? 0 : n);
 async function showAssetView() {
   $('#holdingsView').hidden = true;
   $('#assetView').hidden = false;
-  // 关闭可能打开的弹框（盈亏分析）与二级视图（工具/AI/设置）
+  // 关闭可能打开的弹框（盈亏分析）与二级视图（工具/设置）
   $('#pnlModal').hidden = true;
   $('#toolsView').hidden = true;
-  $('#aiView').hidden = true;
   $('#settingsView').hidden = true;
   // 恢复上次所在的资产 tab（账户/收支/流水…），避免保存后或刷新后跳回「账户」
   try {
@@ -4063,7 +3880,6 @@ async function showToolsView() {
   // 以网页内视图展示（非弹框）：隐藏其它视图，仅显示工具页
   $('#holdingsView').hidden = true;
   $('#assetView').hidden = true;
-  $('#aiView').hidden = true;
   $('#settingsView').hidden = true;
   $('#toolsView').hidden = false;
   bindToolsTabs();
@@ -4080,39 +3896,22 @@ async function showToolsView() {
   fxCalcRun();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-// AI 中枢页面：总结 / 历史 / AI 设置（仿 panwatch 分组卡片）
-async function showAiView() {
-  $('#holdingsView').hidden = true;
-  $('#assetView').hidden = true;
-  $('#toolsView').hidden = true;
-  $('#settingsView').hidden = true;
-  $('#aiView').hidden = false;
-  // loadAISettings 内部会渲染总结面板下拉并组装输入框，这里不必重复调用旧胶囊函数
-  await loadAISettings();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-// 设置页面：通知渠道
+// 设置页面：通知渠道 / 风险偏好 / AI（AI 设置已迁入本页的「AI」页签）
 async function showSettingsView() {
   $('#holdingsView').hidden = true;
   $('#assetView').hidden = true;
   $('#toolsView').hidden = true;
-  $('#aiView').hidden = true;
   $('#settingsView').hidden = false;
   await loadNotifySettings();
+  await loadAISettings(); // AI 页签的模型/模板/MCP 参数回填
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-// AI 子页面：标题「AI」下的标签页切换（AI 总结 / AI 设置）
-function switchAiTab(tab) {
-  const isSum = tab === 'summary';
-  $('#aiTabSummary').classList.toggle('active', isSum);
-  $('#aiTabSettings').classList.toggle('active', !isSum);
-  $('#aiPanelSummary').hidden = !isSum;
-  $('#aiPanelSettings').hidden = isSum;
-}
-$('#aiTabSummary').onclick = () => switchAiTab('summary');
-$('#aiTabSettings').onclick = () => switchAiTab('settings');
+// 设置页页签切换入口：风险偏好 / 推送策略 / AI（AI 放在最后一个）。
+// 实际实现在下方 switchNotifyTab（含 #stPanelAi 的显隐），这里只做转发，避免两套逻辑。
+function switchSettingsTab(tab) { switchNotifyTab(tab); }
+$('#stTabAi').onclick = () => switchSettingsTab('ai');
 
-// ---- AI 设置 → MCP 参数 子面板 ----
+// ---- AI 设置（设置页「AI」页签）→ MCP 参数 子面板 ----
 function switchAiSubTab(tab) {
   const isModel = tab === 'model';
   $('#aiSubTabModel').classList.toggle('active', isModel);
@@ -5082,8 +4881,8 @@ function renderWealth(body) {
             <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
         <div class="ac-sub">总金额：<span class="ac-amount"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
         <div class="ac-actions">
-          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('hist')} 每日盈亏</button>
           <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">${actIcon('edit')} 编辑</button>
+          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('hist')} 每日盈亏</button>
           <button class="btn btn-icon" data-act="redeem-wealth" data-id="${p.id}">${actIcon('exit')} 减仓</button>
         </div></div>`;
     });
@@ -5130,8 +4929,8 @@ function renderWealthInline(container) {
             <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
         <div class="ac-sub">总金额：<span class="ac-amount"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
         <div class="ac-actions">
-          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('hist')} 每日盈亏</button>
           <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">${actIcon('edit')} 编辑</button>
+          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('hist')} 每日盈亏</button>
           <button class="btn btn-icon" data-act="redeem-wealth" data-id="${p.id}">${actIcon('exit')} 减仓</button>
         </div></div>`;
     });
@@ -5196,8 +4995,8 @@ function renderWealthTable(w) {
       <td class="num ${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
       <td class="num u-sm u-muted" title="从首次录入快照起算">${p.holding_days > 0 ? p.holding_days + '天' : '—'}</td>
       <td class="row-act-cell">
-        ${actBtn('hist', `data-act="wealth-hist" data-id="${p.id}"`, '每日盈亏')}
         ${actBtn('edit', `data-act="edit-wealth" data-id="${p.id}"`, '编辑')}
+        ${actBtn('hist', `data-act="wealth-hist" data-id="${p.id}"`, '每日盈亏')}
         ${actBtn('exit', `data-act="redeem-wealth" data-id="${p.id}"`, '减仓/清仓', { danger: true })}
       </td>
     </tr>`;
@@ -6243,11 +6042,16 @@ $('#consumeForm').onsubmit = async (e) => {
 // 通知渠道：改为弹框展示（保留 #/notify 路由，打开时叠加在当前视图上）
 // 设置页页签切换：风险偏好 / 推送策略（钉钉、邮箱配置已并入推送策略面板上下排列；风险偏好内容懒渲染；默认页签=风险偏好）
 function switchNotifyTab(tab) {
-  $('#stTabAsset').classList.toggle('active', tab === 'asset');
-  $('#ntTabPolicy').classList.toggle('active', tab === 'policy');
-  $('#stPanelAsset').hidden = tab !== 'asset';
-  $('#ntPanelPolicy').hidden = tab !== 'policy';
-  if (tab === 'asset') renderAssetSettingsPanel();
+  const t = tab === 'ai' ? 'ai' : (tab === 'policy' ? 'policy' : 'asset');
+  const set = (btn, panel, on) => {
+    const b = $(btn); if (b) b.classList.toggle('active', on);
+    const p = $(panel); if (p) p.hidden = !on;
+  };
+  set('#stTabAsset', '#stPanelAsset', t === 'asset');
+  set('#ntTabPolicy', '#ntPanelPolicy', t === 'policy');
+  set('#stTabAi', '#stPanelAi', t === 'ai');
+  if (t === 'asset') renderAssetSettingsPanel();
+  if (t === 'ai') loadAISettings();
 }
 async function loadNotifySettings() {
   switchNotifyTab('asset'); // 每次进设置页重置到默认页签「风险偏好」并懒渲染面板
@@ -8557,3 +8361,528 @@ if (cashflowModalEl) cashflowModalEl.addEventListener('click', (e) => { if (e.ta
 const cfAmtModalEl = document.getElementById('cfAmtModal');
 if (cfAmtModalEl) cfAmtModalEl.addEventListener('click', (e) => { if (e.target === cfAmtModalEl) cfAmtModalEl.hidden = true; });
 
+// ============================================================================
+// AI 助手：右下角悬浮按钮 + 聊天面板
+// ----------------------------------------------------------------------------
+// 会话落在后端（/api/ai/chats，按用户隔离），消息走 /api/ai/chat：
+// 后端按 OpenAI function-calling 协议把「MCP 已对接的账本工具」与「持仓分析工具」
+// 交给模型调用，因此助手既能查账本、记流水，也能做技术分析 / 买卖判断 / 持仓总结。
+// ============================================================================
+
+const aiChatState = { chats: [], curId: 0, msgs: [], busy: false, inited: false };
+
+// 聊天面板的模型下拉：与「设置 → AI」共享 aiCfg.models，但选中下标独立。
+function renderAiChatModelSelect() {
+  const sel = document.getElementById('aiChatModel');
+  if (!sel) return;
+  if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) {
+    aiCfg.models = [{ name: '默认', model: 'deepseek-v4-pro', api_key: '', base_url: 'https://api.deepseek.com' }];
+  }
+  if (aiChatModelIdx >= aiCfg.models.length || aiChatModelIdx < 0) aiChatModelIdx = 0;
+  sel.innerHTML = aiCfg.models.map((m, i) => {
+    const label = (m.name || ('模型' + (i + 1))) + (m.model ? ' · ' + m.model : '');
+    return '<option value="' + i + '">' + esc(label) + '</option>';
+  }).join('');
+  sel.value = String(aiChatModelIdx);
+}
+
+// 取聊天面板当前选中的模型配置；Key 取所选模型自己的，
+// 仅当所选正是设置面板正在编辑的那条时优先用输入框（刚填未保存也能立刻生效）。
+function getAiChatModel() {
+  if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) return null;
+  const i = (aiChatModelIdx >= 0 && aiChatModelIdx < aiCfg.models.length) ? aiChatModelIdx : 0;
+  const m = aiCfg.models[i] || {};
+  const editing = (aiChatModelIdx === aiModelIdx);
+  const boxKey = ($('#ai_apikey') ? $('#ai_apikey').value : '').trim();
+  const localKey = (aiCfg.models.length === 1) ? ((localStorage.getItem('pf_ai_key') || '').trim() || (aiCfg.api_key || '').trim()) : '';
+  return {
+    name: m.name || '默认',
+    model: (m.model || '').trim() || 'deepseek-chat',
+    base_url: (m.base_url || '').trim() || 'https://api.deepseek.com',
+    api_key: (m.api_key || '').trim() || (editing ? boxKey : '') || localKey,
+  };
+}
+
+function aiChatPanelEl() { return document.getElementById('aiChatPanel'); }
+
+function aiChatOpen() {
+  const p = aiChatPanelEl();
+  if (!p) return;
+  p.hidden = false;
+  p.classList.add('open');
+  aiChatPlacePanel();
+  const fab = document.getElementById('aiFab');
+  if (fab) { fab.classList.add('open'); fab.setAttribute('aria-expanded', 'true'); }
+  if (!aiChatState.inited) { aiChatState.inited = true; aiChatLoadList(); }
+  const inp = document.getElementById('aiChatInput');
+  if (inp) setTimeout(() => inp.focus(), 60);
+}
+
+function aiChatClose() {
+  const p = aiChatPanelEl();
+  if (p) { p.hidden = true; p.classList.remove('open'); p.classList.remove('side-open'); }
+  const fab = document.getElementById('aiFab');
+  if (fab) { fab.classList.remove('open'); fab.setAttribute('aria-expanded', 'false'); }
+}
+
+function aiChatToggle() {
+  const p = aiChatPanelEl();
+  if (!p) return;
+  if (p.hidden) aiChatOpen(); else aiChatClose();
+}
+
+// ---- 会话列表 ----
+async function aiChatLoadList() {
+  try {
+    const r = await api('/api/ai/chats');
+    if (!r.ok) return;
+    const d = await r.json();
+    aiChatState.chats = d.chats || [];
+  } catch (_) { aiChatState.chats = []; }
+  aiChatRenderList();
+}
+
+function aiChatRenderList() {
+  const box = document.getElementById('aiChatList');
+  if (!box) return;
+  if (!aiChatState.chats.length) {
+    box.innerHTML = '<p class="acp-empty">还没有对话，点「＋ 新对话」开始。</p>';
+    return;
+  }
+  box.innerHTML = aiChatState.chats.map((c) => {
+    const on = Number(c.id) === Number(aiChatState.curId) ? ' active' : '';
+    return '<div class="acp-item' + on + '" data-id="' + c.id + '">'
+      + '<span class="acp-item-title" title="' + esc(c.title || '新对话') + '">' + esc(c.title || '新对话') + '</span>'
+      + '<button class="acp-item-edit" type="button" data-edit="' + c.id + '" title="重命名" aria-label="重命名">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>'
+      + '</button>'
+      + '<button class="acp-item-del" type="button" data-del="' + c.id + '" title="删除该对话" aria-label="删除该对话">✕</button>'
+      + '</div>';
+  }).join('');
+}
+
+// ---- 会话重命名 ----
+async function aiChatRename(id, newTitle) {
+  const t = (newTitle || '').trim();
+  if (!t) return;
+  try {
+    const r = await api('/api/ai/chats/' + id, { method: 'PUT', body: JSON.stringify({ title: t }) });
+    if (!r.ok) { toast('重命名失败', 'err'); return; }
+    // 更新本地 state
+    const c = aiChatState.chats.find((x) => Number(x.id) === Number(id));
+    if (c) c.title = t;
+    // 如果改的是当前选中的会话，同步 sub 标题
+    if (Number(aiChatState.curId) === Number(id)) {
+      const sub = document.getElementById('aiChatSub');
+      if (sub) sub.textContent = t;
+    }
+    aiChatRenderList();
+  } catch (e) { toast('重命名异常：' + e.message, 'err'); }
+}
+
+function aiChatStartRename(item) {
+  const id = item.dataset.id;
+  const titleEl = item.querySelector('.acp-item-title');
+  if (!titleEl || !id) return;
+  const curTitle = titleEl.textContent || '';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = curTitle;
+  input.className = 'acp-item-rename-input';
+  input.maxLength = 60;
+  // 替换 title span
+  titleEl.replaceWith(input);
+  input.focus();
+  input.select();
+  const finish = (save) => {
+    const val = input.value.trim();
+    // 恢复 span
+    const span = document.createElement('span');
+    span.className = 'acp-item-title';
+    span.title = val || curTitle;
+    span.textContent = val || curTitle;
+    input.replaceWith(span);
+    if (save && val && val !== curTitle) aiChatRename(id, val);
+  };
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    e.stopPropagation();
+  });
+  // 阻止 input 上的 click 冒泡到 item（避免触发 select）
+  input.addEventListener('click', (e) => e.stopPropagation());
+}
+
+async function aiChatSelect(id) {
+  aiChatState.curId = Number(id) || 0;
+  aiChatRenderList();
+  const box = document.getElementById('aiChatMsgs');
+  const sub = document.getElementById('aiChatSub');
+  if (sub) {
+    const c = aiChatState.chats.find((x) => Number(x.id) === Number(aiChatState.curId));
+    sub.textContent = c ? (c.title || '新对话') : '新对话';
+  }
+  if (!box) return;
+  box.innerHTML = '<div class="acp-loading"><span class="ana-spinner"></span></div>';
+  try {
+    const r = await api('/api/ai/chats/' + aiChatState.curId);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    aiChatState.msgs = d.messages || [];
+  } catch (_) { aiChatState.msgs = []; }
+  aiChatRenderMsgs();
+}
+
+async function aiChatNew() {
+  try {
+    const r = await api('/api/ai/chats', { method: 'POST', body: JSON.stringify({ title: '新对话' }) });
+    if (!r.ok) { toast('创建会话失败', 'err'); return; }
+    const d = await r.json();
+    await aiChatLoadList();
+    await aiChatSelect(d.id);
+    const inp = document.getElementById('aiChatInput');
+    if (inp) { inp.value = ''; inp.focus(); }
+  } catch (e) { toast('创建会话异常：' + e.message, 'err'); }
+}
+
+async function aiChatDelete(id) {
+  const c = aiChatState.chats.find((x) => Number(x.id) === Number(id));
+  openConfirm({
+    title: '删除对话',
+    msg: '确认删除对话「' + (c ? (c.title || '新对话') : id) + '」？该对话的全部消息将一并删除，不可恢复。',
+    okText: '删除',
+    danger: true,
+    onOk: async () => {
+      try {
+        const r = await api('/api/ai/chats/' + id, { method: 'DELETE' });
+        if (!r.ok) { toast('删除失败', 'err'); return; }
+        if (Number(aiChatState.curId) === Number(id)) {
+          aiChatState.curId = 0;
+          aiChatState.msgs = [];
+          aiChatRenderMsgs();
+          const sub = document.getElementById('aiChatSub');
+          if (sub) sub.textContent = '新对话';
+        }
+        await aiChatLoadList();
+        toast('已删除对话', 'ok');
+      } catch (e) { toast('删除异常：' + e.message, 'err'); }
+    },
+  });
+}
+
+// ---- 消息区 ----
+function aiChatRenderMsgs() {
+  const box = document.getElementById('aiChatMsgs');
+  if (!box) return;
+  if (!aiChatState.msgs.length) {
+    box.innerHTML = '<div class="acp-welcome">'
+      + '<p class="acp-welcome-h">你好，我是持仓侠 AI 助手</p>'
+      + '<p class="acp-welcome-p">我能直接读你的账本（持仓 / 理财 / 账户 / 现金），也能按你的指令记一笔流水。</p>'
+      + '<ul class="acp-suggest">'
+      + '<li data-q="帮我总结一下当前持仓">帮我总结一下当前持仓</li>'
+      + '<li data-q="我的持仓里技术面最强和最弱的分别是哪只">技术面最强 / 最弱是哪只</li>'
+      + '<li data-q="看看我的现金账户余额分布">看看现金账户余额分布</li>'
+      + '<li data-q="列出我设置了 mcp 标记的实体">列出我设置了 mcp 标记的实体</li>'
+      + '</ul>'
+      + '<p class="acp-welcome-note">涉及买卖判断的结论仅供参考，不构成投资建议。</p>'
+      + '</div>';
+    return;
+  }
+  box.innerHTML = aiChatState.msgs.map((m) => {
+    if (m.role === 'user') {
+      return '<div class="ai-msg user"><div class="ai-bubble">' + esc(m.content) + '</div></div>';
+    }
+    if (m.role === 'assistant') {
+      return '<div class="ai-msg ai"><div class="ai-avatar">AI</div><div class="ai-bubble md">' + renderMarkdown(m.content) + '</div></div>';
+    }
+    if (m.role === 'pending') {
+      return '<div class="ai-msg ai"><div class="ai-avatar">AI</div><div class="ai-bubble acp-typing">'
+        + '<span class="acp-dot"></span><span class="acp-dot"></span><span class="acp-dot"></span></div></div>';
+    }
+    return '';
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function aiChatSetBusy(on) {
+  aiChatState.busy = on;
+  const b = document.getElementById('aiChatSend');
+  if (b) { b.disabled = on; b.textContent = on ? '思考中…' : '发送'; }
+  if (on) { const e = document.getElementById('aiChatErr'); if (e) e.textContent = ''; }
+}
+
+async function aiChatSend() {
+  if (aiChatState.busy) return;
+  const inp = document.getElementById('aiChatInput');
+  const text = (inp ? inp.value : '').trim();
+  if (!text) { toast('请输入内容', 'err'); return; }
+  const m = getAiChatModel();
+  if (!m || !m.api_key) {
+    const e = document.getElementById('aiChatErr');
+    if (e) e.textContent = '未配置 API Key：请到「设置 → AI → 模型与提示词」填写并保存。';
+    toast('未配置 API Key', 'err');
+    return;
+  }
+  inp.value = '';
+  // 本地先渲染用户消息 + 思考中占位，等后端返回再补助手消息
+  aiChatState.msgs = aiChatState.msgs.filter((x) => x.role !== 'pending');
+  aiChatState.msgs.push({ role: 'user', content: text });
+  aiChatState.msgs.push({ role: 'pending', content: '' });
+  aiChatRenderMsgs();
+  aiChatSetBusy(true);
+  try {
+    const r = await api('/api/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        chat_id: Number(aiChatState.curId) || 0,
+        api_key: m.api_key,
+        model: m.model,
+        base_url: m.base_url,
+        message: text,
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    aiChatState.msgs = aiChatState.msgs.filter((x) => x.role !== 'pending');
+    if (!r.ok) {
+      const e = document.getElementById('aiChatErr');
+      if (e) e.textContent = d.error || ('请求失败 HTTP ' + r.status);
+      aiChatRenderMsgs();
+      return;
+    }
+    aiChatState.msgs.push({ role: 'assistant', content: d.content || '' });
+    aiChatRenderMsgs();
+    if (!aiChatState.curId && d.chat_id) aiChatState.curId = Number(d.chat_id);
+    if (d.title) {
+      const sub = document.getElementById('aiChatSub');
+      if (sub) sub.textContent = d.title;
+    }
+    await aiChatLoadList(); // 新会话落库后刷新左侧列表
+    if (d.degraded) toast('该模型不支持工具调用，已按持仓上下文直接回答', 'info');
+  } catch (err) {
+    const e = document.getElementById('aiChatErr');
+    if (e) e.textContent = '请求异常：' + err.message;
+    aiChatRenderMsgs();
+  } finally {
+    aiChatSetBusy(false);
+  }
+}
+
+// ---- 事件绑定（全部走 document 级委托，避免动态节点绑不上） ----
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (t.closest('#aiFab')) {
+    // 刚拖完按钮的那一次 click 不当作点击，否则拖完就弹出面板
+    if (aiFabState.justDragged) { aiFabState.justDragged = false; return; }
+    aiChatToggle();
+    return;
+  }
+  if (t.closest('#aiChatClose')) { aiChatClose(); return; }
+  if (t.closest('#aiChatNew')) { aiChatNew(); return; }
+  if (t.closest('#aiChatSend')) { aiChatSend(); return; }
+  if (t.closest('#aiChatListToggle')) {
+    const p = aiChatPanelEl();
+    if (p) p.classList.toggle('side-open');
+    return;
+  }
+  const sug = t.closest('.acp-suggest li');
+  if (sug) {
+    const inp = document.getElementById('aiChatInput');
+    if (inp) { inp.value = sug.dataset.q || ''; inp.focus(); }
+    return;
+  }
+  const item = t.closest('.acp-item');
+  if (item) {
+    const del = t.closest('.acp-item-del');
+    if (del && del.dataset.del) { aiChatDelete(del.dataset.del); return; }
+    const edit = t.closest('.acp-item-edit');
+    if (edit) { aiChatStartRename(item); return; }
+    if (item.dataset.id) aiChatSelect(item.dataset.id);
+    return;
+  }
+  // 点击面板与悬浮按钮之外：收起，避免遮挡主界面
+  const p = aiChatPanelEl();
+  if (p && !p.hidden && !t.closest('.ai-chat-panel') && !t.closest('#aiFab') && !t.closest('.modal')) {
+    aiChatClose();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const p = aiChatPanelEl();
+  if (!p || p.hidden) return;
+  if (document.querySelectorAll('.modal:not([hidden])').length) return; // 弹框优先关闭
+  aiChatClose();
+});
+
+(function initAiChatInput() {
+  const inp = document.getElementById('aiChatInput');
+  if (inp) {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        aiChatSend();
+      }
+    });
+  }
+  const sel = document.getElementById('aiChatModel');
+  if (sel) sel.onchange = () => { aiChatModelIdx = parseInt(sel.value, 10) || 0; };
+})();
+
+// ============================================================================
+// AI 助手悬浮按钮：拖动定位
+// ----------------------------------------------------------------------------
+// 宽屏（>760px）可用鼠标/触控拖动，位置存 localStorage("pf_ai_fab_pos")；
+// 窄屏（手机）一律固定在右下角，不响应拖动（避免手指拖动与页面滚动打架）。
+// 双击按钮复位到默认右下角。面板打开时贴着按钮弹出并钳在视口内。
+// ============================================================================
+
+const aiFabState = { dragging: false, justDragged: false, moved: false };
+
+function aiFabEl() { return document.getElementById('aiFab'); }
+
+// 拖动始终可用（手机也能拖）：面板定位仍区分宽/窄屏（窄屏面板固定左右贴边）
+function aiFabDraggable() { return true; }
+
+function aiFabIsMobile() { return window.matchMedia('(max-width: 768px)').matches; }
+
+// 手机底部 tab 栏（.main-nav）占用高度 + 间距：拖动时按钮不允许被拖到这里，
+// 否则会挡住「持仓/资产/工具/设置」功能切换。
+function aiFabBottomLimit() {
+  if (!aiFabIsMobile()) return 0;
+  const nav = document.querySelector('.main-nav');
+  return (nav && nav.offsetHeight ? nav.offsetHeight : 58) + 12;
+}
+
+// 按视口左上角坐标落位，并钳制在视口内（留 8px 安全边距）
+function aiFabSetPos(x, y, save) {
+  const fab = aiFabEl();
+  if (!fab) return;
+  const pad = 8;
+  const w = fab.offsetWidth || 56;
+  const h = fab.offsetHeight || 56;
+  const bottomLimit = aiFabBottomLimit();
+  const maxX = Math.max(pad, window.innerWidth - w - pad);
+  const maxY = Math.max(pad, window.innerHeight - h - pad - bottomLimit);
+  const nx = Math.min(Math.max(pad, x), maxX);
+  const ny = Math.min(Math.max(pad, y), maxY);
+  fab.style.left = nx + 'px';
+  fab.style.top = ny + 'px';
+  fab.style.right = 'auto';
+  fab.style.bottom = 'auto';
+  if (save) {
+    try { localStorage.setItem('pf_ai_fab_pos', JSON.stringify({ x: Math.round(nx), y: Math.round(ny) })); } catch (_) { /* 忽略隐私模式写入失败 */ }
+  }
+}
+
+// 复位到默认右下角（清除记忆位置）
+function aiFabReset() {
+  const fab = aiFabEl();
+  if (!fab) return;
+  fab.style.left = '';
+  fab.style.top = '';
+  fab.style.right = '';
+  fab.style.bottom = '';
+  try { localStorage.removeItem('pf_ai_fab_pos'); } catch (_) { /* 忽略 */ }
+  toast('悬浮按钮已复位', 'ok');
+}
+
+// 恢复上次拖动的位置；没有记忆时清掉内联坐标，交回 CSS 的默认位置
+// （手机上默认位置=底部 tab 栏上方，见 style.css 768px 断点）
+function aiFabRestore() {
+  let p = null;
+  try { p = JSON.parse(localStorage.getItem('pf_ai_fab_pos') || 'null'); } catch (_) { p = null; }
+  if (p && typeof p.x === 'number' && typeof p.y === 'number') { aiFabSetPos(p.x, p.y, false); return; }
+  const fab = aiFabEl();
+  if (fab) { fab.style.left = ''; fab.style.top = ''; fab.style.right = ''; fab.style.bottom = ''; }
+}
+
+// 面板贴着按钮弹出：按钮在右半屏则右对齐，左半屏则左对齐；上下空间不够就翻到下方
+function aiChatPlacePanel() {
+  const p = aiChatPanelEl();
+  const fab = aiFabEl();
+  if (!p) return;
+  if (aiFabIsMobile()) {
+    // 手机：交回 CSS 的固定左右布局，左右都不可移动
+    p.style.left = '';
+    p.style.top = '';
+    p.style.right = '';
+    p.style.bottom = '';
+    p.style.transformOrigin = '';
+    return;
+  }
+  const r = (fab ? fab.getBoundingClientRect() : null) || { left: 24, top: window.innerHeight - 80, right: 80, bottom: window.innerHeight - 24, width: 56, height: 56 };
+  const pw = p.offsetWidth || Math.min(900, window.innerWidth - 32);
+  const ph = p.offsetHeight || Math.min(640, window.innerHeight - 140);
+  const pad = 12;
+  let left = (r.left + r.width / 2 > window.innerWidth / 2) ? (r.right - pw) : r.left;
+  left = Math.min(Math.max(pad, left), Math.max(pad, window.innerWidth - pw - pad));
+  let top = r.top - ph - 12;
+  if (top < pad) top = Math.min(Math.max(pad, r.bottom + 12), Math.max(pad, window.innerHeight - ph - pad));
+  p.style.left = left + 'px';
+  p.style.top = top + 'px';
+  p.style.right = 'auto';
+  p.style.bottom = 'auto';
+  p.style.transformOrigin = (left + pw / 2 > window.innerWidth / 2) ? 'bottom right' : 'bottom left';
+}
+
+function aiFabInitDrag() {
+  const fab = aiFabEl();
+  if (!fab) return;
+  aiFabRestore();
+
+  let st = null;
+  fab.addEventListener('pointerdown', (e) => {
+    if (!aiFabDraggable()) return;               // 手机模式不拖
+    if (typeof e.button === 'number' && e.button !== 0) return;
+    const r = fab.getBoundingClientRect();
+    st = { id: e.pointerId, ox: e.clientX - r.left, oy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false };
+    try { fab.setPointerCapture(e.pointerId); } catch (_) { /* 忽略 */ }
+  });
+
+  fab.addEventListener('pointermove', (e) => {
+    if (!st || e.pointerId !== st.id) return;
+    if (!aiFabDraggable()) { st = null; return; }
+    if (!st.moved && Math.abs(e.clientX - st.sx) < 4 && Math.abs(e.clientY - st.sy) < 4) return;
+    if (!st.moved) {
+      st.moved = true;
+      aiFabState.dragging = true;
+      fab.classList.add('dragging');
+    }
+    e.preventDefault();
+    aiFabSetPos(e.clientX - st.ox, e.clientY - st.oy, false);
+  });
+
+  const end = (e) => {
+    if (!st || (e && e.pointerId !== st.id)) return;
+    const moved = st.moved;
+    try { fab.releasePointerCapture(st.id); } catch (_) { /* 忽略 */ }
+    st = null;
+    if (!moved) return;
+    aiFabState.dragging = false;
+    aiFabState.justDragged = true;               // 抑制紧随其后的 click
+    fab.classList.remove('dragging');
+    const r = fab.getBoundingClientRect();
+    aiFabSetPos(r.left, r.top, true);
+    const p = aiChatPanelEl();
+    if (p && !p.hidden) aiChatPlacePanel();
+  };
+  fab.addEventListener('pointerup', end);
+  fab.addEventListener('pointercancel', end);
+
+  // 双击复位
+  fab.addEventListener('dblclick', () => { if (aiFabDraggable()) aiFabReset(); });
+
+  // 视口变化：把按钮重新钳回可视范围（手机/宽屏都要），面板窄屏固定、宽屏跟随按钮
+  window.addEventListener('resize', () => {
+    const p = aiChatPanelEl();
+    aiFabRestore();
+    if (p) {
+      if (aiFabIsMobile()) { p.style.left = ''; p.style.top = ''; p.style.right = ''; p.style.bottom = ''; }
+      else if (!p.hidden) aiChatPlacePanel();
+    }
+  }, { passive: true });
+}
+
+aiFabInitDrag();

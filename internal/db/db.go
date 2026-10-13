@@ -159,6 +159,9 @@ _, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 	if err := initAISettings(); err != nil {
 		return fmt.Errorf("init ai_settings: %w", err)
 	}
+	if err := initAIChats(); err != nil {
+		return fmt.Errorf("init ai_chats: %w", err)
+	}
 	if err := initAssetTables(); err != nil {
 		return fmt.Errorf("init asset tables: %w", err)
 	}
