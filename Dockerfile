@@ -1,13 +1,14 @@
-# 前端构建：优先使用已预构建的 web/dist（同步时一并上传，免服务器 npm 联网）；
-# 若缺失则现场 npm install + build 兜底。
-FROM node:20-alpine AS fe
+# 前端构建：优先使用已预构建的 web/dist（同步时一并上传，免服务器 npm 联网）。
+# fe 阶段仅负责搬运 web/dist，不需要 node 运行时；用已缓存的 alpine 作基础，
+# 避免路由器到 Docker Hub 拉取 node:20-alpine（~43MB，出口被限速到 KB/s 级）。
+# 若本地未预构建 dist，需先在本地 `cd web && npm run build` 再上传。
+FROM alpine:3.20 AS fe
 WORKDIR /fe
-ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 COPY web ./web
 RUN if [ -f web/dist/app.js ] && [ -f web/dist/style.css ]; then \
       echo "prebuilt web/dist found, skip npm build"; \
     else \
-      cd web && npm install && npm run build; \
+      echo "ERROR: web/dist 未预构建，请在本地 npm run build 后重新上传" && exit 1; \
     fi
 
 FROM golang:1.25-alpine AS build

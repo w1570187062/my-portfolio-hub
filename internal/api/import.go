@@ -304,16 +304,23 @@ func importData(c *gin.Context) {
 		res.Imported.Consumption++
 	}
 
-	// 收支计划：type+title+day_of_month+currency 判重；关联账户/负债按 旧id→新id 重映射
+	// 收支计划：type+title+day_of_month/one_time_date+pattern+currency 判重；关联账户/负债按 旧id→新id 重映射
 	existPlan := map[string]bool{}
+	planKey := func(pl db.CashflowPlan) string {
+		day := strconv.Itoa(pl.DayOfMonth)
+		if pl.Pattern == "one_time" {
+			day = pl.OneTimeDate
+		}
+		return pl.Type + "|" + pl.Title + "|" + day + "|" + pl.Pattern + "|" + pl.Currency
+	}
 	if ps, e := db.ListCashflowPlans(uid); e == nil {
 		for _, pl := range ps {
-			existPlan[pl.Type+"|"+pl.Title+"|"+strconv.Itoa(pl.DayOfMonth)+"|"+pl.Currency] = true
+			existPlan[planKey(pl)] = true
 		}
 	}
 	for _, pl := range p.CashflowPlans {
 		pl.UserID = uid
-		key := pl.Type + "|" + pl.Title + "|" + strconv.Itoa(pl.DayOfMonth) + "|" + pl.Currency
+		key := planKey(pl)
 		if pl.Title == "" || existPlan[key] {
 			res.Skipped.Plans++
 			continue

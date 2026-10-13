@@ -363,6 +363,10 @@ func ClearUserData(userID int64) error {
 	if _, err := DB.Exec(`DELETE FROM ai_settings WHERE user_id=?`, userID); err != nil {
 		return err
 	}
+	// AI 助手会话（ai_chats + ai_chat_messages）
+	if err := DeleteAIChatsByUser(userID); err != nil {
+		return err
+	}
 	return nil
 }
 

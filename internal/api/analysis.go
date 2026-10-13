@@ -41,6 +41,64 @@ func signalFromUpPct(upPct float64) string {
 	return market.SignalFromUpPct(upPct)
 }
 
+// ---- 分析缓存新鲜度（命中缓存也做新鲜度校验）----
+//
+// 背景：美股行情来自新浪日K，其更新滞后于美股收盘。若在源端尚未更新时（如 07:00 定时快照）
+// 首写了当日缓存，则会带着「落后的末根K线」把一整天钉死——因为缓存键是 (symbol, 当日)，
+// 命中即直接返回、当日不再重取。这里在缓存命中时追加两道校验，任一不满足即判定为不新鲜，
+// 回落到实时抓取并 upsert 覆盖：
+//  1) 缓存的最后一根K线日期 < 期望的最近交易日（期望值按市场与北京时间粗算，忽略节假日）；
+//  2) 距上次生成超过硬 TTL。
+// 为免源端持续滞后时频繁抓取，第 1 条还需超过最小重取间隔才真正重取（否则仍视为新鲜）。
+const (
+	analysisCacheHardTTL    = 6 * time.Hour
+	analysisCacheMinRefresh = 30 * time.Minute
+)
+
+// beijing 用于把缓存里的本地时间字符串解析回 time.Time。
+var beijing = time.FixedZone("CST", 8*3600)
+
+// expectedLatestBarDate 估算「此刻应已可获得的最新交易日」（YYYY-MM-DD）。
+// 只按工作日回退、忽略节假日：宁可偶尔多抓一次，也不长期钉在旧数据上。
+// 美股：收盘约在北京时间次日 05:00，故以 now-29h 为界；其余市场按 now-16h 处理。
+func expectedLatestBarDate(marketName string, now time.Time) string {
+	cutoff := now.Add(-16 * time.Hour)
+	if marketName == "美股" {
+		cutoff = now.Add(-29 * time.Hour)
+	}
+	d := cutoff
+	for d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+		d = d.AddDate(0, 0, -1)
+	}
+	return d.Format("2006-01-02")
+}
+
+// analysisCacheFresh 判断当日分析缓存是否新鲜（true=可直接复用）。
+func analysisCacheFresh(row *db.AnalysisCacheRow, marketName string) bool {
+	if row == nil {
+		return false
+	}
+	genAt, err := time.ParseInLocation("2006-01-02 15:04:05", row.GeneratedAt, beijing)
+	if err != nil {
+		return true // 时间无法解析时不强制重取，保持旧行为
+	}
+	age := time.Since(genAt)
+	if age >= analysisCacheHardTTL {
+		return false
+	}
+	var bars []market.KlineBar
+	if err := json.Unmarshal([]byte(row.BarsJSON), &bars); err != nil || len(bars) == 0 {
+		return true
+	}
+	if bars[len(bars)-1].Date < expectedLatestBarDate(marketName, time.Now()) {
+		// 末根K线落后于期望交易日：仅当超过最小重取间隔才判定为不新鲜，避免源端滞后时频繁抓取
+		if age >= analysisCacheMinRefresh {
+			return false
+		}
+	}
+	return true
+}
+
 // getAnalysis returns technical analysis for a holding.
 // GET /holdings/:id/analysis
 //
@@ -84,8 +142,9 @@ func getAnalysis(c *gin.Context) {
 	symbol := resolveSymbol(symForFetch, h.Market)
 	today := time.Now().Format("2006-01-02")
 
-	// ① 查缓存：当日命中则直接反序列化返回，跳过 K线抓取（毫秒级）
-	if row, e := db.GetAnalysisCache(symbol, today); e == nil && row != nil {
+	// ① 查缓存：当日命中且「新鲜」则直接反序列化返回，跳过 K线抓取（毫秒级）。
+	// 若末根K线落后于期望交易日或超过硬 TTL（analysisCacheFresh），则视为不新鲜，回落到实时抓取。
+	if row, e := db.GetAnalysisCache(symbol, today); e == nil && row != nil && analysisCacheFresh(row, h.Market) {
 		var bars []market.KlineBar
 		if e2 := json.Unmarshal([]byte(row.BarsJSON), &bars); e2 == nil && len(bars) >= 30 {
 			var ind market.IndicatorsResult

@@ -32,3 +32,10 @@ docs/deploy.md
 web/dist/
 node_modules/
 
+# 部署临时目录与产物（本地部署脚本生成，不入库）
+.deploy_tmp/
+portfolio.tar.gz
+
+# 归档文件（AI 总结快照等临时归档，不入库）
+archive/
+

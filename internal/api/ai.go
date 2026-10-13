@@ -137,6 +137,9 @@ type aiSummaryReq struct {
 	Model    string `json:"model"`
 	BaseURL  string `json:"base_url"`
 	Template string `json:"template"`
+	// Resolved=true 时，Template 已是前端组装好的完整 prompt（含 {{DATA}} 已展开），
+	// 服务端不再调用 injectData 二次注入，保证用户在输入框里编辑过的 DATA 真实生效。
+	Resolved bool `json:"resolved"`
 }
 
 func aiSummary(c *gin.Context) {
@@ -177,7 +180,10 @@ func aiSummary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计失败: " + err.Error()})
 		return
 	}
-	prompt := injectData(b.Template, stats)
+	prompt := b.Template
+	if !b.Resolved {
+		prompt = injectData(b.Template, stats)
+	}
 	content, err := callChatCompletions(b.BaseURL, b.APIKey, b.Model, prompt)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
@@ -195,6 +201,30 @@ func aiSummary(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"content": content})
+}
+
+// aiData returns the live portfolio/asset statistics text (the same block that
+// gets injected into the {{DATA}} placeholder) for a given scope, so the frontend
+// can preview and let the user edit it before sending.
+//
+//	scope=all     -> 全部资产（权益 + 理财 + 负债 + 消费），等同 assetSummary 的 DATA
+//	scope=equity  -> 权益类（股票 / 基金），等同 aiSummary 的 DATA
+//	其他 / 缺省   -> 同 all
+func aiData(c *gin.Context) {
+	uid := currentUserID(c)
+	scope := c.Query("scope")
+	var stats string
+	var err error
+	if scope == "equity" {
+		stats, err = buildPortfolioStats(uid)
+	} else {
+		stats, err = buildAssetStats(uid)
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": stats})
 }
 
 // injectData replaces the {{DATA}} placeholder with the live stats. If the template

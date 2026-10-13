@@ -677,8 +677,16 @@ func checkCashflowReminders() {
 			continue
 		}
 		var due []db.CashflowPlan
+		tomorrowStr := tomorrow.Format("2006-01-02")
 		for _, p := range plans {
 			if p.Type != "expense" { // 仅待还款参与提醒
+				continue
+			}
+			if p.Pattern == "one_time" {
+				// 一次性计划以具体日期判定是否次日到期
+				if p.OneTimeDate == tomorrowStr {
+					due = append(due, p)
+				}
 				continue
 			}
 			if p.DayOfMonth == tomorrowDay {

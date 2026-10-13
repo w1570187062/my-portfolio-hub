@@ -169,28 +169,25 @@ func assetOverview(c *gin.Context) {
 
 	// 4) 负债（按来源 region 归集境内/境外负债，供前端拆分境内/境外净资产）
 	libs, _ := db.ListLiabilities(uid)
-	var lTotal, lMonthly, domLiab, ovsLiab float64
+	var lTotal, domLiab, ovsLiab float64
 	lItems := make([]gin.H, 0, len(libs))
 	for _, l := range libs {
 		lCNY := fxToCNY(l.Amount, l.Currency, cnyRate, hkdRate)
 		lTotal += lCNY
-		lMonthly += l.MonthlyPayment
 		if regionOf(l.SourceID) == "overseas" {
 			ovsLiab += lCNY
 		} else {
 			domLiab += lCNY
 		}
 		lItems = append(lItems, gin.H{
-			"id":              l.ID,
-			"name":            l.Name,
-			"type":            l.Type,
-			"source_id":       l.SourceID,
-			"source_name":     srcName[l.SourceID],
-			"currency":        l.Currency,
-			"amount":          round2(l.Amount),
-			"rate":            l.Rate,
-			"monthly_payment": round2(l.MonthlyPayment),
-			"note":            l.Note,
+			"id":          l.ID,
+			"name":        l.Name,
+			"type":        l.Type,
+			"source_id":   l.SourceID,
+			"source_name": srcName[l.SourceID],
+			"currency":    l.Currency,
+			"amount":      round2(l.Amount),
+			"note":        l.Note,
 		})
 	}
 
@@ -234,9 +231,8 @@ func assetOverview(c *gin.Context) {
 			"items":       cItems,
 		},
 		"liability": gin.H{
-			"total":           round2(lTotal),
-			"monthly_payment": round2(lMonthly),
-			"items":           lItems,
+			"total": round2(lTotal),
+			"items": lItems,
 		},
 		"consumption": gin.H{
 			"today": round2(todayC),
@@ -1234,11 +1230,18 @@ func updateLiability(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
 	}
-	var l db.Liability
-	if err := c.ShouldBindJSON(&l); err != nil {
+	// 除负债自身字段外，额外接受 flow_note：本次余额变动流水的备注（可选）。
+	// 填入时覆盖默认的「余额调高 / 还款」，让负债侧的「± 借入/还款 + 说明」与
+	// 子账户的「± 资金 + 说明」（adjustCash）对齐。
+	var body struct {
+		db.Liability
+		FlowNote string `json:"flow_note"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
+	l := body.Liability
 	l.ID = id
 	l.Name = strings.TrimSpace(l.Name)
 	if l.Name == "" {
@@ -1265,6 +1268,9 @@ func updateLiability(c *gin.Context) {
 		amt := delta
 		if delta < 0 {
 			ft, note, amt = "repay", "还款", -delta
+		}
+		if fn := strings.TrimSpace(body.FlowNote); fn != "" {
+			note = fn
 		}
 		_, _ = db.InsertLiabilityFlow(&db.LiabilityFlow{
 			UserID: l.UserID, LiabilityID: id, Type: ft,
@@ -1411,7 +1417,10 @@ func assetSummary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计失败: " + err.Error()})
 		return
 	}
-	prompt := injectData(b.Template, stats)
+	prompt := b.Template
+	if !b.Resolved {
+		prompt = injectData(b.Template, stats)
+	}
 	content, err := callChatCompletions(b.BaseURL, b.APIKey, b.Model, prompt)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
@@ -1498,22 +1507,13 @@ func buildAssetStats(uid int64) (string, error) {
 
 	// ---- 负债 ----
 	libs, _ := db.ListLiabilities(uid)
-	var lTotal, lMonthly float64
+	var lTotal float64
 	b.WriteString("\n【负债】\n")
 	if len(libs) == 0 {
 		b.WriteString("（暂无负债）\n")
 	}
 	for i, l := range libs {
 		lTotal += fxToCNY(l.Amount, l.Currency, cnyRate, hkdRate)
-		lMonthly += l.MonthlyPayment
-		rateStr := ""
-		if l.Rate > 0 {
-			rateStr = " 年利率" + fmt.Sprintf("%.2f", l.Rate) + "%"
-		}
-		mpStr := ""
-		if l.MonthlyPayment > 0 {
-			mpStr = " 月供" + nf(l.MonthlyPayment)
-		}
 		cur := strings.ToLower(strings.TrimSpace(l.Currency))
 		var owe string
 		if cur == "usd" || cur == "hkd" {
@@ -1521,11 +1521,11 @@ func buildAssetStats(uid int64) (string, error) {
 		} else {
 			owe = "欠款(CNY)" + nf(l.Amount)
 		}
-		line := fmt.Sprintf("%d. %s（%s/%s）%s%s%s",
-			i+1, l.Name, srcName[l.SourceID], l.Type, owe, rateStr, mpStr)
+		line := fmt.Sprintf("%d. %s（%s/%s）%s",
+			i+1, l.Name, srcName[l.SourceID], l.Type, owe)
 		b.WriteString(line + "\n")
 	}
-	b.WriteString("负债合计(CNY)：" + nf(lTotal) + "  月供合计(CNY)：" + nf(lMonthly) + "\n")
+	b.WriteString("负债合计(CNY)：" + nf(lTotal) + "\n")
 
 	// ---- 消费 ----
 	todayC, _ := db.ConsumptionSum(today, uid)
