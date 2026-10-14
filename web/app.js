@@ -8065,14 +8065,19 @@ function renderCashflowCard() {
       <button class="cf-edit" data-act="cf-edit" data-id="${p.id}" title="编辑" aria-label="编辑">${actIcon('edit')}</button>
     </div>`;
   };
-  // 净现金流：仅统计「尚未完成」的计划（已完成的已记入真实出入账），移到「收支计划」标题下方小字
-  const inSum = pendingPlans.filter((p) => p.type === 'income').reduce((s, p) => s + (p.amount || 0), 0);
-  const outSum = pendingPlans.filter((p) => p.type === 'expense').reduce((s, p) => s + (p.amount || 0), 0);
-  const net = inSum - outSum;
+  // 净收支：当月全部计划（含已完成）的收入和 − 支出和；已完成/未完成只是执行状态
+  const allInSum = monthPlans.filter((p) => p.type === 'income').reduce((s, p) => s + (p.amount || 0), 0);
+  const allOutSum = monthPlans.filter((p) => p.type === 'expense').reduce((s, p) => s + (p.amount || 0), 0);
+  const net = allInSum - allOutSum;
   card.hidden = false;
   const sub = document.getElementById('cfSub');
   if (sub) {
     sub.innerHTML = `${cashflowMonth || ''} · 净 <b class="${net >= 0 ? 'up' : 'down'}">${net >= 0 ? '＋' : '－'}${curSymbolJS('rmb')}${fmt(Math.abs(net))}</b>`;
+  }
+  const netEl = document.getElementById('cfNet');
+  if (netEl) {
+    netEl.className = 'cf-net ' + (net >= 0 ? 'up' : 'down');
+    netEl.textContent = `${net >= 0 ? '＋' : '－'}${curSymbolJS('rmb')}${fmt(Math.abs(net))}`;
   }
   // 全部当月计划 → SVG 柱状图（空态也在 renderCfBars 里统一处理）
   const ordered = pendingPlans.concat(donePlans);
@@ -8474,7 +8479,16 @@ function aiChatOpen() {
 
 function aiChatClose() {
   const p = aiChatPanelEl();
-  if (p) { p.hidden = true; p.classList.remove('open'); p.classList.remove('side-open'); }
+  if (p) {
+    p.hidden = true; p.classList.remove('open'); p.classList.remove('side-open');
+    if (p.classList.remove('fullscreen')) {
+      const btn = document.getElementById('aiChatFullscreen');
+      if (btn) {
+        btn.title = '全屏'; btn.setAttribute('aria-label', '全屏');
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>';
+      }
+    }
+  }
   const fab = document.getElementById('aiFab');
   if (fab) { fab.classList.remove('open'); fab.setAttribute('aria-expanded', 'false'); }
 }
@@ -8626,6 +8640,18 @@ async function aiChatDelete(id) {
 }
 
 // ---- 消息区 ----
+function aiFmtTime(ts) {
+  if (!ts) return '';
+  // 后端存的是 "YYYY-MM-DD HH:mm:ss"，Safari 不认空格，替换成 T
+  let d = ts instanceof Date ? ts : new Date(String(ts).replace(' ', 'T'));
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (sameDay) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // 非当天显示完整日期
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 function aiChatRenderMsgs() {
   const box = document.getElementById('aiChatMsgs');
   if (!box) return;
@@ -8644,11 +8670,12 @@ function aiChatRenderMsgs() {
     return;
   }
   box.innerHTML = aiChatState.msgs.map((m) => {
+    const timeHtml = m.created_at ? '<div class="ai-time">' + aiFmtTime(m.created_at) + '</div>' : '';
     if (m.role === 'user') {
-      return '<div class="ai-msg user"><div class="ai-bubble">' + esc(m.content) + '</div></div>';
+      return '<div class="ai-msg user">' + timeHtml + '<div class="ai-bubble">' + esc(m.content) + '</div><div class="ai-avatar user-avatar">我</div></div>';
     }
     if (m.role === 'assistant') {
-      return '<div class="ai-msg ai"><div class="ai-avatar">AI</div><div class="ai-bubble md">' + renderMarkdown(m.content) + '</div></div>';
+      return '<div class="ai-msg ai">' + timeHtml + '<div class="ai-avatar">AI</div><div class="ai-bubble md">' + renderMarkdown(m.content) + '</div></div>';
     }
     if (m.role === 'pending') {
       return '<div class="ai-msg ai"><div class="ai-avatar">AI</div><div class="ai-bubble acp-typing">'
@@ -8681,7 +8708,7 @@ async function aiChatSend() {
   inp.value = '';
   // 本地先渲染用户消息 + 思考中占位，等后端返回再补助手消息
   aiChatState.msgs = aiChatState.msgs.filter((x) => x.role !== 'pending');
-  aiChatState.msgs.push({ role: 'user', content: text });
+  aiChatState.msgs.push({ role: 'user', content: text, created_at: new Date() });
   aiChatState.msgs.push({ role: 'pending', content: '' });
   aiChatRenderMsgs();
   aiChatSetBusy(true);
@@ -8704,7 +8731,7 @@ async function aiChatSend() {
       aiChatRenderMsgs();
       return;
     }
-    aiChatState.msgs.push({ role: 'assistant', content: d.content || '' });
+    aiChatState.msgs.push({ role: 'assistant', content: d.content || '', created_at: new Date() });
     aiChatRenderMsgs();
     if (!aiChatState.curId && d.chat_id) aiChatState.curId = Number(d.chat_id);
     if (d.title) {
@@ -8730,6 +8757,21 @@ document.addEventListener('click', (e) => {
     // 刚拖完按钮的那一次 click 不当作点击，否则拖完就弹出面板
     if (aiFabState.justDragged) { aiFabState.justDragged = false; return; }
     aiChatToggle();
+    return;
+  }
+  if (t.closest('#aiChatFullscreen')) {
+    const p = aiChatPanelEl();
+    if (p) {
+      const fs = p.classList.toggle('fullscreen');
+      const btn = document.getElementById('aiChatFullscreen');
+      if (btn) {
+        btn.title = fs ? '退出全屏' : '全屏';
+        btn.setAttribute('aria-label', fs ? '退出全屏' : '全屏');
+        btn.innerHTML = fs
+          ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4"/><path d="M15 4v5h5"/><path d="M9 20v-5H4"/><path d="M15 20v-5h5"/></svg>'
+          : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>';
+      }
+    }
     return;
   }
   if (t.closest('#aiChatClose')) { aiChatClose(); return; }
@@ -8767,6 +8809,16 @@ document.addEventListener('keydown', (e) => {
   const p = aiChatPanelEl();
   if (!p || p.hidden) return;
   if (document.querySelectorAll('.modal:not([hidden])').length) return; // 弹框优先关闭
+  if (p.classList.contains('fullscreen')) {
+    p.classList.remove('fullscreen');
+    const btn = document.getElementById('aiChatFullscreen');
+    if (btn) {
+      btn.title = '全屏';
+      btn.setAttribute('aria-label', '全屏');
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>';
+    }
+    return;
+  }
   aiChatClose();
 });
 
