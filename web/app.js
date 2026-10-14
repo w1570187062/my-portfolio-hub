@@ -274,6 +274,7 @@ async function load() {
     buildFilters();
     renderFiltered();
     loadCashflow(); // 首页紧凑卡片：本月收支计划（不阻塞主渲染）
+    loadDCA();      // 首页紧凑卡片：基金定投（待确认期次 + 下一期）
   } catch (e) {
     toast('加载异常：' + e.message, 'err');
   }
@@ -552,7 +553,7 @@ function renderHoldingsBySource(hs) {
       + `<thead><tr><th>名称</th><th class="num">现价</th>`
       + `<th class="num">市值</th>`
       + `<th class="num">当日</th><th class="num">当日%</th>`
-      + `<th class="num">盈亏%</th><th class="num">持仓</th>`
+      + `<th class="num">盈亏%</th><th class="num" title="持有期总盈亏金额">盈亏</th><th class="num">持仓</th>`
       + `<th class="num" title="近20个交易日收盘价走势">近20日</th><th>操作</th>`
       + `</tr></thead><tbody>${g.items.map((h, i) => renderGroupRow(h, i, g.maxItemMV || 1)).join('')}</tbody>`
       + `</table></div></div></div>`;
@@ -614,6 +615,7 @@ function renderGroupRow(h, i, maxItemMV) {
     <td class="num ${cls(h.day_pnl)}">¥${fmtPnl(toRmb(h, h.day_pnl))}</td>
     <td class="num" title="当日盈亏率">${pct(h.day_pnl_pct)}</td>
     <td class="num ${cls(h.pnl_pct)}" title="持有期总盈亏率">${pct(h.pnl_pct)}</td>
+    <td class="num ${cls(h.pnl)}" title="持有期总盈亏金额">¥${fmtPnl(toRmb(h, h.pnl))}</td>
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
     <td class="num spark-td">${sparkCell(h.symbol, h.pnl)}</td>
     <td class="row-act-cell">
@@ -1798,6 +1800,7 @@ $('#addPickModal').addEventListener('click', (e) => {
   if (!it) return;
   $('#addPickModal').hidden = true;
   if (it.dataset.addKind === 'wealth') openWealthModal(null);
+  else if (it.dataset.addKind === 'dca') openDCAModal(null);
   else openModal(null);
 });
 // 名称/代码联想框初始化（类别/市场已改为胶囊，不再用下拉框 onchange）
@@ -4877,13 +4880,16 @@ function renderWealth(body) {
       const cum = p.cum_pnl || 0;
       html += `<div class="asset-card wealth-card"><div class="ac-head">
           <div class="ac-idx">${i + 1}</div>
-          <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span></div>
+          <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span>${p.archived ? ' <span class="cur-badge wb-archived" title="已清仓停用：保留历史收益，可启用或删除">已清仓</span>' : ''}</div>
             <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
         <div class="ac-sub">总金额：<span class="ac-amount"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
         <div class="ac-actions">
           <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">${actIcon('edit')} 编辑</button>
           <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('hist')} 每日盈亏</button>
-          <button class="btn btn-icon" data-act="redeem-wealth" data-id="${p.id}">${actIcon('exit')} 减仓</button>
+          ${p.archived
+            ? `<button class="btn btn-icon" data-act="enable-wealth" data-id="${p.id}">${actIcon('refresh')} 启用</button>`
+            : `<button class="btn btn-icon" data-act="redeem-wealth" data-id="${p.id}">${actIcon('exit')} 减仓</button>`}
+          <button class="btn btn-icon" data-act="del-wealth" data-id="${p.id}">${actIcon('del')} 删除</button>
         </div></div>`;
     });
     html += `</div>`;
@@ -4892,6 +4898,8 @@ function renderWealth(body) {
   body.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="redeem-wealth"]').forEach((b) => b.onclick = () => openWealthRedeem(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHistory(Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="enable-wealth"]').forEach((b) => b.onclick = () => enableWealthRow(Number(b.dataset.id)));
+  body.querySelectorAll('[data-act="del-wealth"]').forEach((b) => b.onclick = () => delWealthRow(Number(b.dataset.id)));
   bindCopyDelegation(body);
   // 视图切换（表格 / 卡片），复用首页同款滑动切换器
   body.querySelectorAll('#wealthViewToggle .vt-btn').forEach((b) => {
@@ -4925,13 +4933,16 @@ function renderWealthInline(container) {
       const cum = p.cum_pnl || 0;
       html += `<div class="asset-card wealth-card"><div class="ac-head">
           <div class="ac-idx">${i + 1}</div>
-          <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span></div>
+          <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span>${p.archived ? ' <span class="cur-badge wb-archived" title="已清仓停用：保留历史收益，可启用或删除">已清仓</span>' : ''}</div>
             <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天</div></div></div>
         <div class="ac-sub">总金额：<span class="ac-amount"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
         <div class="ac-actions">
           <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">${actIcon('edit')} 编辑</button>
           <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('hist')} 每日盈亏</button>
-          <button class="btn btn-icon" data-act="redeem-wealth" data-id="${p.id}">${actIcon('exit')} 减仓</button>
+          ${p.archived
+            ? `<button class="btn btn-icon" data-act="enable-wealth" data-id="${p.id}">${actIcon('refresh')} 启用</button>`
+            : `<button class="btn btn-icon" data-act="redeem-wealth" data-id="${p.id}">${actIcon('exit')} 减仓</button>`}
+          <button class="btn btn-icon" data-act="del-wealth" data-id="${p.id}">${actIcon('del')} 删除</button>
         </div></div>`;
     });
     html += `</div>`;
@@ -4942,6 +4953,8 @@ function renderWealthInline(container) {
   container.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
   container.querySelectorAll('[data-act="redeem-wealth"]').forEach((b) => b.onclick = () => openWealthRedeem(Number(b.dataset.id)));
   container.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHistory(Number(b.dataset.id)));
+  container.querySelectorAll('[data-act="enable-wealth"]').forEach((b) => b.onclick = () => enableWealthRow(Number(b.dataset.id)));
+  container.querySelectorAll('[data-act="del-wealth"]').forEach((b) => b.onclick = () => delWealthRow(Number(b.dataset.id)));
   // 理财块自带表格/卡片切换器（与专属理财视图同款），点击仅改 wealthView 并就地重渲染本块
   container.querySelectorAll('#wealthInlineViewToggle .vt-btn').forEach((b) => {
     b.onclick = () => {
@@ -4988,8 +5001,9 @@ function renderWealthTable(w) {
     const rows = g.items.map((p, i) => {
       const pnl = p.today_pnl || 0;
       const cum = p.cum_pnl || 0;
-      return `<tr>
-      <td class="name-cell"><span class="wn-idx">${i + 1}</span><span class="name-cap"><span class="name-clickable" title="${esc(p.name)}">${esc(p.name)}</span></span><span class="cur-badge">${curSymbolJS(p.currency)}</span></td>
+      const arch = !!p.archived;
+      return `<tr${arch ? ' class="wealth-archived"' : ''}>
+      <td class="name-cell"><span class="wn-idx">${i + 1}</span><span class="name-cap"><span class="name-clickable" title="${esc(p.name)}">${esc(p.name)}</span></span><span class="cur-badge">${curSymbolJS(p.currency)}</span>${arch ? '<span class="cur-badge wb-archived" title="已清仓停用：保留历史收益，可启用或删除">已清仓</span>' : ''}</td>
       <td class="num"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</td>
       <td class="num ${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</td>
       <td class="num ${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
@@ -4997,7 +5011,10 @@ function renderWealthTable(w) {
       <td class="row-act-cell">
         ${actBtn('edit', `data-act="edit-wealth" data-id="${p.id}"`, '编辑')}
         ${actBtn('hist', `data-act="wealth-hist" data-id="${p.id}"`, '每日盈亏')}
-        ${actBtn('exit', `data-act="redeem-wealth" data-id="${p.id}"`, '减仓/清仓', { danger: true })}
+        ${arch
+          ? actBtn('refresh', `data-act="enable-wealth" data-id="${p.id}"`, '启用')
+          : actBtn('exit', `data-act="redeem-wealth" data-id="${p.id}"`, '减仓/清仓')}
+        ${actBtn('del', `data-act="del-wealth" data-id="${p.id}"`, '永久删除', { danger: true })}
       </td>
     </tr>`;
     }).join('');
@@ -5024,7 +5041,37 @@ function renderWealthTable(w) {
   }).join('') + `</div>`;
 }
 
-// ---- 资金流水（资产全景「流水」tab）----
+// 理财行内操作：重新启用已清仓停用的产品（恢复参与每日持仓录入）
+async function enableWealthRow(id) {
+  try {
+    const r = await api(`/api/asset/wealth/${id}/enable`, { method: 'POST' });
+    if (!r.ok) { let m = '启用失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m, 'err'); return; }
+    await loadAsset();
+    toast('已重新启用，可在「更新理财持仓」里继续录入', 'ok');
+  } catch (err) { toast('异常：' + err.message, 'err'); }
+}
+
+// 理财行内操作：永久删除（产品与其每日盈亏/审计记录一并删除，不可恢复）
+async function delWealthRow(id) {
+  const p = ((assetData.wealth || {}).products || []).find((x) => x.id === id);
+  const name = p ? (p.name || ('#' + id)) : ('#' + id);
+  const amt = p ? Number(p.amount || 0) : 0;
+  const cur = p ? (p.currency || 'rmb') : 'rmb';
+  const warn = amt > 0.005 ? `该理财仍有持仓 ${moneyCur(amt, cur)}，删除后这部分资产将从总资产中直接消失。` : '';
+  openConfirm({
+    title: '永久删除理财',
+    msg: `${warn}确认永久删除「${name}」？其每日盈亏与审计记录将一并删除，不可恢复。`,
+    okText: '删除', danger: true,
+    onOk: async () => {
+      try {
+        const r = await api('/api/asset/wealth/' + id, { method: 'DELETE' });
+        if (!r.ok) { let m = '删除失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m, 'err'); return; }
+        await loadAsset();
+        toast(`已永久删除「${name}」`, 'ok');
+      } catch (err) { toast('异常：' + err.message, 'err'); }
+    },
+  });
+}
 // 聚合现金流水(cash_flow)与负债流水(liability_flows)：持仓主动调仓 / 理财调仓 / 转账 / 贷款还款。
 // 标题行(asset-section-head)：左侧「流水（条目数）」，右侧同行放年份下拉 + 起止日期（默认近 7 天）。
 async function renderFlows(body) {
@@ -5830,8 +5877,8 @@ function wrSyncHint() {
   const v = Number($('#wr_amount').value || 0);
   const full = v >= wrBase - 0.005;
   $('#wrHint').textContent = full
-    ? '转出金额 = 当前持仓：确认后将删除该理财条目（清仓），回款入账所选子账户。'
-    : `部分减仓：持仓将降为 ${moneyCur(round2(wrBase - v), wrCur)}，并在每日盈亏历史记录一笔减仓（净存入为负）。`;
+    ? '转出金额 = 当前持仓：确认后清仓停用该理财（保留每日盈亏历史，可在列表启用或删除），回款入账所选子账户。'
+    : `部分减仓：持仓将降为 ${moneyCur(round2(wrBase - v), wrCur)}，并在每日盈亏历史记录一笔减仓（不计入当日盈亏）。`;
 }
 $('#wrForm').onsubmit = async (e) => {
   e.preventDefault();
@@ -5846,7 +5893,7 @@ $('#wrForm').onsubmit = async (e) => {
     const d = await r.json();
     $('#wealthRedeemModal').hidden = true;
     await loadAsset();
-    toast(d.cleared ? `已清仓 ${moneyCur(amt, wrCur)}，回款已入账「${d.cash_name}」，条目已删除` : `已减仓 ${moneyCur(amt, wrCur)}，回款已入账「${d.cash_name}」`, 'ok');
+    toast(d.cleared ? `已清仓 ${moneyCur(amt, wrCur)}，回款已入账「${d.cash_name}」；产品已停用，可启用或删除` : `已减仓 ${moneyCur(amt, wrCur)}，回款已入账「${d.cash_name}」`, 'ok');
   } catch (err) { $('#wrErr').textContent = '异常：' + err.message; }
 };
 
@@ -6149,8 +6196,9 @@ $('#loanCalc').onclick = calcLoan;
 async function openSnapModal() {
   await loadAsset();
   await loadCashAccounts();
-  // 与理财卡片列表保持相同顺序（按原币持仓金额从大到小）
-  const raw = (assetData.wealth || {}).products || [];
+  // 与理财卡片列表保持相同顺序（按原币持仓金额从大到小）；
+  // 已清仓停用（archived）的产品不参与持仓更新（取出走理财表格「减仓/清仓」）
+  const raw = ((assetData.wealth || {}).products || []).filter((p) => !p.archived);
   const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount));
   if (!w.length) { toast('请先在「理财」里添加一个产品', 'err'); return; }
   const today = ymd(new Date());
@@ -6183,24 +6231,29 @@ async function openSnapModal() {
   });
   // 组序按组内首行（即该组金额最大的一笔）从大到小，组内沿用原金额序，整体阅读顺序与改动前一致
   groups.sort((a, b) => Number(b.items[0].amount || 0) - Number(a.items[0].amount || 0));
-  const rowHtml = (p) => `
+  const rowHtml = (p) => {
+    // 当日已录净存入（绝对值语义，data-cf0 仅用于提交时合成累计值，不在输入框回显）。
+    // 输入框每次打开归零：填的是「本次新增转入」，提交时前端加上已录值合成当日累计 —— 避免带入上次输入造成误改。
+    const cfToday = Number(p.cashflow_today || 0);
+    return `
     <div class="snap-row">
-      <div class="sr-name">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span><small>上次持仓 ${moneyCur(p.amount || 0, p.currency)}</small></div>
+      <div class="sr-name">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span><small>上次持仓 ${moneyCur(p.amount || 0, p.currency)}${cfToday ? `｜今日已录净存入 ${cfToday > 0 ? '+' : ''}${moneyCur(cfToday, p.currency)}` : ''}</small></div>
       <div class="sr-fields">
         <div class="sr-field">
           <label class="sr-label" for="amt-${p.id}">① 今日持仓金额 ${curSymbolJS(p.currency)}</label>
-          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2);this.dataset.touched=1" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" data-cur="${p.currency || 'rmb'}" data-base="${round2(p.amount || 0)}" value="${round2(p.amount || 0)}" placeholder="今天收盘后的总市值">
-        </div>
-        <div class="sr-cash-slot">
-          <label class="sr-label" for="cash-${p.id}">② 资金账户 ${curSymbolJS(p.currency)}</label>
-          <select class="sr-cash" id="cash-${p.id}" data-id="${p.id}" title="资金账户（须与理财同币种）：转入时从此账户扣款，取出时回款转入此账户">${cashOpts(p.source_id, p.currency)}</select>
+          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2);this.dataset.touched=1" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" data-cur="${p.currency || 'rmb'}" data-base="${round2(p.amount || 0)}" data-cf0="${cfToday}" value="${round2(p.amount || 0)}" placeholder="今天收盘后的总市值">
         </div>
         <div class="sr-field">
-          <label class="sr-label" for="cf-${p.id}">③ 当日净存入 ${curSymbolJS(p.currency)}</label>
-          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2);snapCfSync(this)" class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0" placeholder="当日转入金额（正数；取出请改用减仓）" title="当日新转入的资金（正数）；取出 / 赎回请使用理财表格中的「减仓」">
+          <label class="sr-label" for="cf-${p.id}">② 当日净存入 ${curSymbolJS(p.currency)}</label>
+          <input type="number" step="0.01" min="0" oninput="clampDecimals(this,2);snapCfSync(this)" class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0" placeholder="本次转入金额（正数）" title="本次新转入的金额（正数，每次打开弹框从 0 开始）；取出/赎回请使用理财表格中的「减仓/清仓」">
+        </div>
+        <div class="sr-cash-slot">
+          <label class="sr-label" for="cash-${p.id}">③ 资金账户 ${curSymbolJS(p.currency)}</label>
+          <select class="sr-cash" id="cash-${p.id}" data-id="${p.id}" title="资金账户（须与理财同币种）：转入时从此账户扣款">${cashOpts(p.source_id, p.currency)}</select>
         </div>
       </div>
     </div>`;
+  };
   body.innerHTML = groups.map((g) => {
     // 单币种直接合计；多币种按人民币折算后也显示「合计」总额（不跨币种相加，仅给出整体市值参考）
     const curs = [...new Set(g.items.map((p) => p.currency || 'rmb'))];
@@ -6217,22 +6270,24 @@ async function openSnapModal() {
   $('#snapModal').hidden = false;
 }
 
-// 净存入联动持仓金额：持仓金额未手动改过时，今日持仓自动 = 上次值 + 净存入，
-// 避免「存款未计入持仓 → 当日盈亏把存款全额算成亏损」；持仓一旦手动修改即停止联动。
+// 净存入联动持仓金额：输入框每次打开归零，填的是「本次新增转入」，
+// 未手动改过持仓金额时，今日持仓 = 上次值 + 本次新增，避免「存款未计入持仓 → 当日盈亏把存款全额算成亏损」；
+// 持仓一旦手动修改即停止联动。
 function snapCfSync(input) {
   const row = input.closest('.snap-row');
   const amt = row && row.querySelector('.sr-amt');
   if (amt && !amt.dataset.touched) {
-    amt.value = round2(Number(amt.dataset.base || 0) + Number(input.value || 0));
+    const v = Number(amt.dataset.base || 0) + Math.max(0, Number(input.value || 0));
+    amt.value = round2(v);
   }
   syncSnapCash(input);
 }
-// 净存入输入联动：下拉常显，按正/负切换提示——正（转入理财）= 从此账户扣款；负（取出理财）= 回款转入此账户
+// 净存入输入联动：下拉常显，转入理财 = 从此账户扣款（存入专用，取出走「减仓/清仓」）
 function syncSnapCash(input) {
   const sel = input.closest('.snap-row') && input.closest('.snap-row').querySelector('.sr-cash');
   if (!sel) return;
   const v = Number(input.value || 0);
-  sel.title = v > 0 ? '转入理财：资金从该账户扣出' : (v < 0 ? '取出理财：回款转入该账户' : '资金账户：净存入≠0 时联动扣款/入账');
+  sel.title = v > 0 ? '转入理财：资金从该账户扣出' : '资金账户：净存入≠0 时从该账户扣款';
 }
 $('#snapSave').onclick = async () => {
   const date = $('#snapModal').dataset.date || ymd(new Date());
@@ -6242,36 +6297,35 @@ $('#snapSave').onclick = async () => {
     const amtInput = row.querySelector('.sr-amt');
     if (amtInput.value === '') return;
     const id = Number(amtInput.dataset.id);
-    let amount = Number(amtInput.value);
-    const cashflow = Number(row.querySelector('.sr-cf').value || 0);
+    const amount = Number(amtInput.value);
+    // 输入框填的是「本次新增转入」（增量）；提交时加上当日已录净存入，合成后端要求的当日累计绝对值
+    const cfInput = Math.max(0, Number(row.querySelector('.sr-cf').value || 0));
     const old = ((assetData.wealth || {}).products || []).find((p) => p.id === id);
     const oldAmt = old ? Number(old.amount || 0) : 0;
-    // 全部取出识别：净存入为负且覆盖全部持仓、最终持仓归零（自动联动或手填均适用）
-    // → 视为全部赎回，今日持仓按 0 落库（确认弹窗中可核对）
-    let autoZero = false;
-    if (cashflow < 0 && amount <= 0.005 && cashflow <= -(oldAmt - 0.005)) {
-      amount = 0;
-      autoZero = true;
-    }
-    // 资金账户下拉常显：正（转入）= 扣款账户，负（取出）= 入账账户；value=0 时后端回落同来源默认账户
+    const oldCf = old ? Number(old.cashflow_today || 0) : 0;   // 当日已录净存入（绝对值语义）
+    const prevAmt = old ? Number(old.prev_amount || 0) : 0;    // 前一快照金额（盈亏预览基线）
+    const cashflow = Math.round((oldCf + cfInput) * 100) / 100; // 当日累计净存入（提交值）
+    const cfDelta = cfInput;                                     // 本次实际资金变动
+    // 资金账户下拉常显：转入 = 扣款账户；value=0 时后端回落同来源默认账户
     const cashSel = row.querySelector('.sr-cash');
-    const cashAccountID = Math.abs(cashflow) > 0.005 && cashSel ? Number(cashSel.value || 0) : 0;
+    const cashAccountID = cfDelta > 0.005 && cashSel ? Number(cashSel.value || 0) : 0;
     let cashName = '';
-    if (Math.abs(cashflow) > 0.005) {
+    if (cfDelta > 0.005) {
       let accName = '';
       if (cashAccountID) {
         const acc = (cashAccountsCache || []).find((x) => Number(x.id) === cashAccountID);
         if (acc) accName = (acc.source_name ? acc.source_name + '·' : '') + acc.name;
       }
       if (!accName) accName = '默认子账户 ★';
-      cashName = (cashflow > 0 ? '扣自：' : '入账：') + accName;
-      if (autoZero) cashName += '；全部取出，持仓归零';
+      cashName = '扣自：' + accName + (oldCf > 0.005 ? `；当日累计 +${moneyCur(cashflow, old.currency)}` : '');
     }
-    // 只提交有变化的行：金额与上次不同，或净存入≠0。
+    // 当日盈亏预览：新持仓 − 前一快照 − 当日累计净存入（与后端口径一致，便于发现「存款忘填净存入被算成收益」）
+    const pnlPreview = Math.round((amount - prevAmt - cashflow) * 100) / 100;
+    // 只提交有变化的行：金额与上次不同，或本次有新增转入。
     // 未变化的行不进 items —— 避免整批保存时把未编辑的产品也 upsert+写审计（产生「旧值空→新值」冗余审计记录）。
-    if (Math.abs(amount - oldAmt) > 0.005 || Math.abs(cashflow) > 0.005) {
+    if (Math.abs(amount - oldAmt) > 0.005 || cfDelta > 0.005) {
       items.push({ wealth_id: id, amount, cashflow, cash_account_id: cashAccountID });
-      diff.push({ name: old ? old.name : ('#' + id), currency: old ? old.currency : 'rmb', oldAmt, amount, cashflow, cashName });
+      diff.push({ name: old ? old.name : ('#' + id), currency: old ? old.currency : 'rmb', oldAmt, amount, cfInput, cashflow, pnl: pnlPreview, cashName });
     }
   });
   if (!items.length) { toast('数值未变化，无需保存', 'err'); return; }
@@ -6282,9 +6336,9 @@ let pendingSnapSave = null;
 function renderSnapConfirm(date, diff, items) {
   pendingSnapSave = { date, items };
   const body = $('#snapConfirmBody');
-  body.innerHTML = `<p class="snap-hint">请核对以下 ${diff.length} 项「旧值 → 新值」，确认无误后保存。净存入会同步联动子账户（存入扣款 / 取出入账）；保存后若录错，可到该理财「每日盈亏 → 审计记录」里一键撤销或删除。</p>
-    <table class="asset-table"><thead><tr><th>理财</th><th class="num">旧持仓</th><th></th><th class="num">新持仓</th><th class="num">当日净存入</th></tr></thead><tbody>
-    ${diff.map((d) => `<tr><td>${esc(d.name)}</td><td class="num">${moneyCur(d.oldAmt, d.currency)}</td><td class="num">→</td><td class="num">${moneyCur(d.amount, d.currency)}</td><td class="num ${d.cashflow >= 0 ? 'up' : 'down'}">${d.cashflow >= 0 ? '+' : ''}${moneyCur(d.cashflow, d.currency)}${d.cashName ? `<div class="snap-cash-note">${esc(d.cashName)}</div>` : ''}</td></tr>`).join('')}
+  body.innerHTML = `<p class="snap-hint">请核对以下 ${diff.length} 项「旧值 → 新值」，确认无误后保存。净存入为转入专用（取出/赎回走理财表格「减仓/清仓」），本次转入会同步从所选子账户扣款；保存后若录错，可到该理财「每日盈亏 → 审计记录」里一键撤销或删除。</p>
+    <table class="asset-table"><thead><tr><th>理财</th><th class="num">旧持仓</th><th></th><th class="num">新持仓</th><th class="num">本次净存入</th><th class="num">当日盈亏（预览）</th></tr></thead><tbody>
+    ${diff.map((d) => `<tr><td>${esc(d.name)}</td><td class="num">${moneyCur(d.oldAmt, d.currency)}</td><td class="num">→</td><td class="num">${moneyCur(d.amount, d.currency)}</td><td class="num up">+${moneyCur(d.cfInput, d.currency)}${d.cashName ? `<div class="snap-cash-note">${esc(d.cashName)}</div>` : ''}</td><td class="num ${d.pnl >= 0 ? 'up' : 'down'}">${d.pnl >= 0 ? '+' : ''}${moneyCur(d.pnl, d.currency)}</td></tr>`).join('')}
     </tbody></table>`;
   $('#snapConfirmModal').hidden = false;
 }
@@ -8886,3 +8940,486 @@ function aiFabInitDrag() {
 }
 
 aiFabInitDrag();
+
+/* ============================================================================
+ * 基金定投（DCA）
+ * 计划只排期不动账；每一期由用户确认后才加仓 + 扣款，成交价/份额可改、可撤销。
+ * ========================================================================== */
+const DCA_INTERVALS = [
+  { v: 'daily', t: '每日' },
+  { v: 'weekly', t: '每周' },
+  { v: 'biweekly', t: '每两周' },
+  { v: 'monthly', t: '每月' },
+  { v: 'quarterly', t: '每季' },
+];
+let dcaPlans = [];
+let dcaCurPlan = null;      // 记录弹框当前计划
+let dcaCurRecords = [];
+let dcaEditing = null;      // 计划弹框正在编辑的计划（null=新建）
+let dcaInterval = 'monthly';
+let dcaExecRec = null;      // 执行弹框当前期次
+let dcaExecMode = 'exec';   // exec | edit
+
+const dcaIvLabel = (v) => (DCA_INTERVALS.find((x) => x.v === v) || { t: '每月' }).t;
+const dcaCur = (p) => curSymbolJS(p.currency || 'CNY');
+
+async function loadDCA() {
+  try {
+    const r = await api('/api/dca/plans');
+    if (!r.ok) return;
+    const d = await r.json();
+    dcaPlans = d.plans || [];
+  } catch (e) { /* 静默，不阻塞首页 */ }
+  renderDCACard();
+}
+
+function renderDCACard() {
+  const card = document.getElementById('dcaCard');
+  const list = document.getElementById('dcaList');
+  if (!card || !list) return;
+  const actives = dcaPlans.filter((p) => p.status !== 'ended');
+  card.hidden = actives.length === 0;
+  if (!actives.length) return;
+  const pending = actives.reduce((s, p) => s + (p.status === 'active' ? (p.pending_count || 0) : 0), 0);
+  const sub = document.getElementById('dcaSub');
+  if (sub) sub.innerHTML = pending > 0 ? pending + ' 期待确认' : '暂无待确认';
+  list.innerHTML = actives.map((p) => {
+    const st = p.status === 'paused' ? 'paused' : (p.pending_count > 0 ? 'due' : 'ok');
+    const tag = p.status === 'paused'
+      ? '<span class="dca-tag paused">已暂停</span>'
+      : (p.pending_count > 0 ? '<span class="dca-tag due">' + p.pending_count + ' 期待确认</span>' : '');
+    const next = p.next_date ? (Number(p.next_date.slice(5, 7)) + '/' + Number(p.next_date.slice(8, 10))) : '—';
+    return '<div class="dca-row ' + st + '" data-id="' + p.id + '">'
+      + '<div class="dca-main">'
+      + '<div class="dca-name">' + esc(p.holding_name || '—') + ' ' + tag + '</div>'
+      + '<div class="dca-meta">' + dcaCur(p) + fmt(p.amount) + ' · ' + dcaIvLabel(p.interval) + ' · 下次 ' + next + '</div>'
+      + '</div>'
+      + '<button class="cf-edit" data-act="dca-edit" data-id="' + p.id + '" title="编辑计划" aria-label="编辑计划">' + actIcon('edit') + '</button>'
+      + '</div>';
+  }).join('');
+  list.querySelectorAll('.dca-row').forEach((el) => {
+    el.onclick = (e) => {
+      if (e.target.closest('[data-act="dca-edit"]')) {
+        const p = dcaPlans.find((x) => x.id === Number(el.dataset.id));
+        openDCAModal(p);
+        return;
+      }
+      openDCAHist(Number(el.dataset.id));
+    };
+  });
+}
+
+// ---------------- 计划弹框 ----------------
+async function openDCAModal(p) {
+  dcaEditing = p || null;
+  await loadCashAccounts();
+  await loadSourcesCache(); // 供资金子账户下拉显示所属账户名
+  const sel = document.getElementById('dcaHolding');
+  const hs = (allHoldings || []).slice().sort((a, b) => (a.category === 'fund' ? -1 : 0) - (b.category === 'fund' ? -1 : 0));
+  sel.innerHTML = hs.map((h) => '<option value="' + h.id + '">' + esc(h.name) + (h.symbol ? ' · ' + esc(h.symbol) : '') + '</option>').join('')
+    + '<option value="0">＋ 新建基金…</option>';
+  dcaInterval = p ? p.interval : 'monthly';
+  document.getElementById('dcaTitle').textContent = p ? '编辑定投计划' : '新建定投计划';
+  if (p) sel.value = String(p.holding_id);
+  else if (hs.length) sel.value = String(hs[0].id);
+  toggleDCANew();
+  document.getElementById('dcaAmount').value = p ? round2(p.amount) : '';
+  document.getElementById('dcaMax').value = p && p.max_amount > 0 ? round2(p.max_amount) : '';
+  document.getElementById('dcaDay').value = p ? (p.day_of_month || 1) : 1;
+  document.getElementById('dcaStart').value = p ? (p.start_date || '') : todayStr();
+  document.getElementById('dcaEnd').value = p ? (p.end_date || '') : '';
+  document.getElementById('dcaNote').value = p ? (p.note || '') : '';
+  renderDCAInterval();
+  fillDCACash(p);
+  document.getElementById('dcaErr').textContent = '';
+  document.getElementById('dcaModal').hidden = false;
+}
+
+function todayStr() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + m + '-' + dd;
+}
+
+function renderDCAInterval() {
+  const box = document.getElementById('dcaInterval');
+  if (!box) return;
+  box.innerHTML = DCA_INTERVALS.map((x) => '<button class="dca-pill' + (dcaInterval === x.v ? ' active' : '') + '" type="button" data-iv="' + x.v + '">' + x.t + '</button>').join('');
+  box.querySelectorAll('.dca-pill').forEach((b) => {
+    b.onclick = () => { dcaInterval = b.dataset.iv; renderDCAInterval(); };
+  });
+  const dayRow = document.getElementById('dcaDayRow');
+  if (dayRow) dayRow.hidden = !(dcaInterval === 'monthly' || dcaInterval === 'quarterly');
+}
+
+// 标的选「＋ 新建基金…」时露出搜索框；切回已有标的则清空已选
+function toggleDCANew() {
+  const sel = document.getElementById('dcaHolding');
+  const box = document.getElementById('dcaNewBox');
+  if (!sel || !box) return;
+  box.hidden = sel.value !== '0';
+  if (box.hidden) {
+    dcaNewPicked = null;
+    const s = document.getElementById('dcaNewSearch');
+    if (s) s.value = '';
+    document.getElementById('dcaNewName').value = '';
+    document.getElementById('dcaNewSymbol').value = '';
+    document.getElementById('dcaNewPicked').hidden = true;
+    document.getElementById('dcaNewPicked').innerHTML = '';
+    document.getElementById('dcaSuggest').hidden = true;
+    document.getElementById('dcaSuggest').innerHTML = '';
+  }
+}
+
+// 资金子账户：只列与标的同账户（银行/证券）同币种的子账户，选项标明所属账户名 + 余额
+function fillDCACash(p) {
+  const sel = document.getElementById('dcaCash');
+  if (!sel) return;
+  const hid = Number(document.getElementById('dcaHolding').value) || (p ? p.holding_id : 0);
+  const h = (allHoldings || []).find((x) => x.id === hid);
+  const src = h ? Number(h.source_id || 0) : 0;
+  const cur = h ? String(h.currency || '').toLowerCase() : '';
+  // 只列同标的所在账户（银行/证券）+ 同币种的子账户；无匹配时退化为全部真实账户，绝不回退虚拟项
+  let accs = (cashAccountsCache || []).filter((c) => (!src || Number(c.source_id) === src) && (!cur || String(c.currency).toLowerCase() === cur));
+  if (!accs.length) accs = (cashAccountsCache || []).slice();
+  sel.innerHTML = accs.length
+    ? accs.map((c) => '<option value="' + c.id + '">' + flowCashLabel(c) + '</option>').join('')
+    : '<option value="0">（无可用资金账户）</option>';
+  if (p && p.cash_account_id) sel.value = String(p.cash_account_id);
+  else { const def = accs.find((c) => c.is_default) || accs[0]; if (def) sel.value = String(def.id); }
+}
+
+// 新增基金：名称/代码联动搜索（复用 /api/search，选中即回填名称+代码，与持仓弹框一致）
+let dcaNewPicked = null;
+function wireDcaSearch() {
+  const inp = document.getElementById('dcaNewSearch');
+  const box = document.getElementById('dcaSuggest');
+  if (!inp || !box) return;
+  let timer = null;
+  const hide = () => { box.hidden = true; };
+  inp.addEventListener('input', () => {
+    const q = inp.value.trim();
+    dcaNewPicked = null;
+    document.getElementById('dcaNewPicked').hidden = true;
+    document.getElementById('dcaNewPicked').innerHTML = '';
+    document.getElementById('dcaNewName').value = q;     // 未从联想选中时，暂用输入文本当名称
+    document.getElementById('dcaNewSymbol').value = '';
+    if (timer) clearTimeout(timer);
+    if (!q) { hide(); box.innerHTML = ''; return; }
+    timer = setTimeout(async () => {
+      try {
+        const r = await api('/api/search?q=' + encodeURIComponent(q));
+        if (!r.ok) { hide(); return; }
+        const d = await r.json();
+        const items = (d.results || []).filter((it) => (it.category || 'stock') === 'fund').slice(0, 12);
+        if (!items.length) { hide(); box.innerHTML = ''; return; }
+        box.innerHTML = items.map((it, i) => (
+          '<button type="button" class="f-suggest-item" data-i="' + i + '">'
+          + '<span class="f-si-name">' + esc(it.name) + '</span>'
+          + '<span class="f-si-code">' + esc(it.symbol) + '</span>'
+          + '<span class="f-si-mkt">' + esc(SEARCH_MKT_TO_PF[it.market] || it.market || '') + '</span>'
+          + '</button>'
+        )).join('');
+        box.hidden = false;
+        box.querySelectorAll('.f-suggest-item').forEach((b) => {
+          b.onclick = (ev) => { ev.preventDefault(); pickDcaSuggestion(items[Number(b.dataset.i)]); };
+        });
+      } catch (_) { hide(); }
+    }, 220);
+  });
+  inp.addEventListener('focus', () => { if (box.innerHTML) box.hidden = false; });
+  document.addEventListener('click', (e) => {
+    if (!box.hidden && e.target !== inp && !box.contains(e.target)) hide();
+  });
+}
+function pickDcaSuggestion(it) {
+  dcaNewPicked = { name: it.name, symbol: it.symbol };
+  document.getElementById('dcaNewName').value = it.name;
+  document.getElementById('dcaNewSymbol').value = it.symbol;
+  document.getElementById('dcaNewSearch').value = it.name + ' · ' + it.symbol;
+  document.getElementById('dcaSuggest').hidden = true;
+  document.getElementById('dcaSuggest').innerHTML = '';
+  const picked = document.getElementById('dcaNewPicked');
+  picked.hidden = false;
+  picked.innerHTML = '<span>' + esc(it.name) + ' <b>' + esc(it.symbol) + '</b></span><button type="button" class="df-picked-x" type="button" title="清除">×</button>';
+  picked.querySelector('.df-picked-x').onclick = () => {
+    dcaNewPicked = null;
+    document.getElementById('dcaNewSearch').value = '';
+    document.getElementById('dcaNewName').value = '';
+    document.getElementById('dcaNewSymbol').value = '';
+    picked.hidden = true;
+    picked.innerHTML = '';
+  };
+}
+
+async function saveDCAPlan() {
+  const errEl = document.getElementById('dcaErr');
+  errEl.textContent = '';
+  const holdingID = Number(document.getElementById('dcaHolding').value) || 0;
+  const amount = parseFloat(document.getElementById('dcaAmount').value) || 0;
+  const max = parseFloat(document.getElementById('dcaMax').value) || 0;
+  if (!holdingID && !(document.getElementById('dcaNewName').value || '').trim()) { errEl.textContent = '请选择标的或填写新基金名称'; return; }
+  if (amount <= 0) { errEl.textContent = '每期金额必须大于 0'; return; }
+  const payload = {
+    holding_id: holdingID,
+    amount,
+    interval: dcaInterval,
+    day_of_month: parseInt(document.getElementById('dcaDay').value, 10) || 1,
+    start_date: document.getElementById('dcaStart').value || '',
+    end_date: document.getElementById('dcaEnd').value || '',
+    max_amount: max,
+    cash_account_id: Number(document.getElementById('dcaCash').value) || 0,
+    note: document.getElementById('dcaNote').value.trim(),
+  };
+  if (!holdingID) {
+    payload.create_holding = {
+      name: document.getElementById('dcaNewName').value.trim(),
+      symbol: document.getElementById('dcaNewSymbol').value.trim(),
+      category: 'fund',
+      market: '',
+    };
+  }
+  if (dcaEditing) payload.status = dcaEditing.status;
+  const r = await api(dcaEditing ? '/api/dca/plans/' + dcaEditing.id : '/api/dca/plans', {
+    method: dcaEditing ? 'PUT' : 'POST',
+    body: JSON.stringify(payload),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { errEl.textContent = d.error || '保存失败'; return; }
+  document.getElementById('dcaModal').hidden = true;
+  toast(dcaEditing ? '已更新定投计划' : '已创建定投计划', 'ok');
+  await loadDCA();
+  if (dcaEditing) await load();
+}
+
+// ---------------- 记录弹框 ----------------
+async function openDCAHist(planId) {
+  const r = await api('/api/dca/plans/' + planId + '/records');
+  if (!r.ok) { toast('加载定投记录失败', 'err'); return; }
+  const d = await r.json();
+  dcaCurPlan = d.plan || dcaPlans.find((x) => x.id === planId) || null;
+  dcaCurRecords = d.records || [];
+  renderDCAHist();
+  document.getElementById('dcaHistModal').hidden = false;
+}
+
+function renderDCAHist() {
+  const p = dcaCurPlan;
+  if (!p) return;
+  document.getElementById('dcaHistTitle').textContent = (p.holding_name || '定投') + ' 定投记录';
+  const head = document.getElementById('dcaHistHead');
+  if (head) {
+    const stTxt = p.status === 'paused' ? '已暂停' : (p.status === 'ended' ? '已结束' : '进行中');
+    const dayTag = (p.interval === 'monthly' || p.interval === 'quarterly') ? ' ' + (p.day_of_month || 1) + '日' : '';
+    head.innerHTML = '<span class="dh-item"><i>每期</i>' + dcaCur(p) + fmt(p.amount) + '</span>'
+      + '<span class="dh-item"><i>间隔</i>' + dcaIvLabel(p.interval) + dayTag + '</span>'
+      + '<span class="dh-item"><i>已投</i>' + (p.done_count || 0) + ' 期 / ' + dcaCur(p) + fmt(p.done_amount || 0) + '</span>'
+      + '<span class="dh-item"><i>状态</i>' + stTxt + '</span>'
+      + (p.max_amount > 0 ? '<span class="dh-item"><i>限购</i>≤ ' + dcaCur(p) + fmt(p.max_amount) + '</span>' : '')
+      + (p.end_date ? '<span class="dh-item"><i>截止</i>' + esc(p.end_date) + '</span>' : '');
+  }
+  const body = document.getElementById('dcaHistBody');
+  if (!dcaCurRecords.length) {
+    body.innerHTML = '<div class="dca-empty">暂无期次记录</div>';
+  } else {
+    body.innerHTML = dcaCurRecords.map((r) => {
+      const stCls = r.status === 'done' ? 'done' : (r.status === 'skipped' ? 'skipped' : 'pending');
+      const stTxt = r.status === 'done' ? '已投' : (r.status === 'skipped' ? '已跳过' : '待确认');
+      const amt = r.status === 'done' ? (r.actual_amount || 0) : (r.amount || 0);
+      const detail = r.status === 'done'
+        ? dcaCur(p) + fmt(amt) + '｜价 ' + round4(r.price) + '｜份额 ' + round4(r.quantity) + (r.fee > 0 ? '｜费 ' + round2(r.fee) : '')
+        : dcaCur(p) + fmt(amt) + (r.note ? '｜' + esc(r.note) : '');
+      const acts = r.status === 'done'
+        ? '<button class="btn btn-sm" data-act="dca-modify" data-id="' + r.id + '">修改</button>'
+          + '<button class="btn btn-sm" data-act="dca-revert" data-id="' + r.id + '">撤销</button>'
+        : '<button class="btn btn-sm" data-act="dca-exec" data-id="' + r.id + '">' + (r.status === 'skipped' ? '执行' : '确认') + '</button>'
+          + '<button class="btn btn-sm" data-act="dca-skip" data-id="' + r.id + '">' + (r.status === 'skipped' ? '恢复' : '跳过') + '</button>';
+      return '<div class="dh-row ' + stCls + '">'
+        + '<div class="dh-main">'
+        + '<div class="dh-date">' + esc(r.plan_date) + '<span class="dh-seq">第' + r.seq + '期</span><span class="dh-st ' + stCls + '">' + stTxt + '</span></div>'
+        + '<div class="dh-detail">' + detail + '</div>'
+        + '</div>'
+        + '<div class="dh-acts">' + acts + '</div>'
+        + '</div>';
+    }).join('');
+    body.querySelectorAll('[data-act]').forEach((b) => {
+      b.onclick = () => {
+        const id = Number(b.dataset.id);
+        const rec = dcaCurRecords.find((x) => x.id === id);
+        const act = b.dataset.act;
+        if (act === 'dca-exec' || act === 'dca-modify') openDCAExec(rec, act === 'dca-modify' ? 'edit' : 'exec');
+        else if (act === 'dca-skip') dcaSkip(id);
+        else if (act === 'dca-revert') dcaRevert(id);
+      };
+    });
+  }
+  const stBtn = document.getElementById('dcaHistStatus');
+  if (stBtn) stBtn.textContent = p.status === 'paused' ? '恢复' : (p.status === 'ended' ? '重启' : '暂停');
+  const delBtn = document.getElementById('dcaHistDelete');
+  if (delBtn) delBtn.hidden = p.status === 'ended';
+}
+
+async function dcaSkip(id) {
+  const r = await api('/api/dca/records/' + id + '/skip', { method: 'POST' });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); toast(d.error || '操作失败', 'err'); return; }
+  toast('已更新', 'ok');
+  await refreshDCAHist();
+}
+
+async function dcaRevert(id) {
+  openConfirm({
+    title: '撤销该期定投',
+    msg: '将回滚本次加仓份额与资金扣款，记录退回待确认。',
+    okText: '撤销',
+    danger: true,
+    onOk: async () => {
+      const r = await api('/api/dca/records/' + id + '/revert', { method: 'POST' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(d.error || '撤销失败', 'err'); return; }
+      toast('已撤销', 'ok');
+      await loadCashAccounts();
+      await load();
+      await refreshDCAHist();
+    },
+  });
+}
+
+// 刷新当前记录弹框内容（计划 + 期次）
+async function refreshDCAHist() {
+  const p = dcaCurPlan;
+  if (!p) return;
+  const r = await api('/api/dca/plans/' + p.id + '/records');
+  if (!r.ok) return;
+  const d = await r.json();
+  dcaCurPlan = d.plan || p;
+  dcaCurRecords = d.records || [];
+  renderDCAHist();
+  await loadDCA();
+}
+
+// ---------------- 执行 / 修改弹框 ----------------
+function openDCAExec(rec, mode) {
+  if (!rec) return;
+  dcaExecRec = rec;
+  dcaExecMode = mode || 'exec';
+  const h = (allHoldings || []).find((x) => x.id === rec.holding_id);
+  const p = dcaCurPlan || {};
+  document.getElementById('dcaExecTitle').textContent = mode === 'edit' ? '修改该期成交' : '确认该期定投';
+  const priceEl = document.getElementById('dcaExecPrice');
+  const qtyEl = document.getElementById('dcaExecQty');
+  const amtEl = document.getElementById('dcaExecAmt');
+  const feeEl = document.getElementById('dcaExecFee');
+  priceEl.value = mode === 'edit' ? round4(rec.price) : round4(h && h.current_price > 0 ? h.current_price : 0);
+  feeEl.value = mode === 'edit' ? round2(rec.fee) : '';
+  amtEl.value = round2(mode === 'edit' ? (rec.actual_amount || 0) : (rec.amount || 0));
+  syncDCAQtyFromAmt();
+  document.getElementById('dcaExecHint').textContent = esc(rec.plan_date) + ' · 第' + rec.seq + '期 · ' + esc(p.holding_name || '');
+  document.getElementById('dcaExecErr').textContent = '';
+  document.getElementById('dcaExecModal').hidden = false;
+  qtyEl.oninput = () => syncDCAAmtFromQty();
+  amtEl.oninput = () => syncDCAQtyFromAmt();
+  priceEl.oninput = () => syncDCAQtyFromAmt();
+  feeEl.oninput = () => syncDCAQtyFromAmt();
+}
+
+function syncDCAQtyFromAmt() {
+  const price = parseFloat(document.getElementById('dcaExecPrice').value) || 0;
+  const amt = parseFloat(document.getElementById('dcaExecAmt').value) || 0;
+  const fee = parseFloat(document.getElementById('dcaExecFee').value) || 0;
+  const q = price > 0 ? (amt - fee) / price : 0;
+  document.getElementById('dcaExecQty').value = q > 0 ? round4(q) : '';
+}
+function syncDCAAmtFromQty() {
+  const price = parseFloat(document.getElementById('dcaExecPrice').value) || 0;
+  const qty = parseFloat(document.getElementById('dcaExecQty').value) || 0;
+  const fee = parseFloat(document.getElementById('dcaExecFee').value) || 0;
+  document.getElementById('dcaExecAmt').value = round2(qty * price + fee);
+}
+
+async function submitDCAExec() {
+  const errEl = document.getElementById('dcaExecErr');
+  errEl.textContent = '';
+  const price = parseFloat(document.getElementById('dcaExecPrice').value) || 0;
+  const qty = parseFloat(document.getElementById('dcaExecQty').value) || 0;
+  const fee = parseFloat(document.getElementById('dcaExecFee').value) || 0;
+  if (price <= 0) { errEl.textContent = '成交价必须大于 0'; return; }
+  if (qty <= 0) { errEl.textContent = '份额必须大于 0'; return; }
+  const rec = dcaExecRec;
+  const url = dcaExecMode === 'edit' ? '/api/dca/records/' + rec.id : '/api/dca/records/' + rec.id + '/execute';
+  const r = await api(url, {
+    method: dcaExecMode === 'edit' ? 'PUT' : 'POST',
+    body: JSON.stringify({ price, quantity: qty, fee }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { errEl.textContent = d.error || '操作失败'; return; }
+  document.getElementById('dcaExecModal').hidden = true;
+  toast(dcaExecMode === 'edit' ? '已按新成交价重记' : '已记入持仓与资金账户', 'ok');
+  await loadCashAccounts();
+  await load();
+  await refreshDCAHist();
+}
+
+// ---------------- 计划状态 / 删除 ----------------
+async function dcaToggleStatus() {
+  const p = dcaCurPlan;
+  if (!p) return;
+  if (p.status === 'active') {
+    openConfirm({
+      title: '暂停定投',
+      msg: '暂停后不再生成新的待确认期次（应对限购 / 暂停申购 / 关门）。已生成的期次仍可确认。',
+      okText: '暂停',
+      onOk: () => doDCAStatus(p.id, 'paused'),
+    });
+  } else {
+    doDCAStatus(p.id, 'active');
+  }
+}
+
+async function doDCAStatus(id, st) {
+  const r = await api('/api/dca/plans/' + id + '/status', { method: 'POST', body: JSON.stringify({ status: st }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { toast(d.error || '操作失败', 'err'); return; }
+  toast(st === 'paused' ? '已暂停' : '已恢复', 'ok');
+  await refreshDCAHist();
+}
+
+async function dcaDeletePlan() {
+  const p = dcaCurPlan;
+  if (!p) return;
+  openConfirm({
+    title: '删除定投计划',
+    msg: '已执行过的计划不能删除（资金链路需留痕），可改为暂停或结束。',
+    okText: '删除',
+    danger: true,
+    onOk: async () => {
+      const r = await api('/api/dca/plans/' + p.id, { method: 'DELETE' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(d.error || '删除失败', 'err'); return; }
+      document.getElementById('dcaHistModal').hidden = true;
+      toast('已删除', 'ok');
+      await loadDCA();
+    },
+  });
+}
+
+// ---------------- 事件绑定（静态元素） ----------------
+(function bindDCA() {
+  const h = document.getElementById('dcaHolding');
+  if (h) h.onchange = () => { toggleDCANew(); fillDCACash(null); };
+  wireDcaSearch(); // 新增基金：名称/代码联动搜索（仅绑定一次）
+  const save = document.getElementById('dcaSave');
+  if (save) save.onclick = () => saveDCAPlan();
+  const cancel = document.getElementById('dcaCancel');
+  if (cancel) cancel.onclick = () => { document.getElementById('dcaModal').hidden = true; };
+  const he = document.getElementById('dcaHistEdit');
+  if (he) he.onclick = () => { document.getElementById('dcaHistModal').hidden = true; openDCAModal(dcaCurPlan); };
+  const hs = document.getElementById('dcaHistStatus');
+  if (hs) hs.onclick = () => dcaToggleStatus();
+  const hd = document.getElementById('dcaHistDelete');
+  if (hd) hd.onclick = () => dcaDeletePlan();
+  const eo = document.getElementById('dcaExecOk');
+  if (eo) eo.onclick = () => submitDCAExec();
+  const ec = document.getElementById('dcaExecCancel');
+  if (ec) ec.onclick = () => { document.getElementById('dcaExecModal').hidden = true; };
+})();

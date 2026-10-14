@@ -140,6 +140,18 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/holdings/:id/adjust", adjustHolding)
 		g.POST("/holdings/:id/dividend", dividendHolding)
 		g.GET("/holdings/:id/transactions", listTransactions)
+		// 基金定投：计划（周期/金额/限购/暂停）+ 期次记录（逐期确认、可改可撤）
+		g.GET("/dca/plans", listDCAPlans)
+		g.POST("/dca/plans", createDCAPlan)
+		g.PUT("/dca/plans/:id", updateDCAPlan)
+		g.DELETE("/dca/plans/:id", deleteDCAPlan)
+		g.POST("/dca/plans/:id/status", setDCAStatus)
+		g.GET("/dca/plans/:id/records", listDCARecords)
+		g.POST("/dca/records/:id/execute", executeDCARecord)
+		g.PUT("/dca/records/:id", modifyDCARecord)
+		g.POST("/dca/records/:id/skip", skipDCARecord)
+		g.POST("/dca/records/:id/revert", revertDCARecord)
+		g.DELETE("/dca/records/:id", deleteDCARecord)
 		g.POST("/holdings/:id/buy-plan/execute", executeBuyPlanTier)
 		g.GET("/holdings/:id/buy-plan/executed", listExecutedBuyPlan)
 		g.GET("/guides", listGuides)
@@ -191,6 +203,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/asset/wealth/:id", updateWealth)
 		g.DELETE("/asset/wealth/:id", deleteWealth)
 		g.POST("/asset/wealth/:id/redeem", redeemWealth)
+		g.POST("/asset/wealth/:id/enable", enableWealth)
 		g.POST("/asset/wealth/snapshots", assetWealthSnapshotsPost)
 		g.DELETE("/asset/wealth/snapshots", assetWealthSnapshotDelete)
 		g.POST("/asset/wealth/snapshots/undo", assetWealthSnapshotUndo)
@@ -499,6 +512,8 @@ func deleteHolding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
 	}
+	// 持仓删除后其定投计划/期次一并清理（持仓已不存在，保留只会成为悬空数据）
+	_ = db.DeleteDCAPlansByHolding(id)
 	if err := db.Delete(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

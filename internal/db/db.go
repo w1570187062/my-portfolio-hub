@@ -189,6 +189,9 @@ _, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 	if err := initBuyPlanExecuted(); err != nil {
 		return fmt.Errorf("init buy_plan_executed: %w", err)
 	}
+	if err := initDCATables(); err != nil {
+		return fmt.Errorf("init dca tables: %w", err)
+	}
 	if err := initAnalysisCache(); err != nil {
 		return fmt.Errorf("init analysis_cache: %w", err)
 	}
@@ -1123,6 +1126,7 @@ func initAssetTables() error {
 			currency TEXT NOT NULL DEFAULT 'rmb',
 			cum_pnl REAL NOT NULL DEFAULT 0,
 			note TEXT NOT NULL DEFAULT '',
+			archived INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS wealth_snapshots (
@@ -1144,6 +1148,7 @@ func initAssetTables() error {
 			new_amount REAL NOT NULL DEFAULT 0,
 			new_cashflow REAL NOT NULL DEFAULT 0,
 			old_exists INTEGER NOT NULL DEFAULT 0,
+			cash_account_id INTEGER NOT NULL DEFAULT 0,
 			user_id INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL DEFAULT ''
 		)`,
@@ -1293,6 +1298,10 @@ func initAssetTables() error {
 	_, _ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_cash_flow_cash ON cash_flow(cash_id)`)
 	// source：流水来源标记（''=应用内操作 / 'mcp'=通过 MCP 服务写入），供流水表格打标签区分。
 	addColumnIfMissing("cash_flow", "source", "TEXT NOT NULL DEFAULT ''")
+	// 审计记录现金落账子账户：撤销时优先冲正回原账户，避免同金额多笔流水匹配错账户。
+	addColumnIfMissing("wealth_snapshot_audit", "cash_account_id", "INTEGER NOT NULL DEFAULT 0")
+	// 理财产品停用标记：清仓后归档（保留产品与历史收益），可重新启用或永久删除。
+	addColumnIfMissing("wealth_products", "archived", "INTEGER NOT NULL DEFAULT 0")
 	// 存量回填：早期 MCP 写入的流水未记录 source，其 type 以 'mcp_' 开头，一次性补齐来源标记。
 	_, _ = DB.Exec(`UPDATE cash_flow SET source='mcp' WHERE COALESCE(source,'')='' AND substr(type,1,4)='mcp_'`)
 	return nil
@@ -1413,12 +1422,13 @@ type WealthProduct struct {
 	Code      string  `json:"code"`
 	Currency  string  `json:"currency"`
 	Note      string  `json:"note"`
-	CumPnl    float64 `json:"cum_pnl"` // 累计收益：手动编辑值优先；为 0 时由每日快照自动累计。
+	CumPnl    float64 `json:"cum_pnl"`  // 累计收益：手动编辑值优先；为 0 时由每日快照自动累计。
+	Archived  bool    `json:"archived"` // 已清仓停用：保留产品与历史收益，可重新启用或永久删除。
 	CreatedAt string  `json:"created_at"`
 }
 
 func ListWealth(userID int64) ([]WealthProduct, error) {
-	rows, err := DB.Query(`SELECT id,user_id,source_id,name,code,currency,cum_pnl,note,created_at FROM wealth_products WHERE user_id=? ORDER BY id DESC`, userID)
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,code,currency,cum_pnl,note,archived,created_at FROM wealth_products WHERE user_id=? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1426,12 +1436,20 @@ func ListWealth(userID int64) ([]WealthProduct, error) {
 	var out []WealthProduct
 	for rows.Next() {
 		var w WealthProduct
-		if err := rows.Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.CumPnl, &w.Note, &w.CreatedAt); err != nil {
+		var archived int
+		if err := rows.Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.CumPnl, &w.Note, &archived, &w.CreatedAt); err != nil {
 			return nil, err
 		}
+		w.Archived = archived != 0
 		out = append(out, w)
 	}
 	return out, rows.Err()
+}
+
+// SetWealthArchived 设置理财产品的停用/启用状态。
+func SetWealthArchived(id int64, archived bool) error {
+	_, err := DB.Exec(`UPDATE wealth_products SET archived=? WHERE id=?`, boolToInt(archived), id)
+	return err
 }
 
 func ListWealthBySource(sourceID int64) ([]WealthProduct, error) {
@@ -2101,18 +2119,19 @@ func CountWealthSnapshots(wealthID int64) (int, error) {
 
 // WealthAudit 记录一次理财快照变更（upsert/delete），用于撤销误改/误删。
 type WealthAudit struct {
-	ID         int64   `json:"id"`
-	WealthID   int64   `json:"wealth_id"`
-	Date       string  `json:"date"`
-	Action     string  `json:"action"` // 'upsert' | 'delete' | 'undo'
-	Field      string  `json:"field"`
-	OldAmount  float64 `json:"old_amount"`
-	OldCash    float64 `json:"old_cashflow"`
-	NewAmount  float64 `json:"new_amount"`
-	NewCash    float64 `json:"new_cashflow"`
-	OldExists  bool    `json:"old_exists"`
-	UserID     int64   `json:"user_id"`
-	CreatedAt  string  `json:"created_at"`
+	ID            int64   `json:"id"`
+	WealthID      int64   `json:"wealth_id"`
+	Date          string  `json:"date"`
+	Action        string  `json:"action"` // 'upsert' | 'delete' | 'undo'
+	Field         string  `json:"field"`
+	OldAmount     float64 `json:"old_amount"`
+	OldCash       float64 `json:"old_cashflow"`
+	NewAmount     float64 `json:"new_amount"`
+	NewCash       float64 `json:"new_cashflow"`
+	OldExists     bool    `json:"old_exists"`
+	CashAccountID int64   `json:"cash_account_id"` // 本次操作现金落账实际使用的子账户（撤销时优先冲正回该账户，0=未落账/未知）
+	UserID        int64   `json:"user_id"`
+	CreatedAt     string  `json:"created_at"`
 }
 
 // WealthProductOwner 返回该产品归属的用户 ID（用于越权校验）。
@@ -2157,15 +2176,15 @@ func DeleteWealthSnapshot(wealthID int64, date string) error {
 
 // InsertWealthAudit 写入一条审计记录。
 func InsertWealthAudit(a WealthAudit) error {
-	_, err := DB.Exec(`INSERT INTO wealth_snapshot_audit(wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,user_id,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		a.WealthID, a.Date, a.Action, a.Field, a.OldAmount, a.OldCash, a.NewAmount, a.NewCash, boolToInt(a.OldExists), a.UserID, a.CreatedAt)
+	_, err := DB.Exec(`INSERT INTO wealth_snapshot_audit(wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,cash_account_id,user_id,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		a.WealthID, a.Date, a.Action, a.Field, a.OldAmount, a.OldCash, a.NewAmount, a.NewCash, boolToInt(a.OldExists), a.CashAccountID, a.UserID, a.CreatedAt)
 	return err
 }
 
 // ListWealthAudit 返回某产品的审计记录（新→旧）。
 func ListWealthAudit(wealthID int64) ([]WealthAudit, error) {
-	rows, err := DB.Query(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,user_id,created_at
+	rows, err := DB.Query(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,cash_account_id,user_id,created_at
 		FROM wealth_snapshot_audit WHERE wealth_id=? ORDER BY id DESC`, wealthID)
 	if err != nil {
 		return nil, err
@@ -2175,7 +2194,7 @@ func ListWealthAudit(wealthID int64) ([]WealthAudit, error) {
 	for rows.Next() {
 		var a WealthAudit
 		var oldExists int
-		if err := rows.Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &oldExists, &a.UserID, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &oldExists, &a.CashAccountID, &a.UserID, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		a.OldExists = oldExists != 0
@@ -2188,9 +2207,9 @@ func ListWealthAudit(wealthID int64) ([]WealthAudit, error) {
 func GetWealthAudit(id int64) (WealthAudit, error) {
 	var a WealthAudit
 	var oldExists int
-	err := DB.QueryRow(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,user_id,created_at
+	err := DB.QueryRow(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,cash_account_id,user_id,created_at
 		FROM wealth_snapshot_audit WHERE id=?`, id).
-		Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &oldExists, &a.UserID, &a.CreatedAt)
+		Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &oldExists, &a.CashAccountID, &a.UserID, &a.CreatedAt)
 	if err != nil {
 		return a, err
 	}

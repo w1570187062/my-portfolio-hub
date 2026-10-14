@@ -797,7 +797,7 @@ w {
   padding: 0 var(--sp-3);
 }
 /* 子表容器：margin auto 让表格在卡片内水平居中 */
-.holdings-group .subtable-wrap { overflow-x: auto; overflow-y: visible; max-width: 1008px; margin: 0 auto; }
+.holdings-group .subtable-wrap { overflow-x: auto; overflow-y: visible; max-width: 1064px; margin: 0 auto; }
 /* 表头背景：沿用分组头(var(--card-bg))但略浅一档（暗色叠微白提亮，亮色叠白更透），与分组头呼应又区别于表体；
    表头下缘即 thead 与表体之间的横向分割线，用加深一档的 --sub-divider */
 .holdings-group .holdings-subtable thead th {
@@ -817,16 +817,17 @@ w {
 .holdings-group .holdings-subtable { table-layout: fixed; width: 100%; }
 .holdings-group .holdings-subtable th, .holdings-group .holdings-subtable td { overflow: hidden; text-overflow: ellipsis; }
 .holdings-group .holdings-subtable th.num, .holdings-group .holdings-subtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: 280px; }  /* 名称：固定 280px，不再 auto */
+.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: 268px; }  /* 名称：固定 268px，不再 auto */
 .holdings-group .holdings-subtable :is(th, td):nth-child(2) { width: 80px; }    /* 现价 */
-.holdings-group .holdings-subtable :is(th, td):nth-child(3) { width: 120px; }   /* 市值：加宽到 120px 保证 ¥1,234,567.89 不截断 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(3) { width: 108px; }   /* 市值 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(4) { width: 80px; }    /* 当日 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(5) { width: 72px; }    /* 当日% */
-.holdings-group .holdings-subtable :is(th, td):nth-child(6) { width: 80px; }    /* 盈亏% */
-.holdings-group .holdings-subtable :is(th, td):nth-child(7) { width: 56px; }    /* 持仓天数 */
-.holdings-group .holdings-subtable :is(th, td):nth-child(8) { width: 132px; }   /* 近20日 sparkline */
-.holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: 108px; }   /* 操作：3 个图标按钮 + 间距 */
-/* 操作列左右内边距收到 2px：90px 按钮 + 4px padding = 94px ≤ 96px 列宽，按钮不被截断 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(6) { width: 72px; }    /* 盈亏% */
+.holdings-group .holdings-subtable :is(th, td):nth-child(7) { width: 100px; }   /* 盈亏金额 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(8) { width: 56px; }    /* 持仓天数 */
+.holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: 116px; }   /* 近20日 sparkline */
+.holdings-group .holdings-subtable :is(th, td):nth-child(10) { width: 112px; position: sticky; right: 0; background: var(--bg-card-solid); z-index: 3; }  /* 操作：3 图标按钮 + 间距；吸右，横向滚动时常驻可见 */
+/* 操作列左右内边距收到 2px：90px 按钮 + 4px padding = 94px ≤ 108px 列宽，按钮不被截断 */
 .holdings-group .holdings-subtable td.row-act-cell { padding-left: 2px; padding-right: 2px; }
 .holdings-group .holdings-subtable .name-cell .name-cap { flex: 0 1 auto; max-width: 100%; }
 .holdings-group .holdings-subtable .name-cell .name-clickable { flex: 0 1 auto; max-width: none; min-width: 0; }
@@ -846,7 +847,7 @@ w {
 .wealth-group .wealth-subtable :is(th, td):nth-child(3) { width: 100px; }   /* 今日收益 */
 .wealth-group .wealth-subtable :is(th, td):nth-child(4) { width: 104px; }   /* 累计收益 */
 .wealth-group .wealth-subtable :is(th, td):nth-child(5) { width: 64px; }    /* 持有天数 */
-.wealth-group .wealth-subtable :is(th, td):nth-child(6) { width: 116px; }   /* 操作：3×28 图标 + gap */
+.wealth-group .wealth-subtable :is(th, td):nth-child(6) { width: 152px; }   /* 操作：4×28 图标 + gap（编辑/每日盈亏/减仓或启用/删除） */
 .wealth-group .wealth-subtable .name-cell { display: flex; align-items: center; gap: var(--sp-1); }
 .wealth-group .wealth-subtable .name-cap { flex: 0 1 auto; min-width: 0; }
 .wealth-group .wealth-subtable .name-clickable { flex: 0 1 auto; min-width: 0; }
@@ -3221,7 +3222,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .snap-group .sg-body > .snap-row:first-child { border-top: 0; }
 .snap-row .sr-name { font-size: var(--fs-md); margin-bottom: var(--sp-2); color: var(--text); }
 .snap-row .sr-name small { color: var(--text-muted); display: block; }
-.sr-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(210px, 280px) minmax(0,1fr); gap: var(--sp-3); align-items: end; }
+.sr-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(210px, 280px); gap: var(--sp-3); align-items: end; }
 .sr-field { display: flex; flex-direction: column; min-width: 0; }
 .sr-label { font-size: var(--fs-md); font-weight: 600; color: var(--text); margin-bottom: var(--sp-1); }
 .sr-field input,
@@ -3325,6 +3326,14 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   margin-left: var(--sp-1);
   vertical-align: middle;
 }
+/* 已清仓停用徽标：灰调，与币种徽标区分 */
+.cur-badge.wb-archived {
+  background: var(--bg-hover, rgba(var(--tint), .08));
+  color: var(--text-muted);
+  border-style: dashed;
+}
+/* 已清仓行整体淡化（按钮仍可点击：启用 / 删除 / 查历史） */
+.wealth-group .wealth-subtable tr.wealth-archived :is(td) { opacity: .55; }
 
 /* ===== 小工具面板：撑满浏览器宽度（突破 920px 内容区限制 + 去掉 560px 面板限宽） ===== */
 #toolsView.page-view { max-width: none; }
@@ -5897,3 +5906,195 @@ textarea::placeholder {
   }
   .ai-msg .ai-bubble { max-width: 92%; }
 }
+
+/* ==========================================================================
+   基金定投（DCA）
+   首页紧凑卡片（与收支计划同款）+ 计划弹框 + 期次记录弹框 + 单期确认弹框
+   ========================================================================== */
+
+/* ---- 首页卡片 ---- */
+.dca-card .cf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.dca-list { display: flex; flex-direction: column; }
+.dca-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background .12s ease;
+}
+.dca-row:hover { background: var(--bg-input); }
+.dca-row.paused { opacity: .6; }
+.dca-main { flex: 1 1 auto; min-width: 0; }
+.dca-name {
+  font-size: var(--fs-md);
+  color: var(--text);
+  font-weight: 500;
+}
+.dca-meta {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.dca-tag {
+  display: inline-block;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: rgb(var(--tint));
+  border: 1px solid rgba(var(--tint), .35);
+  border-radius: var(--r-xs);
+  padding: 0 var(--sp-1);
+  margin-left: var(--sp-1);
+  vertical-align: 1px;
+}
+.dca-tag.paused {
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+}
+@media (hover: hover) {
+  .dca-row .cf-edit { opacity: 0; }
+  .dca-row:hover .cf-edit { opacity: 1; }
+}
+
+/* ---- 计划弹框 ---- */
+.df-row { display: flex; gap: var(--sp-2); }
+.df-row > label { flex: 1 1 0; min-width: 0; }
+/* 按 hidden 切换的行：display 被改写后必须显式声明 none */
+.df-row[hidden] { display: none; }
+.df-field { margin-bottom: var(--sp-3); }
+.df-label {
+  display: block;
+  font-size: var(--fs-md);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-1);
+}
+.dca-pills { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.dca-pill {
+  height: var(--h-1);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: color .12s ease, border-color .12s ease;
+}
+.dca-pill.active {
+  color: rgb(var(--tint));
+  border-color: rgb(var(--tint));
+  background: rgba(var(--tint), .1);
+}
+.dca-new-box {
+  position: relative; /* 搜索联想下拉 absolute 定位的相对容器 */
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.dca-new-box[hidden] { display: none; }
+.dca-new-box label:last-child { margin-bottom: var(--sp-2); }
+/* 新增基金：选中文案（名称 + 代码 + 清除），与持仓弹框的已选样式呼应 */
+.df-picked {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+  padding: 6px var(--sp-2);
+  border: 1px solid rgba(var(--tint), .35);
+  border-radius: var(--r-xs);
+  background: rgba(var(--tint), .1);
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+.df-picked b { color: rgb(var(--tint)); font-weight: 600; }
+.df-picked-x {
+  margin-left: auto;
+  width: 24px; height: 24px;
+  border: none; border-radius: 50%;
+  background: transparent; color: var(--text-muted);
+  font-size: var(--fs-lg); line-height: 1; cursor: pointer;
+}
+.df-picked-x:hover { background: rgba(var(--tint), .14); color: var(--text); }
+
+/* ---- 期次记录弹框 ---- */
+.dca-hist-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.dh-item {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.dh-item i {
+  font-style: normal;
+  color: var(--text-faint);
+  margin-right: var(--sp-1);
+}
+.dca-hist-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.dh-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.dh-row.skipped { opacity: .6; }
+.dh-main { flex: 1 1 auto; min-width: 0; }
+.dh-date {
+  font-size: var(--fs-md);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.dh-seq,
+.dh-st {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-left: var(--sp-1);
+}
+.dh-st {
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+}
+.dh-st.done { color: rgb(var(--tint)); border-color: rgba(var(--tint), .35); }
+.dh-st.skipped { color: var(--text-faint); }
+.dh-detail {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.dh-acts { flex: 0 0 auto; display: flex; gap: var(--sp-1); }
+.dca-empty {
+  font-size: var(--fs-md);
+  color: var(--text-muted);
+  padding: var(--sp-3);
+  text-align: center;
+}
+.dca-hint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+/* 计划弹框内容：复用 .m-body 的 28px 左右内边距 + 滚动；错误提示条同样对齐 */
+#dcaModal .dca-form { padding: var(--sp-2) 28px; }
+#dcaModal #dcaErr { padding: 0 28px; margin-bottom: var(--sp-2); }
+#dcaModal .dca-form > label:last-of-type { margin-bottom: 0; }

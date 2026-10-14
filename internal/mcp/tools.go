@@ -456,7 +456,9 @@ func recordWealthTX(uid int64, hit *entityHit, action string, args map[string]in
 		lastAmount = 0
 	}
 	newAmount := round2(lastAmount + cashflow)
-	if e := db.UpsertWealthSnapshot(w.ID, today, newAmount, round2(cashflow)); e != nil {
+	// 当日净存入按累计差值语义更新：不覆盖当日已录的其他申赎（与快照保存/减仓口径一致）
+	_, oldCf, _, _ := db.GetWealthSnapshot(w.ID, today)
+	if e := db.UpsertWealthSnapshot(w.ID, today, newAmount, round2(oldCf+cashflow)); e != nil {
 		return "", e
 	}
 	return fmt.Sprintf("已记录理财%s流水：%s(%s) 当日净%s %.2f，持仓金额更新为 %.2f。",

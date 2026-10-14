@@ -93,6 +93,14 @@
     </div>
     <div id="cfList" class="cf-list"></div>
   </div>
+
+  <div id="dcaCard" class="cf-card dca-card" hidden>
+    <div class="cf-head">
+      <span class="cf-title" data-icon="refresh">基金定投</span>
+      <span class="cf-sub" id="dcaSub"></span>
+    </div>
+    <div id="dcaList" class="cf-list dca-list"></div>
+  </div>
   <div class="list-bar" data-page-node-id="HzKoy1xLmjaKqJBABbisQp">
     <div id="filters" class="filters" data-page-node-id="rJ0NCGyyqi1IwoC54luEW3"></div>
     <div class="list-actions" data-page-node-id="DuyK3cN7FRoyZrmwjCel0l">
@@ -706,6 +714,84 @@
     </div>
   </div>
 
+  <!-- 定投计划：新建 / 编辑（标的 + 金额 + 间隔 + 起止 + 限购上限 + 资金子账户） -->
+  <div id="dcaModal" class="modal" hidden>
+    <div class="modal-card" style="width:520px; max-width:94vw;">
+      <h2 id="dcaTitle" data-icon="refresh">定投计划</h2>
+      <div class="dca-form m-body">
+        <label>定投标的
+          <select id="dcaHolding"></select>
+        </label>
+        <div id="dcaNewBox" class="dca-new-box" hidden>
+          <label>搜索基金（代码 / 名称）
+            <input id="dcaNewSearch" type="text" placeholder="如 易方达蓝筹 或 005827" autocomplete="off" />
+          </label>
+          <div id="dcaSuggest" class="f-suggest" hidden></div>
+          <input id="dcaNewName" type="hidden" />
+          <input id="dcaNewSymbol" type="hidden" />
+          <div id="dcaNewPicked" class="df-picked" hidden></div>
+        </div>
+        <div class="df-row">
+          <label>每期金额<input id="dcaAmount" type="number" step="0.01" min="0" placeholder="0.00" /></label>
+          <label>单期上限<input id="dcaMax" type="number" step="0.01" min="0" placeholder="限购时填，可空" /></label>
+        </div>
+        <div class="df-field">
+          <span class="df-label">定投间隔</span>
+          <div id="dcaInterval" class="dca-pills"></div>
+        </div>
+        <div class="df-row" id="dcaDayRow">
+          <label>每月几号<input id="dcaDay" type="number" min="1" max="31" step="1" placeholder="1" /></label>
+          <label>起始日<input id="dcaStart" type="date" /></label>
+        </div>
+        <div class="df-row">
+          <label>截止日<input id="dcaEnd" type="date" /></label>
+          <label>资金子账户<select id="dcaCash"></select></label>
+        </div>
+        <label>备注<input id="dcaNote" type="text" placeholder="可空" autocomplete="off" /></label>
+      </div>
+      <div id="dcaErr" class="err"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="dcaCancel" type="button">取消</button>
+        <button class="btn primary" id="dcaSave" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 定投记录：逐期确认 / 修改 / 跳过 / 撤销 -->
+  <div id="dcaHistModal" class="modal" hidden>
+    <div class="modal-card" style="width:680px; max-width:94vw;">
+      <h2 id="dcaHistTitle" data-icon="refresh">定投记录</h2>
+      <div id="dcaHistHead" class="dca-hist-head"></div>
+      <div id="dcaHistBody" class="dca-hist-body"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="dcaHistStatus" type="button">暂停</button>
+        <button class="btn ghost danger" id="dcaHistDelete" type="button">删除</button>
+        <button class="btn ghost" id="dcaHistEdit" type="button">编辑计划</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 单期执行 / 修改：成交价 × 份额（金额自动联动），费用可选 -->
+  <div id="dcaExecModal" class="modal" hidden>
+    <div class="modal-card" style="width:420px; max-width:94vw;">
+      <h2 id="dcaExecTitle" data-icon="check">确认定投</h2>
+      <div class="df-row">
+        <label>成交价<input id="dcaExecPrice" type="number" step="0.0001" min="0" placeholder="净值" /></label>
+        <label>份额<input id="dcaExecQty" type="number" step="0.0001" min="0" placeholder="0.0000" /></label>
+      </div>
+      <div class="df-row">
+        <label>金额<input id="dcaExecAmt" type="number" step="0.01" min="0" placeholder="0.00" /></label>
+        <label>费用<input id="dcaExecFee" type="number" step="0.01" min="0" placeholder="0.00" /></label>
+      </div>
+      <div id="dcaExecHint" class="dca-hint"></div>
+      <div id="dcaExecErr" class="err"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="dcaExecCancel" type="button">取消</button>
+        <button class="btn primary" id="dcaExecOk" type="button">确认</button>
+      </div>
+    </div>
+  </div>
+
   <div id="cfAmtModal" class="modal" hidden>
     <div class="modal-card" style="width:380px; max-width:94vw;">
       <h2 id="cfAmtTitle" data-icon="calendar">完成计划</h2>
@@ -1079,6 +1165,10 @@
         <button class="add-pick-item" type="button" data-add-kind="wealth">
           <span class="ap-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.6v8.8M9.3 10.4h5.4M9.3 13.6h5.4"/></svg></span>
           <span class="ap-txt"><b>理财</b><small>存款 / 理财 / 货基等</small></span>
+        </button>
+        <button class="add-pick-item" type="button" data-add-kind="dca">
+          <span class="ap-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></span>
+          <span class="ap-txt"><b>定投</b><small>基金定期定额投入</small></span>
         </button>
       </div>
     </div>

@@ -49,6 +49,9 @@ func main() {
 	go api.ScheduleDailySnapshot()
 	go api.ScheduleDailyAISummary()
 
+	// 基金定投：启动时为所有用户补齐已到期的待确认期次（不自动动账）。
+	api.EnsureDCA()
+
 	// 每日 00:00 归零结算：先兜底落库上一交易日盈亏，再把当日盈亏归零（不带入下一交易日）。
 	api.EnsureMidnightReset()
 	go api.ScheduleMidnightReset()

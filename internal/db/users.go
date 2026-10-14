@@ -36,7 +36,7 @@ func EnsureUsers() error {
 	// 1) 为子表补充 user_id 列
 	for _, t := range []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
-		"cash_accounts", "consumptions", "operation_guides",
+		"cash_accounts", "consumptions", "operation_guides", "dca_plans",
 	} {
 		addColumnIfMissing(t, "user_id", "INTEGER NOT NULL DEFAULT 0")
 	}
@@ -85,7 +85,7 @@ func EnsureUsers() error {
 func backfillUser(def int64) {
 	tables := []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
-		"cash_accounts", "consumptions", "operation_guides",
+		"cash_accounts", "consumptions", "operation_guides", "dca_plans",
 		"pnl_daily", "price_daily", "calc_inputs", "ai_settings",
 	}
 	for _, t := range tables {
@@ -290,7 +290,7 @@ func CountUserData(userID int64) (map[string]int, error) {
 	out := map[string]int{}
 	tables := []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
-		"cash_accounts", "consumptions", "operation_guides",
+		"cash_accounts", "consumptions", "operation_guides", "dca_plans",
 	}
 	for _, t := range tables {
 		var n int
@@ -330,6 +330,12 @@ func ClearUserData(userID int64) error {
 		return err
 	}
 	if _, err := DB.Exec(`DELETE FROM pnl_daily WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	if _, err := DB.Exec(`DELETE FROM dca_records WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	if _, err := DB.Exec(`DELETE FROM dca_plans WHERE user_id=?`, userID); err != nil {
 		return err
 	}
 	if _, err := DB.Exec(`DELETE FROM holdings WHERE user_id=?`, userID); err != nil {
