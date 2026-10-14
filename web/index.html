@@ -47,9 +47,11 @@
     <div class="hero-content">
       <!-- 左栏：品牌信息 + 核心数据（总市值 / 收益率 双 panel 已迁至品牌区下方） -->
       <div class="hero-left">
-        <div class="hero-headline">
-          <h2 class="hero-title">持仓<span>侠</span></h2>
-          <p class="hero-slogan">一站式持仓管理 · 盈亏追踪 · AI 智能分析</p>
+        <div class="hero-brand">
+          <div class="hero-headline">
+            <h2 class="hero-title">持仓<span>侠</span></h2>
+            <p class="hero-slogan">一站式持仓管理 · 盈亏追踪 · AI 智能分析</p>
+          </div>
         </div>
         <div class="hero-summary-pair">
           <div class="hero-panel hero-panel-mv" id="heroMvSummary">
@@ -95,18 +97,12 @@
     <div id="cfList" class="cf-list"></div>
   </div>
 
-  <div id="dcaCard" class="cf-card dca-card" hidden>
-    <div class="cf-head">
-      <span class="cf-title" data-icon="refresh">基金定投</span>
-      <span class="cf-sub" id="dcaSub"></span>
-    </div>
-    <div id="dcaList" class="cf-list dca-list"></div>
-  </div>
   <div class="list-bar" data-page-node-id="HzKoy1xLmjaKqJBABbisQp">
     <div id="filters" class="filters" data-page-node-id="rJ0NCGyyqi1IwoC54luEW3"></div>
     <div class="list-actions" data-page-node-id="DuyK3cN7FRoyZrmwjCel0l">
       <div class="action-btns" data-page-node-id="9N7DJN0hDZ4HCG9aB97Cck">
         <button id="wealthSnapBtn" class="btn icon-btn" title="更新理财持仓" aria-label="更新理财持仓"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><path d="M20 12a8 8 0 1 1-2.4-5.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="dcaBtn" class="btn icon-btn" title="基金定投" aria-label="基金定投"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="4" y="5.5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9.5h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 3.2v3M16 3.2v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 11.6v4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.6 13.4 12 15.8 14.4 13.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button id="addBtn" class="btn icon-btn" title="添加" aria-label="添加" data-page-node-id="hsHtQTtnqagRxe0FRE0ZXx"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px" data-page-node-id="ElLAqhDFcocL9vATRVskMf"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9" data-page-node-id="oheMGX8lKEdMs4EC8Cjw0a"/><path d="M12 7.8 V16.2 M7.8 12 H16.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="9xCwby2wE7GPOB9QWbufbW"/></svg></button>
         <button id="guideBtn" class="btn icon-btn" title="调仓计划" aria-label="调仓计划" data-page-node-id="8rCBgehIeNogxJkqbkialu"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px" data-page-node-id="QFPGqCC6KOlqre9T5BBU9R"><rect x="5.5" y="4.5" width="13" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9" data-page-node-id="zSvXboQREF2SK8NMJgh3rs"/><rect x="9" y="2.8" width="6" height="3.4" rx="1.2" fill="currentColor" data-page-node-id="8OA1dAMB5EqlANNUujlq29"/><path d="M9 10.5 H15 M9 14 H15 M9 17.5 H12.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" data-page-node-id="Ieiq7YCyTl5R4dLIGm5d9l"/></svg><span id="guideBadge" class="guide-badge" hidden data-page-node-id="eaNKrxDXSm9TZoonSGzOVA"></span></button>
       </div>
@@ -307,7 +303,7 @@
               <span class="mcp-status-dot off" id="mcpStatusDot" data-page-node-id="mcpStatusDot35"></span>
               <span class="mcp-status-text" id="mcpStatusText" data-page-node-id="mcpStatusText36">检测中…</span>
             </div>
-            <p class="tool-hint" data-page-node-id="mcpHint06">MCP 服务允许 AI 客户端（支持 MCP 协议）连接本应用，按实体的「备注（mcp 标记）」记录流水。填写并保存后：HTTP 模式请点击「重启 MCP 服务」生效；stdio 模式用命令 <code>portfolio mcp</code> 启动。</p>
+            <p class="tool-hint" data-page-node-id="mcpHint06">MCP 服务允许 AI 客户端（支持 MCP 协议）连接本应用，按实体名称/代码定位并记录流水。填写并保存后：HTTP 模式请点击「重启 MCP 服务」生效；stdio 模式用命令 <code>portfolio mcp</code> 启动。</p>
 
             <label class="switch-row" data-page-node-id="mcpEnableRow07">启用 MCP 服务
               <label class="switch"><input type="checkbox" id="mcp_enabled" data-page-node-id="mcpEnabled08"><span class="switch-knob"></span></label>
@@ -566,9 +562,9 @@
             </div>
           <!-- 低频字段收进高级折叠：主流程只留 名称/类别/数量成本/账户，弹框高度降约 30% -->
           <details class="f-adv" id="fAdv">
-            <summary><span class="hat-chevron">▾</span>高级选项 · MCP 标记 / 资产类型标签</summary>
+            <summary><span class="hat-chevron">▾</span>高级选项 · 备注 / 资产类型标签</summary>
             <div class="f-adv-body">
-              <label data-page-node-id="eDNvbZVZJAzpNmCL3PUV5T">MCP 标记 <input id="f_note" placeholder="MCP 标记（供 AI 客户端识别）" data-page-node-id="rrnlGiAaInYR5XAoLFYdpT"></label>
+              <label data-page-node-id="eDNvbZVZJAzpNmCL3PUV5T">备注 <input id="f_note" placeholder="备注（可选）" data-page-node-id="rrnlGiAaInYR5XAoLFYdpT"></label>
               <div class="f-adv-cap">资产类型标签（可多选）</div>
               <div id="f_at_chips" class="at-chips-row" data-page-node-id="YVMoRQvULOWPDUt8w1pC2n"></div>
             </div>
@@ -725,7 +721,7 @@
   <!-- 定投计划：新建 / 编辑（标的 + 金额 + 间隔 + 起止 + 限购上限 + 资金子账户） -->
   <div id="dcaModal" class="modal" hidden>
     <div class="modal-card" style="width:520px; max-width:94vw;">
-      <h2 id="dcaTitle" data-icon="refresh">定投计划</h2>
+      <h2 id="dcaTitle" data-icon="dca">定投计划</h2>
       <div class="dca-form m-body">
         <label>定投标的
           <select id="dcaHolding"></select>
@@ -753,7 +749,15 @@
         </div>
         <div class="df-row">
           <label>截止日<input id="dcaEnd" type="date" /></label>
-          <label>资金子账户<select id="dcaCash"></select></label>
+        </div>
+        <!-- 资金子账户：二级子账户折叠选择器（同「添加持仓 · 账户币种」），独占一行避免被两列栅格压窄 -->
+        <div class="df-field" id="dcaCashField">
+          <span class="df-label">资金子账户</span>
+          <div class="ac-picker" id="dcaCashPicker">
+            <button type="button" class="ac-picker-btn" id="dcaCashBtn">请选择子账户</button>
+            <div class="ac-picker-panel" id="dcaCashPanel" hidden></div>
+          </div>
+          <input type="hidden" id="dcaCash" value="0">
         </div>
         <label>备注<input id="dcaNote" type="text" placeholder="可空" autocomplete="off" /></label>
       </div>
@@ -766,9 +770,21 @@
   </div>
 
   <!-- 定投记录：逐期确认 / 修改 / 跳过 / 撤销 -->
+  <!-- 基金定投：计划列表（顶部操作条「基金定投」入口；首页不再常驻卡片，2026-10-14） -->
+  <div id="dcaPlansModal" class="modal" hidden>
+    <div class="modal-card" style="width:560px; max-width:94vw;">
+      <h2 data-icon="dca">基金定投</h2>
+      <div id="dcaPlansBody" class="dca-list dca-plans-body"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="dcaPlansNew" type="button">新建计划</button>
+        <button class="btn primary" id="dcaPlansClose" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div id="dcaHistModal" class="modal" hidden>
     <div class="modal-card" style="width:680px; max-width:94vw;">
-      <h2 id="dcaHistTitle" data-icon="refresh">定投记录</h2>
+      <h2 id="dcaHistTitle" data-icon="dca">定投记录</h2>
       <div id="dcaHistHead" class="dca-hist-head"></div>
       <div id="dcaHistBody" class="dca-hist-body"></div>
       <div class="modal-actions">
@@ -967,7 +983,7 @@
             <input type="hidden" id="w_cash" value="0">
           </label>
         </div>
-        <label data-page-node-id="MW6vJewmlXl5HI23mQBS7O">MCP 标记 <input id="w_note" placeholder="MCP 标记（供 AI 客户端识别）" data-page-node-id="xzVRvQ3B4Ygp64hpzRqPcQ"></label>
+        <label data-page-node-id="MW6vJewmlXl5HI23mQBS7O">备注 <input id="w_note" placeholder="备注（可选）" data-page-node-id="xzVRvQ3B4Ygp64hpzRqPcQ"></label>
         <div id="wealthErr" class="err" data-page-node-id="aR3I1FZUGUaFUFtBE1hWmG"></div>
         <div class="modal-actions" data-page-node-id="Pa9BWVlM2To5z3wn9xKLzu"><button class="btn primary" type="submit" data-page-node-id="rgFM7OClizkjEmAZJLfqyT">保存</button></div>
       </form>
@@ -1015,7 +1031,7 @@
         <label id="c_source_fix_row" hidden data-page-node-id="saJnyjHx4RVb0KVf7k0SeE">所属账户 <input id="c_source_fix" readonly placeholder="—" data-page-node-id="k0gy44BxRZ6lDCNBW7bntM"></label>
         <label id="c_source_sel_row" hidden data-page-node-id="t0necID2OAsBVw0Xn5BvQm">所属账户 <select id="c_source" data-page-node-id="4mBy0As0Qm1ylPgU2IE9rS"></select></label>
         <label class="c-default-row" id="c_default_row" data-page-node-id="jVUh2zGR8XuTm0Xp9RBA5B"><input type="checkbox" id="c_is_default" data-page-node-id="afuh0AgjLNK3mp0FFiJwWX"> 设为默认子账户<span class="ua-hint" data-page-node-id="IuhYSnlR7PkdFkedi0wk6x">（同币种唯一；加减仓资金默认走此账户）</span></label>
-        <label data-page-node-id="JqPv9b7e6tsnaznyDJurPG">MCP 标记 <input id="c_note" placeholder="MCP 标记（供 AI 客户端识别）" data-page-node-id="D0psJyFudbmzUl55dSo0c1"></label>
+        <label data-page-node-id="JqPv9b7e6tsnaznyDJurPG">备注 <input id="c_note" placeholder="备注（可选）" data-page-node-id="D0psJyFudbmzUl55dSo0c1"></label>
         <!-- 仅编辑态出现（新增时没有可调整的余额）：
              子账户=±存入/取出，负债=±借入/还款；下方「说明」作为这一笔变动流水的备注 -->
         <div class="sign-edit" id="c_delta_row" hidden data-page-node-id="Hj4n0YsmXKuQgwOV7EDCj1">
@@ -1173,10 +1189,6 @@
         <button class="add-pick-item" type="button" data-add-kind="wealth">
           <span class="ap-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.6v8.8M9.3 10.4h5.4M9.3 13.6h5.4"/></svg></span>
           <span class="ap-txt"><b>理财</b><small>存款 / 理财 / 货基等</small></span>
-        </button>
-        <button class="add-pick-item" type="button" data-add-kind="dca">
-          <span class="ap-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></span>
-          <span class="ap-txt"><b>定投</b><small>基金定期定额投入</small></span>
         </button>
       </div>
     </div>

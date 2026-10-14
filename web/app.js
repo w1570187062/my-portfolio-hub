@@ -274,7 +274,6 @@ async function load() {
     buildFilters();
     renderFiltered();
     loadCashflow(); // 首页紧凑卡片：本月收支计划（不阻塞主渲染）
-    loadDCA();      // 首页紧凑卡片：基金定投（待确认期次 + 下一期）
   } catch (e) {
     toast('加载异常：' + e.message, 'err');
   }
@@ -541,7 +540,7 @@ function renderHoldingsBySource(hs) {
       + `<span class="hat-title"><span class="src-ico">${srcTypeIconForSource(g.sid)}</span> ${esc(g.name)} <span class="hat-count">${g.items.length} 只</span></span>`
       + `<span class="hat-side">`
       + `<span class="hat-stat hat-stat-mv" title="该账户持仓折合人民币市值"><span class="hat-stat-lbl">市值</span><b>¥${fmt(g.mv)}</b></span>`
-      + `<span class="hat-side-extra" title="悬停展开：当日 / 总盈亏 / 盈亏率">`
+      + `<span class="hat-side-extra" title="当日 / 总盈亏 / 盈亏率（该账户合计）">`
       + `<span class="hat-stat" title="该账户当日盈亏合计"><span class="hat-stat-lbl">当日</span><b class="${cls(g.dayPnl)}">¥${fmtPnl(g.dayPnl)} <small>(${pct(dayPctV)})</small></b></span>`
       + `<span class="hat-stat" title="该账户累计盈亏合计"><span class="hat-stat-lbl">总盈亏</span><b class="${cls(g.pnl)}">¥${fmtPnl(g.pnl)}</b></span>`
       + `<span class="hat-stat" title="该账户累计盈亏率"><span class="hat-stat-lbl">盈亏率</span><b class="${cls(pnlPct)}">${pct(pnlPct)}</b></span>`
@@ -614,7 +613,7 @@ function renderGroupRow(h, i, maxItemMV) {
     <td class="num">${fmtNav(h.current_price, h.category)}</td>
     <td class="num"${mvOrigTitle(h)}>¥${fmt(mvCny)}</td>
     <td class="num ${cls(h.day_pnl)}">¥${fmtPnl(toRmb(h, h.day_pnl))}</td>
-    <td class="num" title="当日盈亏率">${pct(h.day_pnl_pct)}</td>
+    <td class="num ${cls(h.day_pnl_pct)}" title="当日盈亏率">${pct(h.day_pnl_pct)}</td>
     <td class="num ${cls(h.pnl_pct)}" title="持有期总盈亏率">${pct(h.pnl_pct)}</td>
     <td class="num ${cls(h.pnl)}" title="持有期总盈亏金额">¥${fmtPnl(toRmb(h, h.pnl))}</td>
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
@@ -1796,6 +1795,10 @@ $('#confirmOk').onclick = async () => {
 $('#addBtn').onclick = () => openAddPick();
 $('#wealthSnapBtn').onclick = () => openSnapModal();
 $('#guideBtn').onclick = () => openGuide();
+// 基金定投：首页常驻卡片已下线，入口改为顶部操作条图标 + 计划列表弹框（2026-10-14）
+$('#dcaBtn').onclick = () => openDCAPlans();
+$('#dcaPlansClose').onclick = () => { $('#dcaPlansModal').hidden = true; };
+$('#dcaPlansNew').onclick = () => { $('#dcaPlansModal').hidden = true; openDCAModal(null); };
 function openAddPick() {
   const wealthFirst = catFilter.size === 1 && catFilter.has('wealth');
   const box = document.querySelector('#addPickModal .add-pick');
@@ -1816,7 +1819,6 @@ $('#addPickModal').addEventListener('click', (e) => {
   if (!it) return;
   $('#addPickModal').hidden = true;
   if (it.dataset.addKind === 'wealth') openWealthModal(null);
-  else if (it.dataset.addKind === 'dca') openDCAModal(null);
   else openModal(null);
 });
 // 名称/代码联想框初始化（类别/市场已改为胶囊，不再用下拉框 onchange）
@@ -2667,6 +2669,33 @@ document.addEventListener('click', (e) => {
   const picker = document.getElementById('consumeAcctPicker');
   if (!picker) return;
   if (!picker.contains(e.target)) { const p = document.getElementById('consumeCashPanel'); if (p) p.hidden = true; }
+});
+
+// ---- 定投计划：资金子账户二级折叠选择器（与「添加持仓」同一套面板，仅 id 前缀不同） ----
+const dcaCashBtn = document.getElementById('dcaCashBtn');
+const dcaCashPanel = document.getElementById('dcaCashPanel');
+if (dcaCashBtn) dcaCashBtn.addEventListener('click', () => { if (dcaCashPanel) dcaCashPanel.hidden = !dcaCashPanel.hidden; });
+if (dcaCashPanel) {
+  dcaCashPanel.addEventListener('click', (e) => {
+    const head = e.target.closest('.ac-pick-head');
+    if (head) {
+      const body = head.nextElementSibling;
+      if (body && body.classList.contains('ac-pick-body')) { body.hidden = !body.hidden; head.classList.toggle('open', !body.hidden); }
+      return;
+    }
+    const row = e.target.closest('.ac-pick-row');
+    if (row) {
+      const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
+      if (c) dcaSetSelection(c);
+      dcaCashPanel.querySelectorAll('.ac-pick-row.on').forEach((r) => r.classList.remove('on'));
+      row.classList.add('on');
+      dcaCashPanel.hidden = true;
+    }
+  });
+}
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('dcaCashPicker');
+  if (picker && !picker.contains(e.target)) { const p = document.getElementById('dcaCashPanel'); if (p) p.hidden = true; }
 });
 
 // ---- 新建/编辑收支计划：关联账户选择器（与「添加持仓/理财/消费」同一套二级子账户折叠面板，仅 id 前缀不同） ----
@@ -5050,7 +5079,7 @@ function renderWealthTable(w) {
         <span class="hat-title"><span class="src-ico">${srcTypeIconForSource(g.sid)}</span> ${esc(g.name)} <span class="hat-count">${g.items.length} 款</span></span>
         <span class="hat-side">
           <span class="hat-stat hat-stat-mv" title="${single ? '该账户理财合计市值（折合人民币）' : '该账户下存在多种币种，此处按币种分段列出，不折算合计'}"><span class="hat-stat-lbl">${single ? '合计' : '多币种'}</span><b${single ? '' : ' class="mix-amt"'}>${single ? '¥' + fmt(sum) : mixLines}</b></span>
-          <span class="hat-side-extra" title="${single ? '悬停展开：今日 / 累计收益' : '多币种账户按币种分段：今日 / 累计收益，不跨币种相加'}">
+          <span class="hat-side-extra" title="${single ? '该账户今日 / 累计收益合计' : '多币种账户按币种分段：今日 / 累计收益，不跨币种相加'}">
             ${single ? `
             <span class="hat-stat" title="该账户今日收益合计"><span class="hat-stat-lbl">今日</span><b class="${cls(dayPnl)}">${fmtPnl(dayPnl)}</b></span>
             <span class="hat-stat" title="该账户累计收益合计"><span class="hat-stat-lbl">累计收益</span><b class="${cls(cumPnl)}">${fmtPnl(cumPnl)}</b></span>` : `<span class="hat-stat hat-stat-mix" title="按币种分段：今日 / 累计收益"><span class="hat-stat-lbl">今日/累计</span><b class="mix-amt">${mixPnlLines}</b></span>`}
@@ -5815,9 +5844,10 @@ function flowCashLabel(c) {
   return `${star}${prefix}${c.name}（${cur}${fmt(c.amount || 0)}）`;
 }
 // 折叠面板：每个父账户一组，点击表头展开/收起其子账户
-function buildFlowPicker(filterSourceId) {
-  const all = cashAccountsCache || [];
-  const accs = (filterSourceId == null) ? all : all.filter((c) => Number(c.source_id) === Number(filterSourceId));
+function buildFlowPicker(filterSourceId, filterCurrency) {
+  let accs = cashAccountsCache || [];
+  if (filterSourceId != null) accs = accs.filter((c) => Number(c.source_id) === Number(filterSourceId));
+  if (filterCurrency) accs = accs.filter((c) => String(c.currency).toLowerCase() === String(filterCurrency).toLowerCase());
   const bySrc = {};
   accs.forEach((c) => { (bySrc[c.source_id] = bySrc[c.source_id] || []).push(c); });
   const sources = (assetSources || []).filter((s) => bySrc[s.id] && bySrc[s.id].length);
@@ -6386,6 +6416,15 @@ $('#snapConfirmCancel').onclick = () => { pendingSnapSave = null; $('#snapConfir
 
 // ── 技术分析 ──────────────────────────────────────────
 let analysisGenId = 0; // 防止并发打开时旧请求覆盖新请求渲染
+
+// 技术分析弹框标题里的代码格式化：A股去 sh/sz 前缀；其它市场统一小写（hk00700 / aapl）
+function fmtAnaCode(sym) {
+  if (!sym) return '';
+  let s = String(sym).trim();
+  s = s.replace(/^(sh|sz)/i, '');   // A股去交易所前缀
+  return s.toLowerCase();            // 其余市场统一小写（港股 hk00700、美股 aapl）
+}
+
 async function openAnalysis(id) {
   const myGen = ++analysisGenId;
   const modal = $('#analysisModal');
@@ -6421,7 +6460,7 @@ async function openAnalysis(id) {
       body.innerHTML = '<div class="analysis-err">该基金未设置关联股票代码，不支持技术分析</div>';
       return;
     }
-    $('#analysisTitle').textContent = a.name + (a.category === 'fund' ? ' (关联 ' + a.symbol + ')' : ' (' + a.symbol + ')') + ' 技术分析';
+    $('#analysisTitle').textContent = a.name + (a.category === 'fund' ? ' (关联 ' + fmtAnaCode(a.symbol) + ')' : ' (' + fmtAnaCode(a.symbol) + ')') + ' 技术分析';
     renderAnalysis(a);
     // 用本次分析结论刷新该行买卖角标，避免弹框显示“中性”而角标仍显示“买”
     syncAnalysisBadge(id, a.signal || '');
@@ -8690,7 +8729,6 @@ function aiChatRenderMsgs() {
       + '<li data-q="帮我总结一下当前持仓">帮我总结一下当前持仓</li>'
       + '<li data-q="我的持仓里技术面最强和最弱的分别是哪只">技术面最强 / 最弱是哪只</li>'
       + '<li data-q="看看我的现金账户余额分布">看看现金账户余额分布</li>'
-      + '<li data-q="列出我设置了 mcp 标记的实体">列出我设置了 mcp 标记的实体</li>'
       + '</ul>'
       + '<p class="acp-welcome-note">涉及买卖判断的结论仅供参考，不构成投资建议。</p>'
       + '</div>';
@@ -9048,26 +9086,35 @@ async function loadDCA() {
     if (!r.ok) return;
     const d = await r.json();
     dcaPlans = d.plans || [];
-  } catch (e) { /* 静默，不阻塞首页 */ }
-  renderDCACard();
+  } catch (e) { /* 静默 */ }
+  // 仅在计划列表弹框打开时重绘（首页已无常驻卡片）
+  const pm = document.getElementById('dcaPlansModal');
+  if (pm && !pm.hidden) renderDCAPlans();
 }
 
-function renderDCACard() {
-  const card = document.getElementById('dcaCard');
-  const list = document.getElementById('dcaList');
-  if (!card || !list) return;
+// 定投计划列表（顶部操作条 #dcaBtn 入口）
+async function openDCAPlans() {
+  await loadDCA();
+  renderDCAPlans();
+  document.getElementById('dcaPlansModal').hidden = false;
+}
+
+function renderDCAPlans() {
+  const list = document.getElementById('dcaPlansBody');
+  if (!list) return;
   const actives = dcaPlans.filter((p) => p.status !== 'ended');
-  card.hidden = actives.length === 0;
-  if (!actives.length) return;
-  const pending = actives.reduce((s, p) => s + (p.status === 'active' ? (p.pending_count || 0) : 0), 0);
-  const sub = document.getElementById('dcaSub');
-  if (sub) sub.innerHTML = pending > 0 ? pending + ' 期待确认' : '暂无待确认';
-  list.innerHTML = actives.map((p) => {
-    const st = p.status === 'paused' ? 'paused' : (p.pending_count > 0 ? 'due' : 'ok');
-    const tag = p.status === 'paused'
-      ? '<span class="dca-tag paused">已暂停</span>'
-      : (p.pending_count > 0 ? '<span class="dca-tag due">' + p.pending_count + ' 期待确认</span>' : '');
-    const next = p.next_date ? (Number(p.next_date.slice(5, 7)) + '/' + Number(p.next_date.slice(8, 10))) : '—';
+  const ended = dcaPlans.filter((p) => p.status === 'ended');
+  const all = actives.concat(ended);
+  if (!all.length) {
+    list.innerHTML = '<div class="dca-empty">还没有定投计划</div>';
+    return;
+  }
+  list.innerHTML = all.map((p) => {
+    const st = p.status === 'ended' ? 'ended' : (p.pending_count > 0 && p.status === 'active' ? 'due' : 'ok');
+    const tag = p.status === 'ended' ? '<span class="dca-tag paused">已结束</span>'
+      : p.status === 'paused' ? '<span class="dca-tag paused">已暂停</span>'
+        : (p.pending_count > 0 ? '<span class="dca-tag due">' + p.pending_count + ' 期待确认</span>' : '');
+    const next = p.status === 'ended' ? '—' : (p.next_date ? (Number(p.next_date.slice(5, 7)) + '/' + Number(p.next_date.slice(8, 10))) : '—');
     return '<div class="dca-row ' + st + '" data-id="' + p.id + '">'
       + '<div class="dca-main">'
       + '<div class="dca-name">' + esc(p.holding_name || '—') + ' ' + tag + '</div>'
@@ -9080,9 +9127,11 @@ function renderDCACard() {
     el.onclick = (e) => {
       if (e.target.closest('[data-act="dca-edit"]')) {
         const p = dcaPlans.find((x) => x.id === Number(el.dataset.id));
+        document.getElementById('dcaPlansModal').hidden = true;
         openDCAModal(p);
         return;
       }
+      document.getElementById('dcaPlansModal').hidden = true;
       openDCAHist(Number(el.dataset.id));
     };
   });
@@ -9151,22 +9200,38 @@ function toggleDCANew() {
   }
 }
 
-// 资金子账户：只列与标的同账户（银行/证券）同币种的子账户，选项标明所属账户名 + 余额
+// 资金子账户：二级折叠选择器（同「添加持仓 · 账户币种」）。只列与标的同账户（银行/证券）同币种的子账户；
+// 无匹配时退化为全部真实账户，绝不回退虚拟项。
+function dcaSetSelection(acc) {
+  const hid = document.getElementById('dcaCash');
+  if (hid) hid.value = acc ? acc.id : '0';
+  const btn = document.getElementById('dcaCashBtn');
+  if (btn) btn.textContent = acc ? flowCashLabel(acc) : '请选择子账户';
+}
 function fillDCACash(p) {
-  const sel = document.getElementById('dcaCash');
-  if (!sel) return;
-  const hid = Number(document.getElementById('dcaHolding').value) || (p ? p.holding_id : 0);
-  const h = (allHoldings || []).find((x) => x.id === hid);
+  const panel = document.getElementById('dcaCashPanel');
+  if (!panel) return;
+  const hidEl = Number(document.getElementById('dcaHolding').value) || (p ? p.holding_id : 0);
+  const h = (allHoldings || []).find((x) => x.id === hidEl);
   const src = h ? Number(h.source_id || 0) : 0;
   const cur = h ? String(h.currency || '').toLowerCase() : '';
-  // 只列同标的所在账户（银行/证券）+ 同币种的子账户；无匹配时退化为全部真实账户，绝不回退虚拟项
-  let accs = (cashAccountsCache || []).filter((c) => (!src || Number(c.source_id) === src) && (!cur || String(c.currency).toLowerCase() === cur));
-  if (!accs.length) accs = (cashAccountsCache || []).slice();
-  sel.innerHTML = accs.length
-    ? accs.map((c) => '<option value="' + c.id + '">' + flowCashLabel(c) + '</option>').join('')
-    : '<option value="0">（无可用资金账户）</option>';
-  if (p && p.cash_account_id) sel.value = String(p.cash_account_id);
-  else { const def = accs.find((c) => c.is_default) || accs[0]; if (def) sel.value = String(def.id); }
+  const match = (c) => (!src || Number(c.source_id) === src) && (!cur || String(c.currency).toLowerCase() === cur);
+  let fSrc = src || null;
+  let fCur = cur || null;
+  let accs = (cashAccountsCache || []).filter(match);
+  if (!accs.length) { fSrc = null; fCur = null; accs = (cashAccountsCache || []).slice(); }
+  panel.innerHTML = accs.length
+    ? buildFlowPicker(fSrc, fCur)
+    : '<div class="ac-picker-empty">暂无可用子账户，请先在「账户」中添加</div>';
+  const wanted = p && p.cash_account_id ? String(p.cash_account_id) : '';
+  const preset = (wanted && accs.find((c) => String(c.id) === wanted))
+    || accs.find((c) => c.is_default) || accs[0] || null;
+  dcaSetSelection(preset);
+  // 展开时标出当前选中项
+  if (preset) {
+    const row = panel.querySelector('.ac-pick-row[data-id="' + preset.id + '"]');
+    if (row) row.classList.add('on');
+  }
 }
 
 // 新增基金：名称/代码联动搜索（复用 /api/search，选中即回填名称+代码，与持仓弹框一致）
