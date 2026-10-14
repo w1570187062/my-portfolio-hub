@@ -129,28 +129,41 @@ func assetOverview(c *gin.Context) {
 		firstDate, _, _ := db.GetWealthFirst(w.ID)
 		wDays := db.CalcHoldingDays(firstDate)
 		// 累计收益：手动编辑值优先（CumPnl 非 0），否则按每日快照自动累计。
-		cum := round2(w.CumPnl)
-		if cum == 0 {
-			cum = round2(wealthCumPnl(w.ID))
-		}
-		wItems = append(wItems, gin.H{
-			"id":             w.ID,
-			"name":           w.Name,
-			"code":           w.Code,
-			"currency":       w.Currency,
-			"note":           w.Note,
-			"source_id":      w.SourceID,
-			"source_name":    srcName[w.SourceID],
-			"amount":         amt,
-			"today_pnl":      todayPnl,
-			"cum_pnl":        cum,
-			"snap_date":      latestDate,
-			"snap_count":     cnt,
-			"holding_days":   wDays,
-			"archived":       w.Archived,
-			"cashflow_today": round2(todayCf),
-			"prev_amount":    round2(prevAmt),
-		})
+			cum := round2(w.CumPnl)
+			if cum == 0 {
+				cum = round2(wealthCumPnl(w.ID))
+			}
+			// 累计收益率 = 累计收益 ÷ （当前金额 - 累计收益）× 100（近似：累计赚/亏 ÷ 本金）
+			cumReturnRate := math.NaN()
+			if amt > 0.005 {
+				costBasis := amt - cum
+				if costBasis > 0.005 {
+					cumReturnRate = math.Round(cum/costBasis*10000) / 100
+				}
+			}
+			var cumRateVal interface{} = nil
+			if !math.IsNaN(cumReturnRate) {
+				cumRateVal = cumReturnRate
+			}
+			wItems = append(wItems, gin.H{
+				"id":              w.ID,
+				"name":            w.Name,
+				"code":            w.Code,
+				"currency":        w.Currency,
+				"note":            w.Note,
+				"source_id":       w.SourceID,
+				"source_name":     srcName[w.SourceID],
+				"amount":          amt,
+				"today_pnl":       todayPnl,
+				"cum_pnl":         cum,
+				"snap_date":       latestDate,
+				"snap_count":      cnt,
+				"holding_days":    wDays,
+				"cum_return_rate": cumRateVal,
+				"archived":        w.Archived,
+				"cashflow_today":  round2(todayCf),
+				"prev_amount":     round2(prevAmt),
+			})
 	}
 
 	// 3.5) 现金
@@ -295,6 +308,49 @@ func wealthCumPnl(wealthID int64) float64 {
 		hasPrev = true
 	}
 	return round2(cum)
+}
+
+// compute7DayAnnualized calculates the 7-day annualized return for a wealth product.
+// Formula: (sum of last 7 daily P&Ls / current amount) * (365/7) * 100
+// Returns NaN when there are insufficient snapshots or the current amount is negligible.
+func compute7DayAnnualized(wealthID int64, currentAmount float64) float64 {
+	if currentAmount < 0.005 {
+		return math.NaN()
+	}
+	snaps, err := db.ListWealthSnapshots(wealthID)
+	if err != nil || len(snaps) < 2 {
+		return math.NaN()
+	}
+	// ListWealthSnapshots returns ASC order; reverse to get DESC
+	for i, j := 0, len(snaps)-1; i < j; i, j = i+1, j-1 {
+		snaps[i], snaps[j] = snaps[j], snaps[i]
+	}
+	var sum7 float64
+	var prevAmt float64
+	hasPrev := false
+	days := 0
+	for _, s := range snaps {
+		if days >= 7 {
+			break
+		}
+		if hasPrev {
+			// 每日盈亏 = 当日金额 - 前一日金额 - 当日净存入（排除本金变动）
+			dailyPnl := s.Amount - prevAmt - s.Cashflow
+			sum7 += dailyPnl
+			days++
+		}
+		prevAmt = s.Amount
+		hasPrev = true
+	}
+	if days == 0 {
+		return math.NaN()
+	}
+	// 7日年化（单利简化公式，与持仓年化口径一致）
+	pct := (sum7 / currentAmount) * (365.0 / float64(days)) * 100
+	if math.IsNaN(pct) || math.IsInf(pct, 0) {
+		return math.NaN()
+	}
+	return math.Round(pct*100) / 100
 }
 
 // ---- 资产来源 CRUD ----

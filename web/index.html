@@ -543,7 +543,7 @@
           <!-- 交易日期紧跟交易成本：四格等宽（手机端两格×两行），与其余输入框同宽 -->
           <div class="f-row f-row4" data-page-node-id="JCukFO7UUG0GtYpuUm8Yjd">
             <label data-page-node-id="AP1guFyhQVAFx4qZOdG7n3">份额 <input id="f_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="股数 / 份数" required data-page-node-id="ksrBEte0Bd9NuAMNz5yGb0"></label>
-            <label data-page-node-id="qW4fLH85p7kFjt0ZLtUILH">成本价 <input id="f_cost_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="每股 / 每份均价" required data-page-node-id="v5BD4jTcUbflvFnPB8Zapw"></label>
+            <label data-page-node-id="qW4fLH85p7kFjt0ZLtUILH">成本价 <input id="f_cost_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="均价" required data-page-node-id="v5BD4jTcUbflvFnPB8Zapw"></label>
             <label data-page-node-id="aogvPh0Nzu4DcJwg6DT0iR">交易成本 <input id="f_cost" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="手续费" data-page-node-id="sJiHxqxVsmVaQyRLUlDn2"></label>
             <label data-page-node-id="MKgVXg1NAjPwSGRZVADDQN">交易日期 <input id="f_buy_date" type="date" data-page-node-id="7qArVdtf9Easn6H8Eaaq5W"></label>
           </div>
@@ -559,7 +559,11 @@
                 </label>
               </div>
             </div>
-            <label id="linked_symbol_row" style="display:none" data-page-node-id="nVR796SFtFwUSFAJsYZiQV">关联股票代码 <input id="f_linked_symbol" placeholder="基金关联的股票代码，如 600519 / AAPL" data-page-node-id="f38RGALsoViGU0Oog3Ix3F"></label>
+            <div id="linked_symbol_row" class="linked-sym-row" style="display:none" data-page-node-id="nVR796SFtFwUSFAJsYZiQV">
+              <span class="linked-sym-label">关联股票代码</span>
+              <select id="f_linked_market" class="linked-sym-mkt"><option value="a">A 股</option><option value="hk">港股</option><option value="us">美股</option></select>
+              <input id="f_linked_code" class="linked-sym-code" placeholder="如 600519 / 00700 / AAPL" data-page-node-id="f38RGALsoViGU0Oog3Ix3F">
+            </div>
           <!-- 低频字段收进高级折叠：主流程只留 名称/类别/数量成本/账户，弹框高度降约 30% -->
           <details class="f-adv" id="fAdv">
             <summary><span class="hat-chevron">▾</span>高级选项 · MCP 标记 / 资产类型标签</summary>
@@ -903,7 +907,7 @@
 
   <!-- ===== 现金资金变动历史弹框（独立，无盈亏 tab）===== -->
   <div id="cashHistModal" class="modal" hidden data-page-node-id="EBCmjqdaeRZLNlA9PXLV2U">
-    <div class="modal-card" style="width:720px; max-width:94vw;" data-page-node-id="ZduWV3YlRUpqbw9cUacEK8">
+    <div class="modal-card" style="width:840px; max-width:94vw;" data-page-node-id="ZduWV3YlRUpqbw9cUacEK8">
       <h2 id="cashHistTitle" data-icon="clock" data-page-node-id="vGFCVhtzItoMe7LyihGXLR">资金变动历史</h2>
       <div id="cashHistBody" class="m-body" data-page-node-id="XtWTRZoKt0qatuoz4CezAj"></div>
     </div>

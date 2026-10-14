@@ -258,6 +258,33 @@ func getAnalysis(c *gin.Context) {
 func resolveSymbol(symbol, market string) string {
 	sym := strings.ToLower(strings.TrimSpace(symbol))
 
+	// 用户友好前缀：a: / sh: / sz: / us: / hk: → 展开为 API 所需前缀
+	if strings.Contains(sym, ":") {
+		parts := strings.SplitN(sym, ":", 2)
+		prefix := parts[0]
+		code := strings.TrimSpace(parts[1])
+		switch prefix {
+		case "a", "sh":
+			if len(code) == 6 && isAllDigits(code) {
+				switch code[0] {
+				case '6', '5', '9':
+					return "sh" + code
+				case '0', '2', '3':
+					return "sz" + code
+				}
+			}
+			return "sh" + code
+		case "sz":
+			return "sz" + code
+		case "hk":
+			return "hk" + code
+		case "us":
+			return code // 美股代码直接返回
+		default:
+			return code
+		}
+	}
+
 	// If symbol already has prefix (sh/sz/hk), use as-is
 	if strings.HasPrefix(sym, "sh") || strings.HasPrefix(sym, "sz") || strings.HasPrefix(sym, "hk") {
 		return sym

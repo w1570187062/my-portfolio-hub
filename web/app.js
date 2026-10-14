@@ -550,7 +550,7 @@ function renderHoldingsBySource(hs) {
       + `</div>`
       + `<div class="collapse-body source-group-body">`
       + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
-      + `<thead><tr><th>名称</th><th class="num">现价</th>`
+      + `<thead><tr><th>名称</th><th>代码</th><th class="num">现价</th>`
       + `<th class="num">市值</th>`
       + `<th class="num">当日</th><th class="num">当日%</th>`
       + `<th class="num">盈亏%</th><th class="num" title="持有期总盈亏金额">盈亏</th><th class="num">持仓</th>`
@@ -607,9 +607,10 @@ function renderGroupRow(h, i, maxItemMV) {
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">' + actIcon('warn') + '</span>' : ''}
       <span class="dir-ind ${dirCls}" title="${dirCls === 'up' ? '涨' : dirCls === 'down' ? '跌' : ''}">${dirArrow}</span>
       ${holdTypeTag(h)}<span class="name-cap"><span class="name-clickable" title="${esc(h.name)}">${esc(h.name)}</span>${supportsAnalysis(h) ? anaBadge(h.analysis_signal) : ''}</span>
-      ${actBtn('edit', `data-adjust="${h.id}"`, '修改', { cls: 'push-right' })}
+      ${actBtn('adjust', `data-adjust="${h.id}"`, '修改', { cls: 'push-right' })}
       ${supportsAnalysis(h) ? actBtn('analysis', 'data-ana="' + h.id + '"', '技术分析') : ''}
     </td>
+    <td class="code-cell u-sm u-muted" title="${esc(h.symbol || '')}">${esc(h.symbol || '—')}</td>
     <td class="num">${fmtNav(h.current_price, h.category)}</td>
     <td class="num"${mvOrigTitle(h)}>¥${fmt(mvCny)}</td>
     <td class="num ${cls(h.day_pnl)}">¥${fmtPnl(toRmb(h, h.day_pnl))}</td>
@@ -1280,7 +1281,22 @@ async function openModal(h) {
   $('#f_cost').value = h ? roundByCat(h.transaction_cost, eCat) : '';
   $('#f_buy_date').value = h ? (h.buy_date || '') : '';
   syncDateHint($('#f_buy_date'));
-  $('#f_linked_symbol').value = h ? (h.linked_symbol || '') : '';
+  // 关联基金代码：拆分为 market 下拉 + code 输入（后端 resolveSymbol 已支持 prefix:code 格式）
+  let linkedSym = h ? (h.linked_symbol || '') : '';
+  let linkedMkt = 'a', linkedCode = '';
+  if (linkedSym.includes(':')) {
+    const [p, c] = linkedSym.split(':');
+    linkedMkt = p.toLowerCase();
+    linkedCode = (c || '').trim();
+  } else if (linkedSym) {
+    // 存量兼容：无前缀的代码按 market 字段推断
+    linkedCode = linkedSym;
+    if (selMkt === '美股') linkedMkt = 'us';
+    else if (selMkt === '港股') linkedMkt = 'hk';
+    else linkedMkt = 'a';
+  }
+  $('#f_linked_market').value = linkedMkt;
+  $('#f_linked_code').value = linkedCode;
   fillAssetTypeChips(h ? (h.asset_type || '') : '');
   toggleLinkedSymbol($('#f_category').value);
   $('#formErr').textContent = '';
@@ -1969,6 +1985,7 @@ $('#form').onsubmit = async (e) => {
     market: $('#f_market').value,
     currency: submitCurrency,
     source_id: submitSource,
+    cash_account_id: Number($('#f_cash').value) || 0, // 出资子账户：新建自动扣款，编辑按差值联动调账
     quantity: round4(parseFloat($('#f_quantity').value)),
     cost_price: roundByCat(parseFloat($('#f_cost_price').value), $('#f_category').value),
     transaction_cost: roundByCat(parseFloat($('#f_cost').value || '0'), $('#f_category').value),
@@ -1977,7 +1994,11 @@ $('#form').onsubmit = async (e) => {
     prev_close: roundByCat((orig ? orig.prev_close : 0), $('#f_category').value),
     note: $('#f_note').value || '',
     buy_date: normDateInput($('#f_buy_date')) || '',
-    linked_symbol: $('#f_linked_symbol').value || '',
+    linked_symbol: (() => {
+      const m = $('#f_linked_market').value;
+      const c = $('#f_linked_code').value.trim();
+      return c ? `${m}:${c}` : '';
+    })(),
     asset_type: (fAtSelected || []).join(','),
   };
   let r;
@@ -5002,12 +5023,18 @@ function renderWealthTable(w) {
       const pnl = p.today_pnl || 0;
       const cum = p.cum_pnl || 0;
       const arch = !!p.archived;
+      // 单利年化 = 累计收益 ÷ 当前持仓 ÷ 持有天数 × 365（当前持仓近似本金；已清仓/无天数不计算）
+      const days = Number(p.holding_days || 0);
+      const base = Number(p.amount || 0);
+      const ann = (!arch && days > 0 && base > 0.005) ? (cum / base) / days * 365 * 100 : null;
       return `<tr${arch ? ' class="wealth-archived"' : ''}>
       <td class="name-cell"><span class="wn-idx">${i + 1}</span><span class="name-cap"><span class="name-clickable" title="${esc(p.name)}">${esc(p.name)}</span></span><span class="cur-badge">${curSymbolJS(p.currency)}</span>${arch ? '<span class="cur-badge wb-archived" title="已清仓停用：保留历史收益，可启用或删除">已清仓</span>' : ''}</td>
       <td class="num"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</td>
       <td class="num ${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</td>
       <td class="num ${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
-      <td class="num u-sm u-muted" title="从首次录入快照起算">${p.holding_days > 0 ? p.holding_days + '天' : '—'}</td>
+      <td class="num ${pnlCls(ann)}" title="单利年化 = 累计收益 ÷ 当前持仓 ÷ 持有天数 × 365（当前持仓近似本金）">${ann === null ? '—' : pct(ann)}</td>
+      <td class="num ${pnlCls(p.cum_return_rate)}" title="累计收益率 = 累计收益 ÷ 本金 ≈ 累计收益 ÷（当前金额 - 累计收益）">${p.cum_return_rate == null ? '—' : pct(p.cum_return_rate)}</td>
+      <td class="num u-sm u-muted" title="从首次录入快照起算">${days > 0 ? days + '天' : '—'}</td>
       <td class="row-act-cell">
         ${actBtn('edit', `data-act="edit-wealth" data-id="${p.id}"`, '编辑')}
         ${actBtn('hist', `data-act="wealth-hist" data-id="${p.id}"`, '每日盈亏')}
@@ -5034,7 +5061,7 @@ function renderWealthTable(w) {
       <div class="collapse-body source-group-body">
         <div class="subtable-wrap"><table class="asset-table holdings-subtable wealth-subtable">
         <thead><tr><th>名称</th>
-        <th class="num">总金额</th><th class="num">今日收益</th><th class="num">累计收益</th>
+        <th class="num">总金额</th><th class="num">今日收益</th><th class="num">累计收益</th><th class="num">年化</th><th class="num">累计收益率</th>
         <th class="num">持有天数</th><th>操作</th>
         </tr></thead><tbody>${rows}</tbody>
         </table></div></div></div>`;
@@ -5439,13 +5466,13 @@ async function openCashHistory(id) {
     let html = `<div class="wh-actions"><span class="ua-hint">当前余额 ${moneyCur(acc.amount || 0, acc.currency)}${acc.is_default ? '　｜　★ 默认子账户' : ''}</span></div>`;
     if (!flows.length) html += '<p class="empty">暂无资金变动记录。首页持仓的加仓/减仓会自动记到这里。</p>';
     else {
-      html += '<table class="asset-table"><thead><tr><th>日期</th><th>类型</th><th class="num">变动</th><th class="num">变动后余额</th><th>关联标的</th><th>说明</th></tr></thead><tbody>';
+      html += '<table class="asset-table"><thead><tr><th>日期</th><th>类型</th><th class="num">变动</th><th>说明</th></tr></thead><tbody>';
       for (const f of flows) {
         const amt = f.amount || 0;
+        const note = esc(f.note || '');
         html += `<tr><td>${esc(f.date)}</td><td>${cashFlowTypeTag(f)}${flowSourceTag(f.source)}</td>
           <td class="num ${amt >= 0 ? 'up' : 'down'}">${(amt >= 0 ? '+' : '')}${money(amt)}</td>
-          <td class="num">${money(f.balance || 0)}</td>
-          <td>${esc(f.ref_name || '')}</td><td>${esc(f.note || '')}</td></tr>`;
+          <td class="note-cell" title="${note}">${note}</td></tr>`;
       }
       html += '</tbody></table>';
     }

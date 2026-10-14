@@ -438,11 +438,15 @@ func latestSnapshotDate(uid int64) string {
 }
 
 func createHolding(c *gin.Context) {
-	var h db.Holding
-	if err := c.ShouldBindJSON(&h); err != nil {
+	var req struct {
+		db.Holding
+		CashAccountID int64 `json:"cash_account_id"` // 新建持仓的出资子账户；扣款 = quantity * cost_price + transaction_cost
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
+	h := req.Holding
 	uid := currentUserID(c)
 	h.UserID = uid
 	normalize(&h)
@@ -456,6 +460,14 @@ func createHolding(c *gin.Context) {
 		return
 	}
 	h.ID = id
+	// 新建持仓：自动从所选子账户扣 (quantity * cost_price + transaction_cost)。
+	// 与加减仓 applyCashForAdjust 同一套资金联动逻辑；cash_account_id 由前端传入，0 则回落来源默认子账户。
+	cost := h.Quantity*h.CostPrice + h.TransactionCost
+	if cost > 0 && req.CashAccountID >= 0 {
+		if e := applyCashForAdjust(uid, h, "BUY", h.Quantity, h.CostPrice, h.TransactionCost, req.CashAccountID, "新建持仓"); e != nil {
+			log.Printf("[createHolding] 新建持仓现金联动失败(uid=%d hid=%d): %v", uid, id, e)
+		}
+	}
 	v := enrich(h, uid)
 	// 单条返回也补全来源名称（enrich 本身不含来源解析；列表接口 listHoldings 已补全）。
 	if srcs, e := db.ListSources(uid); e == nil {
@@ -474,17 +486,41 @@ func updateHolding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
 	}
-	var h db.Holding
-	if err := c.ShouldBindJSON(&h); err != nil {
+	var req struct {
+		db.Holding
+		CashAccountID int64 `json:"cash_account_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
-	h.ID = id
-	uid := currentUserID(c)
-	// 编辑时表单不回传 buy_plan / user_id：先取旧行保留，避免保存时被清空（#修复：编辑持仓导致所属用户被重置为 0、从当前用户列表消失）
-	if ex, e := db.Get(id); e == nil {
-		h.BuyPlan = ex.BuyPlan
-	}
+	h := req.Holding
+		h.ID = id
+		uid := currentUserID(c)
+		// 编辑时表单不回传 buy_plan / user_id：先取旧行保留，避免保存时被清空（#修复：编辑持仓导致所属用户被重置为 0、从当前用户列表消失）
+		ex, e := db.Get(id)
+		if e == nil {
+			h.BuyPlan = ex.BuyPlan
+			// 取旧值用于资金联动对比：仅当新旧总成本变化 ≥ 0.01 时才联动（避免误改名字/代码时触发）
+			oldCost := ex.Quantity*ex.CostPrice + ex.TransactionCost
+			newCost := h.Quantity*h.CostPrice + h.TransactionCost
+			diff := newCost - oldCost
+			if math.Abs(diff) >= 0.01 && req.CashAccountID >= 0 {
+				acc, accErr := resolveCashAccount(uid, req.CashAccountID, h.SourceID, h.Currency)
+				if accErr == nil {
+					flowType, label := "holding_edit_add", "编辑追补资金"
+					delta := -diff // diff>0 追补=扣款（负）；diff<0 调减=回款（正）
+					if diff < 0 {
+						flowType, label = "holding_edit_reduce", "编辑调减资金"
+						delta = -diff // diff 为负 → delta 为正（入账）
+					}
+					detail := fmt.Sprintf("%s %s｜旧成本 %.2f → 新成本 %.2f｜差额 %+.2f", label, h.Name, oldCost, newCost, -diff)
+					if e2 := db.AddCashAmount(acc.ID, delta, flowType, "holding", h.ID, h.Name, detail); e2 != nil {
+						log.Printf("[updateHolding] 编辑持仓现金联动失败(uid=%d hid=%d): %v", uid, id, e2)
+					}
+				}
+			}
+		}
 	h.UserID = uid
 	normalize(&h)
 	if exists, e := db.ExistsBySymbol(h.Symbol, id, currentUserID(c)); e == nil && exists {
