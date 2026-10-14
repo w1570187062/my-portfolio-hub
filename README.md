@@ -67,8 +67,8 @@
 
 **MCP 服务**
 
-- 内建零依赖 MCP 服务端（stdio / HTTP(SSE)），AI 客户端可查询账本并按「MCP 标记」记录流水。
-- 提供 `record_transaction` 写入与 `list_markers` / `list_amount_modifiable` / `list_accounts` / `list_cash_accounts` / `list_holdings` / `list_wealth` 查询工具。
+- 内建零依赖 MCP 服务端（stdio / HTTP(SSE)），AI 客户端可查询账本并按名称/代码定位实体记录流水。
+- 提供 `record_transaction` 写入与 `list_amount_modifiable` / `list_accounts` / `list_cash_accounts` / `list_holdings` / `list_wealth` 查询工具。
 - MCP 写入的流水在表格中打高亮 **MCP** 标签。
 
 **AI 助手**
@@ -121,12 +121,12 @@
 
 ## 🔌 MCP 服务（连接 hermes 等 AI 客户端）
 
-内建**零依赖 MCP 服务端**（stdio / HTTP(SSE)，默认端口 `9988`）：hermes 等 AI 客户端可先查询账本（账户 / 子账户 / 持仓 / 理财），再按「MCP 标记」记录流水（加仓 / 减仓 / 分红、现金存取、理财申赎）。
+内建**零依赖 MCP 服务端**（stdio / HTTP(SSE)，默认端口 `9988`）：hermes 等 AI 客户端可先查询账本（账户 / 子账户 / 持仓 / 理财），再按名称/代码定位实体记录流水（加仓 / 减仓 / 分红、现金存取、理财申赎）。
 
 - **配置**：**设置 → AI → MCP 参数** 页一键开关、选传输方式、填地址与令牌，并可复制 hermes 客户端配置；HTTP 模式保存后重启 MCP 服务生效（stdio 用 `portfolio mcp` 启动）。
 - **启用（环境变量）**：`MCP_ENABLED=true` / `MCP_TRANSPORT=http` / `MCP_HTTP_ADDR=:9988`；不设则默认关闭、零开销。
-- **打标记**：在新增/编辑子账户 / 持仓 / 理财 / 负债的弹框中填写「**MCP 标记**」（如 `hermes-券商A`），AI 即可按标记（精确）或名称 / 代码（模糊）定位目标。
-- **工具**：写 `record_transaction`；读 `list_markers` / `list_amount_modifiable` / `list_accounts` / `list_cash_accounts` / `list_holdings` / `list_wealth`。均可选 `username` / `user_id` 指定归属用户。
+- **定位实体**：AI 按**名称 / 证券代码**（大小写不敏感、包含匹配）定位目标；命中多个时返回候选列表供选择。表单中的「备注」仅作说明，不参与定位。
+- **工具**：写 `record_transaction`；读 `list_amount_modifiable` / `list_accounts` / `list_cash_accounts` / `list_holdings` / `list_wealth`。均可选 `username` / `user_id` 指定归属用户。
 - **流水来源**：MCP 写入的流水 `source='mcp'`、`type` 以 `mcp_` 开头，前端流水表打高亮 **MCP** 标签。
 
 完整参数、返回结构与调用示例见 [`docs/mcp-api.md`](docs/mcp-api.md)。

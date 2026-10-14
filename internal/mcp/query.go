@@ -13,7 +13,7 @@ import (
 func (s *Server) registerQueryTools() {
 	s.tools = append(s.tools, &Tool{
 		Name: "list_accounts",
-		Description: "列出当前用户的账户来源（平台/银行/券商等），默认内联其下的现金子账户（id/名称/币种/类型/余额/是否默认/mcp 标记）。" +
+		Description: "列出当前用户的账户来源（平台/银行/券商等），默认内联其下的现金子账户（id/名称/币种/类型/余额/是否默认/备注）。" +
 			"可用 source_id 只查某个来源；include_cash=false 可只返回来源列表。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -29,7 +29,7 @@ func (s *Server) registerQueryTools() {
 
 	s.tools = append(s.tools, &Tool{
 		Name: "list_cash_accounts",
-		Description: "列出当前用户的现金子账户（扁平列表），含所属来源名称、id、币种、类型、余额、是否默认账户、mcp 标记（备注）。" +
+		Description: "列出当前用户的现金子账户（扁平列表），含所属来源名称、id、币种、类型、余额、是否默认账户、备注。" +
 			"可用 source_id / currency 过滤，并给出各币种余额合计。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -45,7 +45,7 @@ func (s *Server) registerQueryTools() {
 
 	s.tools = append(s.tools, &Tool{
 		Name: "list_holdings",
-		Description: "列出当前用户的持仓：id、名称、代码、类别、市场、币种、所属来源、份额、成本价、现价、市值、浮动盈亏及盈亏百分比、资产类型、买入日期、mcp 标记（备注）。" +
+		Description: "列出当前用户的持仓：id、名称、代码、类别、市场、币种、所属来源、份额、成本价、现价、市值、浮动盈亏及盈亏百分比、资产类型、买入日期、备注。" +
 			"默认过滤已清仓（份额为 0）的持仓，可设 include_closed=true 一并返回；可用 source_id / symbol / category 过滤，并给出各币种市值与盈亏合计。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -63,7 +63,7 @@ func (s *Server) registerQueryTools() {
 
 	s.tools = append(s.tools, &Tool{
 		Name: "list_wealth",
-		Description: "列出当前用户的理财产品：id、名称、代码、币种、所属来源、最新持仓金额及快照日期、累计收益、mcp 标记（备注）。" +
+		Description: "列出当前用户的理财产品：id、名称、代码、币种、所属来源、最新持仓金额及快照日期、累计收益、备注。" +
 			"可用 source_id 过滤，并给出各币种最新金额合计。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -78,8 +78,8 @@ func (s *Server) registerQueryTools() {
 
 	s.tools = append(s.tools, &Tool{
 		Name: "list_amount_modifiable",
-		Description: "列出当前用户所有设置了 mcp 标记（备注非空）且「金额可被 MCP 修改」的实体，即持仓(holding)、现金子账户(cash)、理财(wealth) 三类（加仓/减仓/分红、存入/取出、申购/赎回均走 record_transaction）。" +
-			"返回每个实体的类型、id、名称、标记、币种、当前金额，以及支持的 mcp 动作列表，便于 AI 找到可改金额的目标并选择 action。" +
+		Description: "列出当前用户所有「金额可被 MCP 修改」的实体，即持仓(holding)、现金子账户(cash)、理财(wealth) 三类（加仓/减仓/分红、存入/取出、申购/赎回均走 record_transaction）。" +
+			"返回每个实体的类型、id、名称、备注、币种、当前金额，以及支持的 mcp 动作列表，便于 AI 找到可改金额的目标并选择 action。" +
 			"注意：负债(liability)与账户来源(source) 不支持 MCP 改金额，故不包含在内。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -149,7 +149,7 @@ func listAccounts(args map[string]interface{}) (string, error) {
 		Type      string  `json:"type"`
 		Amount    float64 `json:"amount"`
 		IsDefault bool    `json:"is_default"`
-		Marker    string  `json:"marker"`
+		Note      string  `json:"note"`
 	}
 	type srcRow struct {
 		ID         int64              `json:"id"`
@@ -157,7 +157,7 @@ func listAccounts(args map[string]interface{}) (string, error) {
 		Type       string             `json:"type"`
 		Region     string             `json:"region"`
 		Currencies string             `json:"currencies"`
-		Marker     string             `json:"marker"`
+		Note       string             `json:"note"`
 		Cash       []cashRow          `json:"cash_accounts,omitempty"`
 		CashTotal  map[string]float64 `json:"cash_total_by_currency,omitempty"`
 	}
@@ -170,7 +170,7 @@ func listAccounts(args map[string]interface{}) (string, error) {
 		r := srcRow{
 			ID: src.ID, Name: src.Name, Type: src.Type,
 			Region: src.Region, Currencies: src.Currencies,
-			Marker: strings.TrimSpace(src.Note),
+			Note: strings.TrimSpace(src.Note),
 		}
 		if includeCash {
 			rows := []cashRow{}
@@ -179,7 +179,7 @@ func listAccounts(args map[string]interface{}) (string, error) {
 				rows = append(rows, cashRow{
 					ID: c.ID, Name: c.Name, Currency: c.Currency, Type: c.Type,
 					Amount: round2(c.Amount), IsDefault: c.IsDefault,
-					Marker: strings.TrimSpace(c.Note),
+					Note: strings.TrimSpace(c.Note),
 				})
 				tot[c.Currency] = round2(tot[c.Currency] + c.Amount)
 			}
@@ -222,7 +222,7 @@ func listCashAccounts(args map[string]interface{}) (string, error) {
 		Type      string  `json:"type"`
 		Amount    float64 `json:"amount"`
 		IsDefault bool    `json:"is_default"`
-		Marker    string  `json:"marker"`
+		Note      string  `json:"note"`
 	}
 	out := []row{}
 	total := map[string]float64{}
@@ -234,7 +234,7 @@ func listCashAccounts(args map[string]interface{}) (string, error) {
 			ID: c.ID, SourceID: c.SourceID, Source: names[c.SourceID],
 			Name: c.Name, Currency: c.Currency, Type: c.Type,
 			Amount: round2(c.Amount), IsDefault: c.IsDefault,
-			Marker: strings.TrimSpace(c.Note),
+			Note: strings.TrimSpace(c.Note),
 		})
 		total[c.Currency] = round2(total[c.Currency] + c.Amount)
 	}
@@ -279,7 +279,7 @@ func listHoldings(args map[string]interface{}) (string, error) {
 		PnlPct       float64 `json:"pnl_pct"`
 		AssetType    string  `json:"asset_type"`
 		BuyDate      string  `json:"buy_date"`
-		Marker       string  `json:"marker"`
+		Note         string  `json:"note"`
 	}
 	out := []row{}
 	marketByCur := map[string]float64{}
@@ -311,7 +311,7 @@ func listHoldings(args map[string]interface{}) (string, error) {
 			CostPrice: h.CostPrice, CurrentPrice: h.CurrentPrice,
 			MarketValue: mv, Pnl: pnl, PnlPct: pct,
 			AssetType: h.AssetType, BuyDate: h.BuyDate,
-			Marker: strings.TrimSpace(h.Note),
+			Note: strings.TrimSpace(h.Note),
 		})
 		marketByCur[h.Currency] = round2(marketByCur[h.Currency] + mv)
 		pnlByCur[h.Currency] = round2(pnlByCur[h.Currency] + pnl)
@@ -351,7 +351,7 @@ func listWealth(args map[string]interface{}) (string, error) {
 		LatestAmount float64 `json:"latest_amount"`
 		LatestDate   string  `json:"latest_date"`
 		CumPnl       float64 `json:"cum_pnl"`
-		Marker       string  `json:"marker"`
+		Note         string  `json:"note"`
 	}
 	out := []row{}
 	total := map[string]float64{}
@@ -368,7 +368,7 @@ func listWealth(args map[string]interface{}) (string, error) {
 			ID: w.ID, Name: w.Name, Code: w.Code, Currency: w.Currency,
 			SourceID: w.SourceID, Source: names[w.SourceID],
 			LatestAmount: amt, LatestDate: date, CumPnl: round2(w.CumPnl),
-			Marker: strings.TrimSpace(w.Note),
+			Note: strings.TrimSpace(w.Note),
 		})
 		total[w.Currency] = round2(total[w.Currency] + amt)
 	}
@@ -377,7 +377,7 @@ func listWealth(args map[string]interface{}) (string, error) {
 	})
 }
 
-// listAmountModifiable 列出所有带 mcp 标记且金额可被 MCP 修改的实体
+// listAmountModifiable 列出所有金额可被 MCP 修改的实体
 // （持仓/现金子账户/理财），返回其支持的 mcp 动作与当前金额，便于 AI 选择目标改金额。
 func listAmountModifiable(args map[string]interface{}) (string, error) {
 	uid, err := resolveUserID(args)
@@ -390,7 +390,7 @@ func listAmountModifiable(args map[string]interface{}) (string, error) {
 		Type             string   `json:"type"`
 		ID               int64    `json:"id"`
 		Name             string   `json:"name"`
-		Marker           string   `json:"marker"`
+		Note             string   `json:"note"`
 		Currency         string   `json:"currency"`
 		CurrentAmount    float64  `json:"current_amount"`
 		SupportedActions []string `json:"supported_actions"`
@@ -403,11 +403,8 @@ func listAmountModifiable(args map[string]interface{}) (string, error) {
 			return "", fmt.Errorf("列举持仓失败: %w", e)
 		}
 		for _, h := range hs {
-			if strings.TrimSpace(h.Note) == "" {
-				continue
-			}
 			out = append(out, target{
-				Type: "holding", ID: h.ID, Name: h.Name, Marker: strings.TrimSpace(h.Note),
+				Type: "holding", ID: h.ID, Name: h.Name, Note: strings.TrimSpace(h.Note),
 				Currency: h.Currency, CurrentAmount: round2(h.Quantity * h.CurrentPrice),
 				SupportedActions: []string{"buy", "sell", "dividend"},
 			})
@@ -419,11 +416,8 @@ func listAmountModifiable(args map[string]interface{}) (string, error) {
 			return "", fmt.Errorf("列举现金子账户失败: %w", e)
 		}
 		for _, c := range cs {
-			if strings.TrimSpace(c.Note) == "" {
-				continue
-			}
 			out = append(out, target{
-				Type: "cash", ID: c.ID, Name: c.Name, Marker: strings.TrimSpace(c.Note),
+				Type: "cash", ID: c.ID, Name: c.Name, Note: strings.TrimSpace(c.Note),
 				Currency: c.Currency, CurrentAmount: round2(c.Amount),
 				SupportedActions: []string{"deposit", "withdraw"},
 			})
@@ -438,15 +432,12 @@ func listAmountModifiable(args map[string]interface{}) (string, error) {
 			if w.UserID != 0 && w.UserID != uid {
 				continue
 			}
-			if strings.TrimSpace(w.Note) == "" {
-				continue
-			}
 			amt := 0.0
 			if _, v, ok, e2 := db.GetWealthLatest(w.ID); e2 == nil && ok {
 				amt = round2(v)
 			}
 			out = append(out, target{
-				Type: "wealth", ID: w.ID, Name: w.Name, Marker: strings.TrimSpace(w.Note),
+				Type: "wealth", ID: w.ID, Name: w.Name, Note: strings.TrimSpace(w.Note),
 				Currency: w.Currency, CurrentAmount: amt,
 				SupportedActions: []string{"subscribe", "redeem"},
 			})

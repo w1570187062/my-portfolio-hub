@@ -23,7 +23,7 @@ import (
 // 与「AI 总结」不同，这里是对话式的：模型可以在回答过程中调用工具（OpenAI function calling
 // 兼容协议）。工具分两类：
 //   1. MCP 已对接的账本能力（list_holdings / list_wealth / list_accounts /
-//      list_cash_accounts / list_markers / record_transaction）—— 与对外 MCP 服务同源，
+//      list_cash_accounts / record_transaction）—— 与对外 MCP 服务同源，
 //      由 internal/mcp 直接提供，避免两套实现漂移。
 //   2. 持仓分析能力（analyze_holding 技术分析 / 买卖判断、portfolio_summary 持仓总结）。
 //
@@ -37,7 +37,7 @@ const (
 const aiChatSystemPrompt = `你是「持仓侠」内置的 AI 投资助手，服务于用户自己的持仓账本。
 
 能力边界（只能做这些，做不到就直说，不要编造）：
-1. 查询账本：持仓、理财、账户来源、现金子账户、mcp 标记（用 list_* 工具）。
+1. 查询账本：持仓、理财、账户来源、现金子账户（用 list_* 工具）。
 2. 记录流水：持仓加仓/减仓/分红、现金存入/取出、理财申购/赎回（用 record_transaction 工具）。
 3. 持仓技术分析（analyze_holding）：MA/MACD/RSI/KDJ/BOLL + 看涨概率，可据此给买卖判断。
 4. 持仓总结（portfolio_summary）：总市值、总盈亏、结构分布、当日表现。

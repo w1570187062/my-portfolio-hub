@@ -21,52 +21,35 @@ const sourceMCP = "mcp"
 func (s *Server) registerDefaultTools() {
 	s.tools = append(s.tools, &Tool{
 		Name:        "record_transaction",
-		Description: "根据实体的 mcp 标记（备注字段）或名称记录一笔流水。可作用于：持仓(holding)的加仓/减仓/分红、现金子账户(cash)的存入/取出、理财(wealth)的申购(转入)/赎回(转出)。marker 按备注精确匹配定位；name 按名称/代码模糊匹配（大小写不敏感、包含匹配）定位；二者至少提供一个，entity_type 可省略以自动匹配。命中多个目标时返回候选列表并要求更精确或指定 entity_type。",
+		Description: "按名称/代码定位实体并记录一笔流水。可作用于：持仓(holding)的加仓/减仓/分红、现金子账户(cash)的存入/取出、理财(wealth)的申购(转入)/赎回(转出)。name 按名称/代码模糊匹配（大小写不敏感、包含匹配）定位，为必填；entity_type 可省略以自动匹配。命中多个目标时返回候选列表并要求更精确或指定 entity_type。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"marker": map[string]interface{}{
-					"type":        "string",
-					"description": "mcp 标记：目标实体的「备注」字段值，用于在持仓/子账户/理财中精确匹配定位。",
-				},
 				"name": map[string]interface{}{
 					"type":        "string",
-					"description": "目标实体名称/代码模糊匹配（大小写不敏感、包含匹配）：可输入持仓名称、证券代码或子账户/理财名称。与 marker 二选一；命中多个时返回候选列表并要求更精确或指定 entity_type。",
+					"description": "目标实体名称/代码模糊匹配（大小写不敏感、包含匹配）：可输入持仓名称、证券代码或子账户/理财名称。命中多个时返回候选列表并要求更精确或指定 entity_type。",
 				},
 				"entity_type": map[string]interface{}{
 					"type":        "string",
 					"enum":        []string{"holding", "cash", "wealth"},
-					"description": "目标类型；省略则在三类资产中按 marker 自动匹配第一个命中。",
+					"description": "目标类型；省略则在三类资产中自动匹配。",
 				},
 				"action": map[string]interface{}{
 					"type":        "string",
 					"description": "操作类型。holding: buy(加仓)/sell(减仓)/dividend(分红)；cash: deposit(存入)/withdraw(取出)；wealth: subscribe(申购/转入)/redeem(赎回/转出)。",
 				},
-				"quantity": map[string]interface{}{"type": "number", "description": "持仓加仓/减仓数量（股/份）。"},
-				"price":    map[string]interface{}{"type": "number", "description": "持仓加仓/减仓价格（每股/每份）。"},
-				"fee":      map[string]interface{}{"type": "number", "description": "手续费/佣金，默认 0。"},
+				"quantity":  map[string]interface{}{"type": "number", "description": "持仓加仓/减仓数量（股/份）。"},
+				"price":     map[string]interface{}{"type": "number", "description": "持仓加仓/减仓价格（每股/每份）。"},
+				"fee":       map[string]interface{}{"type": "number", "description": "手续费/佣金，默认 0。"},
 				"per_share": map[string]interface{}{"type": "number", "description": "持仓分红每股金额（action=dividend 时使用）。"},
-				"amount":   map[string]interface{}{"type": "number", "description": "金额（取绝对值，方向完全由 action 决定）：现金存取额或理财申赎额。action=withdraw/redeem 记为流出、deposit/subscribe 记为流入；传入负数会按绝对值处理（如 withdraw + amount=-17 与 amount=17 等价，均记取出 17）。"},
-				"note":     map[string]interface{}{"type": "string", "description": "附加说明，会写入账本备注。"},
-				"username": map[string]interface{}{"type": "string", "description": "归属用户名：指定后流水记录到该用户账本，必须与系统用户名精确匹配；省略则使用默认（首个）用户。"},
-				"user_id":  map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一，必须与系统中的用户 id 匹配；省略则使用默认用户。"},
+				"amount":    map[string]interface{}{"type": "number", "description": "金额（取绝对值，方向完全由 action 决定）：现金存取额或理财申赎额。action=withdraw/redeem 记为流出、deposit/subscribe 记为流入；传入负数会按绝对值处理（如 withdraw + amount=-17 与 amount=17 等价，均记取出 17）。"},
+				"note":      map[string]interface{}{"type": "string", "description": "附加说明，会写入账本备注。"},
+				"username":  map[string]interface{}{"type": "string", "description": "归属用户名：指定后流水记录到该用户账本，必须与系统用户名精确匹配；省略则使用默认（首个）用户。"},
+				"user_id":   map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一，必须与系统中的用户 id 匹配；省略则使用默认用户。"},
 			},
-			"required": []string{"action"},
+			"required": []string{"name", "action"},
 		},
 		Handler: recordTransaction,
-	})
-
-	s.tools = append(s.tools, &Tool{
-		Name:        "list_markers",
-		Description: "列出当前用户所有设置了 mcp 标记（备注非空）的实体，返回其类型、id、名称与标记值，便于 AI 选择 record_transaction 的 marker 参数。",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"username": map[string]interface{}{"type": "string", "description": "归属用户名：省略则使用默认（首个）用户。"},
-				"user_id":  map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一；省略则使用默认用户。"},
-			},
-		},
-		Handler: listMarkers,
 	})
 
 	// 只读查询工具：账户/子账户、持仓、理财
@@ -134,62 +117,13 @@ func toInt64(v interface{}) int64 {
 	return 0
 }
 
-// entityHit 描述一个被 marker 命中的实体。
+// entityHit 描述一个被定位到的实体。
 type entityHit struct {
 	Type   string
 	ID     int64
 	Name   string
 	Extra  string
 	Object interface{} // 原始 db 对象（holding/cash/wealth）
-}
-
-// findEntityByMarker 在指定（或所有）类型中按 note == marker 查找实体。
-func findEntityByMarker(uid int64, marker, entityType string) (*entityHit, error) {
-	norm := strings.TrimSpace(marker)
-	if norm == "" {
-		return nil, fmt.Errorf("marker 不能为空")
-	}
-	types := []string{"holding", "cash", "wealth"}
-	if entityType != "" {
-		types = []string{strings.ToLower(entityType)}
-	}
-	for _, t := range types {
-		switch t {
-		case "holding":
-			hs, err := db.List(uid)
-			if err != nil {
-				return nil, err
-			}
-			for _, h := range hs {
-				if strings.TrimSpace(h.Note) == norm {
-					return &entityHit{Type: "holding", ID: h.ID, Name: h.Name, Extra: fmt.Sprintf("%s/%s", h.Symbol, h.Currency), Object: h}, nil
-				}
-			}
-		case "cash":
-			cs, err := db.ListCash(uid)
-			if err != nil {
-				return nil, err
-			}
-			for _, c := range cs {
-				if strings.TrimSpace(c.Note) == norm {
-					return &entityHit{Type: "cash", ID: c.ID, Name: c.Name, Extra: c.Currency, Object: c}, nil
-				}
-			}
-		case "wealth":
-			ws, err := db.ListWealth(uid)
-			if err != nil {
-				return nil, err
-			}
-			for _, w := range ws {
-				if strings.TrimSpace(w.Note) == norm {
-					return &entityHit{Type: "wealth", ID: w.ID, Name: w.Name, Extra: w.Currency, Object: w}, nil
-				}
-			}
-		default:
-			return nil, fmt.Errorf("未知 entity_type: %s（应为 holding/cash/wealth）", entityType)
-		}
-	}
-	return nil, fmt.Errorf("未找到备注(标记)为「%s」的%s实体", norm, entityTypeText(entityType))
 }
 
 func entityTypeText(t string) string {
@@ -199,11 +133,8 @@ func entityTypeText(t string) string {
 	return t + " 类型"
 }
 
-// resolveTargetEntity 先按 marker（备注精确匹配）定位；marker 为空时按 name（名称/代码模糊匹配）定位。
-func resolveTargetEntity(uid int64, marker, name, entityType string) (*entityHit, error) {
-	if strings.TrimSpace(marker) != "" {
-		return findEntityByMarker(uid, marker, entityType)
-	}
+// resolveTargetEntity 按 name（名称/代码模糊匹配）定位实体。
+func resolveTargetEntity(uid int64, name, entityType string) (*entityHit, error) {
 	return findEntityByName(uid, strings.TrimSpace(name), entityType)
 }
 
@@ -299,24 +230,23 @@ func resolveCashAccount(uid, sourceID int64, currency string) (*db.Cash, error) 
 	return nil, fmt.Errorf("找不到可用的现金子账户（来源=%d 币种=%s）", sourceID, currency)
 }
 
-// recordTransaction 是核心工具：按 marker 定位实体并记录一笔流水。
+// recordTransaction 是核心工具：按名称定位实体并记录一笔流水。
 func recordTransaction(args map[string]interface{}) (string, error) {
 	uid, err := resolveUserID(args)
 	if err != nil {
 		return "", err
 	}
-	marker, _ := args["marker"].(string)
 	name, _ := args["name"].(string)
 	entityType, _ := args["entity_type"].(string)
 	action, _ := args["action"].(string)
 	action = strings.ToLower(strings.TrimSpace(action))
-	if strings.TrimSpace(marker) == "" && strings.TrimSpace(name) == "" {
-		return "", fmt.Errorf("marker 与 name 至少提供其一以定位目标实体")
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("name 为必填：用于定位目标实体")
 	}
 	if action == "" {
 		return "", fmt.Errorf("action 为必填")
 	}
-	hit, err := resolveTargetEntity(uid, marker, name, entityType)
+	hit, err := resolveTargetEntity(uid, name, entityType)
 	if err != nil {
 		return "", err
 	}
@@ -463,44 +393,6 @@ func recordWealthTX(uid int64, hit *entityHit, action string, args map[string]in
 	}
 	return fmt.Sprintf("已记录理财%s流水：%s(%s) 当日净%s %.2f，持仓金额更新为 %.2f。",
 		actionName(action), w.Name, w.Currency, actionName(action), round2(cashflow), newAmount), nil
-}
-
-func listMarkers(args map[string]interface{}) (string, error) {
-	uid, err := resolveUserID(args)
-	if err != nil {
-		return "", err
-	}
-	type row struct {
-		Type   string `json:"type"`
-		ID     int64  `json:"id"`
-		Name   string `json:"name"`
-		Marker string `json:"marker"`
-		Extra  string `json:"extra"`
-	}
-	out := []row{}
-	hs, _ := db.List(uid)
-	for _, h := range hs {
-		if strings.TrimSpace(h.Note) != "" {
-			out = append(out, row{"holding", h.ID, h.Name, h.Note, fmt.Sprintf("%s/%s", h.Symbol, h.Currency)})
-		}
-	}
-	cs, _ := db.ListCash(uid)
-	for _, c := range cs {
-		if strings.TrimSpace(c.Note) != "" {
-			out = append(out, row{"cash", c.ID, c.Name, c.Note, c.Currency})
-		}
-	}
-	ws, _ := db.ListWealth(uid)
-	for _, w := range ws {
-		if strings.TrimSpace(w.Note) != "" {
-			out = append(out, row{"wealth", w.ID, w.Name, w.Note, w.Currency})
-		}
-	}
-	b, err := json.MarshalIndent(map[string]interface{}{"count": len(out), "markers": out}, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
 }
 
 // ---- 参数 / 数值助手 ----

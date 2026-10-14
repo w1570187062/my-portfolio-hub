@@ -1,6 +1,6 @@
 // Package mcp 实现了一个自包含、零依赖的 MCP（Model Context Protocol）服务端，
-// 让外部 AI 客户端（如 hermes）可以通过标准 MCP 协议连接本持仓项目，并基于实体的
-// 「备注(mcp 标记)」来记录流水（加仓/减仓/分红、现金存取、理财申赎）。
+// 让外部 AI 客户端（如 hermes）可以通过标准 MCP 协议连接本持仓项目，并按实体名称 / 代码
+// 定位目标来记录流水（加仓/减仓/分红、现金存取、理财申赎）。
 //
 // 设计参考 mayswind/ezbookkeeping 的 pkg/mcp：以 JSON-RPC 2.0 暴露 tools/list 与
 // tools/call，工具内部复用以有的 db 层完成账本写入。本实现额外支持 stdio 与 HTTP(SSE)
