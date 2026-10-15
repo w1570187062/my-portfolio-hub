@@ -213,6 +213,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/asset/cash/:id/flows", listCashFlows)
 		g.POST("/asset/cash", createCash)
 		g.POST("/asset/cash/adjust", adjustCash)
+		g.POST("/asset/balance/sync", balanceSync)
 		g.POST("/asset/cash/transfer", transferCash)
 		g.PUT("/asset/cash/:id", updateCash)
 		g.DELETE("/asset/cash/:id", deleteCash)
@@ -1985,6 +1986,29 @@ func holdingPnlHistory(c *gin.Context) {
 	// 优先用清仓前快照，快照缺失时从 position_tx 回退推算（兼容本次升级前已清仓的老数据）。
 	qty := h.Quantity
 	cost := h.CostPrice
+	// 已清仓判定 + 清仓日（最后一次 SELL 的日期）。清仓后不应再产生浮动盈亏，
+	// 曲线必须截断到清仓日，否则会把清仓后的涨跌算成持仓盈亏（历史 bug）。
+	closed := h.Closed || h.Quantity <= 0
+	var closedDate string
+	var realizedSum float64
+	var txs []db.PositionTx
+	if t, e := db.ListPositionTx(h.ID); e == nil {
+		txs = t
+	}
+	if closed {
+		for _, t := range txs { // ListPositionTx 按 id DESC，最后一条 SELL 即清仓动作
+			if t.TxType != "SELL" {
+				continue
+			}
+			realizedSum += t.RealizedPnl
+			if len(t.CreatedAt) >= 10 {
+				d := t.CreatedAt[:10]
+				if d > closedDate {
+					closedDate = d
+				}
+			}
+		}
+	}
 	if h.Closed || (h.Quantity <= 0 && h.CostPrice <= 0) {
 		if h.LastQuantity > 0 {
 			qty = h.LastQuantity
@@ -1993,23 +2017,21 @@ func holdingPnlHistory(c *gin.Context) {
 			cost = h.LastCostPrice
 		}
 		if qty <= 0 || cost <= 0 {
-			if txs, e := db.ListPositionTx(h.ID); e == nil {
-				var sellQty, sellFee, realizedSum, lastPrice float64
-				for _, t := range txs {
-					if t.TxType == "SELL" {
-						sellQty += t.Quantity
-						sellFee += t.Fee
-						realizedSum += t.RealizedPnl
-						lastPrice = t.Price
-					}
+			var sellQty, sellFee, realizedAll, lastPrice float64
+			for _, t := range txs {
+				if t.TxType == "SELL" {
+					sellQty += t.Quantity
+					sellFee += t.Fee
+					realizedAll += t.RealizedPnl
+					lastPrice = t.Price
 				}
-				if qty <= 0 && sellQty > 0 {
-					qty = sellQty
-				}
-				if cost <= 0 && sellQty > 0 && lastPrice > 0 {
-					// realized = (price - cost)*qty - fee  =>  cost = price - (realized+fee)/qty
-					cost = lastPrice - (realizedSum+sellFee)/sellQty
-				}
+			}
+			if qty <= 0 && sellQty > 0 {
+				qty = sellQty
+			}
+			if cost <= 0 && sellQty > 0 && lastPrice > 0 {
+				// realized = (price - cost)*qty - fee  =>  cost = price - (realized+fee)/qty
+				cost = lastPrice - (realizedAll+sellFee)/sellQty
 			}
 		}
 	}
@@ -2034,6 +2056,10 @@ func holdingPnlHistory(c *gin.Context) {
 	}
 	var rows []Row
 	for i, p := range series {
+		// 已清仓：曲线截止清仓日（含），之后的行情与持仓无关，不能再算成持仓盈亏
+		if closed && closedDate != "" && p.Date > closedDate {
+			break
+		}
 		mv := p.Close * qty * fx
 		totalPnl := (p.Close - cost) * qty * fx
 		var totalPct, dayPnl, dayPct float64
@@ -2047,13 +2073,100 @@ func holdingPnlHistory(c *gin.Context) {
 				dayPct = dayPnl / (prev * qty * fx) * 100
 			}
 		}
+		// 清仓日当天的累计盈亏用已实现口径（卖出价落袋），而不是收盘价浮盈，避免与交易记录对不上
+		if closed && closedDate != "" && p.Date == closedDate && realizedSum != 0 {
+			totalPnl = realizedSum
+			if cost*qty*fx > 0 {
+				totalPct = totalPnl / (cost * qty * fx) * 100
+			}
+		}
 		rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})
 	}
+	// 清仓日之后没有价格序列时（清仓日超出已有行情范围），曲线至少保留最后一个点
+	if closed && closedDate != "" && len(rows) == 0 && len(series) > 0 {
+		p := series[0]
+		mv := p.Close * qty * fx
+		totalPnl := (p.Close - cost) * qty * fx
+		var totalPct float64
+		if cost > 0 {
+			totalPct = totalPnl / (cost * qty * fx) * 100
+		}
+		rows = append(rows, Row{Date: p.Date, Close: p.Close, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})
+	}
+	// 交易点：BUY/SELL 供前端在曲线上打 B/S 标记；DIV（分红）不画。
+	// 日期取 created_at[:10]，若当天没有行情点，前端会就近落到最近一个点上。
+	type Marker struct {
+		Date     string  `json:"date"`
+		Type     string  `json:"type"` // BUY | SELL
+		Price    float64 `json:"price"`
+		Quantity float64 `json:"quantity"`
+		Amount   float64 `json:"amount"` // 成交金额 = quantity * price
+		Fee      float64 `json:"fee"`
+		Note     string  `json:"note"`
+	}
+	var markers []Marker
+	for _, t := range txs {
+		if t.TxType != "BUY" && t.TxType != "SELL" {
+			continue
+		}
+		if len(t.CreatedAt) < 10 {
+			continue
+		}
+		d := t.CreatedAt[:10]
+		if closed && closedDate != "" && d > closedDate {
+			continue // 清仓日之后的交易不在曲线区间内
+		}
+		markers = append(markers, Marker{Date: d, Type: t.TxType, Price: t.Price, Quantity: t.Quantity, Amount: t.Amount, Fee: t.Fee, Note: t.Note})
+	}
+	// 已清仓日的落袋摘要：供前端在清仓日 hover 时显示「累计收益 / 持仓天数 / 收益率」
+	var closedInfo *struct {
+		Date        string  `json:"date"`
+		RealizedPnl float64 `json:"realized_pnl"`
+		HoldingDays int     `json:"holding_days"`
+		ReturnRate  float64 `json:"return_rate"`
+		CostAmount  float64 `json:"cost_amount"`
+		SellPrice   float64 `json:"sell_price"`
+		CostPrice   float64 `json:"cost_price"`
+	}
+	if closed && closedDate != "" && cost > 0 && qty > 0 {
+		costAmt := cost * qty * fx
+		info := &struct {
+			Date        string  `json:"date"`
+			RealizedPnl float64 `json:"realized_pnl"`
+			HoldingDays int     `json:"holding_days"`
+			ReturnRate  float64 `json:"return_rate"`
+			CostAmount  float64 `json:"cost_amount"`
+			SellPrice   float64 `json:"sell_price"`
+			CostPrice   float64 `json:"cost_price"`
+		}{Date: closedDate, RealizedPnl: realizedSum, CostAmount: costAmt,
+			CostPrice: cost, ReturnRate: round2(realizedSum / costAmt * 100)}
+		// 持仓天数：buy_date → 清仓日（老数据无 buy_date 时退化为 series 起点→清仓日）
+		start := h.BuyDate
+		if start == "" && len(rows) > 0 {
+			start = rows[0].Date
+		}
+		if start != "" {
+			if d1, e1 := time.Parse("2006-01-02", start); e1 == nil {
+				if d2, e2 := time.Parse("2006-01-02", closedDate); e2 == nil {
+					info.HoldingDays = int(d2.Sub(d1).Hours() / 24)
+				}
+			}
+		}
+		// 清仓成交价（最后一次 SELL 的价格）
+		for _, t := range txs {
+			if t.TxType == "SELL" && len(t.CreatedAt) >= 10 && t.CreatedAt[:10] == closedDate {
+				info.SellPrice = t.Price
+			}
+		}
+		closedInfo = info
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"holding": gin.H{"id": h.ID, "name": h.Name, "symbol": h.Symbol, "currency": h.Currency, "quantity": h.Quantity, "cost_price": h.CostPrice, "category": h.Category},
-		"currency": h.Currency,
-		"fx":       fx,
-		"series":   rows,
+		"holding":     gin.H{"id": h.ID, "name": h.Name, "symbol": h.Symbol, "currency": h.Currency, "quantity": h.Quantity, "cost_price": h.CostPrice, "category": h.Category, "closed": closed, "closed_date": closedDate},
+		"currency":    h.Currency,
+		"fx":          fx,
+		"series":      rows,
+		"markers":     markers,
+		"closed_info": closedInfo,
 	})
 }
 

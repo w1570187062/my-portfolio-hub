@@ -1074,8 +1074,14 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "持仓金额不能为负（产品 " + strconv.FormatInt(it.WealthID, 10) + "）"})
 			return
 		}
-		// 净存入仅支持存入（≥0）：取出/赎回统一走理财表格「减仓/清仓」，避免两条入口打架
-		if it.Cashflow < 0 {
+		// 拉取当日已存快照：用于判断「当日净存入为负」是否由「减仓/清仓」合法产生
+		// （避免卡住「减仓后想再微调当日持仓」的正常流程）。
+		oldAmt, oldCf, existed, _ := db.GetWealthSnapshot(it.WealthID, b.Date)
+		// 净存入通常≥0（存入走「更新理财」②，取出/赎回走「减仓/清仓」）。
+		// 但当日在「减仓/清仓」已产生负净存入（oldCf<0）时，前端提交值 = 旧值 + 本次新增转入（≥0），
+		// 可能为负（即当天净赎回），属合法值，应放行；否则会拦截「减仓后补录余额」的正常录入。
+		// 仅当 oldCf≥0 却提交负值（即本次新增转入为负，前端本不允许）才拦截。
+		if it.Cashflow < 0 && oldCf >= 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "「" + p.Name + "」当日净存入不能为负数；取出/赎回请使用理财表格中的「减仓/清仓」"})
 			return
 		}
@@ -1090,7 +1096,6 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 			}
 		}
 		// 写审计：记录改前/改后
-		oldAmt, oldCf, existed, _ := db.GetWealthSnapshot(it.WealthID, b.Date)
 		// 与当日快照完全一致 → 无变化：跳过落库与审计（防御性兜底，前端本就只提交有变化的行）
 		if existed && math.Abs(oldAmt-it.Amount) < 0.005 && math.Abs(oldCf-it.Cashflow) < 0.005 {
 			continue

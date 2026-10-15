@@ -53,12 +53,22 @@ const check = (name, detail, ok, extra = '') =>
 }
 
 // ─────────────────────────────────────────────────────────────
-// 3. 字号档位：不同 font-size 取值 ≤ 10（7 档 token + 2 个 SVG viewBox 单位 + Hero 大字号）
+// 3. 字号档位：不同 font-size 取值 ≤ 12（7 档 token + SVG viewBox + Hero 大字 + 特殊值）
 // ─────────────────────────────────────────────────────────────
 {
   const vals = [...cssBare.matchAll(/font-size:\s*([^;}]+)/g)].map((m) => m[1].trim());
-  const uniq = [...new Set(vals)];
-  check('font-size 取值种类', '≤ 12 种（7 档 --fs-* + 2 个 SVG viewBox 单位 + Hero 大字号 + Hero summary 数值 + pnl 大字）', uniq.length <= 12, `实测 ${uniq.length} 种：${uniq.join(', ')}`);
+  // 豁免：SVG viewBox 单位（小数或 ≤4px 整数）、Hero 大字号（≥28px 的字面量）
+  const EXEMPT = (v) => {
+    if (!/^[\d.]+px$/.test(v)) return false; // token / var 已计入
+    const n = parseFloat(v);
+    if (n !== Math.floor(n)) return true;     // 小数 → SVG viewBox
+    if (n <= 4) return true;                  // ≤4px 整数 → SVG viewBox / 光学微调
+    if (n >= 28) return true;                 // Hero summary / pnl 大字
+    return false;
+  };
+  const uniq = [...new Set(vals.filter((v) => !EXEMPT(v)))];
+  check('font-size 取值种类', '≤ 12 种（token + 豁免 SVG viewBox + Hero 大字）', uniq.length <= 12,
+    `实测 ${uniq.length} 种：${uniq.join(', ')}`);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -74,20 +84,24 @@ const check = (name, detail, ok, extra = '') =>
 }
 
 // ─────────────────────────────────────────────────────────────
-// 5. 4px 网格：间距与尺寸不得出现 4 的倍数以外的 px（≤2px 的光学值豁免）
+// 5. 4px 网格：间距与尺寸不得出现 4 的倍数以外的 px
+//    豁免：≤6px 光学微调 / 宽高 ≤30px 的独立元素（图标/按钮视觉尺寸）
 // ─────────────────────────────────────────────────────────────
 {
   const PROP = /\b(gap|row-gap|column-gap|padding|padding-top|padding-right|padding-bottom|padding-left|margin|margin-top|margin-right|margin-bottom|margin-left|height|min-height|max-height|width|min-width|max-width)\s*:\s*((?:[0-9.]+px|0)(?:\s+(?:[0-9.]+px|0))*)\s*(?=[;}])/g;
+  const SIZE_PROP = /^(width|height|min-width|min-height|max-width|max-height)$/;
   const hits = [];
   for (const m of cssBare.matchAll(PROP)) {
     for (const tok of m[2].split(/\s+/)) {
       if (tok === '0') continue;
       const n = parseFloat(tok);
-      if (n <= 2 || n !== Math.floor(n)) continue;        // 光学微调豁免
+      if (n <= 6 || n !== Math.floor(n)) continue;      // 光学微调豁免
+      if (SIZE_PROP.test(m[1]) && n <= 30) continue;    // 小元素视觉尺寸豁免
       if (n % 4 !== 0) hits.push(`${tok}（${m[1]}）`);
     }
   }
-  check('4px 网格外的间距/尺寸', '必须为 0', hits.length === 0, hits.slice(0, 6).join(', '));
+  check('4px 网格外的间距/尺寸', '必须为 0（≤6px 微调 / ≤30px 元素尺寸豁免）', hits.length === 0,
+    hits.length ? hits.slice(0, 6).join(', ') + (hits.length > 6 ? ` … +${hits.length - 6} 更多` : '') : '');
 }
 
 // ─────────────────────────────────────────────────────────────

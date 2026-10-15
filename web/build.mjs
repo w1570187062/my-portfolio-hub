@@ -26,4 +26,8 @@ await build({
 copyFileSync('index.html', 'dist/index.html');
 copyFileSync('favicon.svg', 'dist/favicon.svg');
 
-console.log('web build complete -> dist/ (app.js, style.css, index.html, favicon.svg)');
+// PWA 静态资源（不压缩，原样拷贝进 dist 供 go:embed 嵌入）
+['manifest.webmanifest', 'sw.js', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png']
+  .forEach((f) => copyFileSync(f, 'dist/' + f));
+
+console.log('web build complete -> dist/ (app.js, style.css, index.html, favicon.svg, manifest.webmanifest, sw.js, icons)');

@@ -90,6 +90,21 @@ func main() {
 				return
 			}
 		}
+		// PWA 资源（manifest / 图标 / service worker）允许缓存：否则 Service Worker 预缓存
+		// （cache.addAll）会因 no-store 而失败，导致离线与「添加到主屏幕」失效。
+		switch {
+		case r.URL.Path == "/sw.js", r.URL.Path == "/manifest.webmanifest", r.URL.Path == "/favicon.svg":
+			if strings.HasSuffix(r.URL.Path, ".webmanifest") {
+				w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+			}
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			fileServer.ServeHTTP(w, r)
+			return
+		case strings.HasPrefix(r.URL.Path, "/icon-") && strings.HasSuffix(r.URL.Path, ".png"):
+			w.Header().Set("Cache-Control", "public, max-age=604800")
+			fileServer.ServeHTTP(w, r)
+			return
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Pragma", "no-cache")
 		fileServer.ServeHTTP(w, r)

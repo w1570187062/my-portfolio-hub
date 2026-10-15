@@ -4,6 +4,12 @@
 <meta charset="UTF-8" data-page-node-id="r8BDCLQZDWyXSjG4PxWPtE">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" data-page-node-id="2t3knbLwHdRBqvEpur4wVN">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" data-page-node-id="sQGs514He3P5SEzVVKfvGO">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0a0e14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="持仓侠">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>持仓侠</title>
 <link rel="stylesheet" href="/style.css" data-page-node-id="b5mR41UapyQYKGlXNRWu5c">
 </head>
@@ -35,6 +41,7 @@
           <path d="M8 3v4M16 3v4M3 10h18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
         </svg>
       </button>
+      <button id="guideBtn" class="btn theme-toggle" type="button" title="调仓计划" aria-label="调仓计划" style="position:relative"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto"><rect x="5.5" y="4.5" width="13" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="9" y="2.8" width="6" height="3.4" rx="1.2" fill="currentColor"/><path d="M9 10.5 H15 M9 14 H15 M9 17.5 H12.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span id="guideBadge" class="guide-badge" hidden></span></button>
       <button id="userBtn" class="btn act-user" type="button" title="用户切换" data-page-node-id="HFt15nJsQL0qjTTP8Lx7KV"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto" data-page-node-id="ID4NSVY35T069QYO63WqEW"><circle cx="12" cy="8.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.9" data-page-node-id="kQu7CzheqdpBw4GiNl6AcO"/><path d="M4.8 19.2 C4.8 15.3 8 13.6 12 13.6 C16 13.6 19.2 15.3 19.2 19.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="sJpfJfDPBs4bWNojDgZvQl"/></svg><span id="userNameText" style="display:none" data-page-node-id="3T24uP1BsS2CK2XUqL2eOg">默认</span></button>
     </div>
   </header>
@@ -91,6 +98,8 @@
   <div id="cashflowCard" class="cf-card" hidden>
     <div class="cf-head">
       <span class="cf-title" data-icon="calendar">收支计划</span>
+      <span class="cf-dot" aria-hidden="true"></span>
+      <span class="cf-month" id="cfMonth"></span>
       <span class="cf-sub" id="cfSub"></span>
       <span class="cf-net" id="cfNet"></span>
     </div>
@@ -104,10 +113,6 @@
         <button id="wealthSnapBtn" class="btn icon-btn" title="更新理财持仓" aria-label="更新理财持仓"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><path d="M20 12a8 8 0 1 1-2.4-5.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button id="dcaBtn" class="btn icon-btn" title="基金定投" aria-label="基金定投"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="4" y="5.5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9.5h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 3.2v3M16 3.2v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 11.6v4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.6 13.4 12 15.8 14.4 13.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button id="addBtn" class="btn icon-btn" title="添加" aria-label="添加" data-page-node-id="hsHtQTtnqagRxe0FRE0ZXx"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px" data-page-node-id="ElLAqhDFcocL9vATRVskMf"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9" data-page-node-id="oheMGX8lKEdMs4EC8Cjw0a"/><path d="M12 7.8 V16.2 M7.8 12 H16.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="9xCwby2wE7GPOB9QWbufbW"/></svg></button>
-        <button id="guideBtn" class="btn icon-btn" title="调仓计划" aria-label="调仓计划" data-page-node-id="8rCBgehIeNogxJkqbkialu"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px" data-page-node-id="QFPGqCC6KOlqre9T5BBU9R"><rect x="5.5" y="4.5" width="13" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9" data-page-node-id="zSvXboQREF2SK8NMJgh3rs"/><rect x="9" y="2.8" width="6" height="3.4" rx="1.2" fill="currentColor" data-page-node-id="8OA1dAMB5EqlANNUujlq29"/><path d="M9 10.5 H15 M9 14 H15 M9 17.5 H12.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" data-page-node-id="Ieiq7YCyTl5R4dLIGm5d9l"/></svg><span id="guideBadge" class="guide-badge" hidden data-page-node-id="eaNKrxDXSm9TZoonSGzOVA"></span></button>
-      </div>
-      <div class="action-tools" data-page-node-id="SIrJRv3gDdKI4xop0vWg4h">
-        <input type="search" id="filterInput" name="q" class="filter-search" placeholder="搜索名称 / 代码" aria-label="筛选持仓" autocomplete="off" spellcheck="false" enterkeyhint="search" hidden data-1p-ignore data-lpignore="true" data-form-type="other" data-dashlane-ignored="true" data-page-node-id="iTPo1g2MEiJcwRzTd6YAOR">
       </div>
     </div>
   </div>
@@ -477,10 +482,27 @@
 
   <!-- ===== AI 助手：右下角悬浮按钮 + 聊天面板（不在 #app 内，避免未登录/boot 前被隐藏） ===== -->
   <button id="aiFab" class="ai-fab" type="button" title="AI 助手" aria-label="打开 AI 助手" aria-haspopup="dialog" aria-expanded="false">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M4.5 5.5 Q4.5 4 6 4 H18 Q19.5 4 19.5 5.5 V14 Q19.5 15.5 18 15.5 H10 L7 18.5 V15.5 H6 Q4.5 15.5 4.5 14 Z"/>
-      <path d="M8.5 12 L11.5 9 L14.5 10.5 L17.5 7.5"/>
-      <circle cx="17.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/>
+    <!-- 牛来（电影《牛来》小黄牛）上半身剪影：镂空八字眉/眼/鼻孔/微笑 -->
+    <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true">
+      <mask id="pfNiuMask">
+        <rect width="48" height="48" fill="#fff"/>
+        <path d="M15 9.7 L20.2 11.4" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+        <path d="M33 9.7 L27.8 11.4" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+        <ellipse cx="18.5" cy="14" rx="1.7" ry="2" fill="#000"/>
+        <ellipse cx="29.5" cy="14" rx="1.7" ry="2" fill="#000"/>
+        <path d="M20.6 21.9 q-1.2 1.2 -0.2 2.4" stroke="#000" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+        <path d="M27.4 21.9 q1.2 1.2 0.2 2.4" stroke="#000" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+        <path d="M20.6 25.4 Q24 26.8 27.4 25.2" stroke="#000" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+        <path d="M12.5 28.2 Q24 31.5 35.5 28.2" stroke="#000" stroke-width="2.4" fill="none"/>
+      </mask>
+      <g mask="url(#pfNiuMask)">
+        <ellipse cx="9.4" cy="14.5" rx="4.8" ry="3" transform="rotate(-20 9.4 14.5)"/>
+        <ellipse cx="38.6" cy="14.5" rx="4.8" ry="3" transform="rotate(20 38.6 14.5)"/>
+        <path d="M14.5 8.5 Q10.5 4.5 13.5 1.8 Q17 4 16.2 8.2 Z"/>
+        <path d="M33.5 8.5 Q37.5 4.5 34.5 1.8 Q31 4 31.8 8.2 Z"/>
+        <path d="M12.5 11 Q12.5 4.5 24 4.5 Q35.5 4.5 35.5 11 L35.5 22 Q35.5 26.5 29.5 27.5 L18.5 27.5 Q12.5 26.5 12.5 22 Z"/>
+        <path d="M9 48 Q9 31.5 24 31.5 Q39 31.5 39 48 Z"/>
+      </g>
     </svg>
   </button>
 
@@ -536,7 +558,7 @@
             <span class="f-pill-cap f-pill-cap-2">市场</span>
             <div id="fMktPills" class="f-pills"></div>
           </div>
-          <!-- 交易日期紧跟交易成本：四格等宽（手机端两格×两行），与其余输入框同宽 -->
+          <!-- 两列两行：份额·成本价一排 / 交易成本·日期一排（电脑端与手机端一致），与其余输入框同宽 -->
           <div class="f-row f-row4" data-page-node-id="JCukFO7UUG0GtYpuUm8Yjd">
             <label data-page-node-id="AP1guFyhQVAFx4qZOdG7n3">份额 <input id="f_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="股数 / 份数" required data-page-node-id="ksrBEte0Bd9NuAMNz5yGb0"></label>
             <label data-page-node-id="qW4fLH85p7kFjt0ZLtUILH">成本价 <input id="f_cost_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="均价" required data-page-node-id="v5BD4jTcUbflvFnPB8Zapw"></label>
@@ -917,7 +939,20 @@
         <button id="wealthHistTabTable" class="ana-tab-btn active" type="button">每日盈亏</button>
         <button id="wealthHistTabAudit" class="ana-tab-btn" type="button">审计记录</button>
       </div>
-      <div id="wealthHistTableWrap" class="m-body"><div id="wealthHistTable" class="hist-table"></div></div>
+      <div id="wealthHistTableWrap" class="m-body">
+        <div class="wh-range-bar ds-t-seg" id="whRangeBar">
+          <button data-range="30" type="button">近30天</button>
+          <button data-range="90" class="active" type="button">近90天</button>
+          <button data-range="0" type="button">全部</button>
+          <button data-range="custom" type="button">自定义</button>
+        </div>
+        <div class="wh-custom-row" id="whCustomRow" hidden>
+          <label>起 <input type="date" id="whFrom"></label>
+          <label>止 <input type="date" id="whTo"></label>
+          <span class="wh-custom-hint">仅显示该区间内的每日盈亏</span>
+        </div>
+        <div id="wealthHistTable" class="hist-table"></div>
+      </div>
     </div>
   </div>
 
@@ -1105,6 +1140,24 @@
         <div class="modal-actions">
           <button class="btn" type="button" id="feCancel">取消</button>
           <button class="btn primary" type="submit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 一键更新余额：手动对账所有账户余额，差额自动记「手动调整」流水并联动余额 -->
+  <div id="balanceSyncModal" class="modal" hidden>
+    <div class="modal-card" style="width:560px; max-width:94vw;">
+      <h2 class="m-head" data-icon="adjust">一键更新余额</h2>
+      <form id="balanceSyncForm">
+        <p class="bsync-desc">填入账户的最新余额（原币种），留空跳过；有变化的自动补一条「手动调整」流水。</p>
+        <div id="bsBody" class="bsync-list"></div>
+        <label>备注 <input id="bs_note" maxlength="120" placeholder="可选，默认「手动调整」" /></label>
+        <div id="bsHint" class="bsync-hint" aria-live="polite"></div>
+        <div id="bsErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="bsCancel">取消</button>
+          <button class="btn primary" type="submit" id="bsSubmit">保存</button>
         </div>
       </form>
     </div>
