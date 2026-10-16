@@ -16,13 +16,13 @@
   --text-muted: #94a3b8;
   --text-faint: #64748b;
 
-  /* 顶部主导航选中态（PanWatch 风格）：深色下加大 alpha 才可见 */
+  /* 顶部主导航选中态：深色下加大 alpha 才可见 */
   --nav-active-a1: .20;
   --nav-active-a2: .07;
   --nav-active-a3: .10;
   --nav-ring: .26;
 
-  /* 主色调：iOS 蓝（改 --tint/--primary 即可全局生效，或用 [data-accent] 预设） */
+  /* 主色调（改 --tint/--primary 即可全局生效，或用 [data-accent] 预设） */
   --tint: 10, 132, 255;
   --primary: #0a84ff;
   --primary-hover: #409cff;
@@ -209,13 +209,13 @@
   --text-muted: #5a6068;
   --text-faint: #8a8f99;
 
-  /* 顶部主导航选中态（PanWatch 风格）：浅色下用较低 alpha 的淡彩底 */
+  /* 顶部主导航选中态：浅色下用较低 alpha 的淡彩底 */
   --nav-active-a1: .20;
   --nav-active-a2: .06;
   --nav-active-a3: .10;
   --nav-ring: .26;
 
-  /* 日间模式 iOS 蓝阶：浅底蓝色压暗保证 AA 对比度（>=4.5:1）。 */
+  /* 日间模式 蓝阶：浅底蓝色压暗保证 AA 对比度（>=4.5:1）。 */
   --tint: 0, 102, 204;
   --primary: #0066cc;
   --primary-hover: #0057b3;
@@ -276,7 +276,7 @@
 }
 
 /* ===== 主题色预设（后期可调）=====
-   用法：<html data-accent="gold|green|blue">，默认 blue（iOS 蓝，见 :root 默认值）；
+   用法：<html data-accent="gold|green|blue">，默认 blue（见 :root 默认值）；
    自定义主题（铅笔）由 JS 以内联变量覆盖 --primary/--tint，不依赖预设块。
    新增一种主题色：只需追加一对规则（暗色 + 日间），给出 --tint(RGB 三元组) 与
    --primary / --primary-hover / --primary-active 四个变量，其余派生色（边框、hover 背景、
@@ -395,7 +395,7 @@
   background: var(--btn-danger-active);
   border-color: var(--btn-danger-active);
 }
-/* 浅红危险变体（借鉴 PanWatch destructive：浅红底+红字，用于轻量危险操作，视觉弱于实心 .danger） */
+/* 浅红危险变体（destructive：浅红底+红字，用于轻量危险操作，视觉弱于实心 .danger） */
 .btn.danger-soft {
   background: var(--danger-soft);
   color: var(--danger);
@@ -411,7 +411,7 @@
   color: #fff;
 }
 
-/* 纯色主按钮（借鉴 PanWatch default variant：主色实心 + 白字，用于主要操作，与幽灵 .btn 形成主次对比） */
+/* 纯色主按钮（default variant：主色实心 + 白字，用于主要操作，与幽灵 .btn 形成主次对比） */
 .btn.primary {
   background: var(--btn-primary);
   color: var(--on-primary);
@@ -441,7 +441,7 @@
 .name-cell .name-clickable { flex: 0 0 auto; max-width: var(--name-w, 300px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-base); font-weight: 400; }
 /* 名称单元格里的「修改 / 分析」已改为 .row-act 纯图标按钮（见下方行内操作按钮族），
    原先的 .act-adjust-inline / .act-analysis / .act-modify 相关规则已随之删除。 */
-/* 买卖信号徽标（红涨绿跌，实心色圆角矩形、白字）—— 仿 PanWatch 持仓页「加仓」建议徽标
+/* 买卖信号徽标（红涨绿跌，实心色圆角矩形、白字）
    （BadgeChip sm：11px 字号 / 8px 水平内边距 / 4px 圆角 / font-medium），随名称同行排布（非右上角悬挂）。
    锚点挂在「名称文本」：操作按钮改纯图标后默认 opacity:0（悬停行才出现），
    语义上信号属于标的，也不该依附于按钮。 */
@@ -453,7 +453,7 @@
   display: inline-flex; align-items: center; box-sizing: border-box;
   border: none;  /* 行内排布后不再溢出单元格，恢复 title 悬停提示 */
 }
-/* 买/卖徽标走实心语义色 token（对应 PanWatch buy=rose-500 / add=rose-400 白字底） */
+/* 买/卖徽标走实心语义色 token */
 .name-cap .ana-badge.buy { background: var(--up-solid); color: #fff; }
 .name-cap .ana-badge.sell { background: var(--down-solid); color: #fff; }
 /* 名称列：图标按钮推到单元格右端。名称列不再靠 .name-clickable 撑满 */
@@ -522,7 +522,7 @@ tbody tr .row-act:focus-visible { opacity: 1; }
   padding: 0 var(--sp-5) 28px; /* 与资产全景 #assetTabBody 左右间距(20px)保持一致 */
 }
 
-/* 账户父卡片：左侧账户名 + 右侧资产总览横排统计（参考 PanWatch portfolio 账户汇总条） */
+/* 账户父卡片：左侧账户名 + 右侧资产总览横排统计 */
 .account-card {
   /* 圆环穿透：卡内 pano 卡圆环越出上下边界，需压在相邻的 market-bar/list-bar 之上
      （backdrop-filter 已建层叠上下文，z-index 决定与外部区块的绘制顺序） */
@@ -542,8 +542,6 @@ tbody tr .row-act:focus-visible { opacity: 1; }
 .ac-left { display: flex; align-items: baseline; gap: var(--sp-2); flex: 0 0 auto; }
 
 .ac-name { font-size: var(--fs-lg); font-weight: 700; color: var(--primary); }
-/* 首页顶部：多个独立指标卡片（总市值/总盈亏/当日盈亏/本月盈亏/涨跌），横排、窄屏换行 */
-.ac-summary-cards { display: flex; align-items: stretch; gap: var(--sp-3); flex-wrap: wrap; flex: 1 1 auto; }
 
 w {
   margin: var(--sp-2) 0 2px;
@@ -756,19 +754,19 @@ w {
   flex-wrap: wrap;
   /* 分组头全宽、单一底色：与卡片背景同宽（底色不再只覆盖居中块），内容左缘随卡片内边距，与下方子表左对齐 */
 }
-/* 分组标题：自然宽度 + 省略号；右侧统计区由 .hat-side 推到最右（PanWatch：账户名在左、KPI 组在最右） */
+/* 分组标题：自然宽度 + 省略号；右侧统计区由 .hat-side 推到最右 */
 .holdings-group .collapse-hat .hat-title { font-weight: 600; font-size: var(--fs-base); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .holdings-group .hat-count { color: var(--text-muted); font-size: var(--fs-sm); font-weight: 400; margin-left: var(--sp-1); }
 .holdings-group .src-ico { color: var(--primary); margin-right: 2px; }
-/* 右侧统计区：常驻显示（原先 hover 才滑出），整体贴右，与 PanWatch 账户头一致 */
+/* 右侧统计区：常驻显示（原先 hover 才滑出），整体贴右 */
 .holdings-group .hat-side { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
 .holdings-group .hat-side-extra { display: inline-flex; align-items: center; gap: 20px; white-space: nowrap; }
-/* 单个 KPI：上标签 / 下数值，右对齐（PanWatch 的「小标签 + mono 数值」两行式） */
+/* 单个 KPI：上标签 / 下数值，右对齐 */
 .holdings-group .hat-stat { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; text-align: right; min-width: 84px; font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
 .holdings-group .hat-stat-lbl { color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.15; }
 .holdings-group .hat-stat b { color: var(--text); font-weight: 500; font-family: var(--font-mono); font-size: var(--fs-md); line-height: 1.25; }
 .holdings-group .hat-stat small { font-weight: 400; opacity: .75; font-size: var(--fs-xs); }
-/* 分隔线：KPI 组之间用极细竖线弱化（PanWatch 靠间距；此处保留间距为主，不引入描边） */
+/* 分隔线：KPI 组之间用极细竖线弱化（此处保留间距为主，不引入描边） */
 .holdings-group .hat-chevron { transition: transform .2s; color: var(--text-muted); margin-left: 0; }
 .holdings-group.collapsed .hat-chevron { transform: rotate(-90deg); }
 .holdings-group.collapsed .collapse-body { display: none; }
@@ -781,7 +779,7 @@ w {
   overflow: visible;
   padding: 0 var(--sp-3);
 }
-/* 子表容器：铺满卡片内容宽（对齐 PanWatch 的 w-full，不再居中留白）。
+/* 子表容器：铺满卡片内容宽不再居中留白）。
    组头 padding 为 var(--sp-3)，.collapse-body 已同步左右 padding，故子表左右缘与组头文字严格对齐。 */
 .holdings-group .subtable-wrap { overflow-x: auto; overflow-y: visible; }
 /* 表头背景：沿用分组头(var(--card-bg))但略浅一档（暗色叠微白提亮，亮色叠白更透），与分组头呼应又区别于表体；
@@ -795,22 +793,22 @@ w {
 /* 保留 .u-sm（代码 / 持仓天数等次要小字）的 12px：本规则特异性高于 .u-sm，必须显式排除 */
 .holdings-group .holdings-subtable td.u-sm,
 .wealth-group .wealth-subtable td.u-sm { font-size: var(--fs-sm); }
-/* 数值列：等宽数字字体（PanWatch 的 font-mono 数据列；表头字号 11px / 数据 13px 亦对齐其密度） */
+/* 数值列：等宽数字字体；表头字号 11px / 数据 13px */
 .holdings-group .holdings-subtable td.num,
 .wealth-group .wealth-subtable td.num { font-family: var(--font-mono); }
-/* 表头/操作列：PanWatch 操作列居中，数值列表头右对齐（与数据同侧） */
+/* 表头/操作列：操作列居中，数值列表头右对齐（与数据同侧） */
 .holdings-group .holdings-subtable thead th.num,
 .wealth-group .wealth-subtable thead th.num { text-align: right; }
 .holdings-group .holdings-subtable :is(th, td):nth-child(12),
 .wealth-group .wealth-subtable :is(th, td):nth-child(8) { text-align: center; }
 /* 首页持仓子表：固定列宽，确保各来源子表的列头/列宽跨卡片完全一致对齐 */
 /* 持仓子表（12 列）：固定布局保证跨卡片列宽一致；**名称列不再给固定宽**（吃剩余空间，
-   同 PanWatch「名称占余、数值列内容驱动」），数值列给略宽的像素值以适配「铺满卡片」后的宽度。
+   名称列吃剩余宽度、数值列内容驱动），数值列给略宽的像素值以适配「铺满卡片」后的宽度。
    列宽和 = 80+88+88+144+112+80+80+112+64+128+124 = 1100px，名称列拿剩余（≥ 240px 时由 min-width 触发表格横向滚动）。 */
 .holdings-group .holdings-subtable { table-layout: fixed; width: 100%; }
 .holdings-group .holdings-subtable th, .holdings-group .holdings-subtable td { overflow: hidden; text-overflow: ellipsis; }
 .holdings-group .holdings-subtable th.num, .holdings-group .holdings-subtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: auto; }     /* 名称：吃剩余宽度（PanWatch 同款） */
+.holdings-group .holdings-subtable :is(th, td):nth-child(1) { width: auto; }     /* 名称：吃剩余宽度 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(2) { width: 80px; }     /* 代码 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(3) { width: 88px; }     /* 现价 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(4) { width: 88px; }     /* 成本价 */
@@ -827,10 +825,21 @@ w {
 .holdings-group .holdings-subtable :is(th, td):nth-child(12) { width: 124px; position: sticky; right: 0; background: var(--card-bg); z-index: 3; }
 /* 表头操作列：跟随其它表头的略浅底（否则被上一行的通用规则覆盖成卡片本色，表头出现色差） */
 .holdings-group .holdings-subtable thead th:nth-child(12) { background: color-mix(in srgb, var(--card-bg) 82%, #ffffff 18%); }
-/* 桌面端低于该宽度改为横向滚动（PanWatch 的 overflow-x-auto 语义），不再等比压缩数值列 */
-@media (min-width: 880px) {
+/* 子表按视口分档，避免平板/手机横向滚动（仅桌面 ≥1340 保持 固定列宽） */
+@media (min-width: 1340px) {
   .holdings-group .holdings-subtable { min-width: 1340px; }
   .wealth-group .wealth-subtable { min-width: 1068px; }
+}
+/* 平板横屏 881–1339：铺满卡片，隐藏最宽的「近20日」sparkline 列（第11列），名称列让出空间 */
+@media (min-width: 881px) and (max-width: 1339px) {
+  .holdings-group .holdings-subtable :is(th, td):nth-child(11) { display: none; }
+}
+/* 手机/平板竖屏 ≤880：隐藏次要列（当日% / 盈亏% / 持仓天数 / sparkline），保留 名称·代码·现价·成本价·市值·当日额·盈亏额·操作 */
+@media (max-width: 880px) {
+  .holdings-group .holdings-subtable :is(th, td):nth-child(7),
+  .holdings-group .holdings-subtable :is(th, td):nth-child(8),
+  .holdings-group .holdings-subtable :is(th, td):nth-child(10),
+  .holdings-group .holdings-subtable :is(th, td):nth-child(11) { display: none; }
 }
 /* 操作列左右内边距收到 2px：90px 按钮 + 4px padding = 94px ≤ 108px 列宽，按钮不被截断 */
 .holdings-group .holdings-subtable td.row-act-cell { padding-left: 2px; padding-right: 2px; }
@@ -856,7 +865,7 @@ w {
 .wealth-group .wealth-subtable :is(th, td):nth-child(6) { width: 96px; }    /* 累计收益率 */
 .wealth-group .wealth-subtable :is(th, td):nth-child(7) { width: 76px; }    /* 持有天数 */
 .wealth-group .wealth-subtable :is(th, td):nth-child(8) { width: 152px; }   /* 操作：编辑/每日盈亏/减仓或启用/删除 */
-/* 表头/单元格密度与持仓子表统一（PanWatch 表头 11px、数据 13px、py 8px） */
+/* 表头/单元格密度与持仓子表统一（表头 11px、数据 13px、py 8px） */
 .wealth-group .wealth-subtable thead th { font-size: var(--fs-xs); font-weight: 600; padding: var(--sp-2) var(--sp-2); }
 .wealth-group .wealth-subtable td { padding: var(--sp-2) var(--sp-2); font-size: var(--fs-md); }
 .wealth-group .wealth-subtable .name-cell { display: flex; align-items: center; gap: var(--sp-1); }
@@ -1136,7 +1145,7 @@ h2 > svg,
 }
 .c-default-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); }
 /* 首页持仓表名称前类型徽标：A=沪深(橙) 美=美股(紫) 港=港股(青) 基=基金(蓝)
-   规格对齐 PanWatch 市场徽标（text-[9px] px-1 py-0.5 rounded bg-*-500/10 text-*-600）：
+   规格对齐市场徽标（text-[9px] px-1 py-0.5 rounded bg-*-500/10 text-*-600）：
    10px / 高 600 / 圆角 4px / 同色系浅底 + 同色系文字、无描边。
    **文字必须用彩色** —— 旧写法 `color: var(--cat-x)` 引用的变量是 RGB 三元组（如 `94, 92, 230`），
    拼不出合法颜色 → 声明整体失效 → 文字继承近黑，故「基金/美股」徽标看着是黑字灰底。现改为
@@ -1363,6 +1372,9 @@ body::after {
 #app {
   position: relative;
   z-index: 1;
+  /* 超宽屏防护：1920 主力下 2200>1903 等同满宽；仅 ≥2200 才居中收边，避免内容拉满带鱼屏 */
+  max-width: 2200px;
+  margin-inline: auto;
 }
 
 /* ===== 顶部导航 ===== */
@@ -1678,10 +1690,10 @@ header {
   -webkit-background-clip: text; background-clip: text;
 }
 
-/* 窄屏响应（≤768px）：hero 两栏改上下堆叠
+/* 窄屏响应（≤880px，与同页 pano 塌栏点对齐）：hero 两栏改上下堆叠
    标题在上、sparkline 在下（不交换顺序，视觉锚点优先）
    height:auto + min-height:280px 让内容自由撑开避免挤压 */
-@media (max-width: 768px) {
+@media (max-width: 880px) {
   .hero-banner { height: auto; min-height: 280px; margin: var(--sp-2) var(--sp-3) 0; }
   .hero-content { grid-template-columns: 1fr; padding: var(--sp-4); gap: var(--sp-3); }
 }
@@ -1702,7 +1714,7 @@ header {
   gap: var(--sp-2);
 }
 
-/* ===== 常驻主导航（参考 PanWatch：桌面顶栏居中胶囊 / 移动底部 tab） ===== */
+/* ===== 常驻主导航（桌面顶栏居中胶囊 / 移动底部 tab） ===== */
 .main-nav {
   flex: 1;
   display: flex;
@@ -1728,7 +1740,7 @@ header {
 }
 .main-nav .nav-pill svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .main-nav .nav-pill:hover { background: var(--bg-hover); color: var(--text); }
-/* PanWatch 风格：选中项 = 主色浅渐变底 + 细 ring + 软阴影，文字走 --text，图标着色 */
+/* 选中项 = 主色浅渐变底 + 细 ring + 软阴影，文字走 --text，图标着色 */
 .main-nav .nav-pill.active {
   background: linear-gradient(135deg,
     rgba(var(--tint), var(--nav-active-a1)),
@@ -1747,7 +1759,7 @@ header {
 @media (max-width: 768px) {
   /* 去掉 header 的 backdrop-filter，否则它会成为 .main-nav(position:fixed) 的包含块，
      导致移动端底部导航被钉在 header 底部（即页面顶部）。去掉后固定定位才相对视口。 */
-  header { padding: var(--sp-2) var(--sp-3); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  header { padding: calc(var(--sp-2) + env(safe-area-inset-top)) var(--sp-3) var(--sp-2); backdrop-filter: none; -webkit-backdrop-filter: none; }
   .main-nav {
     position: fixed;
     left: 0; right: 0; bottom: 0;
@@ -1770,7 +1782,7 @@ header {
     border-radius: var(--r-sm);
   }
   .main-nav .nav-pill svg { width: 20px; height: 20px; }
-  /* 移动端底部 tab：更淡的选中态（PanWatch mobile：bg-primary/8 + ring/15，文字主色） */
+  /* 移动端底部 tab：更淡的选中态（bg-primary/8 + ring/15，文字主色） */
   .main-nav .nav-pill.active {
     background: rgba(var(--tint), .10);
     color: var(--primary);
@@ -2367,6 +2379,20 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   margin: 0 0 var(--sp-4); /* 上下间距统一：上与 #holdingsView padding-top(sp-4)、下与 tbl-meta-bar 均 16px */
   flex-wrap: wrap;
 }
+/* 桌面端筛选行吸顶：紧贴 sticky 顶栏之下（顶栏高 ≈58px），长列表滚动时筛选/操作区常驻 */
+@media (min-width: 769px) {
+  .list-bar {
+    position: sticky;
+    top: 58px;
+    z-index: 40;
+    padding-top: var(--sp-2);
+    padding-bottom: var(--sp-2);
+    background: var(--bg-glass);
+    backdrop-filter: blur(14px) saturate(var(--sat));
+    -webkit-backdrop-filter: blur(14px) saturate(var(--sat));
+    border-bottom: 1px solid var(--border);
+  }
+}
 /* 表格/卡片切换行：上方分割线，左侧列表描述（样式同 asset-section-head 标题），右侧视图切换；间距收紧（8/8/8） */
 .tbl-meta-bar {
   display: flex;
@@ -2516,7 +2542,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .home-wealth-box { padding: 0 28px var(--sp-2); margin: 0 0 var(--sp-2); overflow-x: auto; }
 /* 首页跟随持仓的理财区块：与上方持仓区用分隔线区隔（上 12px / 下 12px，原 20+16=36px 太空） */
 #homeWealthInline { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
-@media (max-width: 639px) {
+@media (max-width: 640px) {
   /* 手机端：搜索框与操作按钮同一行。flex-basis 必须为 0（不能 auto）：
      auto 时 basis=input max-content（含 padding-right:30px ≈207px），+gap 12+按钮 152=371>366 触发 wrap 被挤到下行；
      basis:0 + grow:1 占按钮之外的剩余宽度（≈202px），min-width:0 允许继续压缩。 */
@@ -2682,7 +2708,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .cal-cell.has-amt:hover .cal-day,
 .cal-cell.has-amt:hover .cal-emoji { opacity: 1; max-height: 60px; }
 /* 移动端：格子窄，缩小居中金额/日期/emoji，并放宽日历宽度避免拥挤
-   横屏(landscape)时 iPhone 高度约 402px，用 max-height 也触发，保证横屏套用同套样式 */
+   横屏(landscape)时 高度约 402px，用 max-height 也触发，保证横屏套用同套样式 */
 @media (max-width: 640px), (orientation: landscape) and (max-height: 640px) {
 
   .cal-cell { padding: var(--sp-1) var(--sp-1); }
@@ -2887,8 +2913,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   background: rgba(var(--tint), 0.05);
 }
 
-/* ===== 移动端适配（iPhone 等窄屏，逻辑宽度 ≤ 640px） ===== */
-/* ===== 移动端适配（iPhone 17 等窄屏，逻辑宽度 ≤ 640px） ===== */
+/* ===== 移动端适配（窄屏，逻辑宽度 ≤ 640px） ===== */
 @media (max-width: 640px) {
   /* 顶部：logo + 汉堡按钮 与 主题切换同在一行 */
   header {
@@ -2931,7 +2956,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   .action-btns { gap: var(--sp-2); justify-content: flex-end; }
   .action-btns > .btn { flex: 0 0 auto; min-width: 0; white-space: nowrap; }
   .action-tools { gap: var(--sp-2); }
-  /* 首页搜索框：basis:0 占剩余宽度（原因同 ≤639px 注释：auto 的 max-content 含 padding-right 会触发 wrap 换行） */
+  /* 首页搜索框：basis:0 占剩余宽度（原因同 ≤640px 注释：auto 的 max-content 含 padding-right 会触发 wrap 换行） */
   .list-bar .filters { flex: 1 1 0; min-width: 0; }
   .filter-row.cat-row.hf-search-row { width: 100%; align-self: stretch; }
   .hf-label { display: none; } /* 「搜索」文字标签仅桌面端显示 */
@@ -3007,7 +3032,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
    替代原两张大圆环卡——与首页概览卡样式雷同且信息重叠；完整构成圆环仍在「资产构成」弹框。
    桌面态横向：左数字组 + 竖线 + 右构成区推至最右（填补横向留白）；≤900px 恢复上下堆叠（见文末媒体查询）。
    v3.6：高度调整为≈首页 banner 的 0.8×（220×0.8 = 176px），内部间距加大让按类别/按地域更透气。 */
-/* 资产页顶部摘要 = PanWatch 持仓页同款统计小卡网格（2026-10-14 由横幅条拆分）：
+/* 资产页顶部摘要 = 统计小卡网格（2026-10-14 由横幅条拆分）：
    净资产/总资产/负债/境内净值/境外净值各占一卡 + 「资产构成」卡占满整行。
    auto-fit：无地域数据时 3 卡自动摊满一行，不留空轨道。
    数值 20px 粗体 tabular（完整金额，溢出省略 + 悬停 title）；标签行 12px muted + 14px 线条图标。 */
@@ -3047,8 +3072,13 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .as-card-val.neg { color: rgb(var(--down-rgb)); }
 /* 资产构成卡：占满整行；内部「按类别 / 按地域」两条横向并排（窄屏回退纵向） */
 .as-comp-card { grid-column: 1 / -1; }
-.as-comp-flex { display: flex; gap: var(--sp-6); flex-wrap: wrap; }
-.as-comp-flex .asb-comprow { flex: 1 1 320px; min-width: 0; }
+/* 资产构成卡：满行；内部 3 个对比维度作「等宽子面板」并排，靠细分隔线区分（非独立 grid 卡）；
+   窄屏（≤640px）回退纵向堆叠，分隔线由竖转横（见文末媒体查询）。 */
+.as-comp-flex { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+.as-comp-flex .asb-comprow { min-width: 0; padding: 0 var(--sp-4); }
+.as-comp-flex .asb-comprow:first-child { padding-left: 0; }
+.as-comp-flex .asb-comprow:last-child { padding-right: 0; }
+.as-comp-flex .asb-comprow + .asb-comprow { border-left: 1px solid var(--border); }
 
 /* 构成条内部：资产构成横向堆叠条（权益/理财/现金 + 境内/境外细条）+ 图例。
    形态与首页「资产构成」圆环弹框区分（横条无圆环、只概览不下钻）。 */
@@ -3076,7 +3106,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .asb-legend .asb-lg i { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; background: var(--dot-c, transparent); }
 .asb-legend .asb-lg em { font-style: normal; opacity: .72; font-variant-numeric: tabular-nums; }
 
-/* 窄屏：数字卡降列数——≤1100px 3 列（卡内数字更从容），≤640px 2 列（PanWatch 手机态同款）；
+/* 窄屏：数字卡降列数——≤1100px 3 列（卡内数字更从容），≤640px 2 列；
    构成卡始终满行，两条构成回退纵向堆叠。 */
 @media (max-width: 1100px) {
   .as-cards { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
@@ -3085,9 +3115,10 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   .as-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* 2 列下 20px 数值放不下大额（¥1,016,083.96），降到 16px 保完整显示 */
   .as-card-val { font-size: var(--fs-lg); }
-  .as-comp-flex { flex-direction: column; gap: var(--sp-3); }
-  /* 纵向堆叠时 flex-basis:320px 会作用到高度上（把构成条撑到 320px 高），必须释放 */
-  .as-comp-flex .asb-comprow { flex: 0 0 auto; }
+  /* 构成子面板回退纵向：分隔线由竖转横，去掉横向内边距避免两端留白 */
+  .as-comp-flex { grid-template-columns: 1fr; gap: var(--sp-3); }
+  .as-comp-flex .asb-comprow { padding: 0; }
+  .as-comp-flex .asb-comprow + .asb-comprow { border-left: 0; border-top: 1px solid var(--border); padding-top: var(--sp-3); }
 }
 
 /* 胶囊行右侧动态摘要：随 tab 更新的一句统计，低密度填充胶囊行空白 */
@@ -3295,8 +3326,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .asset-table .up { color: var(--up); }
 .asset-table .down { color: var(--down); }
 
-/* === 首页持仓 / 理财表格：中性数字列改用次级灰（参照 PanWatch 配色，2026-10-14）===
-   PanWatch 持仓表实测：表头与「现价/涨跌/成本/持仓/市值」等全部中性数字统一 text-muted-foreground
+/* === 首页持仓 / 理财表格：中性数字列改用次级灰（2026-10-14）===
+   表头与「现价/涨跌/成本/持仓/市值」等全部中性数字统一 text-muted-foreground
    rgb(115,123,140)（对其底色对比度 ≈4.5:1），仅标的代码用前景色加粗、盈亏用红绿着色。
    观澜原先中性数字直接吃 var(--text)（亮色 #1f2329 ≈15.8:1 近黑），十列数字连成深色块 → 视觉过重。
    这里把「非涨跌着色」的数值列统一降到 --text-muted（亮色 #5a6068 ≈6.3:1，暗色 #94a3b8 ≈7.1:1），
@@ -3432,7 +3463,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .asset-table { width: 100%; }
 /* 理财分组表格（含来源分组表）：窄屏横向滚动而非撑破布局；与持仓来源分组表一致 */
 .wealth-groups { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-/* 币种徽标：同样对齐 PanWatch 徽标规格（无描边、10px、圆角 4px、同色系浅底深字） */
+/* 币种徽标：（无描边、10px、圆角 4px、同色系浅底深字） */
 .cur-badge {
   display: inline-block;
   font-size: 10px;
@@ -3857,7 +3888,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .pat-item.neu .pat-name { color: var(--signal-neu); }
 .pat-more { font-size: var(--fs-xs); color: var(--text-faint); margin-top: var(--sp-1); text-align: right; }
 
-/* 关键信号徽章（PanWatch TechnicalBadge 风格，由已有指标派生） */
+/* 关键信号徽章（由已有指标派生） */
 .ana-badges { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin: -4px 0 14px; }
 .ana-badge { font-size: var(--fs-xs); padding: 2px var(--sp-2); border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); background: transparent; }
 .ana-badge.up { color: var(--up); border-color: rgba(var(--up-rgb),.4); background: rgba(var(--up-rgb),.1); }
@@ -3895,7 +3926,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .sig-reason { flex: 1; color: var(--text-muted); }
 .sig-score { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-muted); min-width: 40px; text-align: right; }
 
-/* ===== 技术分析弹框：标签切换（仿 Panwatch 个股详情 概览/建议/报告 按钮） ===== */
+/* ===== 技术分析弹框：标签切换（概览/建议/报告 按钮） ===== */
 /* 标签栏 sticky 置顶，随内容滚动但始终可见；横向留白与下方面板对齐 */
 .ana-tabs { position: sticky; top: 0; z-index: 5; display: flex; gap: var(--sp-1); flex-wrap: wrap; padding: var(--sp-1) 0 var(--sp-3); margin: -4px 0 0; background: var(--bg-card-solid); border-bottom: 1px solid var(--border); }
 .ana-tab-btn { font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-3); border: none; border-radius: var(--r-xs); cursor: pointer; background: var(--primary-soft); color: var(--text-muted); transition: background-color .15s, color .15s cubic-bezier(.32,.72,0,1); font-family: inherit; line-height: 1.4; }
@@ -4913,7 +4944,7 @@ textarea::placeholder {
 /* 分析/图表弹框正文预留高度，避免异步内容注入时跳动 */
 .analysis-loading, #analysisBody { min-height: 180px; }
 
-/* ===== 设置 / AI / 工具 页（仿 panwatch 分组卡片：满宽、左右平分、饱满不紧凑，与持仓/资产页对齐） ===== */
+/* ===== 设置 / AI / 工具 页（分组卡片：满宽、左右平分、饱满不紧凑，与持仓/资产页对齐） ===== */
 .settings-page {
   max-width: none;
   width: 100%;
@@ -4953,7 +4984,7 @@ textarea::placeholder {
   flex-direction: column;
   gap: var(--sp-4);
 }
-/* 分组卡片内的表单标签更舒展，避免紧凑；标签用静音色，控件全宽圆角（参考 panwatch） */
+/* 分组卡片内的表单标签更舒展，避免紧凑；标签用静音色，控件全宽圆角 */
 .settings-group-body label {
   display: flex;
   flex-direction: column;
@@ -5025,7 +5056,7 @@ textarea::placeholder {
   .settings-group-body { padding: var(--sp-4) var(--sp-4) var(--sp-4); }
 }
 
-/* ===== AI / 设置 子页面：仿 panwatch 单列分区卡片（每区 = 标题 + 描述 + 内容） ===== */
+/* ===== AI / 设置 子页面：单列分区卡片（每区 = 标题 + 描述 + 内容） ===== */
 .pano-open .settings-layout { grid-template-columns: 1fr; gap: var(--sp-6); max-width: none; }
 .pano-open .settings-group {
   background: var(--bg-card);
@@ -5047,7 +5078,7 @@ textarea::placeholder {
   border-bottom: none;
 }
 .pano-open .settings-group-title::before { content: none; }
-/* 分区描述：标题下方一行静音色说明，对齐 panwatch 每区副标题 */
+/* 分区描述：标题下方一行静音色说明 */
 .pano-open .settings-group-desc {
   margin: 0;
   padding: 0 var(--sp-6) var(--sp-4);

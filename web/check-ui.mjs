@@ -172,6 +172,50 @@ const check = (name, detail, ok, extra = '') =>
 }
 
 // ─────────────────────────────────────────────────────────────
+// 11. 响应式断点白名单：所有 (min|max)-width 取值必须来自核准集
+//     直接把《ui-design-spec.md》§3.13 的断点集变成机器强制，
+//     防止再出现孤立 639 / hero 768 未对齐 pano 880 这类漂移
+// ─────────────────────────────────────────────────────────────
+{
+  const ALLOWED = new Set([380, 520, 640, 680, 768, 769, 880, 881, 1024, 1100, 1339, 1340]);
+  const vals = [];
+  // 只在 @media 条件段里取值，避开规则体里的 flex: min-width:0 等
+  for (const seg of cssBare.split('@media').slice(1)) {
+    const preamble = seg.split('{', 1)[0];
+    for (const m of preamble.matchAll(/(?:min|max)-width:\s*(\d+)px/g)) vals.push(parseInt(m[1], 10));
+  }
+  const bad = [...new Set(vals.filter((v) => !ALLOWED.has(v)))];
+  const all = [...new Set(vals)].sort((a, b) => a - b);
+  check('响应式断点白名单', '所有 (min|max)-width 取值必须 ∈ 核准集', bad.length === 0,
+    bad.length ? `越界断点：${bad.join(', ')}` : `已用断点：${all.join('/')}`);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 12. 死 class 启发式（仅告警，不阻断）
+//     style.css 定义的类若从未在 app.js / index.html 以 class="..." /
+//     classList.x('...') / className= 出现，列出供人工复核
+//     （可能含 JS 动态拼接的类，仅供参考，故不 fail）
+// ─────────────────────────────────────────────────────────────
+{
+  const defined = new Set();
+  for (const rule of cssBare.split('}')) {
+    const sel = rule.split('{', 1)[0];
+    if (!sel) continue;
+    for (const m of sel.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) defined.add(m[1]);
+  }
+  const used = new Set();
+  const scan = (src) => {
+    for (const m of src.matchAll(/\bclass\s*=\s*["'`]([\s\S]*?)["'`]/g)) m[1].split(/\s+/).forEach((c) => c && used.add(c));
+    for (const m of src.matchAll(/\.classList\.(?:add|remove|toggle|contains)\(\s*['"]([\w-]+)['"]/g)) used.add(m[1]);
+    for (const m of src.matchAll(/\bclassName\s*=\s*["'`]([\s\S]*?)["'`]/g)) m[1].split(/\s+/).forEach((c) => c && used.add(c));
+  };
+  scan(jsBare); scan(htmlBare);
+  const dead = [...defined].filter((c) => !used.has(c));
+  check('死 class 启发式（告警）', 'CSS 定义类应被引用（仅人工复核，不阻断）', true,
+    dead.length ? `疑似未引用 ${dead.length} 个，示例：${dead.slice(0, 8).join(', ')}` : '未发现明显未引用类');
+}
+
+// ─────────────────────────────────────────────────────────────
 // 输出
 // ─────────────────────────────────────────────────────────────
 const pad = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].reduce((a, c) => a + (c.charCodeAt(0) > 255 ? 2 : 1), 0)));

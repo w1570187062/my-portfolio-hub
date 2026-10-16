@@ -20,9 +20,11 @@ COPY internal ./internal
 COPY main.go ./
 COPY web ./web
 COPY --from=fe /fe/web/dist ./web/dist
-COPY VERSION ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    V=$(tr -d '\r\n ' < VERSION) && \
+# VERSION 不入库（部署产物）：构建时按 git HEAD + UTC 时间自动生成，格式 "commit|commitTime"（与 /api/version、缓存戳一致）。
+# 无 git 时回退 "dev"，保证本地无仓库也能构建。
+RUN H=$(git rev-parse --short HEAD 2>/dev/null || echo "dev") && \
+    V="${H}|$(date -u +%Y-%m-%dT%H:%M:%SZ)" && \
+    echo "$V" > VERSION && \
     go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags "-X 'portfolio/internal/api.BuildInfo=$V'" -o /out/app .
 
 FROM alpine:3.20

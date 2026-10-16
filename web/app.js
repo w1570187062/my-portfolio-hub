@@ -57,7 +57,7 @@ function applyAccent(accent) {
   if (accent === 'custom' && localStorage.getItem('pf_accent_custom')) {
     applyCustomAccent(localStorage.getItem('pf_accent_custom'));
   } else {
-    if (accent === 'custom') accent = 'blue'; // 无自定义色历史时回退默认（iOS 蓝）
+    if (accent === 'custom') accent = 'blue'; // 无自定义色历史时回退默认
     const v = ACCENTS.indexOf(accent) >= 0 ? accent : 'blue';
     const root = document.documentElement;
     root.dataset.accent = v;
@@ -412,7 +412,7 @@ function renderFiltered() {
     if (cards) cards.hidden = false;
     renderCards(sorted);
   } else {
-    // 表格视图改为「按来源分组的折叠卡片」（借鉴 PanWatch portfolio 来源分组）
+    // 表格视图改为「按来源分组的折叠卡片」（portfolio 来源分组）
     if (cards) cards.hidden = true;
     if (tw) tw.hidden = true;
     if (tbl) tbl.hidden = true;
@@ -512,7 +512,7 @@ function prefillAdjCalc(h) {
 }
 
 // 按来源分组渲染首页持仓为折叠卡片（每来源一张子表 + 4 列汇总）
-// 借鉴 PanWatch portfolio：来源标题 + 数量 + 右侧市值/当日/总盈亏/盈亏率 + 折叠
+// 来源标题 + 数量 + 右侧市值/当日/总盈亏/盈亏率 + 折叠
 // 持仓按 id 索引，供首页「计算」按钮快速取用成本/现价/数量（避免二次请求）
 let HOLDINGS_BY_ID = {};
 function renderHoldingsBySource(hs) {
@@ -1090,7 +1090,7 @@ function applyFilter() {
 }
 
 let sparkUid = 0;
-// 迷你走势线（借鉴 PanWatch Sparkline）：纯 SVG polyline + 渐变面积 + 尾端点圆。
+// 迷你走势线（Sparkline）：纯 SVG polyline + 渐变面积 + 尾端点圆。
 // 涨红跌绿（中国惯例），w/h 固定 1:1 用 viewBox 精确匹配，避免拉伸变形。
 // 将 CSS 变量（var(--up) 等）解析为具体颜色：SVG <stop> 的 stop-color 不支持 presentation 属性里的 var()，
 // 直接传 var() 会回退成黑色，在深色 hero 下渐变填充几乎不可见；这里统一解析成真实色值。
@@ -1131,7 +1131,7 @@ function sparkline(data, opts) {
   const pts = vals.map((v, i) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ');
   const last = pts.split(' ').pop();
   const gid = 'spk' + (++sparkUid);
-  // 渐变方向：默认 fade（顶深→底透明）；'panwatch' = PanWatch 权益曲线风格：曲线下方同色柔和底色，
+  // 渐变方向：默认 fade（顶深→底透明）；'panwatch' = 曲线下方同色柔和底色，
   // 自上而下近乎均匀、底部保留可见色（不淡出到透明），仅紧贴曲线处略深
   const grad = (opts && opts.gradient) || 'fade';
   let topOp = '.20', botOp = '0';
@@ -2548,8 +2548,8 @@ function hideTrendTip() { const tip = document.getElementById('trendTip'); if (t
 // 资产工具栏按钮改由 #assetToolbar 事件委托（见下方 document.getElementById('assetToolbar').addEventListener）
 // 关闭按钮已移除：右上角 ✕ 与点击遮罩均可关闭
 $('#chartModal').addEventListener('click', (e) => { if (e.target === $('#chartModal')) $('#chartModal').hidden = true; });
-$('#histModal').addEventListener('click', (e) => { if (e.target === $('#histModal')) $('#histModal').hidden = true; });
-$('#wealthHistModal').addEventListener('click', (e) => { if (e.target === $('#wealthHistModal')) $('#wealthHistModal').hidden = true; });
+$('#histModal').addEventListener('click', (e) => { if (e.target === $('#histModal')) { $('#histModal').hidden = true; hideTrendTip(); } });
+$('#wealthHistModal').addEventListener('click', (e) => { if (e.target === $('#wealthHistModal')) { $('#wealthHistModal').hidden = true; hideTrendTip(); } });
 // 资金变动方向切换：选中段置 active（CSS 负责主题色/灰色），方向由 data-sign 决定
 const cashSignToggle = document.getElementById('c_sign_toggle');
 if (cashSignToggle) {
@@ -2814,6 +2814,7 @@ document.addEventListener('keydown', (e) => {
   const openModals = document.querySelectorAll('.modal:not([hidden])');
   if (openModals.length) {
     openModals.forEach((m) => { m.hidden = true; });
+    hideTrendTip();   // 关闭任意弹框时收起可能残留的悬停浮框（如持仓盈亏曲线的 pinned tooltip）
     return;
   }
   const inSubView = !$('#assetView').hidden || !$('#toolsView').hidden || !$('#settingsView').hidden;
@@ -4668,6 +4669,7 @@ document.addEventListener('click', (e) => {
   if (!x) return;
   const modal = x.closest('.modal');
   if (modal) modal.hidden = true;
+  hideTrendTip();   // 关闭弹框（含自动注入的 ✕）时收起可能残留的悬停浮框
 });
 // 部分遮罩：保留首尾若干字符，中间以 * 替代（Webhook/加签密钥 这类普通文本框默认只露头尾）
 function maskSecret(v) {
@@ -4849,7 +4851,7 @@ function renderAssetSummary() {
   const dom = d.domestic_assets || 0, ovs = d.overseas_assets || 0;
   const domL = d.domestic_liabilities || 0, ovsL = d.overseas_liabilities || 0;
   const domNet = dom - domL, ovsNet = ovs - ovsL;
-  // 顶部摘要：独立统计小卡（PanWatch 风格），完整金额直接展示，悬停 title 查看精确值。
+  // 顶部摘要：独立统计小卡，完整金额直接展示，悬停 title 查看精确值。
   const hasRegion = (dom > 0 || domL > 0 || ovs > 0 || ovsL > 0);
   // 摘要卡内部：资产构成横向堆叠条（权益/理财/现金）+ 境内/境外细条（width:100% 换行占满）。
   // 形态与首页「资产构成」圆环弹框区分（横条+图例，无圆环），只做概览不下钻。
@@ -4864,7 +4866,7 @@ function renderAssetSummary() {
     const capHtml = cap ? `<span class="asb-lg-cap">${cap}:</span>` : '';
     return `<div class="asb-comprow"><div class="asb-legend">${capHtml}${legend}</div><div class="asb-compbar${slim ? ' slim' : ''}">${bars}</div></div>`;
   };
-  // 顶部摘要 = PanWatch 持仓页同款统计小卡网格：每卡「图标 + 12px 标签 + 20px 粗体数值」，
+  // 顶部摘要 = 统计小卡网格：每卡「图标 + 12px 标签 + 20px 粗体数值」，
   // 净资产/总资产/负债/境内净值/境外净值各占一卡（独立白卡，非一条横幅）；资产构成卡占满整行。
   // 数值用完整金额（千分位），悬停 title 显示完整值；负值（净值/净资产为负）用跌色。
   const ic = (p) =>
@@ -7337,7 +7339,7 @@ function sigListHTML(signals) {
 
 // 命中形态仅在悬停时通过 data-pat 展示，迷你K线蜡烛不再描边/加框
 
-// 关键信号徽章（由已有指标派生，对应 PanWatch 的 TechnicalBadge 风格）
+// 关键信号徽章（由已有指标派生）
 function anaBadgesHTML(ind, prob) {
   const items = [];
   const maUp = ind.price > ind.ma20 && ind.ma20 > 0;
@@ -7558,7 +7560,7 @@ function indicatorsTableHTML(ind, volSig) {
   return h;
 }
 
-// 标签栏（仿 Panwatch 个股详情 概览/建议/报告 按钮：小圆角胶囊）
+// 标签栏（概览/建议/报告 按钮：小圆角胶囊）
 function analysisTabBarHTML(tabs, active) {
   return '<div class="ana-tabs">' + tabs.map((t) =>
     '<button type="button" class="ana-tab-btn' + (t.id === active ? ' active' : '') + '" data-tab="' + t.id + '">' + esc(t.label) + '</button>'
