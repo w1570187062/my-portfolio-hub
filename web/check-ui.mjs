@@ -154,7 +154,7 @@ const check = (name, detail, ok, extra = '') =>
     '--r-xs', '--r-sm', '--r', '--r-lg',
     '--up', '--down', '--up-rgb', '--down-rgb', '--danger-rgb', '--warning-rgb',
     '--cal-none', '--cal-up-1', '--cal-down-4',
-    '--cat-fund', '--cat-debt', '--cat-equity', '--cat-wealth', '--cat-cash', '--cat-other', '--cat-overseas',
+    '--cat-fund', '--cat-debt', '--cat-equity', '--cat-wealth', '--cat-cash', '--cat-other', '--cat-hk', '--cat-us',
     '--ma-1', '--ma-2', '--ma-3', '--kl-res', '--kl-sup',
     '--on-primary', '--card-glow', '--blur', '--sat', '--row-h',
   ];

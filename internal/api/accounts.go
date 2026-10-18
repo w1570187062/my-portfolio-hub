@@ -41,7 +41,7 @@ func convertAccount(c *gin.Context) {
 		return
 	}
 	if body.Currency == "" {
-		body.Currency = "rmb"
+		body.Currency = "cny"
 	}
 	uid := currentUserID(c)
 	plans, err := db.ListCashflowPlans(uid)
@@ -74,14 +74,7 @@ func convertAccount(c *gin.Context) {
 				return
 			}
 		}
-		// 负债没有「默认子账户」概念：先把 ★ 让给同来源同币种的其他子账户，
-		// 否则该来源该币种会暂时没有默认账户（后续由 EnsureCurrencyDefaults 兜底补建）。
-		if acc.IsDefault {
-			if e := handoverDefaultCash(uid, acc); e != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
-				return
-			}
-		}
+		// 子账户与负债都支持单独删除（2026-10-16 移除默认子账户概念），无需转移任何标记
 		lid, e := db.CreateLiability(&db.Liability{
 			UserID: uid, SourceID: acc.SourceID, Name: body.Name, Type: body.Type,
 			Amount: body.Amount, Currency: body.Currency, Note: body.Note,
@@ -139,33 +132,16 @@ func convertAccount(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
 			return
 		}
-		// 与 createCash 一致：该来源该币种尚无默认子账户时，转过来的这条兜底设为默认
-		if def, e := db.GetDefaultCash(uid, l.SourceID, body.Currency); e == nil && def == nil {
-			_ = db.SetDefaultCash(uid, l.SourceID, cid)
-		}
+		// 币种集合反向同步：转过来的子账户用到的币种补进来源 currencies（只补不删）
+		_ = db.SyncSourceCurrency(uid, l.SourceID, body.Currency)
 		if e := db.DeleteLiability(l.ID); e != nil {
 			_ = db.DeleteCash(cid) // 回滚
 			c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"kind": "cash", "id": cid})
+	c.JSON(http.StatusOK, gin.H{"kind": "cash", "id": cid})
 
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "kind 应为 cash 或 liability"})
+default:
+	c.JSON(http.StatusBadRequest, gin.H{"error": "kind 应为 cash 或 liability"})
 	}
-}
-
-// handoverDefaultCash 把 ★ 默认标记从 acc 让给同来源同币种的其他子账户；
-// 没有可接手的同币种子账户时不做处理（该来源该币种暂时无默认账户，由 EnsureCurrencyDefaults 兜底补建）。
-func handoverDefaultCash(uid int64, acc *db.Cash) error {
-	others, err := db.ListCashBySource(uid, acc.SourceID)
-	if err != nil {
-		return err
-	}
-	for _, o := range others {
-		if o.ID != acc.ID && strings.EqualFold(o.Currency, acc.Currency) {
-			return db.SetDefaultCash(uid, acc.SourceID, o.ID)
-		}
-	}
-	return nil
 }

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net/http"
 	"net/smtp"
 	"net/url"
@@ -264,18 +263,6 @@ func sendEmail(cfg emailCfg, subject, body string) error {
 
 // ---- 净值更新触发通知 ----
 
-// buySignal 补仓信号：某持仓的某一档已到补仓点位（操作指南里的动态补仓计划）。
-type buySignal struct {
-	Name         string
-	Symbol       string
-	LinkedSymbol string
-	TierLabel    string
-	TierPrice    float64
-	Drawdown     float64
-	Amount       float64
-	Signal       string
-}
-
 // scope 限定通知/信号的范围："" / "all" = 全部；"us" = 美股；"cn" = A股；"fund" = 基金。
 // 定时快照按资产类别分时段触发（美股07:00 / A股15:15 / 基金21:00），只在对应范围有数据更新，
 // 故通知只列该范围；手动刷新/快照传 "" 表示全量。
@@ -319,93 +306,17 @@ func scopeFromLabel(label string) string {
 	return ""
 }
 
-// collectBuySignals 遍历所有持仓的补仓计划（holdings.buy_plan，由净值刷新时计算、
-// 操作指南弹框展示的同一份数据），收集「联接ETF最新价已到该档触发价」的档位。
-// scope 非全量时仅保留该范围内的持仓信号（如 15:15 A股定时快照不展示基金补仓信号，
-// 因基金价格尚未在此时刷新、信号为陈旧值）。
-// 注意：BuyPlanTier.Signal 是档位说明文字（恒非空），不是触发标记；
-// 真正判定「价格已到补仓点位」是 ETFLatest（联接ETF最新价）≤ 该档 Price。
-func collectBuySignals(uid int64, scope string) []buySignal {
-	hs, err := db.List(uid)
-	if err != nil {
-		log.Printf("[notify] 读取持仓失败: %v", err)
-		return nil
-	}
-	var out []buySignal
-	execKeys, _ := db.ListExecutedBuyPlanKeys()
-	for _, h := range hs {
-		if !inScope(h, scope) {
-			continue
-		}
-		if strings.TrimSpace(h.BuyPlan) == "" {
-			continue
-		}
-		var plan struct {
-			HasData   bool `json:"HasData"`
-			ETFLatest float64 `json:"ETFLatest"`
-		Tiers     []struct {
-			Action   string  `json:"Action"`
-			Label    string  `json:"Label"`
-			Price    float64 `json:"Price"`
-			Drawdown float64 `json:"Drawdown"`
-			Amount   float64 `json:"Amount"`
-			Signal   string  `json:"Signal"`
-		} `json:"Tiers"`
-		}
-		if json.Unmarshal([]byte(h.BuyPlan), &plan) != nil || !plan.HasData {
-			continue
-		}
-		for idx, t := range plan.Tiers {
-			// 卖出（减仓）档位不计入买入待触发信号
-			if t.Action == "sell" {
-				continue
-			}
-			// 已"标记已补"的档位不再计入待触发信号
-			if execKeys[fmt.Sprintf("%d:%d", h.ID, idx)] {
-				continue
-			}
-			// 价格到点位：联接ETF最新价 ≤ 触发价（浮点误差极小，直接比较）
-			if plan.ETFLatest <= 0 || plan.ETFLatest > t.Price {
-				continue
-			}
-			out = append(out, buySignal{
-				Name:         h.Name,
-				Symbol:       h.Symbol,
-				LinkedSymbol: h.LinkedSymbol,
-				TierLabel:    t.Label,
-				TierPrice:    t.Price,
-				Drawdown:     t.Drawdown,
-				Amount:       t.Amount,
-				Signal:       t.Signal,
-			})
-		}
-	}
-	return out
-}
-
-// buildNetValueNotifyText 构造通知正文：触发来源 + 更新范围 + 补仓信号 + 日期 + 当日盈亏概览。
-// scope 限定只列出该范围内（美股/A股/基金）的持仓盈亏与补仓信号；"" / "all" 为全量（手动刷新）。
+// buildNetValueNotifyText 构造通知正文：触发来源 + 更新范围 + 日期 + 当日盈亏概览。
+// scope 限定只列出该范围内（美股/A股/基金）的持仓盈亏；"" / "all" 为全量（手动刷新）。
 func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool) {
 	date := time.Now().Format("2006-01-02")
 	label := scopeLabelCN(scope)
 	var sb strings.Builder
-	hasData := false // 是否有真实持仓行或补仓信号；无任何有效数据时不发送
+	hasData := false // 是否有真实持仓行；无任何有效数据时不发送
 	sb.WriteString("## 持仓净值已更新\n\n")
 	sb.WriteString(fmt.Sprintf("- **触发**：%s\n", triggeredBy))
 	sb.WriteString(fmt.Sprintf("- **更新范围**：%s\n", label))
 	sb.WriteString(fmt.Sprintf("- **日期**：%s\n", date))
-
-	// 补仓信号重点提示：有条目已到补仓点位时置顶突出（按范围过滤）
-	if sigs := collectBuySignals(uid, scope); len(sigs) > 0 {
-		sb.WriteString(fmt.Sprintf("\n## 🚨 补仓信号（%d 档已到补仓点位）\n\n", len(sigs)))
-		for _, s := range sigs {
-			sb.WriteString(fmt.Sprintf("- **%s**（%s · 联接 %s）\n", s.Name, s.Symbol, s.LinkedSymbol))
-			sb.WriteString(fmt.Sprintf("  触发档：`%s`　触发价 %.3f　自高点回撤 %.1f%%　建议投入 ¥%.2f\n",
-				s.TierLabel, s.TierPrice, math.Abs(s.Drawdown), s.Amount))
-			sb.WriteString("  > 信号：" + s.Signal + "\n")
-		}
-		hasData = true
-	}
 
 	// 持仓范围映射，用于按 scope 过滤明细中的按标的盈亏
 	hmap := map[string]db.Holding{}
@@ -559,8 +470,8 @@ func shouldSendByPolicy(uid int64, cfg notifyConfig, triggeredBy, scope string) 
 		// 仅收盘后定时快照（A股15:15 / 基金21:00 / 美股07:00）推送
 		return strings.Contains(triggeredBy, "定时快照")
 	case "only_signal":
-		// 仅在有补仓信号时推送（按范围过滤，避免展示未刷新类别的陈旧信号）
-		return len(collectBuySignals(uid, scope)) > 0
+		// "only_signal"（仅补仓信号）已随调仓计划删除；legacy 配置保守回落为「仅收盘后」
+		return strings.Contains(triggeredBy, "定时快照")
 	default: // "" / "every"
 		return true
 	}
@@ -725,7 +636,7 @@ func buildCashflowReminderText(items []db.CashflowPlan, due time.Time) string {
 	var sb strings.Builder
 	sb.WriteString("## 待还款提醒\n\n")
 	sb.WriteString(fmt.Sprintf("- **到期日**：%s（提前一天提醒）\n", due.Format("2006-01-02")))
-	sb.WriteString(fmt.Sprintf("- **待还款 %d 笔**，合计约 %s\n\n", len(items), curSymbol("rmb")+moneyFmtPrec(sumPlanAmount(items), 2)))
+	sb.WriteString(fmt.Sprintf("- **待还款 %d 笔**，合计约 %s\n\n", len(items), curSymbol("cny")+moneyFmtPrec(sumPlanAmount(items), 2)))
 	for _, p := range items {
 		cur := curSymbol(p.Currency)
 		accName := ""

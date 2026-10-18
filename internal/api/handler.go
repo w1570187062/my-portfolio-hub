@@ -72,9 +72,13 @@ func nthSundayUTC(year, month, n int) time.Time {
 }
 
 func enrich(h db.Holding, userID int64) HoldingView {
-	// 币种归一化：历史数据存在 'usd'/'USD' 混写（录入/编辑路径不一），统一大写输出。
-	// 否则前端严格比较 h.currency === 'USD' 会把小写美元持仓当人民币——收益金额漏乘汇率。
-	h.Currency = strings.ToUpper(strings.TrimSpace(h.Currency))
+	// 币种归一化：历史数据存在 'usd'/'USD'、'rmb'/'CNY' 混写（录入/编辑路径不一），
+	// 统一按小写规范输出（cny/usd/hkd，人民币含存量 rmb 一并归一 cny）。
+	// 前端 toRmb/renderSummary 等比较均大小写不敏感，严格比较处也按小写规范对齐。
+	h.Currency = strings.ToLower(strings.TrimSpace(h.Currency))
+	if h.Currency == "rmb" {
+		h.Currency = "cny"
+	}
 	mv := h.Quantity * h.CurrentPrice
 	cv := h.Quantity * h.CostPrice
 	pnl := mv - cv
@@ -152,13 +156,6 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/dca/records/:id/skip", skipDCARecord)
 		g.POST("/dca/records/:id/revert", revertDCARecord)
 		g.DELETE("/dca/records/:id", deleteDCARecord)
-		g.POST("/holdings/:id/buy-plan/execute", executeBuyPlanTier)
-		g.GET("/holdings/:id/buy-plan/executed", listExecutedBuyPlan)
-		g.GET("/guides", listGuides)
-		g.POST("/guides", createGuide)
-		g.GET("/guides/:id", getGuide)
-		g.PUT("/guides/:id", updateGuide)
-		g.DELETE("/guides/:id", deleteGuide)
 
 		g.GET("/home", home)
 		g.GET("/rate", rate)
@@ -202,8 +199,9 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/asset/wealth", createWealth)
 		g.PUT("/asset/wealth/:id", updateWealth)
 		g.DELETE("/asset/wealth/:id", deleteWealth)
-		g.POST("/asset/wealth/:id/redeem", redeemWealth)
 		g.POST("/asset/wealth/:id/enable", enableWealth)
+		g.POST("/asset/wealth/:id/nav", updateWealthNav)
+		g.POST("/asset/wealth/nav/refresh", refreshWealthNavBatch)
 		g.POST("/asset/wealth/snapshots", assetWealthSnapshotsPost)
 		g.DELETE("/asset/wealth/snapshots", assetWealthSnapshotDelete)
 		g.POST("/asset/wealth/snapshots/undo", assetWealthSnapshotUndo)
@@ -241,11 +239,6 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/asset/consumptions/:id", updateConsumption)
 		g.DELETE("/asset/consumptions/:id", deleteConsumption)
 		g.POST("/asset/summary", assetSummary)
-
-		// 小工具计算器录入持久化（equity / usd）
-		g.GET("/calc/inputs", calcInputsGet)
-		g.PUT("/calc/inputs", calcInputsPut)
-		g.DELETE("/calc/inputs", calcInputsDelete)
 
 		// 设置：风险偏好 / 资产类型标签（JSON 配置，按用户隔离）
 		g.GET("/settings/:kind", settingsGet)
@@ -752,8 +745,9 @@ func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee flo
 	return db.AddCashAmount(acc.ID, delta, flowType, "holding", h.ID, h.Name, detail)
 }
 
-// resolveCashAccount 返回本次资金变动使用的现金账户：显式指定优先（并校验归属当前用户），
-// 否则取该来源同币种的默认子账户（★），仍没有则按币种现场补建一个。
+// resolveCashAccount 返回本次资金变动使用的现金账户：显式指定优先（并校验归属当前用户、来源一致），
+// 否则取该来源（sourceID>0）或该用户全部（收支计划，sourceID=0）同币种中余额最大的子账户；
+// 仍没有且来源明确时，按币种现场补建一个落点账户（2026-10-16 起无「默认子账户」概念）。
 func resolveCashAccount(uid, cashID, sourceID int64, currency string) (*db.Cash, error) {
 	if cashID > 0 {
 		acc, err := db.GetCash(cashID)
@@ -769,19 +763,26 @@ func resolveCashAccount(uid, cashID, sourceID int64, currency string) (*db.Cash,
 		}
 		return acc, nil
 	}
-	if acc, err := db.GetDefaultCash(uid, sourceID, currency); err == nil && acc != nil {
+	if acc, err := db.PickCashAccount(uid, sourceID, currency); err == nil && acc != nil {
 		return acc, nil
 	}
-	id, err := db.EnsureCurrencyDefaults(uid, sourceID, "", currency)
+	// sourceID=0（收支计划等不挂来源的场景）不现场补建——补出来也是无主账户，直接报错引导用户先建
+	if sourceID <= 0 {
+		return nil, fmt.Errorf("没有可用的 %s 子账户，请先在「账户」中添加该币种的子账户", strings.ToUpper(db.NormCurrency(currency)))
+	}
+	id, err := db.EnsureCashForCurrency(uid, sourceID, "", currency)
 	if err != nil {
 		return nil, err
+	}
+	if id <= 0 {
+		return nil, fmt.Errorf("找不到可用的现金子账户（source=%d currency=%s）", sourceID, currency)
 	}
 	acc, err := db.GetCash(id)
 	if err != nil {
 		return nil, err
 	}
 	if acc == nil {
-		return nil, fmt.Errorf("默认子账户创建失败（source=%d）", sourceID)
+		return nil, fmt.Errorf("现金子账户创建失败（source=%d）", sourceID)
 	}
 	return acc, nil
 }
@@ -843,233 +844,6 @@ func refresh(c *gin.Context) {
 // refreshOne 已移除：单只持仓手动刷新逻辑取消，行情改由定时快照（refreshAllQuotes）自动更新。
 // 批量刷新 /api/refresh 与定时快照仍复用 refreshAllQuotes。
 
-// executeBuyPlanTier 真实落库执行某档补仓计划（"标记已补" / "标记已减"）：
-//   - 依据弹框填写的「实际成交金额 + 实际成交份额」更新持仓（份额、摊薄成本），
-//     折合成交价 = 金额 ÷ 份额，不动用手续费列；
-//   - 同步资金账户余额并记一笔真实现金流水（买入=账户出账 adjust_buy，
-//     卖出=账户入账 adjust_sell），该流水可在「资产 → 流水」中修改 / 删除；
-//   - 卖出档位额外记已实现盈亏并重算当日盈亏；
-//   - 最后把档位标记为已执行（holdings 计划置灰 ✓，并从待触发信号中排除）。
-func executeBuyPlanTier(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
-		return
-	}
-	var req struct {
-		TierIndex    int     `json:"tier_index"`
-		TierLabel    string  `json:"tier_label"`
-		Action       string  `json:"action"`
-		Price        float64 `json:"price"` // 计划档位触发价，作为金额/份额互算的参考价
-		Amount       float64 `json:"amount"`
-		ActualAmount float64 `json:"actual_amount"`
-		ActualShares float64 `json:"actual_shares"`
-		CashID       int64   `json:"cash_id"`
-		Note         string  `json:"note"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
-		return
-	}
-	if req.TierIndex < 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "tier_index 非法"})
-		return
-	}
-	uid := currentUserID(c)
-	h, err := db.Get(id)
-	if err != nil || h == nil || h.UserID != uid {
-		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
-		return
-	}
-	action := strings.TrimSpace(req.Action)
-	if action == "" {
-		action = "buy"
-	}
-	isSell := action == "sell"
-	holdName := h.Name
-	if holdName == "" {
-		holdName = h.Symbol
-	}
-	// 参考价：优先计划档位触发价，缺失时回落持仓现价，用于金额 / 份额互算与兜底成交价。
-	refPrice := req.Price
-	if refPrice <= 0 {
-		refPrice = h.CurrentPrice
-	}
-	actual := req.ActualAmount
-	if actual <= 0 {
-		actual = req.Amount
-	}
-	shares := req.ActualShares
-	if shares <= 0 && actual > 0 && refPrice > 0 {
-		shares = actual / refPrice
-	}
-	if actual <= 0 && shares > 0 && refPrice > 0 {
-		actual = shares * refPrice
-	}
-	if shares <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写实际成交份额"})
-		return
-	}
-	if actual <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写实际成交金额"})
-		return
-	}
-	actual = math.Round(actual*100) / 100
-	note := strings.TrimSpace(req.Note)
-
-	if req.CashID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择资金账户"})
-		return
-	}
-	acc, e := db.GetCash(req.CashID)
-	if e != nil || acc == nil || acc.UserID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"error": "资金账户不存在或无权访问"})
-		return
-	}
-	if !isSell && acc.Amount-actual < -0.004 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("账户「%s」余额不足（当前 %.2f，需 %.2f）", acc.Name, acc.Amount, actual)})
-		return
-	}
-	// 折合成交价 = 实际成交金额 ÷ 实际成交份额（无参考价时也据此得到）。
-	price := refPrice
-	if shares > 0 && actual > 0 {
-		price = math.Round(actual/shares*10000) / 10000
-	}
-	if price <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无法确定成交价，请填写实际成交金额与份额"})
-		return
-	}
-
-	// 1) 更新持仓：份额 + 摊薄成本（含实际成交金额），并写 position_tx 留痕。
-	txType := "BUY"
-	if isSell {
-		txType = "SELL"
-	}
-	txNote := fmt.Sprintf("补仓计划「%s」", strings.TrimSpace(req.TierLabel))
-	if note != "" {
-		txNote += "｜" + note
-	}
-	nh, realized, e := db.AdjustHolding(id, txType, shares, price, 0, txNote)
-	if e != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
-		return
-	}
-
-	// 2) 账户资金变动 + 现金流水（买入出账 / 卖出入账）。
-	delta, flowType, verb := -actual, "adjust_buy", "补仓买入"
-	if isSell {
-		delta, flowType, verb = actual, "adjust_sell", "调仓卖出"
-	}
-	detail := fmt.Sprintf("%s %s %s｜份额 %g｜价 %g", verb, holdName, h.Symbol, shares, price)
-	if note != "" {
-		detail += "｜" + note
-	}
-	if e := db.AddCashAmount(acc.ID, delta, flowType, "buy_plan", h.ID, holdName, detail); e != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
-		return
-	}
-	var flowID int64
-	if f, e := db.GetLatestCashFlowByRef("buy_plan", h.ID); e == nil && f != nil {
-		flowID = f.ID
-	}
-
-	// 3) 卖出档位：记已实现盈亏并立即重算当日盈亏（与加减仓减仓口径一致）。
-	if isSell && math.Abs(realized) > 1e-9 {
-		today := time.Now().Format("2006-01-02")
-		if e := db.RecordRealizedPnl(uid, today, id, nh.Symbol, nh.Name, nh.Currency, realized); e != nil {
-			log.Printf("[buyplan] 记录已实现盈亏失败(uid=%d hid=%d): %v", uid, id, e)
-		}
-		if e := doSnapshot(uid); e != nil {
-			log.Printf("[buyplan] 重算当日盈亏失败(uid=%d): %v", uid, e)
-		}
-	}
-
-	// 4) 档位标记为已执行（备注带上账户名，便于回看）。
-	execNote := acc.Name
-	if execNote != "" && note != "" {
-		execNote += " · " + note
-	} else if execNote == "" {
-		execNote = note
-	}
-	tx := &db.BuyPlanExec{
-		HoldingID: id,
-		TierIndex: req.TierIndex,
-		TierLabel: strings.TrimSpace(req.TierLabel),
-		Action:    action,
-		Price:     price,
-		Amount:    actual,
-		Note:      execNote,
-	}
-	if err := db.SaveExecutedBuyPlan(tx); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"ok":           true,
-		"executed":     tx,
-		"flow_id":      flowID,
-		"cash_name":    acc.Name,
-		"holding":      enrich(*nh, uid),
-		"realized_pnl": realized,
-	})
-}
-
-// listExecutedBuyPlan returns the executed tiers for a holding.
-func listExecutedBuyPlan(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
-		return
-	}
-	rows, err := db.ListExecutedBuyPlans(id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if rows == nil {
-		rows = []db.BuyPlanExec{}
-	}
-	c.JSON(http.StatusOK, gin.H{"executed": rows})
-}
-// linked_symbol set, and persists it into holdings.buy_plan. It is triggered by
-// both the manual net-value refresh and the scheduled 21:00 snapshot (via
-// refreshAllQuotes). Results are NOT written into the note column;
-// the 操作指南弹框 reads holdings.buy_plan to display them.
-// recomputeBuyPlan 在净值刷新（手动/定时）时为持仓计算并持久化动态补仓计划：
-//   - 基金：需设置关联联接ETF代码，基于ETF日K线计算（原逻辑）；
-//   - 股票：仅当处于浮亏（成本>现价）时，基于自身日K线计算，纳入动态补仓计划。
-func recomputeBuyPlan(h *db.Holding) {
-	switch h.Category {
-	case "fund":
-		if h.LinkedSymbol == "" {
-			return
-		}
-		saveBuyPlan(h, market.ComputeLinkedETFBuyPlan(h.LinkedSymbol, h.Symbol, h.Market, h.CostPrice, h.CurrentPrice, h.Quantity))
-	case "stock":
-		// 仅浮亏时才生成摊薄成本的补仓计划
-		if h.CostPrice <= h.CurrentPrice {
-			return
-		}
-		saveBuyPlan(h, market.ComputeLinkedETFBuyPlan(h.Symbol, h.Symbol, h.Market, h.CostPrice, h.CurrentPrice, h.Quantity))
-	}
-}
-
-func saveBuyPlan(h *db.Holding, plan *market.BuyPlan) {
-	if plan == nil {
-		return
-	}
-	b, err := json.Marshal(plan)
-	if err != nil {
-		log.Printf("[buyplan] %s 序列化失败: %s", h.Symbol, err.Error())
-		return
-	}
-	if err := db.SaveBuyPlan(h.ID, string(b)); err != nil {
-		log.Printf("[buyplan] %s 落库失败: %s", h.Symbol, err.Error())
-		return
-	}
-	log.Printf("[buyplan] %s 已重算补仓计划并落库（held=%.0f 亏损=%.0f 弹药上限=%.0f）",
-		h.Symbol, plan.HeldValue, plan.LossAmt, plan.AmmoCap)
-}
 
 func rate(c *gin.Context) {
 	r, degraded := market.GetUSDRate()
@@ -1308,13 +1082,12 @@ func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
 		return "", 0
 	}
 	upPct = prob.UpPct
-	// 回写缓存：供弹框与后续刷新复用（daily_signals 顺带计算；估值为弹框按需补齐）
+	// 回写缓存：供弹框与 AI 分析复用（K线 + 指标 + 概率）；逐日信号与估值已不再计算
 	go func() {
 		barsJSON, _ := json.Marshal(bars)
 		indJSON, _ := json.Marshal(ind)
 		probJSON, _ := json.Marshal(prob)
-		dailySigsJSON, _ := json.Marshal(market.ComputeDailySignals(bars))
-		_ = db.SaveAnalysisCache(sym, today, string(barsJSON), string(indJSON), string(probJSON), string(dailySigsJSON), "{}", time.Now().Format("2006-01-02 15:04:05"))
+		_ = db.SaveAnalysisCache(sym, today, string(barsJSON), string(indJSON), string(probJSON), "[]", "{}", time.Now().Format("2006-01-02 15:04:05"))
 	}()
 	return signalFromUpPct(upPct), upPct
 }
@@ -1355,7 +1128,6 @@ func refreshAllQuotes(uid int64) ([]db.Holding, []string, error) {
 						hs[i].Name = q.Name
 					}
 				}
-				recomputeBuyPlan(&hs[i])
 				autoAnalyzeAndStore(hs[i])
 			} else {
 				failed = append(failed, fmt.Sprintf("%s: %s", hs[i].Symbol, e.Error()))
@@ -1907,7 +1679,7 @@ func mergeWealthDetail(orig string, items []wealthPnlItem) string {
 // for the in-table mini sparklines. Shared by the merged
 // /api/home endpoint so the logic lives in exactly one place.
 func computeSpark(uid int64, syms []string) map[string][]float64 {
-	const days = 20
+	const days = 30
 	out := make(map[string][]float64, len(syms))
 	for _, s := range syms {
 		series, err := db.GetPriceSeries(s, uid)
@@ -1954,6 +1726,18 @@ func home(c *gin.Context) {
 		}
 	}
 	spark := computeSpark(uid, syms)
+	// 现金子账户余额：key = "sourceID:currency"（币种小写），value = 该 (来源,币种) 下所有现金子账户余额合计。
+	// 供首页持仓表「仓位」列计算分母（同账户同币种持仓市值合计 + 现金余额）；匹配不到 key 时前端显示 —。
+	cashBal := make(map[string]float64)
+	if cashList, cerr := db.ListCash(uid); cerr == nil {
+		for _, cc := range cashList {
+			cur := strings.ToLower(cc.Currency)
+			if cur == "cny" {
+				cur = "cny" // 存量数据人民币有 rmb/cny 两种写法，归一为 cny 后与持仓侧 key 对齐
+			}
+			cashBal[strconv.FormatInt(cc.SourceID, 10)+":"+cur] += cc.Amount
+		}
+	}
 	resp := gin.H{
 		"holdings":       out,
 		"day_date":       day,
@@ -1962,6 +1746,7 @@ func home(c *gin.Context) {
 		"fx":             fx,
 		"sources":        srcs,
 		"spark":          spark,
+		"cash":           cashBal,
 	}
 	for k, v := range sd {
 		resp[k] = v
@@ -2170,81 +1955,3 @@ func holdingPnlHistory(c *gin.Context) {
 	})
 }
 
-// ============================================================================
-// 操作指南 CRUD
-// ============================================================================
-
-func listGuides(c *gin.Context) {
-	guides, err := db.ListOperationGuides(currentUserID(c))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"guides": guides})
-}
-
-func createGuide(c *gin.Context) {
-	var g db.OperationGuide
-	if err := c.ShouldBindJSON(&g); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式错误: " + err.Error()})
-		return
-	}
-	if g.Title == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "标题不能为空"})
-		return
-	}
-	g.UserID = currentUserID(c)
-	id, err := db.InsertOperationGuide(&g)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	g.ID = id
-	c.JSON(http.StatusCreated, gin.H{"guide": g})
-}
-
-func getGuide(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id 格式错误"})
-		return
-	}
-	g, err := db.GetOperationGuide(id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "未找到该操作记录"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"guide": g})
-}
-
-func updateGuide(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id 格式错误"})
-		return
-	}
-	var g db.OperationGuide
-	if err := c.ShouldBindJSON(&g); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式错误: " + err.Error()})
-		return
-	}
-	g.ID = id
-	if err := db.UpdateOperationGuide(&g); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"guide": g})
-}
-
-func deleteGuide(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id 格式错误"})
-		return
-	}
-	if err := db.DeleteOperationGuide(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"ok": true})
-}

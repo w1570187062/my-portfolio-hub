@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-accent="green">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>设置 / 工具页重构方案稿</title>
+<style>
+  :root{
+    --bg:#0d1320;
+    --bg-2:#0a1018;
+    --bg-card-raise:rgba(27,35,49,.94);
+    --border:rgba(255,255,255,.08);
+    --border-strong:rgba(255,255,255,.16);
+    --text:#e3e9f0;
+    --text-strong:#f1f5f9;
+    --text-muted:#94a3b8;
+    --text-faint:#64748b;
+    --primary:#6f9e5e;
+    --primary-hover:#84b373;
+    --primary-active:#639253;
+    --on-primary:#101c0a;
+    --up:#ff6b6b;
+    --down:#4ade80;
+    --r-sm:8px; --r-lg:16px;
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
+    --fs-xs:11px; --fs-sm:12px; --fs-md:13px; --fs-base:14px; --fs-lg:16px; --fs-xl:20px;
+    --card-glow:radial-gradient(122% 94% at 100% 0%, rgba(111,158,94,.07) 0%, rgba(111,158,94,0) 58%);
+    --blur:6px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Sarasa Gothic SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:var(--fs-base);line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1180px;margin:0 auto;padding:var(--sp-8) var(--sp-5) 80px;}
+  .doc-head{margin-bottom:var(--sp-8);}
+  .doc-head h1{font-size:var(--fs-xl);color:var(--text-strong);margin:0 0 var(--sp-2);}
+  .doc-head p{color:var(--text-muted);margin:0;max-width:760px;font-size:var(--fs-md);}
+  .legend{display:flex;gap:var(--sp-4);margin-top:var(--sp-4);font-size:var(--fs-xs);color:var(--text-faint);}
+  .legend b{color:var(--text-muted);font-weight:600;}
+  .legend .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+  .dot.bad{background:var(--up);}
+  .dot.good{background:var(--primary);}
+
+  section.cmp{margin-bottom:var(--sp-8);}
+  .cmp-title{font-size:var(--fs-lg);color:var(--text-strong);margin:0 0 var(--sp-1);}
+  .cmp-sub{font-size:var(--fs-sm);color:var(--text-muted);margin:0 0 var(--sp-5);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-6);}
+  @media(max-width:880px){.grid2{grid-template-columns:1fr;}}
+  .col{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;}
+  .col-head{padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);font-size:var(--fs-xs);letter-spacing:.4px;text-transform:uppercase;display:flex;align-items:center;gap:var(--sp-2);}
+  .col-head .tag{padding:2px 8px;border-radius:999px;font-size:10px;}
+  .col-head .tag.now{background:rgba(255,107,107,.14);color:var(--up);}
+  .col-head .tag.next{background:rgba(111,158,94,.16);color:var(--primary-hover);}
+  .col-body{padding:var(--sp-5);}
+
+  /* ===== 共通控件（复刻真实令牌） ===== */
+  .settings-group{margin:0;}
+  .settings-group + .settings-group{margin-top:var(--sp-6);}
+  .sg-title{font-size:var(--fs-base);color:var(--text-strong);margin:0;font-weight:600;}
+  .sg-desc{font-size:var(--fs-sm);color:var(--text-muted);margin:4px 0 var(--sp-4);}
+  .sg-body{padding:var(--sp-4) 0 0;}
+  .ana-tabs{display:flex;gap:var(--sp-1);border-bottom:1px solid var(--border);margin-bottom:var(--sp-4);}
+  .ana-tab-btn{background:none;border:none;color:var(--text-muted);font:inherit;font-size:var(--fs-sm);padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;}
+  .ana-tab-btn.active{color:var(--text-strong);border-bottom-color:var(--primary);}
+  label{display:block;font-size:var(--fs-sm);color:var(--text-muted);margin:0 0 var(--sp-3);}
+  label .inner{display:block;}
+  input[type=text],input[type=password],input[type=number],select,textarea{width:100%;margin-top:6px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font:inherit;font-size:var(--fs-md);padding:8px 10px;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(111,158,94,.18);}
+  textarea{resize:vertical;}
+  .set-sep{border:none;border-top:1px solid var(--border);margin:var(--sp-4) 0;}
+  .tool-hint{font-size:var(--fs-xs);color:var(--text-faint);margin:2px 0 var(--sp-3);}
+  .modal-actions{display:flex;gap:var(--sp-2);margin-top:var(--sp-5);justify-content:flex-end;}
+  .btn{background:transparent;border:1px solid var(--border-strong);color:var(--text);font:inherit;font-size:var(--fs-sm);padding:8px 16px;border-radius:var(--r-sm);cursor:pointer;}
+  .btn:hover{border-color:var(--primary);color:var(--text-strong);}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary);font-weight:600;}
+  .btn.primary:hover{background:var(--primary-hover);}
+  .btn.btn-sm{padding:5px 10px;font-size:var(--fs-xs);}
+  .switch{position:relative;display:inline-block;width:40px;height:22px;}
+  .switch input{opacity:0;width:0;height:0;}
+  .switch-knob{position:absolute;inset:0;background:rgba(255,255,255,.14);border-radius:999px;transition:.2s;cursor:pointer;}
+  .switch-knob:before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;}
+  .switch input:checked + .switch-knob{background:var(--primary);}
+  .switch input:checked + .switch-knob:before{transform:translateX(18px);}
+  .switch-row{display:flex;align-items:center;justify-content:space-between;color:var(--text);font-size:var(--fs-sm);margin-bottom:var(--sp-3);}
+  .err{color:var(--up);font-size:var(--fs-xs);min-height:14px;margin-top:6px;}
+
+  /* ===== 方案新增：次级子区块 + 归类标题 ===== */
+  .sub-block{border:1px solid var(--border);border-radius:var(--r-sm);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-4);background:rgba(255,255,255,.02);}
+  .sub-block.off{opacity:.55;}
+  .sub-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-3);}
+  .sub-head .sub-name{font-size:var(--fs-sm);color:var(--text-strong);font-weight:600;}
+  .sub-fields{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3) var(--sp-4);}
+  @media(max-width:520px){.sub-fields{grid-template-columns:1fr;}}
+  .grp-label{font-size:var(--fs-xs);letter-spacing:.5px;text-transform:uppercase;color:var(--text-faint);margin:var(--sp-5) 0 var(--sp-2);font-weight:600;display:flex;align-items:center;gap:var(--sp-2);}
+  .grp-label:before{content:"";width:3px;height:13px;background:var(--primary);border-radius:2px;}
+  .grp-label:first-child{margin-top:0;}
+  .accent-chips{display:flex;gap:var(--sp-2);}
+  .chip{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;}
+  .chip.gold{background:#d9a52b;}
+  .chip.green{background:#6f9e5e;}
+  .chip.blue{background:#0a84ff;}
+  .chip.sel{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.2);}
+  .collapse{border:1px solid var(--border);border-radius:var(--r-sm);margin-top:var(--sp-3);overflow:hidden;}
+  .collapse-head{display:flex;align-items:center;justify-content:space-between;padding:var(--sp-3) var(--sp-4);cursor:pointer;background:rgba(255,255,255,.02);font-size:var(--fs-sm);color:var(--text-strong);}
+  .collapse-head .chev{transition:.2s;color:var(--text-faint);}
+  .collapse.open .chev{transform:rotate(90deg);}
+  .collapse-body{padding:var(--sp-4);border-top:1px solid var(--border);display:none;}
+  .collapse.open .collapse-body{display:block;}
+
+  /* ===== 工具页：决策卡 vs 换算卡 ===== */
+  .rebal-card{border:1px solid var(--primary);border-radius:var(--r-lg);padding:var(--sp-5);background:linear-gradient(180deg,rgba(111,158,94,.06),transparent);}
+  .rebal-top{display:flex;gap:var(--sp-5);align-items:center;flex-wrap:wrap;}
+  .donut{width:96px;height:96px;border-radius:50%;background:conic-gradient(var(--primary) 0 62%, #4f8fd6 62% 81%, #d9a52b 81% 100%);display:flex;align-items:center;justify-content:center;flex:none;}
+  .donut span{width:62px;height:62px;border-radius:50%;background:var(--bg-card-raise);display:flex;align-items:center;justify-content:center;font-size:var(--fs-xs);color:var(--text-muted);text-align:center;}
+  .rebal-rows{flex:1;min-width:200px;}
+  .rebal-rows .r{display:flex;justify-content:space-between;font-size:var(--fs-sm);padding:5px 0;border-bottom:1px solid var(--border);}
+  .rebal-rows .r:last-child{border-bottom:none;}
+  .pill{font-size:10px;padding:1px 7px;border-radius:999px;}
+  .pill.ok{background:rgba(74,222,128,.16);color:var(--down);}
+  .pill.warn{background:rgba(255,107,107,.14);color:var(--up);}
+  .tool-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);margin-top:var(--sp-4);}
+  @media(max-width:520px){.tool-grid{grid-template-columns:1fr;}}
+  .tool-card{border:1px solid var(--border);border-radius:var(--r-sm);padding:var(--sp-4);background:rgba(255,255,255,.02);}
+  .tool-card h5{margin:0 0 2px;font-size:var(--fs-sm);color:var(--text-strong);}
+  .tool-card p{margin:0 0 var(--sp-3);font-size:var(--fs-xs);color:var(--text-faint);}
+  .mini-result{font-size:var(--fs-lg);color:var(--primary-hover);margin-top:var(--sp-2);font-weight:600;}
+  .footnote{margin-top:40px;font-size:var(--fs-xs);color:var(--text-faint);border-top:1px solid var(--border);padding-top:var(--sp-4);}
+  .footnote b{color:var(--text-muted);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="doc-head">
+    <h1>设置 / 工具页 重构方案稿</h1>
+    <p>核心问题：设置页把「风险偏好 / 推送策略 / AI」三个互不从属的功能塞进一个名为"通知"的卡片（标题与内容错位）；工具页把 5 个计算器平铺在"工具"标题下、没有次级归类。下方左右对照——左为<strong>当前</strong>，右为<strong>方案</strong>。</p>
+    <div class="legend">
+      <span><span class="dot bad"></span><b>当前痛点</b>：语义错位 / 信息平铺无层级</span>
+      <span><span class="dot good"></span><b>方案</b>：按语义拆分组 + 次级归类 + 舒适最大宽度</span>
+    </div>
+  </div>
+
+  <!-- ===================== 设置页 ===================== -->
+  <section class="cmp">
+    <h2 class="cmp-title">① 设置页</h2>
+    <p class="cmp-sub">去掉"通知"大卡片里的三个互斥 tab，改为 4 个语义正确的分组；钉钉/邮箱折叠为子区块（关闭时灰化）；MCP 开发者参数收进"高级"折叠；内容区限宽居中。</p>
+    <div class="grid2">
+      <!-- 当前 -->
+      <div class="col">
+        <div class="col-head"><span class="tag now">当前</span> 单一"通知"卡片 · 三 tab 错位</div>
+        <div class="col-body">
+          <div class="settings-group">
+            <h3 class="sg-title">通知</h3>
+            <p class="sg-desc">配置净值更新后的推送策略，以及钉钉 / 邮箱通知渠道。</p>
+            <div class="sg-body">
+              <div class="ana-tabs">
+                <button class="ana-tab-btn active" onclick="tabs(this)">风险偏好</button>
+                <button class="ana-tab-btn" onclick="tabs(this)">推送策略</button>
+                <button class="ana-tab-btn" onclick="tabs(this)">AI</button>
+              </div>
+              <!-- 风险偏好面板 -->
+              <div class="panel">
+                <label class="switch-row">稳健型（目标占比） <span class="switch"><input type="checkbox" checked><span class="switch-knob"></span></span></label>
+                <label>资产类型标签 <input type="text" placeholder="股票 / 基金 / 现金"></label>
+                <button class="btn btn-sm">+ 新增风险偏好</button>
+              </div>
+              <hr class="set-sep" />
+              <p class="tool-hint">↑ "风险偏好"与"AI"根本不属于"通知"，却藏在这个卡片里——标题与内容错位。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 方案 -->
+      <div class="col">
+        <div class="col-head"><span class="tag next">方案</span> 4 个语义分组 · 子区块 · 限宽</div>
+        <div class="col-body" style="max-width:520px;margin:0 auto;">
+          <!-- 通知与推送 -->
+          <div class="settings-group">
+            <h3 class="sg-title">通知与推送</h3>
+            <p class="sg-desc">控制净值更新后何时推送，以及钉钉 / 邮箱渠道。</p>
+            <div class="sg-body">
+              <label>推送频率
+                <select><option>每次净值更新都推送</option><option>仅收盘后</option><option>仅出现补仓信号时</option></select>
+              </label>
+              <label class="switch-row">待还款提醒（提前一天 07:00）<span class="switch"><input type="checkbox" checked><span class="switch-knob"></span></span></label>
+              <hr class="set-sep" />
+              <!-- 钉钉子区块 -->
+              <div class="sub-block">
+                <div class="sub-head"><span class="sub-name">钉钉通知</span><span class="switch"><input type="checkbox" checked onchange="toggleSub(this)"><span class="switch-knob"></span></span></div>
+                <div class="sub-fields">
+                  <label>Webhook 地址 <input type="text" value="https://oapi.dingtalk.com/robot/send?access_token=…"></label>
+                  <label>加签密钥（可选） <input type="text" placeholder="机器人安全设置中的加签密钥"></label>
+                </div>
+              </div>
+              <!-- 邮箱子区块 -->
+              <div class="sub-block">
+                <div class="sub-head"><span class="sub-name">邮箱通知</span><span class="switch"><input type="checkbox" onchange="toggleSub(this)"><span class="switch-knob"></span></span></div>
+                <div class="sub-fields" style="opacity:.5;">
+                  <label>SMTP 服务器 <input type="text" placeholder="smtp.qq.com"></label>
+                  <label>端口 <input type="number" value="465"></label>
+                  <label>账号 <input type="text" placeholder="1570187062@qq.com"></label>
+                  <label>授权码 <input type="password" placeholder="邮箱授权码"></label>
+                </div>
+              </div>
+              <div class="modal-actions"><button class="btn">测试通知</button><button class="btn primary">保存配置</button></div>
+            </div>
+          </div>
+          <!-- 风险偏好 -->
+          <div class="settings-group">
+            <h3 class="sg-title">风险偏好</h3>
+            <p class="sg-desc">设定目标资产配置比例，供资产再平衡与补仓信号使用。</p>
+            <div class="sg-body">
+              <label class="switch-row">稳健型（目标占比） <span class="switch"><input type="checkbox" checked><span class="switch-knob"></span></span></label>
+              <label>资产类型标签 <input type="text" placeholder="股票 / 基金 / 现金"></label>
+              <button class="btn btn-sm">+ 新增风险偏好</button>
+            </div>
+          </div>
+          <!-- AI 配置 -->
+          <div class="settings-group">
+            <h3 class="sg-title">AI 配置</h3>
+            <p class="sg-desc">模型与提示词模板。MCP 等开发者参数收进下方"高级"。</p>
+            <div class="sg-body">
+              <label>配置名称 <input type="text" value="默认"></label>
+              <label>模型名称 <input type="text" value="deepseek-v4-pro"></label>
+              <label>API Key <input type="password" value="sk-…"></label>
+              <div class="collapse" id="mcpCol">
+                <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">高级 · MCP 与开发者参数 <span class="chev">›</span></div>
+                <div class="collapse-body">
+                  <label class="switch-row">启用 MCP 服务 <span class="switch"><input type="checkbox"><span class="switch-knob"></span></span></label>
+                  <label>HTTP 监听地址 <input type="text" value=":9988"></label>
+                  <label>鉴权令牌 <input type="password" placeholder="留空则不鉴权"></label>
+                  <label>客户端配置（JSON） <textarea rows="4" readonly>{ "mcpServers": { "portfolio": { "url": "http://127.0.0.1:9988/mcp" } } }</textarea></label>
+                  <div class="modal-actions"><button class="btn">复制客户端配置</button><button class="btn">重启 MCP 服务</button><button class="btn primary">保存</button></div>
+                </div>
+              </div>
+              <div class="modal-actions"><button class="btn primary">保存设置</button></div>
+            </div>
+          </div>
+          <!-- 外观主题 -->
+          <div class="settings-group">
+            <h3 class="sg-title">外观主题</h3>
+            <p class="sg-desc">主题色与明暗模式，全局即时生效。</p>
+            <div class="sg-body">
+              <div class="grp-label">主题色</div>
+              <div class="accent-chips">
+                <div class="chip gold" title="金"></div>
+                <div class="chip green sel" title="豆沙绿"></div>
+                <div class="chip blue" title="蓝"></div>
+              </div>
+              <label class="switch-row" style="margin-top:var(--sp-4);">深色模式 <span class="switch"><input type="checkbox" checked><span class="switch-knob"></span></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 工具页 ===================== -->
+  <section class="cmp">
+    <h2 class="cmp-title">② 工具页</h2>
+    <p class="cmp-sub">把 5 个计算器归为两类：「决策分析」突出资产再平衡（依赖风险偏好），「即时换算」聚合汇率 / 权益盈亏 / 美元盈亏 / 贷款。两者各自成组，层级清晰。</p>
+    <div class="grid2">
+      <!-- 当前 -->
+      <div class="col">
+        <div class="col-head"><span class="tag now">当前</span> 单一"工具"标题 · 5 tab 平铺</div>
+        <div class="col-body">
+          <div class="settings-group">
+            <h3 class="sg-title">工具</h3>
+            <div class="sg-body">
+              <div class="ana-tabs">
+                <button class="ana-tab-btn active" onclick="tabs(this)">资产再平衡</button>
+                <button class="ana-tab-btn" onclick="tabs(this)">汇率计算</button>
+                <button class="ana-tab-btn" onclick="tabs(this)">权益盈亏</button>
+                <button class="ana-tab-btn" onclick="tabs(this)">美元盈亏</button>
+                <button class="ana-tab-btn" onclick="tabs(this)">贷款计算</button>
+              </div>
+              <hr class="set-sep" />
+              <p class="tool-hint">↑ 决策类（再平衡）与即时换算类（其余 4 个）混在同一层 tab，无主次；宽屏下控件被拉满整行。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 方案 -->
+      <div class="col">
+        <div class="col-head"><span class="tag next">方案</span> 决策 / 换算 两类归类</div>
+        <div class="col-body" style="max-width:520px;margin:0 auto;">
+          <!-- 决策分析 -->
+          <div class="settings-group">
+            <div class="grp-label" style="margin-top:0;">决策分析</div>
+            <div class="rebal-card">
+              <div class="rebal-top">
+                <div class="donut"><span>目标<br>vs 实际</span></div>
+                <div class="rebal-rows">
+                  <div class="r"><span>股票</span><span>62% <span class="pill ok">达标</span></span></div>
+                  <div class="r"><span>基金</span><span>19% <span class="pill ok">达标</span></span></div>
+                  <div class="r"><span>现金</span><span>19% <span class="pill warn">偏离 +4%</span></span></div>
+                </div>
+              </div>
+              <p class="tool-hint" style="margin-top:var(--sp-3);">基于"稳健型"目标占比检视当前组合偏离，提示再平衡空间。</p>
+            </div>
+          </div>
+          <!-- 即时换算 -->
+          <div class="settings-group">
+            <div class="grp-label">即时换算</div>
+            <div class="ana-tabs">
+              <button class="ana-tab-btn active" onclick="tabs(this)">汇率</button>
+              <button class="ana-tab-btn" onclick="tabs(this)">权益盈亏</button>
+              <button class="ana-tab-btn" onclick="tabs(this)">美元盈亏</button>
+              <button class="ana-tab-btn" onclick="tabs(this)">贷款</button>
+            </div>
+            <div class="tool-grid">
+              <div class="tool-card">
+                <h5>汇率计算</h5>
+                <p>CNY / HKD / USD 互转</p>
+                <label style="margin:0;">金额 <input type="number" value="1000"></label>
+                <div class="mini-result">≈ HK$ 1,090</div>
+              </div>
+              <div class="tool-card">
+                <h5>权益盈亏</h5>
+                <p>记录并折算权益类盈亏</p>
+                <label style="margin:0;">本币盈亏 <input type="number" value="0"></label>
+                <div class="mini-result" style="color:var(--text-muted);">—</div>
+              </div>
+              <div class="tool-card">
+                <h5>美元盈亏</h5>
+                <p>含汇率收益的成本法核算</p>
+                <label style="margin:0;">平均买入汇率 <input type="number" value="7.1"></label>
+                <div class="mini-result" style="color:var(--down);">跑赢 ¥ +320</div>
+              </div>
+              <div class="tool-card">
+                <h5>贷款计算</h5>
+                <p>等额本息 / 等额本金</p>
+                <label style="margin:0;">贷款本金 <input type="number" value="1000000"></label>
+                <div class="mini-result">月供 ¥ 5,307</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="footnote">
+    <b>方案稿说明</b>：本稿为可视化原型，复刻项目真实设计令牌（豆沙绿暗色主题、ghost 按钮、发丝线、4px 间距网格）。落地时改动集中在 <code>web/index.html</code>（拆分 settingsView / toolsView 的分组结构）与 <code>web/app.js</code> 对应渲染/绑定逻辑；样式复用现有 <code>.settings-group / .ana-tabs / .switch</code> 体系，新增少量 <code>.sub-block / .grp-label / .collapse</code>。确认方向后我再做可交互的正式实现并部署。
+  </div>
+</div>
+
+<script>
+  function tabs(el){ el.parentElement.querySelectorAll('.ana-tab-btn').forEach(b=>b.classList.remove('active')); el.classList.add('active'); }
+  function toggleSub(cb){ cb.closest('.sub-block').classList.toggle('off', !cb.checked); }
+</script>
+</body>
+</html>

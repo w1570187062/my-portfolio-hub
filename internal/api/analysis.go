@@ -14,53 +14,46 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AnalysisResponse contains full technical analysis results.
+// AnalysisResponse 是技术分析弹框所需的精简数据：仅保留迷你K线(series)与
+// 自动分析信号(signal，驱动持仓列表买卖角标)。指标/概率/逐日信号/估值等
+// 子面板已在本次重构中移除，后端不再计算与返回它们。
 type AnalysisResponse struct {
-	ID           int                      `json:"id"`
-	Name         string                   `json:"name"`
-	Symbol       string                   `json:"symbol"`
-	Category     string                   `json:"category"`
-	Market       string                   `json:"market"`
-	Price        float64                  `json:"price"`
-	Indicators   *market.IndicatorsResult  `json:"indicators,omitempty"`
-	Probability  *market.ProbabilityResult `json:"probability,omitempty"`
-	Signal       string                   `json:"signal,omitempty"`                        // 归一化信号：buy/sell/hold（与角标一致，回写 holdings.analysis_signal）
-	UpPct        float64                  `json:"up_pct,omitempty"`                       // 看涨概率（与概览买入评级一致）
-	DailySignals []market.DailySignal     `json:"daily_signals,omitempty"`                // 逐日历史信号 + 次日收盘，用于悬停评级与回测胜率
-	Error        string                   `json:"error,omitempty"`
-	GeneratedAt  string                   `json:"generated_at"` // 分析生成时间（本地时区）
-	Series       []market.KlineBar        `json:"series,omitempty"` // 已拉取的日K线(OHLC)，用于前端迷你K线展示
-	Valuation    *market.ValuationResult  `json:"valuation,omitempty"` // 股票 PE/PB 历史百分位（仅股票，基金/ETF 不填）
+	ID          int               `json:"id"`
+	Name        string            `json:"name"`
+	Symbol      string            `json:"symbol"`
+	Category    string            `json:"category"`
+	Market      string            `json:"market"`
+	Signal      string            `json:"signal,omitempty"`
+	Error       string            `json:"error,omitempty"`
+	GeneratedAt string            `json:"generated_at"`
+	Series      []market.KlineBar `json:"series,omitempty"`
 }
 
-// signalFromUpPct maps the bullish probability to a normalized signal used by
-// both the auto-analysis (角标) and the on-demand analysis endpoint, so the
-// badge always agrees with the modal's verdict. Delegates to market.SignalFromUpPct,
-// the single source of truth also used by the daily backtest.
+// analysisSeriesCap 迷你K线响应截断：只回传最近约 1 年交易日（260 根）。上市二三十年的
+// A 股全量上万根，既拖慢弹框加载，前端缩放档数（total/12）也永远到不了最大档（切不出折线）。
+const analysisSeriesCap = 260
+
+func capSeries(bars []market.KlineBar) []market.KlineBar {
+	if len(bars) > analysisSeriesCap {
+		return bars[len(bars)-analysisSeriesCap:]
+	}
+	return bars
+}
+
+// signalFromUpPct 将看涨概率映射为归一化信号（与持仓角标、自动分析一致）。
 func signalFromUpPct(upPct float64) string {
 	return market.SignalFromUpPct(upPct)
 }
 
 // ---- 分析缓存新鲜度（命中缓存也做新鲜度校验）----
-//
-// 背景：美股行情来自新浪日K，其更新滞后于美股收盘。若在源端尚未更新时（如 07:00 定时快照）
-// 首写了当日缓存，则会带着「落后的末根K线」把一整天钉死——因为缓存键是 (symbol, 当日)，
-// 命中即直接返回、当日不再重取。这里在缓存命中时追加两道校验，任一不满足即判定为不新鲜，
-// 回落到实时抓取并 upsert 覆盖：
-//  1) 缓存的最后一根K线日期 < 期望的最近交易日（期望值按市场与北京时间粗算，忽略节假日）；
-//  2) 距上次生成超过硬 TTL。
-// 为免源端持续滞后时频繁抓取，第 1 条还需超过最小重取间隔才真正重取（否则仍视为新鲜）。
 const (
 	analysisCacheHardTTL    = 6 * time.Hour
 	analysisCacheMinRefresh = 30 * time.Minute
 )
 
-// beijing 用于把缓存里的本地时间字符串解析回 time.Time。
 var beijing = time.FixedZone("CST", 8*3600)
 
 // expectedLatestBarDate 估算「此刻应已可获得的最新交易日」（YYYY-MM-DD）。
-// 只按工作日回退、忽略节假日：宁可偶尔多抓一次，也不长期钉在旧数据上。
-// 美股：收盘约在北京时间次日 05:00，故以 now-29h 为界；其余市场按 now-16h 处理。
 func expectedLatestBarDate(marketName string, now time.Time) string {
 	cutoff := now.Add(-16 * time.Hour)
 	if marketName == "美股" {
@@ -91,7 +84,6 @@ func analysisCacheFresh(row *db.AnalysisCacheRow, marketName string) bool {
 		return true
 	}
 	if bars[len(bars)-1].Date < expectedLatestBarDate(marketName, time.Now()) {
-		// 末根K线落后于期望交易日：仅当超过最小重取间隔才判定为不新鲜，避免源端滞后时频繁抓取
 		if age >= analysisCacheMinRefresh {
 			return false
 		}
@@ -99,12 +91,9 @@ func analysisCacheFresh(row *db.AnalysisCacheRow, marketName string) bool {
 	return true
 }
 
-// getAnalysis returns technical analysis for a holding.
+// getAnalysis 返回迷你K线所需的日K线数据，并依据概率结论回写持仓买卖角标信号。
+// 指标/概率/逐日信号/估值等子面板已移除，此处不再计算与返回它们。
 // GET /holdings/:id/analysis
-//
-// 缓存策略：按 (规范化 symbol, 当日 YYYY-MM-DD) 缓存 K线+指标+概率+逐日信号 JSON。
-// 同一交易日内多次打开分析弹框直接命中缓存，毫秒级返回；跨日自然失效。
-// 注意：缓存命中时仍会回写持仓的 analysis_signal/up_pct（用户点开弹框视为最新结论）。
 func getAnalysis(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
@@ -134,119 +123,73 @@ func getAnalysis(c *gin.Context) {
 		return
 	}
 
-	// 确定用于取数的 symbol：基金用关联股票代码，股票用自身代码
 	symForFetch := h.Symbol
 	if h.Category == "fund" {
 		symForFetch = h.LinkedSymbol
 	}
 	symbol := resolveSymbol(symForFetch, h.Market)
 	today := time.Now().Format("2006-01-02")
+	genAt := time.Now().Format("2006-01-02 15:04:05")
 
-	// ① 查缓存：当日命中且「新鲜」则直接反序列化返回，跳过 K线抓取（毫秒级）。
-	// 若末根K线落后于期望交易日或超过硬 TTL（analysisCacheFresh），则视为不新鲜，回落到实时抓取。
+	// ① 查缓存：当日命中且「新鲜」则直接复用 K线 + 概率（用于角标）。
 	if row, e := db.GetAnalysisCache(symbol, today); e == nil && row != nil && analysisCacheFresh(row, h.Market) {
 		var bars []market.KlineBar
 		if e2 := json.Unmarshal([]byte(row.BarsJSON), &bars); e2 == nil && len(bars) >= 30 {
-			var ind market.IndicatorsResult
-			if e2 := json.Unmarshal([]byte(row.IndicatorsJSON), &ind); e2 == nil {
-				var prob market.ProbabilityResult
-				_ = json.Unmarshal([]byte(row.ProbabilityJSON), &prob)
-				var dailySigs []market.DailySignal
-				_ = json.Unmarshal([]byte(row.DailySignalsJSON), &dailySigs)
-
-				resp.Series = bars
-				resp.Indicators = &ind
-				resp.Price = ind.Price
-				resp.Probability = &prob
-				resp.DailySignals = dailySigs
-				resp.Symbol = symForFetch
-				resp.GeneratedAt = row.GeneratedAt
-				// 估值（仅股票）：命中缓存则反序列化估值 JSON；若由概览预热的缓存未带估值，按需补抓一次避免页签退化
-				if h.Category == "stock" {
-					if row.ValuationJSON != "" && row.ValuationJSON != "{}" {
-						var v market.ValuationResult
-						if e2 := json.Unmarshal([]byte(row.ValuationJSON), &v); e2 == nil && (v.PE > 0 || len(v.Points) > 0) {
-							resp.Valuation = &v
-						}
-					} else if v, ve := market.GetValuationHistory(symForFetch, h.Market, bars); ve == nil {
-						resp.Valuation = v
-					}
+			resp.Series = capSeries(bars)
+			resp.Symbol = symForFetch
+			resp.GeneratedAt = row.GeneratedAt
+			// 缓存命中也回写角标信号，使首页角标与弹框结论一致
+			var prob market.ProbabilityResult
+			if e2 := json.Unmarshal([]byte(row.ProbabilityJSON), &prob); e2 == nil && prob.UpPct > 0 {
+				resp.Signal = signalFromUpPct(prob.UpPct)
+				if e := db.UpdateAnalysis(h.ID, resp.Signal, prob.UpPct, genAt); e != nil {
+					log.Printf("[analysis] 回写信号失败 id=%d: %v", h.ID, e)
 				}
-				// 缓存命中也回写持仓信号，使首页角标与弹框结论保持一致
-				if prob.UpPct > 0 {
-					resp.Signal = signalFromUpPct(prob.UpPct)
-					resp.UpPct = prob.UpPct
-					if e := db.UpdateAnalysis(h.ID, resp.Signal, prob.UpPct, time.Now().Format("2006-01-02 15:04:05")); e != nil {
-						log.Printf("[analysis] 回写信号失败 id=%d: %v", h.ID, e)
-					}
-				}
-				c.JSON(http.StatusOK, gin.H{"analysis": resp, "cache": true})
-				return
 			}
+			c.JSON(http.StatusOK, gin.H{"analysis": resp, "cache": true})
+			return
 		}
-		// 缓存反序列化失败：忽略缓存，继续走实时抓取
 	}
 
-	// ② 未命中缓存：实时抓取 K线 + 计算指标 + 落库缓存
+	// ② 未命中缓存：实时抓取 K线，计算概率用于角标，落库缓存（K线+指标+概率）。
 	bars, err := market.FetchKline(symbol)
-	resp.Series = bars
+	resp.Series = capSeries(bars)
 	if err != nil {
 		log.Printf("[analysis] fetch kline for %s (%s) failed: %v", h.Name, symbol, err)
 		resp.Error = "获取K线数据失败：" + err.Error()
 		resp.Symbol = symForFetch
-		resp.GeneratedAt = time.Now().Format("2006-01-02 15:04:05")
+		resp.GeneratedAt = genAt
 		c.JSON(http.StatusOK, gin.H{"analysis": resp})
 		return
 	}
 	if len(bars) < 30 {
 		resp.Error = "K线数据不足（需要至少30个交易日）"
 		resp.Symbol = symForFetch
-		resp.GeneratedAt = time.Now().Format("2006-01-02 15:04:05")
+		resp.GeneratedAt = genAt
 		c.JSON(http.StatusOK, gin.H{"analysis": resp})
 		return
 	}
 
-	// 估值（仅股票）：A股用东财真实历史 PE_TTM/PB_MRQ；美股/港股用腾讯 PE + K线估算
-	if h.Category == "stock" {
-		if v, ve := market.GetValuationHistory(symbol, h.Market, bars); ve == nil {
-			resp.Valuation = v
-		} else {
-			log.Printf("[analysis] valuation for %s (%s) failed: %v", h.Name, symbol, ve)
-		}
-	}
-
 	ind := market.CalculateIndicators(bars)
-	resp.Indicators = ind
-	resp.Price = ind.Price
-	resp.Symbol = symForFetch
 	prob := market.CalculateProbability(ind)
-	resp.Probability = prob
-	resp.DailySignals = market.ComputeDailySignals(bars)
-	genAt := time.Now().Format("2006-01-02 15:04:05")
+	resp.Symbol = symForFetch
 	resp.GeneratedAt = genAt
 
-	if prob != nil {
+	if prob != nil && prob.UpPct > 0 {
 		// 回写最新信号到持仓，使首页角标与弹框结论保持一致（中性→hold，不展示角标）
 		resp.Signal = signalFromUpPct(prob.UpPct)
-		resp.UpPct = prob.UpPct
 		if err := db.UpdateAnalysis(h.ID, resp.Signal, prob.UpPct, genAt); err != nil {
 			log.Printf("[analysis] 回写信号失败 id=%d: %v", h.ID, err)
 		}
 	}
 
-	// 异步落库缓存（失败不影响响应）
+	// 异步落库缓存（失败不影响响应）：仅缓存 K线 + 指标 + 概率（供 AI 分析复用）；
+	// 逐日信号与估值已不再计算。
 	go func() {
 		barsJSON, _ := json.Marshal(bars)
 		indJSON, _ := json.Marshal(ind)
 		probJSON, _ := json.Marshal(prob)
-		dailySigsJSON, _ := json.Marshal(resp.DailySignals)
-		valJSON := "{}"
-		if resp.Valuation != nil {
-			if b, e := json.Marshal(resp.Valuation); e == nil {
-				valJSON = string(b)
-			}
-		}
-		if e := db.SaveAnalysisCache(symbol, today, string(barsJSON), string(indJSON), string(probJSON), string(dailySigsJSON), valJSON, genAt); e != nil {
+		if e := db.SaveAnalysisCache(symbol, today, string(barsJSON), string(indJSON), string(probJSON), "[]", "{}", genAt); e != nil {
 			log.Printf("[analysis] save cache %s %s failed: %v", symbol, today, e)
 		}
 	}()
@@ -291,7 +234,6 @@ func resolveSymbol(symbol, market string) string {
 	}
 
 	// 6 位纯数字 → 视为 A 股，按首位判定上交所(sh)/深交所(sz)。
-	// 不依赖 market 字段（market 缺失或写法不一致时仍能正确取数）。
 	if len(sym) == 6 && isAllDigits(sym) {
 		switch sym[0] {
 		case '6', '5', '9':
@@ -322,4 +264,3 @@ func isAllDigits(s string) bool {
 	}
 	return true
 }
-

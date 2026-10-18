@@ -78,6 +78,10 @@ func EnsureUsers() error {
 	if err := migrateRoundHoldingPrices(); err != nil {
 		return err
 	}
+	// 存量币种标识统一为小写 cny/usd/hkd（人民币 rmb/CNY 混写归一 cny）。
+	if err := migrateCurrencyCNY(); err != nil {
+		return err
+	}
 	return nil
 }
 

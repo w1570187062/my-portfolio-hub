@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>资产页卡片光斑处理 · 设计对比</title>
+<style>
+:root{
+  --bg:#0a0e14; --bg-card:rgba(20,26,36,.82); --bg-raise:rgba(27,35,49,.94);
+  --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.16);
+  --text:#e6eaf2; --muted:#8b95a5; --faint:#5d6675;
+  --tint:217,165,43; --cash:100,210,255; --debt:138,148,166; --hk:94,92,230; --us:42,163,155;
+  --sh:0 2px 10px rgba(0,0,0,.24); --sh-2:0 8px 20px rgba(0,0,0,.34);
+  --e:cubic-bezier(.4,0,.2,1);
+  --mono:"SF Mono","Fira Code",Consolas,monospace;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f9; --bg-card:rgba(255,255,255,.85); --bg-raise:#ffffff;
+  --border:rgba(15,23,42,.10); --border-strong:rgba(15,23,42,.22);
+  --text:#1f2329; --muted:#5b6472; --faint:#98a1af;
+  --tint:138,102,8; --cash:50,173,230; --debt:116,126,145; --hk:78,76,200; --us:30,140,134;
+  --sh:0 1px 3px rgba(15,23,42,.08); --sh-2:0 6px 18px rgba(15,23,42,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text); min-height:100vh;
+  font:14px/1.6 -apple-system,"Microsoft YaHei","PingFang SC","Segoe UI",system-ui,sans-serif;
+  padding:0 0 80px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1220px;margin:0 auto;padding:0 28px}
+
+/* 顶栏 */
+.bar{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:color-mix(in srgb,var(--bg) 82%,transparent);border-bottom:1px solid var(--border)}
+.bar-in{max-width:1220px;margin:0 auto;padding:12px 28px;display:flex;align-items:center;gap:16px}
+.bar h1{font-size:15px;font-weight:650;letter-spacing:.2px}
+.bar .sub{font-size:12px;color:var(--muted)}
+.bar .spacer{flex:1}
+.tgl{border:1px solid var(--border);background:transparent;color:var(--muted);font:inherit;font-size:12px;
+  padding:5px 12px;border-radius:8px;cursor:pointer;transition:.2s var(--e)}
+.tgl:hover{color:var(--text);border-color:var(--border-strong)}
+
+/* 章节 */
+section{margin-top:44px}
+.sec-h{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+.sec-h h2{font-size:19px;font-weight:680;letter-spacing:-.2px}
+.sec-h .idx{font-family:var(--mono);font-size:11px;color:rgb(var(--tint));letter-spacing:1px}
+.lead{color:var(--muted);font-size:13.5px;max-width:820px;margin-bottom:20px}
+.lead b{color:var(--text);font-weight:600}
+
+/* 诊断：点阵示意 */
+.diag{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:24px;align-items:start}
+@media (max-width:880px){.diag{grid-template-columns:1fr}}
+.dots{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:18px;
+  display:grid;grid-template-columns:repeat(6,1fr);gap:9px}
+.dots i{display:block;height:54px;border-radius:9px;background:var(--bg-raise);border:1px solid var(--border);
+  background-image:radial-gradient(122% 94% at 100% 0%,rgba(var(--tint),.16) 0%,rgba(var(--tint),0) 58%)}
+.dots-note{grid-column:1/-1;font-size:11.5px;color:var(--faint);padding-top:4px;text-align:center;letter-spacing:.3px}
+.pts{display:flex;flex-direction:column;gap:14px}
+.pt{display:flex;gap:12px}
+.pt .n{flex:0 0 22px;height:22px;border-radius:6px;font-size:11px;font-weight:700;display:grid;place-items:center;
+  background:rgba(var(--tint),.14);color:rgb(var(--tint));font-family:var(--mono);margin-top:2px}
+.pt .t{font-size:13px;color:var(--muted)}
+.pt .t b{color:var(--text);display:block;font-size:13.5px;font-weight:620;margin-bottom:2px}
+.pt .t code{font-family:var(--mono);font-size:11.5px;background:var(--bg-raise);border:1px solid var(--border);
+  padding:1px 5px;border-radius:4px;color:var(--text)}
+
+/* 方案块 */
+.plan{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:color-mix(in srgb,var(--bg-card) 55%,transparent)}
+.plan.rec{border-color:rgba(var(--tint),.42);box-shadow:0 0 0 3px rgba(var(--tint),.07)}
+.plan-h{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.plan-h .tag{font-family:var(--mono);font-size:11px;font-weight:700;width:24px;height:24px;border-radius:7px;
+  display:grid;place-items:center;background:rgba(var(--tint),.14);color:rgb(var(--tint));flex:0 0 auto}
+.plan-h h3{font-size:15px;font-weight:650;letter-spacing:-.1px}
+.plan-h .badge{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:20px;
+  background:rgba(var(--tint),.16);color:rgb(var(--tint));letter-spacing:.3px}
+.plan-h .meta{margin-left:auto;font-size:11.5px;color:var(--faint);font-family:var(--mono)}
+.stage{padding:18px;background:var(--bg)}
+.hint{font-size:11.5px;color:var(--faint);padding:0 20px 14px}
+
+/* ---- 卡片公共 ---- */
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:960px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:540px){.cards{grid-template-columns:1fr}}
+.kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px}
+@media (max-width:640px){.kpis{grid-template-columns:1fr}}
+
+.c{position:relative;border:1px solid var(--border);box-shadow:var(--sh),inset 0 1px 0 rgba(255,255,255,.045);transition:box-shadow .25s var(--e),border-color .25s var(--e)}
+.c:hover{box-shadow:var(--sh-2),inset 0 1px 0 rgba(255,255,255,.045);border-color:var(--border-strong)}
+:root[data-theme="light"] .c,:root[data-theme="light"] .c:hover{box-shadow:var(--sh)}
+
+/* 摘要卡 */
+.k{background-color:var(--bg-raise);border-radius:12px;padding:14px 18px;min-height:84px;
+  display:flex;flex-direction:column;gap:4px;overflow:hidden}
+.k::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--acc);pointer-events:none}
+.k .kh{display:flex;align-items:center;gap:7px}
+.k .ico{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--acc) 14%,transparent);color:var(--acc);font-size:11px;font-weight:700}
+.k .lbl{font-size:11px;color:var(--muted);letter-spacing:.3px}
+.k .val{font-size:20px;font-weight:680;font-family:var(--mono);letter-spacing:-.4px;margin-top:2px}
+.k .foot{font-size:11px;color:var(--faint);margin-top:auto}
+
+/* 账户卡 */
+.s{background-color:var(--bg-raise);border-radius:14px;padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px}
+.sh{display:flex;align-items:center;gap:8px;min-width:0}
+.sh .lg{width:28px;height:28px;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;
+  font-size:12px;font-weight:700;background:color-mix(in srgb,var(--lgc) 16%,transparent);color:var(--lgc)}
+.sh .nm{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sh .rg{font-size:10.5px;padding:1px 5px;border-radius:4px;flex:0 0 auto;
+  background:rgba(var(--rgc),.18);color:rgb(var(--rgc))}
+.sh .tools{margin-left:auto;display:flex;gap:2px;flex:0 0 auto}
+.sh .tools i{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;color:var(--faint);
+  font-style:normal;font-size:11px}
+.s .bal{font-size:24px;font-weight:700;font-family:var(--mono);letter-spacing:-.6px;line-height:1.15}
+.s .bal small{font-size:12px;font-weight:600;color:var(--muted);margin-left:3px}
+.s .note{font-size:11px;color:var(--faint);font-family:var(--mono);letter-spacing:.2px}
+.s .chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
+.s .chips span{font-size:10.5px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:1px 6px}
+
+/* ---- 各方案的光策略 ---- */
+/* 现状：全部同一处、同一色、同强度 */
+.v-now .k,.v-now .s{background-image:radial-gradient(122% 94% at 100% 0%,rgba(var(--tint),.07) 0%,rgba(var(--tint),0) 58%)}
+
+/* A：摘要卡用各自语义色；账户卡静息无光，悬停淡入 */
+.v-a .k{background-image:radial-gradient(122% 94% at 100% 0%,color-mix(in srgb,var(--acc) 9%,transparent) 0%,transparent 58%)}
+:root[data-theme="light"] .v-a .k{background-image:radial-gradient(122% 94% at 100% 0%,color-mix(in srgb,var(--acc) 13%,transparent) 0%,transparent 58%)}
+.v-a .s::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background-image:radial-gradient(122% 94% at 100% 0%,rgba(var(--tint),.07) 0%,transparent 58%);
+  opacity:0;transition:opacity .28s var(--e)}
+.v-a .s:hover::after{opacity:1}
+
+/* B：全部删角光，改顶部 1px 同色渐变细线 */
+.v-b .k,.v-b .s{background-image:none}
+.v-b .k::after,.v-b .s::after{content:"";position:absolute;top:0;left:14%;right:14%;height:1px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--acc,var(--tint)) 62%,transparent),transparent)}
+.v-b .s::after{background:linear-gradient(90deg,transparent,rgba(var(--tint),.5),transparent)}
+.v-b .k{background-image:none}
+
+/* C：全静默，零装饰 */
+.v-c .k,.v-c .s{background-image:none}
+
+/* 结论表 */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+th{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.4px;text-transform:uppercase}
+td:first-child{font-weight:600;white-space:nowrap}
+td code{font-family:var(--mono);font-size:11.5px;color:rgb(var(--tint))}
+.table-wrap{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:color-mix(in srgb,var(--bg-card) 55%,transparent)}
+
+/* 结论条 */
+.verdict{margin-top:20px;border-radius:14px;padding:18px 20px;border:1px solid rgba(var(--tint),.3);
+  background:rgba(var(--tint),.05);display:flex;gap:14px;align-items:flex-start}
+.verdict .vt{flex:0 0 auto;font-size:11px;font-weight:700;letter-spacing:.6px;color:rgb(var(--tint));
+  font-family:var(--mono);padding-top:2px}
+.verdict p{font-size:13.5px;color:var(--muted);line-height:1.75}
+.verdict p b{color:var(--text)}
+
+/* 落地代码块 */
+.code-wrap{margin-top:16px;border:1px solid var(--border);border-radius:14px;overflow:hidden;
+  background:color-mix(in srgb,var(--bg-card) 70%,transparent)}
+.code-h{padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);
+  letter-spacing:.5px;font-family:var(--mono)}
+.code-wrap pre{padding:16px;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.85;color:var(--muted)}
+.code-wrap pre::selection{background:rgba(var(--tint),.25)}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="bar-in">
+    <h1>资产页卡片光斑 · 处理方案</h1>
+    <span class="sub">19 个同角度光斑 → 语义化 vs. 交互化</span>
+    <span class="spacer"></span>
+    <button class="tgl" id="theme">切换日间模式</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- 诊断 -->
+  <section>
+    <div class="sec-h"><span class="idx">01</span><h2>为什么会疲劳</h2></div>
+    <p class="lead">不是渐变太亮，是<b>同一种装饰在视野里重复了 19 次</b>。装饰一旦重复，就从「强调」降级成「纹理」——所有卡都被同等强调，等于没有一张被强调。</p>
+
+    <div class="diag">
+      <div class="dots">
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+        <p class="dots-note">同角度 · 同颜色 · 同强度 → 规律点阵</p>
+      </div>
+      <div class="pts">
+        <div class="pt"><span class="n">1</span><span class="t"><b>四层卡共用同一段 CSS</b>
+          <code>radial-gradient(122% 94% at 100% 0%, …)</code> 被摘要卡、账户卡、总览折叠卡、持仓分组卡同时引用，位置和角度完全一致，网格里排成阵列。</span></div>
+        <div class="pt"><span class="n">2</span><span class="t"><b>摘要卡已经有两个色彩中心</b>
+          左侧 4px 语义色条（净资产金 / 负债灰蓝 / HK 靛 / US 蓝绿）已经在传递信息，右上角却又压一个<b>统一的品牌金光斑</b> —— 一张卡两个色彩中心，一个有意义、一个纯装饰，互相抢。</span></div>
+        <div class="pt"><span class="n">3</span><span class="t"><b>账户卡的色彩已经有归属</b>
+          品牌 logo chip + 地域 badge 已经给了颜色，卡面再叠一层同色晕，只是把同一件事说了两遍。</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 方案 A -->
+  <section>
+    <div class="sec-h"><span class="idx">02</span><h2>三个处理方向</h2></div>
+    <p class="lead">关键不是「留还是删」，而是<b>把色彩从装饰通道挪回信息通道</b>，再用交互态承接质感。</p>
+
+    <div class="plan v-now" style="margin-bottom:20px">
+      <div class="plan-h">
+        <span class="tag">0</span>
+        <h3>现状（线上）</h3>
+        <span class="meta">统一品牌金 · 19 处</span>
+      </div>
+      <div class="stage">
+        <div class="kpis">
+          <div class="c k" style="--acc:rgb(var(--tint))">
+            <div class="kh"><span class="ico">¥</span><span class="lbl">净资产</span></div>
+            <div class="val">¥1,286,430</div><div class="foot">占总资产 85.0%</div>
+          </div>
+          <div class="c k" style="--acc:rgb(var(--cash))">
+            <div class="kh"><span class="ico">∑</span><span class="lbl">总资产</span></div>
+            <div class="val">¥1,512,800</div><div class="foot">权益 42.1% · 理财 18.3%</div>
+          </div>
+          <div class="c k" style="--acc:rgb(var(--debt))">
+            <div class="kh"><span class="ico">−</span><span class="lbl">负债</span></div>
+            <div class="val">¥226,370</div><div class="foot">占总资产 15.0%</div>
+          </div>
+        </div>
+        <div class="cards">
+          <div class="c s" style="--lgc:#d70029;--rgc:var(--tint)">
+            <div class="sh"><span class="lg">招</span><span class="nm">招商银行</span><span class="rg">CN</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">86,200<small>¥</small></div>
+            <div class="note">¥86,200 · $5,000 · HK$8,000</div>
+            <div class="chips"><span>子账户 3</span><span>负债 1</span><span>CNY</span></div>
+          </div>
+          <div class="c s" style="--lgc:#e21836;--rgc:var(--hk)">
+            <div class="sh"><span class="lg">中</span><span class="nm">中银香港</span><span class="rg">HK</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">128,600<small>HK$</small></div>
+            <div class="note">HK$128,600 · $20,000</div>
+            <div class="chips"><span>子账户 2</span><span>HKD</span></div>
+          </div>
+          <div class="c s" style="--lgc:#2aa39b;--rgc:var(--us)">
+            <div class="sh"><span class="lg">盈</span><span class="nm">盈立证券</span><span class="rg">US</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">3,200<small>$</small></div>
+            <div class="note">USD</div>
+            <div class="chips"><span>子账户 1</span><span>USD</span></div>
+          </div>
+          <div class="c s" style="--lgc:#c8102e;--rgc:var(--hk)">
+            <div class="sh"><span class="lg">汇</span><span class="nm">汇丰银行</span><span class="rg">HK</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">45,000<small>HK$</small></div>
+            <div class="note">HKD</div>
+            <div class="chips"><span>子账户 1</span><span>HKD</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="hint">每张卡相同位置、相同金色。左侧 4px 语义色条与右上金晕是两个色彩中心，互相抵消。</p>
+    </div>
+
+    <div class="plan rec v-a">
+      <div class="plan-h">
+        <span class="tag">A</span>
+        <h3>语义化 + 交互化</h3>
+        <span class="badge">推荐</span>
+        <span class="meta">改 CSS 约 12 行 · 零布局风险</span>
+      </div>
+      <div class="stage">
+        <div class="kpis">
+          <div class="c k" style="--acc:rgb(var(--tint))">
+            <div class="kh"><span class="ico">¥</span><span class="lbl">净资产</span></div>
+            <div class="val">¥1,286,430</div><div class="foot">占总资产 85.0%</div>
+          </div>
+          <div class="c k" style="--acc:rgb(var(--cash))">
+            <div class="kh"><span class="ico">∑</span><span class="lbl">总资产</span></div>
+            <div class="val">¥1,512,800</div><div class="foot">权益 42.1% · 理财 18.3%</div>
+          </div>
+          <div class="c k" style="--acc:rgb(var(--debt))">
+            <div class="kh"><span class="ico">−</span><span class="lbl">负债</span></div>
+            <div class="val">¥226,370</div><div class="foot">占总资产 15.0%</div>
+          </div>
+        </div>
+        <div class="cards">
+          <div class="c s" style="--lgc:#d70029;--rgc:var(--tint)">
+            <div class="sh"><span class="lg">招</span><span class="nm">招商银行</span><span class="rg">CN</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">86,200<small>¥</small></div>
+            <div class="note">¥86,200 · $5,000 · HK$8,000</div>
+            <div class="chips"><span>子账户 3</span><span>负债 1</span><span>CNY</span></div>
+          </div>
+          <div class="c s" style="--lgc:#e21836;--rgc:var(--hk)">
+            <div class="sh"><span class="lg">中</span><span class="nm">中银香港</span><span class="rg">HK</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">128,600<small>HK$</small></div>
+            <div class="note">HK$128,600 · $20,000</div>
+            <div class="chips"><span>子账户 2</span><span>HKD</span></div>
+          </div>
+          <div class="c s" style="--lgc:#2aa39b;--rgc:var(--us)">
+            <div class="sh"><span class="lg">盈</span><span class="nm">盈立证券</span><span class="rg">US</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">3,200<small>$</small></div>
+            <div class="note">USD</div>
+            <div class="chips"><span>子账户 1</span><span>USD</span></div>
+          </div>
+          <div class="c s" style="--lgc:#c8102e;--rgc:var(--hk)">
+            <div class="sh"><span class="lg">汇</span><span class="nm">汇丰银行</span><span class="rg">HK</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">45,000<small>HK$</small></div>
+            <div class="note">HKD</div>
+            <div class="chips"><span>子账户 1</span><span>HKD</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="hint">摘要卡：右上角改成<b>各自的语义色</b>（金 / 青 / 灰蓝 / 靛 / 蓝绿），与左侧色条同色呼应成「左侧实条 → 右侧柔晕」。账户卡：静息干净，<b>鼠标移上去</b>光晕淡入。</p>
+    </div>
+  </section>
+
+  <!-- 方案 B -->
+  <section style="margin-top:20px">
+    <div class="plan v-b">
+      <div class="plan-h">
+        <span class="tag">B</span>
+        <h3>换装饰语言：顶部渐变细线</h3>
+        <span class="meta">全局统一 · 精致克制</span>
+      </div>
+      <div class="stage">
+        <div class="kpis">
+          <div class="c k" style="--acc:rgb(var(--tint))">
+            <div class="kh"><span class="ico">¥</span><span class="lbl">净资产</span></div>
+            <div class="val">¥1,286,430</div><div class="foot">占总资产 85.0%</div>
+          </div>
+          <div class="c k" style="--acc:rgb(var(--cash))">
+            <div class="kh"><span class="ico">∑</span><span class="lbl">总资产</span></div>
+            <div class="val">¥1,512,800</div><div class="foot">权益 42.1% · 理财 18.3%</div>
+          </div>
+          <div class="c k" style="--acc:rgb(var(--debt))">
+            <div class="kh"><span class="ico">−</span><span class="lbl">负债</span></div>
+            <div class="val">¥226,370</div><div class="foot">占总资产 15.0%</div>
+          </div>
+        </div>
+        <div class="cards">
+          <div class="c s" style="--lgc:#d70029;--rgc:var(--tint)">
+            <div class="sh"><span class="lg">招</span><span class="nm">招商银行</span><span class="rg">CN</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">86,200<small>¥</small></div>
+            <div class="note">¥86,200 · $5,000 · HK$8,000</div>
+            <div class="chips"><span>子账户 3</span><span>负债 1</span><span>CNY</span></div>
+          </div>
+          <div class="c s" style="--lgc:#e21836;--rgc:var(--hk)">
+            <div class="sh"><span class="lg">中</span><span class="nm">中银香港</span><span class="rg">HK</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">128,600<small>HK$</small></div>
+            <div class="note">HK$128,600 · $20,000</div>
+            <div class="chips"><span>子账户 2</span><span>HKD</span></div>
+          </div>
+          <div class="c s" style="--lgc:#2aa39b;--rgc:var(--us)">
+            <div class="sh"><span class="lg">盈</span><span class="nm">盈立证券</span><span class="rg">US</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">3,200<small>$</small></div>
+            <div class="note">USD</div>
+            <div class="chips"><span>子账户 1</span><span>USD</span></div>
+          </div>
+          <div class="c s" style="--lgc:#c8102e;--rgc:var(--hk)">
+            <div class="sh"><span class="lg">汇</span><span class="nm">汇丰银行</span><span class="rg">HK</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">45,000<small>HK$</small></div>
+            <div class="note">HKD</div>
+            <div class="chips"><span>子账户 1</span><span>HKD</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="hint">删掉角部光斑，改成卡片顶部一道 1px 同色渐变细线。干净、有精密感 —— 但 13 张卡排成网格后，细线仍会连成「条带阵列」，重复问题只是被缩小了，没被解决。</p>
+    </div>
+  </section>
+
+  <!-- 方案 C -->
+  <section style="margin-top:20px">
+    <div class="plan v-c">
+      <div class="plan-h">
+        <span class="tag">C</span>
+        <h3>全部静默：零装饰</h3>
+        <span class="meta">最干净 · 但无焦点</span>
+      </div>
+      <div class="stage">
+        <div class="kpis">
+          <div class="c k" style="--acc:rgb(var(--tint))">
+            <div class="kh"><span class="ico">¥</span><span class="lbl">净资产</span></div>
+            <div class="val">¥1,286,430</div><div class="foot">占总资产 85.0%</div>
+          </div>
+          <div class="c k" style="--acc:rgb(var(--cash))">
+            <div class="kh"><span class="ico">∑</span><span class="lbl">总资产</span></div>
+            <div class="val">¥1,512,800</div><div class="foot">权益 42.1% · 理财 18.3%</div>
+          </div>
+          <div class="c k" style="--acc:rgb(var(--debt))">
+            <div class="kh"><span class="ico">−</span><span class="lbl">负债</span></div>
+            <div class="val">¥226,370</div><div class="foot">占总资产 15.0%</div>
+          </div>
+        </div>
+        <div class="cards">
+          <div class="c s" style="--lgc:#d70029;--rgc:var(--tint)">
+            <div class="sh"><span class="lg">招</span><span class="nm">招商银行</span><span class="rg">CN</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">86,200<small>¥</small></div>
+            <div class="note">¥86,200 · $5,000 · HK$8,000</div>
+            <div class="chips"><span>子账户 3</span><span>负债 1</span><span>CNY</span></div>
+          </div>
+          <div class="c s" style="--lgc:#e21836;--rgc:var(--hk)">
+            <div class="sh"><span class="lg">中</span><span class="nm">中银香港</span><span class="rg">HK</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">128,600<small>HK$</small></div>
+            <div class="note">HK$128,600 · $20,000</div>
+            <div class="chips"><span>子账户 2</span><span>HKD</span></div>
+          </div>
+          <div class="c s" style="--lgc:#2aa39b;--rgc:var(--us)">
+            <div class="sh"><span class="lg">盈</span><span class="nm">盈立证券</span><span class="rg">US</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">3,200<small>$</small></div>
+            <div class="note">USD</div>
+            <div class="chips"><span>子账户 1</span><span>USD</span></div>
+          </div>
+          <div class="c s" style="--lgc:#c8102e;--rgc:var(--hk)">
+            <div class="sh"><span class="lg">汇</span><span class="nm">汇丰银行</span><span class="rg">HK</span>
+              <span class="tools"><i>⌄</i><i>⋯</i></span></div>
+            <div class="bal">45,000<small>HK$</small></div>
+            <div class="note">HKD</div>
+            <div class="chips"><span>子账户 1</span><span>HKD</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="hint">全删，只留边框 + 阴影 + 顶部 1px 内高光。最安静，但页面失去「面」的呼吸感，深色下尤其容易读成一片平面色块 —— 这正是你担心的单调。</p>
+    </div>
+  </section>
+
+  <!-- 对比表 -->
+  <section>
+    <div class="sec-h"><span class="idx">03</span><h2>取舍</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>方案</th><th>解决重复</th><th>解决单调</th><th>色彩是否承载信息</th><th>改动面</th></tr></thead>
+        <tbody>
+          <tr><td>A · 语义化 + 交互化</td><td>✓ 每卡异色，不再阵列</td><td>✓ 悬停有质感反馈</td><td>✓ 摘要卡光色=语义色</td><td>仅 CSS，<code>--card-glow</code> 拆两支</td></tr>
+          <tr><td>B · 顶部细线</td><td>△ 变成条带阵列</td><td>△ 靠精密感</td><td>✗ 仍是统一色</td><td>4 处卡片 + 日间核对</td></tr>
+          <tr><td>C · 全静默</td><td>✓ 彻底</td><td>✗ 偏空</td><td>△ 只靠色条</td><td>4 处，删代码</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="verdict">
+      <span class="vt">结论</span>
+      <p>选 <b>A</b>。它同时回答了你问的两件事：<b>疲劳</b>来自「19 个一模一样的色斑」，所以让摘要卡的色斑改用自己的语义色（不再是同一个金）；<b>单调</b>来自「没有任何反馈」，所以让账户卡的质感从静态装饰变成悬停反馈 —— 静止时干净，操作时才有回应。<br>
+      容器级大卡（资产总览折叠卡、持仓分组卡）<b>保留</b>原光斑不动：它们每屏只有 1–2 个，是页面的空间锚点，重复条件不成立。</p>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-h">落地口径 · 只动 style.css，三处</div>
+      <pre>/* 1. 摘要卡角光改用各自的语义色（app.js 早已注入 --card-accent，只是没用上） */
+.as-card {
+  background-image: radial-gradient(122% 94% at 100% 0%,
+    color-mix(in srgb, var(--card-accent) 8%, transparent) 0%, transparent 58%);
+}
+
+/* 2. 账户卡：静息无光，悬停淡入（background-image 不可过渡，用伪元素承载） */
+.src-card { background-image: none; }
+.src-card::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background-image: var(--card-glow);
+  opacity: 0; transition: opacity .28s var(--e);
+}
+.src-card:hover::before { opacity: 1; }
+
+/* 3. .summary.collapsible / .holdings-group：维持原样，不改 */</pre>
+    </div>
+  </section>
+
+</div>
+
+<script>
+const root = document.documentElement;
+const btn = document.getElementById('theme');
+btn.onclick = () => {
+  const light = root.dataset.theme === 'light';
+  root.dataset.theme = light ? 'dark' : 'light';
+  btn.textContent = light ? '切换日间模式' : '切换暗色模式';
+};
+</script>
+</body>
+</html>

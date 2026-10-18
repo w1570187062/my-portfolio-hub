@@ -28,7 +28,7 @@ func fxToCNY(amount float64, currency string, cnyRate, hkdRate float64) float64 
 			return amount * (cnyRate / hkdRate)
 		}
 		return amount
-	default: // rmb, cny, 人民币
+	default: // cny（兼容存量 rmb）, 人民币
 		return amount
 	}
 }
@@ -49,7 +49,7 @@ func assetOverview(c *gin.Context) {
 	cnyRate, hkdRate, _ := market.FetchFXRates()
 	today := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
 
-	// 0) 资产来源名/区域映射（供后续按来源 region 归集境内/境外资产）
+	// 0) 资产来源名/地域映射（供后续按来源 region 归集 CN/HK/US 资产）
 	sources, _ := db.ListSources(uid)
 	srcName := map[int64]string{}
 	srcRegion := map[int64]string{}
@@ -57,14 +57,34 @@ func assetOverview(c *gin.Context) {
 		srcName[s.ID] = s.Name
 		srcRegion[s.ID] = s.Region
 	}
-	// 来源未归集(source_id=0)或区域未知时默认计入境内，确保 境内+境外=总资产(未减负债前)。
+	// 地域归属挂在来源（账户）上：账户内资产默认即该地域资产。合法值 cn/hk/us；
+	// 兼容存量 domestic/overseas 写法；来源未归集(source_id=0)或地域未知时默认 cn，
+	// 确保各地域资产合计 = 总资产(未减负债前)。
 	regionOf := func(sid int64) string {
-		if r, ok := srcRegion[sid]; ok && (r == "overseas" || r == "domestic") {
-			return r
+		r, ok := srcRegion[sid]
+		if !ok {
+			return "cn"
 		}
-		return "domestic"
+		switch strings.ToLower(strings.TrimSpace(r)) {
+		case "hk", "overseas":
+			return "hk"
+		case "us":
+			return "us"
+		default: // cn / domestic / 其它
+			return "cn"
+		}
 	}
-	var domAssets, ovsAssets float64
+	// 按地域归集的资产/负债（均折 CNY）：map 结构，将来加市场不用再加字段
+	regAssets := map[string]float64{}
+	// 按币种归集的资产总额（权益+理财+现金，均折 CNY）：供资产页「资产构成」卡按币种对比
+	curAssets := map[string]float64{}
+	curKey := func(c string) string {
+		c = strings.ToLower(strings.TrimSpace(c))
+		if c == "rmb" {
+			return "cny"
+		}
+		return c
+	}
 
 	// 1) 权益类（基金/股票）
 	hs, _ := db.List(uid)
@@ -77,11 +97,8 @@ func assetOverview(c *gin.Context) {
 		eqCV += fxToCNY(v.CostValue, h.Currency, cnyRate, hkdRate)
 		eqPnl += fxToCNY(v.Pnl, h.Currency, cnyRate, hkdRate)
 		eqDay += fxToCNY(v.DayPnl, h.Currency, cnyRate, hkdRate)
-		if regionOf(h.SourceID) == "overseas" {
-			ovsAssets += cmv
-		} else {
-			domAssets += cmv
-		}
+		regAssets[regionOf(h.SourceID)] += cmv
+		curAssets[curKey(h.Currency)] += cmv
 		eqItems = append(eqItems, gin.H{
 			"id":           h.ID,
 			"name":         h.Name,
@@ -117,13 +134,10 @@ func assetOverview(c *gin.Context) {
 			prevAmt = 0
 		}
 		wTotal += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
-		if regionOf(w.SourceID) == "overseas" {
-			ovsAssets += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
-		} else {
-			domAssets += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
-		}
+		regAssets[regionOf(w.SourceID)] += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
 		wToday += fxToCNY(todayPnl, w.Currency, cnyRate, hkdRate)
 		wByCur[w.Currency] += amt
+		curAssets[curKey(w.Currency)] += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
 		cnt, _ := db.CountWealthSnapshots(w.ID)
 		// 持有天数：从首次录入快照日期起算（与持仓 buy_date 口径一致），无快照记 0
 		firstDate, _, _ := db.GetWealthFirst(w.ID)
@@ -163,6 +177,9 @@ func assetOverview(c *gin.Context) {
 				"archived":        w.Archived,
 				"cashflow_today":  round2(todayCf),
 				"prev_amount":     round2(prevAmt),
+				"nav":             round4(w.Nav),
+				"nav_updated_at":  w.NavUpdatedAt,
+				"shares":          round4(w.Shares),
 			})
 	}
 
@@ -173,11 +190,8 @@ func assetOverview(c *gin.Context) {
 	cItems := make([]gin.H, 0, len(cashs))
 	for _, cc := range cashs {
 		cTotalCNY += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
-		if regionOf(cc.SourceID) == "overseas" {
-			ovsAssets += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
-		} else {
-			domAssets += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
-		}
+		curAssets[curKey(cc.Currency)] += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
+		regAssets[regionOf(cc.SourceID)] += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
 		cByCur[cc.Currency] += cc.Amount
 		cItems = append(cItems, gin.H{
 			"id":          cc.ID,
@@ -188,22 +202,18 @@ func assetOverview(c *gin.Context) {
 			"source_name": srcName[cc.SourceID],
 			"amount":      round2(cc.Amount),
 			"note":        cc.Note,
-			"is_default":  cc.IsDefault,
 		})
 	}
 
-	// 4) 负债（按来源 region 归集境内/境外负债，供前端拆分境内/境外净资产）
+	// 4) 负债（按来源地域归集，供前端拆分各地域净资产）
 	libs, _ := db.ListLiabilities(uid)
-	var lTotal, domLiab, ovsLiab float64
+	var lTotal float64
+	regLiab := map[string]float64{}
 	lItems := make([]gin.H, 0, len(libs))
 	for _, l := range libs {
 		lCNY := fxToCNY(l.Amount, l.Currency, cnyRate, hkdRate)
 		lTotal += lCNY
-		if regionOf(l.SourceID) == "overseas" {
-			ovsLiab += lCNY
-		} else {
-			domLiab += lCNY
-		}
+		regLiab[regionOf(l.SourceID)] += lCNY
 		lItems = append(lItems, gin.H{
 			"id":          l.ID,
 			"name":        l.Name,
@@ -265,10 +275,9 @@ func assetOverview(c *gin.Context) {
 			"items": consItems,
 		},
 		"net_asset": netAsset,
-		"domestic_assets":  round2(domAssets),
-		"overseas_assets": round2(ovsAssets),
-		"domestic_liabilities": round2(domLiab),
-		"overseas_liabilities": round2(ovsLiab),
+		"currency_assets": curAssets,
+		"region_assets":      regAssets,
+		"region_liabilities": regLiab,
 		"rate":             cnyRate,
 		"day":              today,
 	})
@@ -364,19 +373,15 @@ func listSources(c *gin.Context) {
 	}
 	items := make([]gin.H, 0, len(out))
 	for _, s := range out {
-		// 存量兼容：currencies 列为空的来源按现有子账户币种推断回填（一次性自愈），
-		// 再为每个币种补齐默认子账户（幂等，已有则直接返回）
+		// 存量兼容：currencies 列为空的来源按现有子账户币种推断回填（一次性自愈）
 		if strings.TrimSpace(s.Currencies) == "" {
 			s.Currencies = db.InferSourceCurrencies(uid, s.ID)
 			if err := db.UpdateSourceCurrencies(uid, s.ID, s.Currencies); err != nil {
 				log.Printf("[source] 回填币种集合失败(source=%d): %v", s.ID, err)
 			}
 		}
-		if _, err := db.EnsureCurrencyDefaults(uid, s.ID, s.Name, s.Currencies); err != nil {
-			log.Printf("[source] 补齐默认子账户失败(source=%d): %v", s.ID, err)
-		}
 		items = append(items, gin.H{
-			"id": s.ID, "user_id": s.UserID, "name": s.Name, "type": s.Type, "region": s.Region, "currencies": s.Currencies, "note": s.Note, "created_at": s.CreatedAt,
+			"id": s.ID, "user_id": s.UserID, "name": s.Name, "type": s.Type, "region": s.Region, "currencies": s.Currencies, "account_no": s.AccountNo, "note": s.Note, "created_at": s.CreatedAt,
 			"funds_cny": sourceFundsCNY(uid, s.ID),
 		})
 	}
@@ -446,14 +451,11 @@ func createSource(c *gin.Context) {
 	default:
 		s.Type = "bank"
 	}
-	switch s.Region {
-	case "overseas":
-		// 合法区域，保持不变
-	default:
-		s.Region = "domestic"
-	}
+	s.Region = db.NormRegion(s.Region)
 	s.UserID = currentUserID(c)
-	// 币种集合：勾选的币种（rmb/hkd/usd）规范化后入库，随来源创建各币种的默认子账户
+	// 币种集合：勾选的币种（cny/hkd/usd）规范化后入库；
+	// 2026-10-16 起不再随账户创建自动生成子账户（默认子账户概念已移除，子账户完全手动管理，
+	// 首次资金联动时按需补建落点账户）。
 	s.Currencies = db.NormalizeCurrencies(s.Currencies)
 	id, err := db.CreateSource(&s)
 	if err != nil {
@@ -461,12 +463,6 @@ func createSource(c *gin.Context) {
 		return
 	}
 	s.ID = id
-	// 每个勾选币种自带一个默认子账户（前端名称前加 ★ 标记）：随来源创建，随来源删除级联删除。
-	if cashID, err := db.EnsureCurrencyDefaults(s.UserID, id, s.Name, s.Currencies); err != nil {
-		log.Printf("[source] 初始化默认子账户失败(source=%d): %v", id, err)
-	} else {
-		log.Printf("[source] 来源 %s(%d) 默认子账户 %d（币种 %s）", s.Name, id, cashID, s.Currencies)
-	}
 	c.JSON(http.StatusOK, gin.H{"source": s})
 }
 
@@ -493,21 +489,14 @@ func updateSource(c *gin.Context) {
 	default:
 		s.Type = "bank"
 	}
-	switch s.Region {
-	case "overseas":
-		// 合法区域，保持不变
-	default:
-		s.Region = "domestic"
-	}
+	s.Region = db.NormRegion(s.Region)
 	s.UserID = currentUserID(c)
-	// 币种集合联动：勾选新币种保存后，自动补齐缺失币种的默认子账户（已有多余子账户不删除）
+	// 币种集合联动：仅作为「该账户允许的子账户币种」元数据（新增/编辑子账户时反向同步补全）；
+	// 不再自动补齐对应币种的子账户（2026-10-16 移除默认子账户概念）。
 	s.Currencies = db.NormalizeCurrencies(s.Currencies)
 	if err := db.UpdateSource(&s); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	if _, err := db.EnsureCurrencyDefaults(s.UserID, s.ID, s.Name, s.Currencies); err != nil {
-		log.Printf("[source] 补齐币种默认子账户失败(source=%d): %v", s.ID, err)
 	}
 	c.JSON(http.StatusOK, gin.H{"source": s})
 }
@@ -631,137 +620,6 @@ func enableWealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// redeemWealth 理财减仓/清仓：把持仓金额转出到同来源的子账户。
-// 转出金额 ≥ 当前持仓 → 清仓：持仓归零并停用归档（保留产品与每日盈亏历史，可在列表重新启用或永久删除），现金入账记「清仓回款」；
-// 部分转出 → 记「减仓回款」，并按差值更新当日快照净存入（不覆盖当日已录的其他存入/取出），盈亏计算自动剔除本金变动。
-func redeemWealth(c *gin.Context) {
-	uid := currentUserID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
-		return
-	}
-	var req struct {
-		Amount float64 `json:"amount"`
-		CashID int64   `json:"cash_id"`
-		Note   string  `json:"note"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
-		return
-	}
-	p, err := db.GetWealthProduct(id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if p == nil || p.UserID != uid {
-		c.JSON(http.StatusNotFound, gin.H{"error": "理财产品不存在"})
-		return
-	}
-	amt := math.Round(req.Amount*100) / 100
-	if amt <= 0.005 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "转出金额必须大于 0"})
-		return
-	}
-	curAmt, err := db.LatestWealthAmount(id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if curAmt <= 0.005 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该理财暂无持仓金额（先在每日盈亏里录入持仓），无法减仓"})
-		return
-	}
-	if amt > curAmt+0.005 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("转出金额超过当前持仓 %.2f", curAmt)})
-		return
-	}
-	acc, err := resolveCashAccount(uid, req.CashID, p.SourceID, p.Currency)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	// 货币一致性校验：理财回款币种必须与目标子账户一致，防止折算口径错乱
-	wCur, aCur := p.Currency, acc.Currency
-	if wCur == "" {
-		wCur = "rmb"
-	}
-	if aCur == "" {
-		aCur = "rmb"
-	}
-	if wCur != aCur {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("币种不一致：理财为 %s，所选子账户为 %s，请选择同币种子账户", wCur, aCur)})
-		return
-	}
-	full := amt >= curAmt-0.005
-	flowType, label := "wealth_redeem", "减仓回款"
-	if full {
-		flowType, label = "wealth_clear", "清仓回款"
-	}
-	detail := fmt.Sprintf("%s %s｜转出 %.2f", label, p.Name, amt)
-	if n := strings.TrimSpace(req.Note); n != "" {
-		detail += "｜" + n
-	}
-	if err := db.AddCashAmount(acc.ID, amt, flowType, "wealth", p.ID, p.Name, detail); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if full {
-		// 清仓：持仓归零 + 停用归档（不再删除产品，保留每日盈亏历史；可在列表重新启用或永久删除）
-		today := time.Now().Format("2006-01-02")
-		oldAmt, oldCf, existed, _ := db.GetWealthSnapshot(id, today)
-		newCf := math.Round((oldCf-amt)*100) / 100
-		if err := db.UpsertWealthSnapshot(id, today, 0, newCf); err != nil {
-			// 快照写入失败：冲正刚入账的现金，避免"钱回了快照没记"的半程状态
-			_ = reverseWealthCash(uid, id, amt, "清仓快照写入失败冲正", acc.ID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if err := db.SetWealthArchived(id, true); err != nil {
-			// 归档失败：回滚快照，保持清仓操作的原子性
-			if existed {
-				_ = db.UpsertWealthSnapshot(id, today, oldAmt, oldCf)
-			} else {
-				_ = db.DeleteWealthSnapshot(id, today)
-			}
-			_ = reverseWealthCash(uid, id, amt, "清仓归档失败冲正", acc.ID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if e := db.InsertWealthAudit(db.WealthAudit{
-			WealthID: id, Date: today, Action: "upsert", Field: "clear",
-			OldAmount: oldAmt, OldCash: oldCf, NewAmount: 0, NewCash: newCf,
-			OldExists: existed, CashAccountID: acc.ID, UserID: uid,
-			CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
-		}); e != nil {
-			log.Printf("[wealth-audit] 写入清仓审计失败(wealth=%d date=%s): %v", id, today, e)
-		}
-	} else {
-		// 部分减仓：当日快照按「旧净存入 − 转出金额」的差值更新（不覆盖当日已录的其他存入/取出），
-		// 每日盈亏历史可见且不计入当日盈亏。
-		today := time.Now().Format("2006-01-02")
-		oldAmt, oldCf, existed, _ := db.GetWealthSnapshot(id, today)
-		newAmt := math.Round((curAmt-amt)*100) / 100
-		newCf := math.Round((oldCf-amt)*100) / 100
-		if err := db.UpsertWealthSnapshot(id, today, newAmt, newCf); err != nil {
-			// 快照写入失败：冲正刚入账的现金，避免"钱回了快照没记"的半程状态
-			_ = reverseWealthCash(uid, id, amt, "减仓快照写入失败冲正", acc.ID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if e := db.InsertWealthAudit(db.WealthAudit{
-			WealthID: id, Date: today, Action: "upsert", Field: "redeem",
-			OldAmount: oldAmt, OldCash: oldCf, NewAmount: newAmt, NewCash: newCf,
-			OldExists: existed, CashAccountID: acc.ID, UserID: uid,
-			CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
-		}); e != nil {
-			log.Printf("[wealth-audit] 写入减仓审计失败(wealth=%d date=%s): %v", id, today, e)
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "cleared": full, "amount": amt, "cash_name": acc.Name})
-}
-
 // ---- 现金 CRUD ----
 
 func listCash(c *gin.Context) {
@@ -783,7 +641,7 @@ func listCash(c *gin.Context) {
 			"id": cc.ID, "user_id": cc.UserID, "source_id": cc.SourceID,
 			"source_name": srcName[cc.SourceID],
 			"name":        cc.Name, "currency": cc.Currency, "type": cc.Type, "amount": cc.Amount,
-			"note": cc.Note, "is_default": cc.IsDefault, "created_at": cc.CreatedAt,
+			"note": cc.Note, "created_at": cc.CreatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"cash": items})
@@ -801,7 +659,7 @@ func createCash(c *gin.Context) {
 		return
 	}
 	if cc.Currency == "" {
-		cc.Currency = "rmb"
+		cc.Currency = "cny"
 	}
 	cc.UserID = currentUserID(c)
 	id, err := db.CreateCash(&cc)
@@ -810,20 +668,10 @@ func createCash(c *gin.Context) {
 		return
 	}
 	cc.ID = id
-	// 默认账户唯一性（按币种）：显式勾选 → 设为本来源该币种默认；未勾选但该来源该币种尚无默认账户 → 兜底设为默认，
-	// 保证「每个来源的每个币种有且仅有一个 ★ 默认子账户」。
-	needDefault := cc.IsDefault
-	if !needDefault {
-		if cur, e := db.GetDefaultCash(cc.UserID, cc.SourceID, cc.Currency); e == nil && cur == nil {
-			needDefault = true
-		}
-	}
-	if needDefault {
-		if err := db.SetDefaultCash(cc.UserID, cc.SourceID, cc.ID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		cc.IsDefault = true
+	// 币种集合反向同步：子账户用到的币种补进所属账户的 currencies（只补不删），
+	// 保证「账户已勾选币种」始终覆盖实际子账户币种。
+	if err := db.SyncSourceCurrency(cc.UserID, cc.SourceID, cc.Currency); err != nil {
+		log.Printf("[cash] 同步来源币种集合失败(source=%d): %v", cc.SourceID, err)
 	}
 	c.JSON(http.StatusOK, gin.H{"cash": cc})
 }
@@ -846,27 +694,18 @@ func updateCash(c *gin.Context) {
 		return
 	}
 	if cc.Currency == "" {
-		cc.Currency = "rmb"
+		cc.Currency = "cny"
 	}
 	cc.UserID = currentUserID(c)
-	// 设为默认现金账户：同一来源下唯一，切换时该来源其他账户自动取消默认标记。
-	if cc.IsDefault {
-		if err := db.SetDefaultCash(cc.UserID, cc.SourceID, cc.ID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	} else {
-		// 不允许取消唯一的默认账户：每个来源必须保留一个 ★ 账户。
-		// 想换默认账户，请在目标账户上勾选「设为默认」，原账户会自动取消。
-		if old, e := db.GetCash(cc.ID); e == nil && old != nil && old.IsDefault {
-			cc.IsDefault = true
-		}
+	// 币种集合反向同步：改币种时把新币种补进所属账户的 currencies（只补不删）。
+	if err := db.SyncSourceCurrency(cc.UserID, cc.SourceID, cc.Currency); err != nil {
+		log.Printf("[cash] 同步来源币种集合失败(source=%d): %v", cc.SourceID, err)
 	}
 	if err := db.UpdateCash(&cc); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	// 回读库中真实状态返回（is_default 可能已被 SetDefaultCash 改写）
+	// 回读库中真实状态返回
 	if fresh, err := db.GetCash(cc.ID); err == nil && fresh != nil {
 		c.JSON(http.StatusOK, gin.H{"cash": fresh})
 		return
@@ -923,6 +762,25 @@ func deleteCash(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
+	}
+	uid := currentUserID(c)
+	acc, err := db.GetCash(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if acc == nil || acc.UserID != uid {
+		c.JSON(http.StatusNotFound, gin.H{"error": "子账户不存在"})
+		return
+	}
+	// 被收支计划引用（入账/还款账户）的子账户不能删，否则计划完成时无账户可落账
+	if plans, e := db.ListCashflowPlans(uid); e == nil {
+		for _, p := range plans {
+			if p.AccountID == id {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "该子账户正被收支计划「" + p.Title + "」引用（入账/还款账户），不能删除"})
+				return
+			}
+		}
 	}
 	if err := db.DeleteCash(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1074,25 +932,18 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "持仓金额不能为负（产品 " + strconv.FormatInt(it.WealthID, 10) + "）"})
 			return
 		}
-		// 拉取当日已存快照：用于判断「当日净存入为负」是否由「减仓/清仓」合法产生
-		// （避免卡住「减仓后想再微调当日持仓」的正常流程）。
+		// 拉取当日已存快照：用于「本次实际资金变动」差值计算（cfDelta = 新 cashflow − 旧 cashflow）。
 		oldAmt, oldCf, existed, _ := db.GetWealthSnapshot(it.WealthID, b.Date)
-		// 净存入通常≥0（存入走「更新理财」②，取出/赎回走「减仓/清仓」）。
-		// 但当日在「减仓/清仓」已产生负净存入（oldCf<0）时，前端提交值 = 旧值 + 本次新增转入（≥0），
-		// 可能为负（即当天净赎回），属合法值，应放行；否则会拦截「减仓后补录余额」的正常录入。
-		// 仅当 oldCf≥0 却提交负值（即本次新增转入为负，前端本不允许）才拦截。
-		if it.Cashflow < 0 && oldCf >= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "「" + p.Name + "」当日净存入不能为负数；取出/赎回请使用理财表格中的「减仓/清仓」"})
-			return
-		}
+		// 净存入正负均合法：正数=存入（子账户扣款），负数=取出（回款入账，2026-10-18 减仓弹框删除后
+		// 由「更新理财持仓」的负净存入承担；当日盈亏按 computeWealthPnl 口径天然剔除本金变动）。
 		// phantom 盈亏拦截：当日净存入≠0 但持仓金额与前一日完全相同，会产生错误盈亏
 		if math.Abs(it.Cashflow) > 1e-9 {
 			_, prevAmt, prevOk, pe := db.GetWealthPrevSnapshot(it.WealthID, b.Date)
 			if pe == nil && prevOk {
-				if math.Abs(prevAmt-it.Amount) < 0.005 {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "产品 " + strconv.FormatInt(it.WealthID, 10) + " 在 " + b.Date + " 的净存入不为 0，但持仓金额与前一日相同，将产生错误盈亏。无资金变动请把净存入填 0；取出/赎回请使用理财表格中的「减仓/清仓」。"})
-					return
-				}
+			if math.Abs(prevAmt-it.Amount) < 0.005 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "产品 " + strconv.FormatInt(it.WealthID, 10) + " 在 " + b.Date + " 的净存入不为 0，但持仓金额与前一日相同，将产生错误盈亏。无资金变动请把净存入填 0。"})
+				return
+			}
 			}
 		}
 		// 写审计：记录改前/改后
@@ -1142,7 +993,7 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 //   - cfDelta > 0（净申购/存入理财）：现金账户扣款（理财存入），账户取前端选定的 cashIDIn；
 //   - cfDelta < 0（净赎回/取出理财）：现金账户入账（理财回款），账户同样取前端选定的 cashIDIn；
 //
-// cashIDIn 为 0（未选）时由 resolveCashAccount 回落该理财同来源、同币种的默认子账户（★）。
+// cashIDIn 为 0（未选）时由 resolveCashAccount 回落该理财同来源、同币种余额最大的子账户。
 // 调用方传入的应是「新 cashflow − 旧 cashflow」的差值，使重复保存/改录只补差额。
 func applyWealthCash(uid, wealthID int64, date string, cfDelta float64, cashIDIn int64) error {
 	cfDelta = math.Round(cfDelta*100) / 100
@@ -1713,8 +1564,16 @@ func buildAssetStats(uid int64) (string, error) {
 		} else {
 			owe = "欠款(CNY)" + nf(l.Amount)
 		}
-		line := fmt.Sprintf("%d. %s（%s/%s）%s",
-			i+1, l.Name, srcName[l.SourceID], l.Type, owe)
+		// 负债 type 自 2026-10-16 起不再写入（统一表单移除类型字段），存量数据可能仍带值；
+		// 为空时只显示来源，避免出现（来源/）空括号
+		var srcPart string
+		if strings.TrimSpace(l.Type) != "" {
+			srcPart = fmt.Sprintf("（%s/%s）", srcName[l.SourceID], l.Type)
+		} else {
+			srcPart = fmt.Sprintf("（%s）", srcName[l.SourceID])
+		}
+		line := fmt.Sprintf("%d. %s%s%s",
+			i+1, l.Name, srcPart, owe)
 		b.WriteString(line + "\n")
 	}
 	b.WriteString("负债合计(CNY)：" + nf(lTotal) + "\n")

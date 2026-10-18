@@ -90,7 +90,7 @@ func createCashflowPlan(c *gin.Context) {
 		}
 	}
 	if p.Currency == "" {
-		p.Currency = "rmb"
+		p.Currency = "cny"
 	}
 	if p.EndDate != "" {
 		if _, e := time.Parse("2006-01-02", p.EndDate); e != nil {
@@ -160,7 +160,7 @@ func updateCashflowPlan(c *gin.Context) {
 		}
 	}
 	if p.Currency == "" {
-		p.Currency = "rmb"
+		p.Currency = "cny"
 	}
 	if p.EndDate != "" {
 		if _, e := time.Parse("2006-01-02", p.EndDate); e != nil {

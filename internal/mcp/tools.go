@@ -214,12 +214,13 @@ func findEntityByName(uid int64, name, entityType string) (*entityHit, error) {
 	return nil, fmt.Errorf("按名称「%s」命中 %d 个实体，请更精确或指定 entity_type 以区分：\n%s", name, len(hits), string(b))
 }
 
-// resolveCashAccount 复刻 api.resolveCashAccount：优先默认子账户，必要时补齐，最后兜底取来源下任一账户。
+// resolveCashAccount 复刻 api.resolveCashAccount：显式 cash_id 优先，否则取同来源同币种
+// 余额最大的子账户，一个都没有时现场补建一个落点账户。
 func resolveCashAccount(uid, sourceID int64, currency string) (*db.Cash, error) {
-	if c, err := db.GetDefaultCash(uid, sourceID, currency); err == nil && c != nil {
+	if c, err := db.PickCashAccount(uid, sourceID, currency); err == nil && c != nil {
 		return c, nil
 	}
-	if id, err := db.EnsureCurrencyDefaults(uid, sourceID, "", currency); err == nil && id > 0 {
+	if id, err := db.EnsureCashForCurrency(uid, sourceID, "", currency); err == nil && id > 0 {
 		if c, e := db.GetCash(id); e == nil && c != nil {
 			return c, nil
 		}
@@ -386,7 +387,7 @@ func recordWealthTX(uid int64, hit *entityHit, action string, args map[string]in
 		lastAmount = 0
 	}
 	newAmount := round2(lastAmount + cashflow)
-	// 当日净存入按累计差值语义更新：不覆盖当日已录的其他申赎（与快照保存/减仓口径一致）
+	// 当日净存入按累计差值语义更新：不覆盖当日已录的其他申赎（与快照保存口径一致）
 	_, oldCf, _, _ := db.GetWealthSnapshot(w.ID, today)
 	if e := db.UpsertWealthSnapshot(w.ID, today, newAmount, round2(oldCf+cashflow)); e != nil {
 		return "", e

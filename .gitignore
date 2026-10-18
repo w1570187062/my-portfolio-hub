@@ -1,5 +1,6 @@
 # 运行时数据与备份（不入库）
 data/
+data_test/
 .bak/
 *.db
 *.db-journal

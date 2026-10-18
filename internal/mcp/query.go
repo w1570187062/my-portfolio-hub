@@ -143,13 +143,12 @@ func listAccounts(args map[string]interface{}) (string, error) {
 	}
 
 	type cashRow struct {
-		ID        int64   `json:"id"`
-		Name      string  `json:"name"`
-		Currency  string  `json:"currency"`
-		Type      string  `json:"type"`
-		Amount    float64 `json:"amount"`
-		IsDefault bool    `json:"is_default"`
-		Note      string  `json:"note"`
+		ID       int64   `json:"id"`
+		Name     string  `json:"name"`
+		Currency string  `json:"currency"`
+		Type     string  `json:"type"`
+		Amount   float64 `json:"amount"`
+		Note     string  `json:"note"`
 	}
 	type srcRow struct {
 		ID         int64              `json:"id"`
@@ -178,8 +177,8 @@ func listAccounts(args map[string]interface{}) (string, error) {
 			for _, c := range cashBySource[src.ID] {
 				rows = append(rows, cashRow{
 					ID: c.ID, Name: c.Name, Currency: c.Currency, Type: c.Type,
-					Amount: round2(c.Amount), IsDefault: c.IsDefault,
-					Note: strings.TrimSpace(c.Note),
+					Amount: round2(c.Amount),
+					Note:   strings.TrimSpace(c.Note),
 				})
 				tot[c.Currency] = round2(tot[c.Currency] + c.Amount)
 			}
@@ -214,15 +213,14 @@ func listCashAccounts(args map[string]interface{}) (string, error) {
 	names := sourceNames(uid)
 
 	type row struct {
-		ID        int64   `json:"id"`
-		SourceID  int64   `json:"source_id"`
-		Source    string  `json:"source"`
-		Name      string  `json:"name"`
-		Currency  string  `json:"currency"`
-		Type      string  `json:"type"`
-		Amount    float64 `json:"amount"`
-		IsDefault bool    `json:"is_default"`
-		Note      string  `json:"note"`
+		ID       int64   `json:"id"`
+		SourceID int64   `json:"source_id"`
+		Source   string  `json:"source"`
+		Name     string  `json:"name"`
+		Currency string  `json:"currency"`
+		Type     string  `json:"type"`
+		Amount   float64 `json:"amount"`
+		Note     string  `json:"note"`
 	}
 	out := []row{}
 	total := map[string]float64{}
@@ -233,8 +231,8 @@ func listCashAccounts(args map[string]interface{}) (string, error) {
 		out = append(out, row{
 			ID: c.ID, SourceID: c.SourceID, Source: names[c.SourceID],
 			Name: c.Name, Currency: c.Currency, Type: c.Type,
-			Amount: round2(c.Amount), IsDefault: c.IsDefault,
-			Note: strings.TrimSpace(c.Note),
+			Amount: round2(c.Amount),
+			Note:   strings.TrimSpace(c.Note),
 		})
 		total[c.Currency] = round2(total[c.Currency] + c.Amount)
 	}

@@ -105,7 +105,7 @@ func importData(c *gin.Context) {
 				s.Type = "bank"
 			}
 			if s.Region == "" {
-				s.Region = "domestic"
+				s.Region = "cn"
 			}
 			_ = db.UpdateSource(&s)
 		} else {
@@ -115,19 +115,18 @@ func importData(c *gin.Context) {
 				s.Type = "bank"
 			}
 			if s.Region == "" {
-				s.Region = "domestic"
+				s.Region = "cn"
 			}
 			if s.Currencies == "" {
-				s.Currencies = "rmb"
+				s.Currencies = "cny"
 			}
 			id, err := db.CreateSource(&s)
 			if err != nil {
 				res.Errors = append(res.Errors, "创建来源「"+name+"」失败: "+err.Error())
 				continue
 			}
-			if _, e := db.EnsureCurrencyDefaults(uid, id, s.Name, s.Currencies); e != nil {
-				res.Errors = append(res.Errors, "来源「"+name+"」默认子账户初始化失败: "+e.Error())
-			}
+			// 子账户不再随账户自动创建（默认子账户概念已移除）；备份里的现金记录下方单独导入，
+			// 若备份无子账户，首次资金联动时会按需补建落点账户。
 			srcByName[name] = id
 		}
 		res.Imported.Sources++
@@ -152,8 +151,7 @@ func importData(c *gin.Context) {
 	}
 
 	// 现金：name 去重；记录 旧id→新id 供收支计划关联账户重映射。
-	// 已存在同名账户（如来源 upsert 时 EnsureCurrencyDefaults 预建的默认子账户）也建立映射，
-	// 避免因跳过而导致计划的 account_id 丢失。
+	// 已存在的同名子账户也建立映射，避免因跳过而导致计划的 account_id 丢失。
 	existCash := map[string]bool{}
 	cashNameToID := map[string]int64{}
 	cashOldToNew := map[int64]int64{}
@@ -174,7 +172,7 @@ func importData(c *gin.Context) {
 			continue
 		}
 		if c.Currency == "" {
-			c.Currency = "rmb"
+			c.Currency = "cny"
 		}
 		c.SourceID = resolveSource(c.SourceName)
 		newID, err := db.CreateCash(&c.Cash)
@@ -240,7 +238,7 @@ func importData(c *gin.Context) {
 			h.Market = "沪深"
 		}
 		if h.Currency == "" {
-			h.Currency = "CNY"
+			h.Currency = "cny"
 		}
 		h.SourceID = resolveSource(h.SourceName)
 		if _, err := db.Create(&h.Holding); err != nil {
@@ -266,7 +264,7 @@ func importData(c *gin.Context) {
 			continue
 		}
 		if w.Currency == "" {
-			w.Currency = "rmb"
+			w.Currency = "cny"
 		}
 		w.SourceID = resolveSource(w.SourceName)
 		id, err := db.CreateWealth(&w.WealthProduct)
@@ -329,7 +327,7 @@ func importData(c *gin.Context) {
 			pl.Type = "income"
 		}
 		if pl.Currency == "" {
-			pl.Currency = "rmb"
+			pl.Currency = "cny"
 		}
 		pl.AccountID = cashOldToNew[pl.AccountID]
 		pl.LiabilityID = libOldToNew[pl.LiabilityID]
