@@ -3241,10 +3241,6 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .kline-mini.mode-line .kl-close-line { display: block; }
 /* 翻页箭头：仅持仓历史盈亏曲线使用（技术分析 K 线 2026-10-18 改为拖拽平移，箭头已删）。
    垂直居中：早年 calc(50% + 11px) 硬偏移是为 K 线图顶部标题/缩放条留的，已不需要。 */
-.kl-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; pointer-events: auto; width: 20px; height: 20px; padding: 0; display: flex; align-items: center; justify-content: center; line-height: 1; text-align: center; border-radius: 50%; border: 1px solid var(--border); background: rgba(127,127,127,.28); color: var(--text); font-size: var(--fs-md); cursor: pointer; opacity: .85; transition: var(--btn-transition, background-color .15s, color .15s, border-color .15s, box-shadow .15s cubic-bezier(.32,.72,0,1)); }
-.kl-arrow:hover { opacity: 1; color: var(--btn-primary); border-color: var(--btn-primary); }
-.kl-arrow.kl-prev { left: 5px; }
-.kl-arrow.kl-next { right: 5px; }
 .kl-range { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* 迷你K线交互；flex-wrap 让「标签行」独占图表上方一行，SVG 换行铺满。
@@ -3720,8 +3716,10 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .rp-sel:hover, .rp-sel:focus { border-color: var(--btn-border); outline: none; }
 .rp-sel option { background: var(--bg-card); color: var(--text); }
 .rebal-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+/* 工具页卡片内 label 被 .settings-group-body label 设为 column（文字/控件上下堆叠），
+   这里覆盖回水平：「风险偏好」文字、select、总市值同行排列 */
+.rebal-head label { flex-direction: row; align-items: center; gap: var(--sp-2); }
 .rebal-head .rp-sel { width: auto; min-width: 140px; }
-.rebal-total { font-size: var(--fs-md); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .rebal-grid { display: grid; grid-template-columns: 180px 1fr; gap: var(--sp-5); align-items: start; }
 @media (max-width: 680px) { .rebal-grid { grid-template-columns: 1fr; } }
 .rebal-donut { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }
@@ -3844,6 +3842,11 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .adj-history h3 { font-size: var(--fs-md); color: var(--text-muted); margin: 0 0 var(--sp-2); font-weight: 600; }
 .adj-realized { font-size: var(--fs-md); margin-bottom: var(--sp-2); }
 .adj-realized b { color: var(--primary); }
+/* 加仓浮动盈亏：涨红跌绿（国内惯例），b 继承 span 的 up/down 色（覆盖上面的主题色 b 规则） */
+.adj-realized .adj-float b { color: inherit; font-weight: 600; }
+.adj-realized .adj-float.up { color: var(--up); }
+.adj-realized .adj-float.down { color: var(--down); }
+.adj-realized .adj-float.flat { color: var(--text-muted); }
 .adj-history-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-2); }
 .adj-empty { font-size: var(--fs-sm); color: var(--text-muted); padding: var(--sp-1) 0; }
 .adj-tx { border: 1px solid var(--border); border-radius: var(--r-sm); padding: var(--sp-2) var(--sp-2); font-size: var(--fs-sm); }
@@ -4833,29 +4836,18 @@ textarea::placeholder {
   --cum-line: #e8541d;
   --cum-line-rgb: 232, 84, 29;
   position: relative;
+  overflow-x: auto;          /* 全量数据超单屏宽度时横向滚动（初始滚到最右=最新一天）；桌面滚轮已映射横向 */
+  overscroll-behavior-x: contain;
 }
 .chart-curve-wrap .grad-area-top { stop-color: #e8541d; stop-opacity: .22; }
 .chart-curve-wrap .grad-area-bottom { stop-color: #e8541d; stop-opacity: 0; }
 /* 曲线本体也偏暖橙（chart-line 用 var(--cum-line) 会拿到上面的覆盖值，这里再加深一档增强观感） */
 .chart-curve-wrap .chart-line { stroke: #f2661f; }
 .chart-curve-wrap .chart-line-glow { stroke: #e8541d; stroke-opacity: .25; }
-/* 页码提示：右下角日期区间 + 第 N/M 页 */
-.chart-page-hint { color: var(--text-faint); font-size: var(--fs-xs); margin-left: auto; }
 /* 图例线段 key 跟随本弹框的橙色调（.chart-line-key 在全局用 --cum-line，这里在弹框作用域内覆盖） */
 .chart-curve-wrap ~ .chart-legend .chart-line-key { background: #f2661f; }
-/* 口径切换（累计盈亏 / 日收益率）：胶囊分段按钮 */
-.chart-mode-bar { display: inline-flex; gap: 2px; padding: 2px; margin-bottom: var(--sp-2); border-radius: 999px; background: var(--bg-hover); }
-.chart-mode-btn {
-  border: 0; background: transparent; cursor: pointer; font: inherit;
-  font-size: var(--fs-xs); color: var(--text-muted);
-  padding: 3px 8px; border-radius: 999px;
-  transition: background .15s var(--e), color .15s var(--e);
-}
-.chart-mode-btn:hover { color: var(--text); }
-.chart-mode-btn.active { background: var(--bg-card-solid); color: #e8541d; font-weight: 600; }
 .chart-line-key { display: inline-block; width: 16px; height: 4px; border-radius: 2px; margin-right: var(--sp-1); vertical-align: middle; background: var(--cum-line); }
 /* 历史盈亏曲线上的交易点标记：B 买入(红) / S 卖出(绿)，涨红跌绿与全局口径一致 */
-.chart-closed-lbl { fill: var(--text-muted); font-family: inherit; }
 .chart-marker rect { stroke-width: 1; }
 .chart-marker text { font-family: inherit; }
 .chart-marker.mk-buy rect { fill: var(--bg-card-solid); stroke: var(--up); stroke-opacity: .55; }
@@ -5489,20 +5481,9 @@ textarea::placeholder {
 .bsync-hint { font-size: var(--fs-sm); color: var(--primary); margin-top: 8px; }
 
 /* ===== 2026-10-18 设置/工具页重构新增样式 ===== */
-/* 次级归类标题（决策分析 / 即时换算 / 主题色）：小号大写发丝标签，左侧统一用设置页同款 SVG 图标（竖条已移除） */
-.grp-label {
-  font-size: var(--fs-xs);
-  letter-spacing: .5px;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  margin: 0 0 var(--sp-2);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-.grp-label:first-child { margin-top: 0; }
-.grp-label .grp-ico { width: 18px; height: 18px; color: var(--primary); }
+/* 工具页「决策分析」「即时换算」分组标题已改用设置页同款
+   h3.settings-group-title + .grp-title-main + .grp-ico 结构（fs-lg/700），
+   旧小号大写 .grp-label 标签已删除。 */
 /* 工具页「决策分析」：资产再平衡卡片化，作为页面内就地诊断的视觉锚点。
    已按需求去掉渐变背景与边框线，仅保留内边距做区块分隔 */
 .rebal-decision {

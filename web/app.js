@@ -665,7 +665,7 @@ function renderGroupRow(h, i, maxItemMV, pool) {
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
     <td class="row-act-cell">
       ${actBtn('edit', `data-edit="${h.id}"`, '编辑持仓')}
-      ${actBtn('hist', `data-hist="${h.id}"`, '历史走势')}
+      ${actBtn('hist', `data-hist="${h.id}"`, '历史盈亏')}
       ${actBtn('del', `data-del="${h.id}"`, '删除持仓', { danger: true })}
     </td>
   </tr>`;
@@ -780,7 +780,7 @@ function renderSummary(hs) {
       `<span class="hero-pnl-item">当日<b class="${dpCls}">¥${fmt(dayPnlCNY)}</b></span>` +
       `<span class="hero-pnl-item">本月<b class="${mpCls}">¥${fmt(monthPnlCNY)}</b></span>`;
   }
-  // v3.4 header 盈亏日历按钮（替代 hero panel 点击入口）
+  // v3.6 盈亏日历按钮：右上角迁至首页工具条（基金定投左侧），icon-btn 样式
   const calBtn = $('#pnlCalBtn');
   if (calBtn && !calBtn._bound) {
     calBtn._bound = true;
@@ -1291,7 +1291,7 @@ async function openAdjust(id) {
   $('#divPreview').style.display = 'none';
   renderDivModePills();
   syncDivModeUI();
-  renderAdjHistory(h.id);
+  renderAdjHistory(h.id, h);
   prefillAdjCalc(h);
   renderAdjModePills();
   renderAdjSidePills();
@@ -1481,7 +1481,7 @@ $('#dividendForm').onsubmit = async (e) => {
   if (el) el.addEventListener('input', computeDivPreview);
 });
 
-async function renderAdjHistory(id) {
+async function renderAdjHistory(id, h) {
   const list = $('#adjHistoryList');
   try {
     const r = await api('/api/holdings/' + id + '/transactions');
@@ -1489,7 +1489,12 @@ async function renderAdjHistory(id) {
     const d = await r.json();
     const txs = d.transactions || [];
     if (!txs.length) { list.innerHTML = '<div class="adj-empty">暂无记录</div>'; return; }
-    let html = '<div class="adj-realized">累计实现盈亏：<b>' + fmt(d.realized_total || 0) + '</b></div>';
+    // 头部两行口径：实现盈亏=只有减仓才落袋；加仓浮动盈亏=当前持仓的浮动盈亏（折 CNY，与列表同源）
+    let html = '<div class="adj-realized">累计实现盈亏：<b>' + fmt(d.realized_total || 0) + '</b>';
+    if (h && (h.quantity || 0) > 0) {
+      html += `<span class="adj-float ${cls(h.pnl)}">｜加仓浮动盈亏：<b>${fmt(h.pnl)}</b></span>`;
+    }
+    html += '</div>';
     html += txs.map((t) => {
       const tag = t.tx_type === 'BUY'
         ? '<span class="adj-tag buy">加仓</span>'
@@ -2231,8 +2236,7 @@ async function renderRebalTab() {
   }
   panel.innerHTML =
     `<div class="rebal-head"><label>风险偏好
-      <select id="rebalSel" class="rp-sel">${profiles.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label>
-      <span class="rebal-total" id="rebalTotal"></span></div>
+      <select id="rebalSel" class="rp-sel">${profiles.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label></div>
     <div id="rebalBody"></div>`;
   const sel = document.getElementById('rebalSel');
   sel.onchange = () => renderRebalance(sel.value);
@@ -2241,7 +2245,6 @@ async function renderRebalTab() {
 async function renderRebalance(profileId) {
   const body = document.getElementById('rebalBody');
   if (!body) return;
-  const tEl = document.getElementById('rebalTotal');
   let data = null;
   try {
     const r = await api('/api/asset/rebalance?profile=' + encodeURIComponent(profileId));
@@ -2250,7 +2253,6 @@ async function renderRebalance(profileId) {
   } catch (e) { body.innerHTML = '<p class="u-danger">异常：' + esc(e.message) + '</p>'; return; }
   const rows = data.rows || [];
   const total = data.total || 0;
-  if (tEl) tEl.textContent = '总市值 ¥' + fmt(total);
   if (!rows.length) { body.innerHTML = '<p class="u-muted">暂无持仓数据。</p>'; return; }
   // 调色板取自资产分类色（--cat-*，自动跟随亮/暗主题），超出后接主题金/灰循环。
   // 颜色按类目 key 稳定分配（首现序 + colorMap），不再按行序硬编码——类目增删不影响其他类目配色；
@@ -3441,11 +3443,6 @@ $('#importFile').onchange = async (e) => {
 
 // ---- 理财历史盈亏弹框（每日盈亏与审计合并，无 tab）----
 
-let histData = null; // 当前持仓历史原始返回
-let histCurvePage = 0;      // 盈亏曲线翻页：0=最新一段，往左翻更早（每次打开重置）
-let histCurvePages = 1;
-let histCurveMode = 'cum';  // 'cum' 累计盈亏 / 'day' 日收益率（每次打开重置为 cum）
-
 async function openHoldingHistory(id) {
   $('#histModal').hidden = false;
   // 持仓历史弹框无 tab，盈亏曲线直接展示；每日数据改悬停/点按柱子查看
@@ -3453,9 +3450,6 @@ async function openHoldingHistory(id) {
   const r = await api('/api/holdings/' + id + '/pnl-history');
   if (!r.ok) { $('#histChartBody').innerHTML = '<p class="u-danger">加载失败 (HTTP ' + r.status + ')</p>'; return; }
   const d = await r.json();
-  histData = d;
-  histCurvePage = 0;   // 每次打开从最新一段开始
-  histCurveMode = 'cum';
   const h = d.holding || {};
   const cur = ((d.currency || '').toUpperCase() === 'USD' ? 'USD ' : (d.currency || '').toUpperCase() === 'HKD' ? 'HK$ ' : '¥');
   $('#histTitle').textContent = (h.name || '') + '（' + (h.symbol || '') + '）历史盈亏';
@@ -3542,45 +3536,17 @@ $('#whTo').addEventListener('change', () => { wealthHistCustomTo = $('#whTo').va
 function drawPnlCurve(s, cur, markers, closedInfo, closedDetail) {
   const body = $('#histChartBody');
   if (!s || s.length === 0) { body.innerHTML = '<p class="u-muted">暂无历史数据。</p>'; return; }
-  // 翻页状态：每页默认展示「最近 3 个月」的行情点，往左翻更早。
-// 按自然月推算起点（不写死点数）—— 交易日数量随节假日浮动，写死点数会让页宽忽宽忽窄。
-const HIST_MONTHS = 3;
-  const lastDate = new Date(s[s.length - 1].date + 'T00:00:00');
-  const cutoff = new Date(lastDate);
-  const dom = cutoff.getDate();
-  cutoff.setMonth(cutoff.getMonth() - HIST_MONTHS);
-  if (cutoff.getDate() !== dom) cutoff.setDate(0);   // 月末溢出（如 7-31 减 3 月）→ 取目标月最后一天
-  // 手工拼 YYYY-MM-DD：toISOString() 走 UTC，东八区会整体差一天
-  const cutoffStr = cutoff.getFullYear() + '-'
-    + String(cutoff.getMonth() + 1).padStart(2, '0') + '-'
-    + String(cutoff.getDate()).padStart(2, '0');
-  // 每页点数 = 从「3 个月前的第一个行情点」到末尾的点数（注意是 n - i，不是 i + 1）
-  let PAGE = 0;
-  for (let i = 0; i < s.length; i++) {
-    if (s[i].date >= cutoffStr) { PAGE = s.length - i; break; }
-  }
-  if (PAGE <= 0) PAGE = s.length;                // 全部数据都早于 cutoff（数据不足 3 个月）→ 整段展示
-  if (PAGE < 5) PAGE = Math.min(s.length, 5);
-  PAGE = Math.min(PAGE, 60);                          // 上限兜底：避免单页过密挤成一团
-  histCurvePages = Math.max(1, Math.ceil(s.length / PAGE));
-  if (histCurvePage > histCurvePages - 1) histCurvePage = histCurvePages - 1;
-  if (histCurvePage < 0) histCurvePage = 0;
-  const end = s.length - histCurvePage * PAGE;
-  const from = Math.max(0, end - PAGE);
-  s = s.slice(from, end);          // 当前页的数据切片（后续逻辑全部按本页计算）
-  if (markers) markers = markers.filter((m) => m.date >= s[0].date && m.date <= s[s.length - 1].date);
-  if (closedDetail && (closedDetail.date < s[0].date || closedDetail.date > s[s.length - 1].date)) {
-    if (!(histCurvePage === 0 && closedDetail.date > s[s.length - 1].date)) closedDetail = null;
-  }
-  // 口径：'cum' 累计盈亏（金额）/ 'day' 日收益率（%）。累计口径天然把日内波动稀释掉
-// （006330 实测：3 个月累计收益率跨度 15.4pp，日均波动仅 1.18% → 只占 7.7% 图高），
-// 所以提供「日收益率」档专门看波动；历史价格口径无效（同样是慢变量），不做。
-const histMode = histCurveMode === 'day' ? 'day' : 'cum';
-  const isDay = histMode === 'day';
-  const vals = isDay ? s.map((x) => (x.day_pnl_pct || 0)) : s.map((x) => (x.total_pnl || 0));
+  // 全量默认绘制：单屏最多容纳 ~60 个行情点（604px ÷ 10px/点），超出即横向滚动
+  // （移动端原生手势、桌面滚轮映射，无翻页状态）。每个行情点保证最小 10px 宽度，
+  // 悬停热区可点、x 轴标签不糊。
   const W = 720, H = 236, mL = 58, mR = 58, mT = 16, mB = 34;  // 2026-10-15 压低画布高度（原 356）
-  const plotW = W - mL - mR, plotH = H - mT - mB;
+  const plotH = H - mT - mB;
   const n = s.length;
+  const SLOT_MIN = 10;
+  const fitW = W - mL - mR;
+  const Wfull = (n * SLOT_MIN > fitW) ? (mL + mR + n * SLOT_MIN) : W;
+  const plotW = Wfull - mL - mR;
+  const vals = s.map((x) => (x.total_pnl || 0));
   // Y 轴自适应（C 方案）：不再强制以 0 为中心。全负或全正时曲线能铺满整个绘图区，
   // 纵向分辨率翻倍；0 落在范围内才画零轴线。
   let vLo = Math.min(...vals), vHi = Math.max(...vals);
@@ -3596,10 +3562,10 @@ const histMode = histCurveMode === 'day' ? 'day' : 'cum';
   const slot = plotW / n;
   const uid = 'th' + (++trendUidSeq);
   const linePts = [];
-  let bars = '', line = '', area = '', dots = '', hotspots = '';
+  let line = '', area = '', dots = '', hotspots = '';
   s.forEach((x, i) => {
     const cx = mL + (i + 0.5) * slot;
-    const ly = yLine(isDay ? (x.day_pnl_pct || 0) : (x.total_pnl || 0));
+    const ly = yLine(x.total_pnl || 0);
     // 交互热区：覆盖整列，hover 显示金额；坐标带上供悬停指示线定位
     hotspots += `<rect class="trend-hot" data-i="${i}" data-x="${cx.toFixed(2)}" data-y="${ly.toFixed(2)}"`
       + ` x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
@@ -3651,18 +3617,8 @@ const histMode = histCurveMode === 'day' ? 'day' : 'cum';
       + `<title>${mk2.date} ${isBuy ? '买入' : '卖出'} ${mk2.type}${mk2.price ? ' @' + fmt(mk2.price) : ''}${mk2.note ? '（' + mk2.note + '）' : ''}</title>`
       + `</g>`;
   });
-  // 已清仓：不再画徽标/竖线，仅在清仓日的折线点旁标「清仓」二字；
-  // hover 该日会弹出「清仓落袋」详情块（累计收益 / 持仓天数 / 收益率 …）。
-  if (closedInfo && closedInfo.closed && closedInfo.closedDate) {
-    let ci = -1;
-    for (let i = 0; i < n; i++) { if (s[i].date === closedInfo.closedDate) { ci = i; break; } }
-    if (ci < 0) for (let i = 0; i < n; i++) { if (s[i].date <= closedInfo.closedDate) ci = i; else break; }
-    if (ci >= 0) {
-      const ccx = mL + (ci + 0.5) * slot;
-      const cpy = linePts[ci][1];
-      mk += `<text class="chart-closed-lbl" x="${ccx.toFixed(2)}" y="${(cpy - 12).toFixed(2)}" text-anchor="middle" font-size="9">清仓</text>`;
-    }
-  }
+  // 已清仓：不在曲线上画徽标；hover 清仓日（或末点）仍弹出「清仓落袋」详情块
+  // （累计收益 / 持仓天数 / 收益率 …）。
   const defs = trendDefs(uid);
   // 折线双层：底层粗而极淡做柔光，上层细实线定形
   const lineEl = `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
@@ -3673,7 +3629,8 @@ const histMode = histCurveMode === 'day' ? 'day' : 'cum';
     + ` class="chart-guide"/>`
     + `<circle class="trend-cursor-dot" cx="0" cy="0" r="4" visibility="hidden"`
     + ` class="chart-dot"/>`;
-  const xLabelStep = Math.max(1, Math.ceil(n / 10));
+  // x 轴标签按像素间距取步长（~60px 一个），全量数据横向滚动时标签密度保持均匀
+  const xLabelStep = Math.max(1, Math.ceil(60 / slot));
   // 末位标签只在与前一个标签拉开足够间距时才补，否则会出现「09-08 09-10」叠字
   const lastTick = Math.floor((n - 1) / xLabelStep) * xLabelStep;
   let xlabels = '';
@@ -3684,59 +3641,42 @@ const histMode = histCurveMode === 'day' ? 'day' : 'cum';
         + ` class="chart-label">${x.date.slice(5)}</text>`;
     }
   });
-  // Y 轴自适应（C 方案）：刻度取本页实际 min/max，左右两轴都标同一组值；
+  // Y 轴自适应（C 方案）：刻度取全量数据的实际 min/max，左右两轴都标同一组值；
 // 零轴只在 0 落在 [vLo,vHi] 内时绘制 —— 否则「全负」标的不会挤在下半区。
-const fv = (v) => (isDay ? pct(v) : fmt(v));
+const fv = (v) => fmt(v);
   const yLabels = `
     <text x="${mL - 8}" y="${(mT + 4).toFixed(2)}" font-size="11" text-anchor="end" class="chart-label-up">${fv(vHi)}</text>
     <text x="${mL - 8}" y="${(mT + plotH + 4).toFixed(2)}" font-size="11" text-anchor="end" class="chart-label-down">${fv(vLo)}</text>
-    <text x="${W - mR + 8}" y="${(mT + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label-cum">${fv(vHi)}</text>
-    <text x="${W - mR + 8}" y="${(mT + plotH + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label-cum">${fv(vLo)}</text>`
+    <text x="${Wfull - mR + 8}" y="${(mT + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label-cum">${fv(vHi)}</text>
+    <text x="${Wfull - mR + 8}" y="${(mT + plotH + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label-cum">${fv(vLo)}</text>`
     + (hasZero ? `<text x="${mL - 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="end" class="chart-label">0</text>
-    <text x="${W - mR + 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label">0</text>` : '');
+    <text x="${Wfull - mR + 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label">0</text>` : '');
   const q1 = (mT + plotH * 0.25).toFixed(2), q3 = (mT + plotH * 0.75).toFixed(2);
-  const grid = `<line x1="${mL}" y1="${q1}" x2="${W - mR}" y2="${q1}" class="chart-hline"/>`
-    + `<line x1="${mL}" y1="${q3}" x2="${W - mR}" y2="${q3}" class="chart-hline"/>`
-    + (hasZero ? `<line x1="${mL}" y1="${zeroY.toFixed(2)}" x2="${W - mR}" y2="${zeroY.toFixed(2)}" class="chart-zero"/>` : '');
-  // 左右翻页箭头（样式/语义与技术分析弹框 K 线窗口一致）：‹ 更早一段，› 更近一段
-  const arrows = histCurvePages > 1
-    ? '<button class="kl-arrow kl-prev" type="button" data-dir="1" aria-label="更早一段"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'
-    + '<button class="kl-arrow kl-next" type="button" data-dir="-1" aria-label="更近一段"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'
-    : '';
-  // 口径切换（A 方案）：累计盈亏 / 日收益率
-  const modeBar = `<div class="chart-mode-bar">`
-    + `<button class="chart-mode-btn${isDay ? '' : ' active'}" type="button" data-mode="cum">累计盈亏</button>`
-    + `<button class="chart-mode-btn${isDay ? ' active' : ''}" type="button" data-mode="day">日收益率</button>`
-    + `</div>`;
+  const grid = `<line x1="${mL}" y1="${q1}" x2="${Wfull - mR}" y2="${q1}" class="chart-hline"/>`
+    + `<line x1="${mL}" y1="${q3}" x2="${Wfull - mR}" y2="${q3}" class="chart-hline"/>`
+    + (hasZero ? `<line x1="${mL}" y1="${zeroY.toFixed(2)}" x2="${Wfull - mR}" y2="${zeroY.toFixed(2)}" class="chart-zero"/>` : '');
   const legend = `
     <div class="chart-legend">
-      <span><span class="chart-line-key"></span>${isDay ? '当日涨跌幅（%）' : '累计盈亏'}</span>
+      <span><span class="chart-line-key"></span>累计盈亏</span>
       ${(markers && markers.length) ? '<span><span class="chart-marker-key mk-buy"></span>B 买入</span><span><span class="chart-marker-key mk-sell"></span>S 卖出</span>' : ''}
-      <span class="chart-page-hint">${s[0].date.slice(5)} ~ ${s[n - 1].date.slice(5)}（${histCurvePage + 1}/${histCurvePages}）</span>
     </div>`;
   body.innerHTML = `
-    ${modeBar}
     <div class="chart-curve-wrap">
-    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <svg width="${Wfull}" height="${H}" viewBox="0 0 ${Wfull} ${H}">
       ${defs}${grid}${area}${cursor}${mk}
       ${lineEl}
       ${dots}${yLabels}${xlabels}${hotspots}
-    </svg>${arrows}</div>${legend}`;
-  // 切换口径：重绘当前页（不重置页码，方便在同一天对比两种口径）
-  body.querySelectorAll('.chart-mode-btn').forEach((b) => b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    histCurveMode = b.dataset.mode;
-    renderHistChart(histData, cur);
-  }));
-  // 翻页：改页码后整块重绘（保留同一个弹框上下文，避免重复请求）
-  body.querySelectorAll('.kl-arrow').forEach((b) => b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const d = histCurvePage + (Number(b.dataset.dir) || 0);
-    if (d < 0 || d > histCurvePages - 1) return;
-    histCurvePage = d;
-    const keep = histData;
-    renderHistChart(keep, cur);
-  }));
+    </svg></div>${legend}`;
+  // 横向滚动：默认定位到最新一天（最右）；桌面滚轮纵向增量映射为横向滚动（仅在有溢出时拦截）
+  const wrapEl = body.querySelector('.chart-curve-wrap');
+  if (wrapEl) {
+    wrapEl.scrollLeft = wrapEl.scrollWidth;
+    wrapEl.addEventListener('wheel', (e) => {
+      if (wrapEl.scrollWidth <= wrapEl.clientWidth + 1) return;
+      wrapEl.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }, { passive: false });
+  }
   // 绑定柱子交互热区 tooltip + 悬停指示线/指示点；支持桌面悬停 / 触屏点按（点击固定，再次点击或点空白区取消）
   const curEl = body.querySelector('.trend-cursor');
   const curDot = body.querySelector('.trend-cursor-dot');
@@ -8385,23 +8325,24 @@ function renderDCAInterval() {
   if (dayRow) dayRow.hidden = !(dcaInterval === 'monthly' || dcaInterval === 'quarterly');
 }
 
-// 标的选「＋ 新建基金…」时露出搜索框；切回已有标的则清空已选
+// 标的选「＋ 新建基金…」时露出搜索框；切回已有标的则收起。
+// 两个分支都做重置：确保「已选标的」确认条（dcaNewPicked）只在用户从联想列表
+// 点选完成后才出现——进入/离开新建模式时若残留上次的选中态，会让人误以为已填好。
+function resetDCANew() {
+  dcaNewPicked = null;
+  const ids = ['dcaNewSearch', 'dcaNewName', 'dcaNewSymbol'];
+  ids.forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const picked = document.getElementById('dcaNewPicked');
+  if (picked) { picked.hidden = true; picked.innerHTML = ''; }
+  const box = document.getElementById('dcaSuggest');
+  if (box) { box.hidden = true; box.innerHTML = ''; }
+}
 function toggleDCANew() {
   const sel = document.getElementById('dcaHolding');
   const box = document.getElementById('dcaNewBox');
   if (!sel || !box) return;
   box.hidden = sel.value !== '0';
-  if (box.hidden) {
-    dcaNewPicked = null;
-    const s = document.getElementById('dcaNewSearch');
-    if (s) s.value = '';
-    document.getElementById('dcaNewName').value = '';
-    document.getElementById('dcaNewSymbol').value = '';
-    document.getElementById('dcaNewPicked').hidden = true;
-    document.getElementById('dcaNewPicked').innerHTML = '';
-    document.getElementById('dcaSuggest').hidden = true;
-    document.getElementById('dcaSuggest').innerHTML = '';
-  }
+  resetDCANew();
 }
 
 // 资金子账户：二级折叠选择器（同「添加持仓 · 账户币种」）。只列与标的同账户（银行/证券）同币种的子账户；
