@@ -319,12 +319,9 @@
   --signal-neu: #0284c7; --signal-neu-rgb: 2, 132, 199;
   --cum-line: #7c3aed; --cum-line-rgb: 124, 58, 237;
 }
-:root[data-theme="light"] .up,
-:root[data-theme="light"] .name-up,
-:root[data-theme="light"] .name-arrow { color: var(--up); }
-:root[data-theme="light"] .down,
-:root[data-theme="light"] .name-down,
-:root[data-theme="light"] .name-arrow-down { color: var(--down); }
+:root[data-theme="light"] .up { color: var(--up); }
+:root[data-theme="light"] .down { color: var(--down); }
+
 
 :root[data-theme="light"] .summary.collapsible { background: transparent; }
 
@@ -1015,14 +1012,6 @@ h2 > svg { color: var(--primary); }
 [data-theme="light"] .type-tag.tag-us,
 [data-theme="light"] .type-tag.tag-hk,
 [data-theme="light"] .type-tag.tag-fund { --bt-l: rgb(var(--bt)); }
-/* 编辑现金弹框顶部固定账户信息条（账户=操作按钮所在行，无需下拉） */
-.cash-edit-info {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-2);
-  border: 1px solid var(--border); border-radius: var(--btn-radius);
-  background: var(--primary-soft); font-size: var(--fs-md);
-}
-.cash-edit-info .ce-bal { color: var(--text-muted); font-size: var(--fs-sm); white-space: nowrap; }
 /* 资金变动方向切换（存入/取出）：主题色分段控件，避免手动输入负数 */
 .sign-edit { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-2); }
 .sign-edit .field-label { flex-basis: 100%; font-size: var(--fs-md); color: var(--text-muted); margin-bottom: 0; }
@@ -1113,19 +1102,6 @@ h2 > svg { color: var(--primary); }
 }
 .asset-row-actions button:hover {
   opacity: .85;
-}
-
-
-/* ===== 首页持仓表分页栏（与 slider/tab 同风格） ===== */
-.pager {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  padding: var(--sp-1) 28px var(--sp-2);
-  color: var(--text-muted);
-  font-size: var(--fs-md);
 }
 
 
@@ -1655,21 +1631,8 @@ table {
      ① 与卡片各自的 backdrop-filter 叠加会让表面发灰；
      ② 横向滚动时 table 的圆角会跟着内容滚走（容器不裁切）；
      ③ overflow:hidden 会破坏将来的粘性表头。
-     外框（圆角/描线/阴影/毛玻璃）统一由包裹容器提供，见 .table-wrap 与各 .source-group 卡片。 */
+     外框（圆角/描线/阴影/毛玻璃）统一由包裹容器提供，见各 .source-group 卡片。 */
   background: transparent;
-}
-/* 主表格容器：承担原挂在 table 上的外框 */
-.table-wrap {
-  width: 100%;
-  margin: 0 0 var(--sp-3);
-  background: var(--bg-card);
-  backdrop-filter: blur(var(--blur)) saturate(var(--sat));
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--sat));
-  border: var(--card-border);
-  border-radius: var(--card-radius);
-  box-shadow: var(--card-shadow);
-  overflow-x: auto;
-  overflow-y: hidden;
 }
 th, td {
   padding: var(--sp-2) var(--sp-4);
@@ -1692,12 +1655,6 @@ th {
 }
 :root[data-theme="light"] th { background: #f1f3f6; }
 td { color: var(--text); }
-/* 首页持仓表：表头标题居最右 */
-#tbl th { text-align: center; }
-/* 让末尾「操作」列收缩到仅容纳按钮宽度，剩余空间交给数据列，避免右侧大片空白 */
-#tbl th:last-child, #tbl td:last-child { width: 1%; white-space: nowrap; }
-/* 名称列（第2列）：限制宽度避免过宽，右侧留白与「代码」列形成间距 */
-#tbl th:nth-child(2), #tbl td:nth-child(2) { width: 208px; max-width: 208px; padding-right: 28px; }
 tbody tr {
   transition: background .15s cubic-bezier(.32,.72,0,1);
 }
@@ -1705,27 +1662,12 @@ tbody tr:hover {
   background: var(--bg-hover);
 }
 .num { text-align: right; }
-.idx { color: var(--text-faint); text-align: center; width: 40px; }
-.hide-col { display: none; }
-
-/* 排序表头 */
-th.sortable {
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-th.sortable:hover { color: var(--primary); }
-th.sortable.active { color: var(--primary); }
-th .sort-ind { font-size: var(--fs-xs); margin-left: 2px; }
 
 /* ===== 涨跌幅颜色（适配深色） ===== */
+/* .name-up/.name-arrow 等已随卡片视图删除（2026-10-19） */
 .up { color: var(--up); }
 .down { color: var(--down); }
 .flat { color: var(--text-muted); }
-.name-up { color: var(--up); font-weight: 600; }
-.name-arrow { color: var(--up); font-size: var(--fs-xs); margin-right: var(--sp-1); }
-.name-down { color: var(--down); font-weight: 600; }
-.name-arrow-down { color: var(--down); font-size: var(--fs-xs); margin-right: var(--sp-1); }
 
 
 /* ===== 饼图 ===== */
@@ -1761,17 +1703,6 @@ th .sort-ind { font-size: var(--fs-xs); margin-left: 2px; }
 }
 .row-actions button:last-child { margin-right: 0; }
 
-/* ---- 首页持仓表「来源」表头筛选下拉 ---- */
-.src-th { cursor: pointer; user-select: none; white-space: nowrap; }
-.src-th:hover { color: var(--primary); }
-.src-caret { font-size: var(--fs-xs); color: var(--text-muted); margin-left: 2px; }
-.src-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 16px; height: 16px; padding: 0 var(--sp-1); margin-left: var(--sp-1);
-  border-radius: var(--r-xs); background: var(--primary); color: var(--on-primary);
-  font-size: var(--fs-xs); font-weight: 600; line-height: 1;
-}
-.src-badge[hidden] { display: none; }
 .src-pop {
   position: fixed; z-index: 500; width: 224px;
   background: var(--bg-card-solid);
@@ -1997,15 +1928,16 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 /* display:block 会压过 [hidden] 的 UA 默认样式，须显式声明（弹框内按 hidden 切换的 label 行） */
 .modal-card label[hidden] { display: none; }
 /* 持仓录入/编辑弹框：补齐各行包装容器（类别+市场行、四格输入行、账户行、关联代码行）的纵向间距，
-   使其与相邻 label 行的 12px 节奏一致，避免多输入行紧贴 */
+   使其与相邻 label 行的 12px 节奏一致，避免多输入行紧贴。
+   名称/代码联想行例外：与「类别/市场」之间是弹框内的主分组断点，升到 20px（design.md §弹框） */
 #form > .f-pills-row,
 #form > .f-row,
 #form > .hold-acct-wrap,
 #form > #linked_symbol_row { margin-bottom: var(--sp-3); }
-/* 统一账户弹框：这两个容器也是 flex（.sign-edit / .cash-edit-info），同样会压过 [hidden] 的
-   UA 默认值，不显式声明的话「资金变动行 / 余额信息条」按 hidden 切不掉 */
-#c_delta_row[hidden],
-#cashEditInfo[hidden] { display: none; }
+#form > .f-search-label { margin-bottom: var(--sp-5); }
+/* 统一账户弹框：资金变动行是 flex，会压过 [hidden] 的
+   UA 默认值，不显式声明的话「资金变动行」按 hidden 切不掉 */
+#c_delta_row[hidden] { display: none; }
 /* 编辑子账户弹框：底部「说明（资金变动备注，可选）」与上方资金变动区拉开间距 */
 #c_adj_note_row { margin-top: var(--sp-3); }
 .modal-card input, .modal-card select, .modal-card textarea {
@@ -2051,7 +1983,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
-  margin: -8px 0 14px;
+  margin: -8px 0 var(--sp-3); /* 顶部负值上拉贴 label cap（刻意）；底部原 14px 已归 12px 节奏 */
 }
 .cur-check {
   display: flex;
@@ -2249,8 +2181,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .slider::-webkit-scrollbar { display: none; }
 /* 首页理财视图（2026-10-09 自资产页迁入）：左右间距对齐 list-bar/tbl-meta-bar（28px）；表格超宽时容器内横向滚动 */
 .home-wealth-box { padding: 0 28px var(--sp-2); margin: 0 0 var(--sp-2); overflow-x: auto; }
-/* 首页跟随持仓的理财区块：与上方持仓区用分隔线区隔（上 12px / 下 12px，原 20+16=36px 太空） */
-#homeWealthInline { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
 @media (max-width: 640px) {
   /* 手机端：搜索框与操作按钮同一行。flex-basis 必须为 0（不能 auto）：
      auto 时 basis=input max-content（含 padding-right:30px ≈207px），+gap 12+按钮 152=371>366 触发 wrap 被挤到下行；
@@ -2573,9 +2503,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   }
   .card .value { font-size: var(--fs-lg); }
 
-  /* 表格/筛选留边收窄（外框已移到 .table-wrap，故这里是 margin 而非 padding） */
-  .table-wrap { margin: 0 var(--sp-3) var(--sp-3); }
-  .cards-grid { padding: 0 var(--sp-3); }
+  /* 表格/筛选留边收窄 */
   .filters { padding: 0 var(--sp-3); }
   .list-bar { padding: 0 var(--sp-3); }
   .tbl-meta-bar { padding: var(--sp-2) var(--sp-3); }
@@ -2608,16 +2536,9 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   #assetTabBody { padding: 0 var(--sp-2) 28px; }
   /* 区块标题行：防按钮溢出 */
   .asset-section-head { flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-2); }
-  /* 表格：与首页 .table-wrap + th/td 一致，可横向滚动 */
+  /* 表格：与首页 th/td 规格一致，可横向滚动 */
   .asset-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .asset-table th, .asset-table td { padding: var(--sp-2) var(--sp-2); }
-  /* 理财：窄屏仍展示表格/卡片切换器（表格本身可横向滚动），不再隐藏切换按钮 */
-  /* 理财卡片：手机端一行一个，撑满容器宽度 */
-  .asset-list.wealth-list { flex-direction: column; }
-  .asset-card.wealth-card { flex: 0 0 auto; width: 100%; min-width: 0; max-width: none; }
-  /* 理财卡片内部 */
-  .asset-card .ac-head { flex-wrap: wrap; }
-  .asset-card .ac-amount { font-size: var(--fs-lg); }
 }
 
 /* ===== 资产全景 ===== */
@@ -2625,7 +2546,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 /* ===== 资产页账户卡（2026-10-18 方案①：指标条并入卡内摘要头）=====
    一张卡承载「总览 → 明细」：卡内顶部 .as-card-sum 是指标条摘要头（净资产 hero 26px + 总资产/负债/地域净值），
    全宽发丝线之下是 .atbl 账户主表。指标条不再以裸发丝线条悬浮在页面背景上（反馈突兀）；
-   账户表也不再是全站唯一不包卡的数据表 —— 与持仓主表 .table-wrap「卡面包表」同构。
+   账户表也不再是全站唯一不包卡的数据表 —— 与持仓分组卡「卡面包表」同构。
    历史：2026-10-17 曾把摘要拆成 6 张统计小卡 + 账户区 13 张卡（19 个同款卡面在网格里退化成纹理点阵）
    而全面去卡片化；2026-10-18 构成卡删除后重新评估——单张「摘要头 + 主表」卡不构成点阵，故恢复卡面。
    层级依旧只靠字号与留白：净资产 26px hero / 其余 16px；地域项 ISO 代码 + 英文全称与表内分组标题呼应。
@@ -2773,43 +2694,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
    内边距/分隔线全部由 .as-card-sum 提供；原 #assetSummary section 外壳已随指标条并入卡片而删除。
    勿在此挂 padding/border——ID 选择器会压过 .as-card-sum 的类规则。 */
 #assetTabBody { padding: 0 var(--sp-5) 28px; }
-.asset-list { display: flex; flex-direction: column; gap: var(--sp-3); }
-.asset-card {
-  border: var(--card-border);
-  border-radius: var(--card-radius);
-  padding: var(--sp-4) var(--sp-4);
-  background: var(--bg-card);
-  backdrop-filter: blur(var(--blur)) saturate(var(--sat));
-  transition: border-color .2s, box-shadow .2s cubic-bezier(.32,.72,0,1);
-  overflow: hidden;
-}
-.asset-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--card-shadow-hover);
-}
-.asset-card .ac-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); min-width: 0; }
-.asset-card .ac-title { font-weight: 600; font-size: var(--fs-base); color: var(--text); }
-.asset-card .ac-sub { color: var(--text-muted); font-size: var(--fs-sm); margin-top: var(--sp-1); line-height: 1.7; }
-.asset-card .ac-amount {
-  font-weight: 700;
-  font-family: var(--font-mono);
-  color: var(--text);
-}
-.asset-card .ac-idx {
-  flex: 0 0 auto;
-  width: 24px;
-  height: var(--h-1);
-  border-radius: var(--r-xs);
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.asset-card .ac-main { flex: 1; min-width: 0; }
-.asset-card .ac-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); flex-wrap: wrap; }
+/* 理财卡片样式（.asset-card / .asset-list / .wealth-card）已随卡片视图移除（2026-10-19） */
 .asset-row-actions button {
   font-size: var(--fs-sm);
   padding: var(--sp-1) var(--sp-3);
@@ -2882,7 +2767,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 
 .asset-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); border: 1px solid var(--border); border-radius: var(--radius); }
 /* 首页持仓/资产全景表格：去掉表格圆角，避免表头背景被裁出圆角显得不协调 */
-#tbl, .asset-table { border-radius: 0; }
+.asset-table { border-radius: 0; }
 /* 表头与数据对齐一致（左对齐；.num 列右对齐），避免上下错位 */
 .asset-table th { font-size: var(--fs-md); text-align: left; }
 .asset-table th, .asset-table td {
@@ -2960,18 +2845,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .snap-hint { font-size: var(--fs-sm); color: var(--text-muted); margin: 0 0 var(--sp-2); }
 .empty { color: var(--text-muted); font-size: var(--fs-md); padding: var(--sp-2) 2px; }
 
-/* ===== 理财卡片：横向流式布局（自适应宽度） ===== */
-.asset-list.wealth-list {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: stretch;
-}
-.asset-card.wealth-card {
-  flex: 1 1 400px;
-  min-width: 0;
-  max-width: none;
-  box-sizing: border-box;
-}
+/* 理财卡片样式（.asset-card / .asset-list / .wealth-card）已随卡片视图移除（2026-10-19） */
 
 /* ===== 统一按钮风格（资产全景模块） ===== */
 /* 新系统已在顶部定义，此处保留旧样式以兼容 */
@@ -3420,39 +3294,8 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
    （原为 var(--text)，金色/绿色主题下浅灰字压浅色块，对比度仅 2.2:1） */
 .view-toggle .vt-btn.active { background: transparent; color: var(--on-primary); box-shadow: none; }
 :root[data-theme="light"] .view-toggle .vt-btn.active { color: var(--text); }
-.cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--sp-3);
-  margin-top: var(--sp-1);
-  padding: 0 28px;
-  /* 卡片高度按各自内容自适应：默认 stretch 会把同排较矮的卡片拉到最高卡片高度，底部留白 */
-  align-items: start;
-}
-/* 修复卡片/表格切换：class 的 display 会盖过 [hidden]，必须强制 hidden 生效 */
-.cards-grid[hidden], .table-wrap[hidden], .pager[hidden], #tbl[hidden], #holdingsEmpty[hidden] { display: none !important; }
-.holding-card {
-  background: var(--bg-card);
-  border: 1px solid rgba(255,255,255,.06);
-  border-radius: var(--r);
-  padding: var(--sp-3) var(--sp-3);
-  cursor: pointer;
-  transition: transform .12s cubic-bezier(.32,.72,0,1), box-shadow .12s cubic-bezier(.32,.72,0,1), border-color .12s cubic-bezier(.32,.72,0,1);
-}
-.holding-card:hover { border-color: rgba(var(--tint),.4); }
-.hc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-2); }
-.hc-name { font-weight: 600; font-size: var(--fs-base); color: var(--text); word-break: keep-all; overflow-wrap: anywhere; }
-/* 卡片名称跟随当日涨跌变色（与表格 name-up/name-down 一致；提高优先级以免被上方默认色覆盖） */
-.hc-name.name-up { color: var(--up); }
-.hc-name.name-down { color: var(--down); }
-:root[data-theme="light"] .hc-name.name-up { color: var(--up); }
-:root[data-theme="light"] .hc-name.name-down { color: var(--down); }
-.hc-code { color: var(--text-muted); font-size: var(--fs-sm); margin: 2px 0 var(--sp-2); }
-/* 账户名（v3.7 P0-1）：卡片视图补回表格视图有的账户维度，加粗提色便于多账户分辨 */
-.hc-acct { color: var(--text); font-weight: 600; }
-.hc-row { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-md); padding: 2px 0; }
-.hc-label { color: var(--text-faint); }
-.hc-val { color: var(--text); font-weight: 500; margin-right: var(--sp-1); }
+/* 修复表格隐藏：class 的 display 会盖过 [hidden]，必须强制 hidden 生效 */
+#holdingsEmpty[hidden] { display: none !important; }
 /* 市值原币种括号备注（非人民币持仓）：低调、不抢视觉 */
 .mv-orig { color: var(--text-muted); font-size: var(--fs-xs); font-weight: 400; margin-left: 2px; white-space: nowrap; }
 
@@ -3876,7 +3719,9 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
    input[type=date] 自带的最小内容宽（年/月/日三段 + 日历图标）会顶开所在列、
    视觉上压到相邻输入框上 —— 手机端「交易日期」压住「描述」就是这个原因。
    minmax(0,…) 把列下限归零，配合下面 input 的 min-width:0，日期框才会和其它输入框同宽。 */
-#modal .f-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-2); }
+#modal .f-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+/* margin-bottom 统一由上方 #form > .f-row 规则（12px）管理：
+   此处曾写 sp-2=8px，同特异性但更靠后，把 1935 行的 12px 节奏悄悄改小，已删 */
 #modal .f-row.f-row2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* 份额 / 成本价 / 交易成本 / 交易日期：**固定两列两行**（份额·成本价一排，交易成本·日期一排），
    电脑端与手机端保持一致（原电脑端四格一行、手机端两行，两边观感不一致）。
@@ -3980,7 +3825,7 @@ textarea::placeholder {
   }
 }
 
-/* #holdingsBySource / #cards / .table-wrap 不再强制 min-height：
+/* #holdingsBySource 不再强制 min-height：
    内容少于 360px 时原先会留大片空白且切换视图后无法自动收拢，现交由内容自然撑开 */
 /* 分析/图表弹框正文预留高度，避免异步内容注入时跳动 */
 .analysis-loading, #analysisBody { min-height: 180px; }
@@ -4136,16 +3981,18 @@ textarea::placeholder {
   gap: var(--sp-3);
 }
 .pano-open .settings-group-title::before { content: none; }
-/* 分区描述：标题下方一行静音色说明 */
+/* 分区描述：标题下方一行静音色说明。
+   纵向节奏（2026-10-19 design.md 规约）：标题↔描述 12px、描述↔内容 24px ——
+   原标题底部 8 + 描述顶 0 过挤、描述底 16 + 正文顶 24 = 40px 过松，两头都违反节奏。 */
 .pano-open .settings-group-desc {
   margin: 0;
-  padding: 0 var(--sp-6) var(--sp-4);
+  padding: var(--sp-1) var(--sp-6) var(--sp-3);
   font-size: var(--fs-sm);
   line-height: 1.6;
   color: var(--text-muted);
 }
 .pano-open .settings-group-body {
-  padding: var(--sp-6);
+  padding: var(--sp-3) var(--sp-6) var(--sp-6);
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
@@ -4321,7 +4168,7 @@ textarea::placeholder {
 @media (max-width: 880px) {
   .pano-open .settings-layout { max-width: none; gap: var(--sp-4); }
   .pano-open .settings-group-title { padding: var(--sp-3) var(--sp-4) var(--sp-2); }
-  .pano-open .settings-group-desc { padding: 0 var(--sp-4) var(--sp-3); }
+  .pano-open .settings-group-desc { padding: var(--sp-1) var(--sp-4) var(--sp-2); }
   .pano-open .settings-group-body { padding: var(--sp-2) var(--sp-4) var(--sp-4); gap: var(--sp-3); }
 }
 
@@ -5230,8 +5077,8 @@ textarea::placeholder {
   /* 禁止整页左右滑动，页面只可上下滚。
      用 clip 而不是 hidden：hidden 会让 body 变成滚动容器，页面上表格头 / 分组头的
      position:sticky 会失效；clip 不创建滚动容器，sticky 照常工作（旧浏览器不支持时只是不裁剪，无害）。
-     overscroll-behavior-x:none 再兜一层：iOS 上内部横向滚动容器（表格）滚到边界后
-     继续滑会把横向橡皮筋传给整个文档，加上它才真正"滑不动"。 */
+     overscroll-behavior-x:none 再兜一层：移动端 WebKit 浏览器上内部横向滚动容器（表格）
+     滚到边界后继续滑会把横向橡皮筋传给整个文档，加上它才真正"滑不动"。 */
   html, body { overflow-x: clip; overscroll-behavior-x: none; }
   /* 手机按钮同样可拖动：位置由 JS 写内联 left/top，未拖过时落在 tab 栏上方；
      不再用 !important 钉死（那会压过内联坐标，导致手机上永远拖不动）。 */
@@ -5256,7 +5103,7 @@ textarea::placeholder {
     touch-action: pan-y; /* 面板内只允许上下滚动，禁止左右滑动 */
   }
   /* 内部横向滚动容器：滚到边界后不要把横向橡皮筋传给整个文档 */
-  .table-wrap, .subtable-wrap, .slider,
+  .subtable-wrap, .slider,
   .asset-table, .home-wealth-box,
   .ai-bubble.md table { overscroll-behavior-x: contain; }
   .acp-list-toggle { display: inline-flex; }

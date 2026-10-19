@@ -18,7 +18,6 @@ type SearchResult struct {
 }
 
 // SearchSecurities 调用东方财富联想接口，按名称/代码模糊匹配证券。
-// 参考 PanWatch 的 src/web/stock_list.py::_realtime_search（同款数据源）。
 // 仅依赖标准库 + 包内 httpClient（强制 IPv4，避免容器无 IPv6 路由时挂起）。
 func SearchSecurities(q string) ([]SearchResult, error) {
 	q = strings.TrimSpace(q)

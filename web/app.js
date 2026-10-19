@@ -219,11 +219,9 @@ let cashBalMap = {}; // "sourceID:currency"(小写、存量 rmb 归一为 cny) -
 const normCur = (c) => { const s = String(c || '').toLowerCase(); return s === 'rmb' ? 'cny' : s; };
 let catFilter = new Set(); // selected categories; empty = all
 let mktFilter = new Set(); // selected markets; empty = all
-let sourceFilter = new Set(); // selected source ids (点击表头「来源」筛选); empty = all
 let textFilter = '';        // 文本搜索（名称/代码/备注），配合「/」快捷聚焦
 let usdRate = 1;
 let hkdRate = 1;
-let dayDate = ''; // 当日盈亏所基于的快照日期（YYYY-MM-DD）
 let snapshotDate = '';   // 最近 pnl_daily 快照日期（YYYY-MM-DD）
 let monthPnlCNY = 0;     // 本月累计盈亏（CNY 折算）
 let monthPnlCny = 0;     // 本月累计盈亏（CNY 原始货币）
@@ -231,8 +229,8 @@ let todayRealizedCny = 0; // 今日已实现盈亏（减仓落库，CNY 折算�
 let monthPnlUsd = 0;     // 本月累计盈亏（USD 原始货币）
 let failedSymbols = {};  // symbol -> 失败原因（刷新失败持久标记）
 // table | card；移动端（窄屏）默认卡片视图（表格横向溢出体验差），但不强制——允许用户手动切回表格（可横向滚动）
-let holdingsView = localStorage.getItem('pf_view') || (window.innerWidth < 640 ? 'card' : 'table');
-let wealthView = localStorage.getItem('pf_wealth_view') || (window.innerWidth < 640 ? 'card' : 'table');
+// 首页主区切换：持仓 / 理财（localStorage 记忆），默认持仓
+let homeSection = localStorage.getItem('pf_home_section') || 'holdings';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Two-level category -> market association (二级筛选).
@@ -291,14 +289,11 @@ async function load() {
     assetSources = hd.sources || [];
     sparkCache = hd.spark || {};
     cashBalMap = hd.cash || {};
-    dayDate = hd.day_date || '';
     snapshotDate = hd.snapshot_date || '';
     monthPnlCNY = hd.month_pnl_cny || 0;
     monthPnlCny = hd.month_pnl_cny_ccy || 0;
     monthPnlUsd = hd.month_pnl_usd || 0;
     todayRealizedCny = hd.today_realized_cny || 0;
-    const ddl = document.getElementById('dayDateLbl');
-    if (ddl) ddl.textContent = dayDate;
     buildFilters();
     renderFiltered();
     loadCashflow(); // 首页紧凑卡片：本月收支计划（不阻塞主渲染）
@@ -316,8 +311,6 @@ function filteredHoldings() {
     if (catFilter.size && !catFilter.has(h.category)) return false;
     // 市场筛选仅在选定了具体类别（市场行可见）时生效：全不勾选 → 空集 → 无数据；全勾选 → 全部。
     if (catFilter.size && !mktFilter.has(h.market)) return false;
-    // 来源筛选：点击表头「来源」勾选来源后，仅显示属于这些来源的持仓。
-    if (sourceFilter.size && !sourceFilter.has(String(h.source_id || 0))) return false;
     if (kw) {
       // 搜索框按「名称 / 代码」过滤（首页 #homeFilterInput 绑定 textFilter）
       const hay = ((h.name || '') + ' ' + (h.symbol || '')).toLowerCase();
@@ -329,8 +322,6 @@ function filteredHoldings() {
 
 // Render both the summary cards and the table from the currently filtered set,
 // so statistics follow the category + market filter.
-let sortKey = null;        // null | 'market_value' | 'pnl' | 'pnl_pct'
-let sortDir = 'desc';      // 'asc' | 'desc'
 
 // Convert a holding's CNY-equivalent value (USD/HKD holdings scaled by exchange rate).
 function toRmb(h, v) {
@@ -354,94 +345,31 @@ function mvOrigTitle(h) {
   return ` title="原币种市值 ${curSymbolJS(h.currency)}${fmt(h.market_value || 0)}"`;
 }
 
-// Apply the active column sort to a filtered holding list.
-// 市值/盈亏按 CNY 折算后比较，与列表展示口径一致；盈亏率按原值。
-function sortedHoldings(hs) {
-  if (!sortKey) return hs;
-  const dir = sortDir === 'asc' ? 1 : -1;
-  const val = (h) => (sortKey === 'pnl_pct' || sortKey === 'day_pnl_pct' ? (h[sortKey] || 0) : toRmb(h, h[sortKey]));
-  return [...hs].sort((a, b) => (val(a) - val(b)) * dir);
-}
-
-// Toggle/reverse sort when a sortable header is clicked.
-function setSort(key) {
-  if (sortKey === key) {
-    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-  } else {
-    sortKey = key;
-    sortDir = 'desc';
-  }
-  updateSortIndicators();
-  renderFiltered();
-}
-
-// Reflect the current sort state on the table headers.
-function updateSortIndicators() {
-  document.querySelectorAll('th.sortable').forEach((th) => {
-    const k = th.dataset.sort;
-    const ind = th.querySelector('.sort-ind');
-    if (ind) ind.textContent = k === sortKey ? (sortDir === 'asc' ? '▲' : '▼') : '';
-    th.classList.toggle('active', k === sortKey);
-  });
-}
-
 function renderFiltered() {
   const hs = filteredHoldings();
   renderSummary(hs);
-  const sorted = sortedHoldings(hs);
-  // 表格/卡片切换行左侧描述：持仓数量动态计算（随筛选、增删实时更新）
   const desc = document.getElementById('tblDesc');
-  if (desc) desc.textContent = `持仓（${sorted.length}）`;
-  const tbl = document.getElementById('tbl');
-  const pager = document.getElementById('pager');
-  const cards = document.getElementById('cards');
   const empty = document.getElementById('holdingsEmpty');
-  const tw = document.querySelector('.table-wrap');
   const srcBox = document.getElementById('holdingsBySource');
   const metaBar = document.querySelector('.tbl-meta-bar');
   const wl = document.getElementById('homeWealthBox');
-  const wInline = document.getElementById('homeWealthInline');
 
-  // 理财视图（2026-10-09 自资产页迁入）：筛选选「理财」时主区域显示理财管理区（复用 renderWealth：标题/操作/表格/卡片）
-  if (catFilter.size === 1 && catFilter.has('wealth')) {
-    if (metaBar) metaBar.hidden = true;        // 理财区自带标题行（理财(N) + 表格/卡片切换），tbl-meta-bar 冗余
-    if (tbl) tbl.hidden = true;
-    if (tw) tw.hidden = true;
-    if (pager) pager.hidden = true;
-    if (cards) cards.hidden = true;
+  if (metaBar) metaBar.hidden = false;
+
+  // 理财视图：隐藏持仓区，主区域显示理财管理区（表格视图，已移除卡片展示）
+  if (homeSection === 'wealth') {
     if (srcBox) srcBox.hidden = true;
     if (empty) empty.hidden = true;
     if (wl) { wl.hidden = false; renderWealth(wl); }
-    if (wInline) { wInline.hidden = true; wInline.innerHTML = ''; }  // 理财独占视图时收起跟随区
+    // 数量已由 renderWealth 的小节标题展示，此处留空避免重复「理财（N）」
+    if (desc) desc.textContent = '';
     return;
   }
-  // 非理财视图：恢复持仓区默认显隐
+
+  // 持仓视图（默认）：隐藏理财区，按来源分组表展示（已移除卡片展示）
   if (wl) wl.hidden = true;
-  if (metaBar) metaBar.hidden = false;
-  // 视图以用户选择为准（holdingsView）；移动端仅作为默认偏好
-  const useCard = holdingsView === 'card';
-  if (useCard) {
-    if (tbl) tbl.hidden = true;
-    if (tw) tw.hidden = true;
-    if (pager) pager.hidden = true;
-    if (srcBox) srcBox.hidden = true;
-    if (cards) cards.hidden = false;
-    renderCards(sorted);
-  } else {
-    // 表格视图改为「按来源分组的折叠卡片」（portfolio 来源分组）
-    if (cards) cards.hidden = true;
-    if (tw) tw.hidden = true;
-    if (tbl) tbl.hidden = true;
-    if (pager) pager.hidden = true;
-    if (srcBox) srcBox.hidden = false;
-    renderHoldingsBySource(sorted);
-  }
-  // 仅「全部」（无类目筛选）时在持仓下方跟随展示理财区块；选「股票/基金」时用户关注点在持仓，理财区收起
-  if (wInline) {
-    const wcount = ((assetData.wealth || {}).products || []).length;
-    if (catFilter.size === 0 && wcount > 0) { wInline.hidden = false; renderWealthInline(wInline); }
-    else { wInline.hidden = true; wInline.innerHTML = ''; }
-  }
+  if (srcBox) { srcBox.hidden = false; renderHoldingsBySource(hs); }
+  if (desc) desc.textContent = `持仓（${hs.length}）`;
   if (empty) {
     const emptyMsg = document.getElementById('emptyMsg');
     const emptyAddBtn = document.getElementById('emptyAddBtn');
@@ -671,37 +599,7 @@ function renderGroupRow(h, i, maxItemMV, pool) {
   </tr>`;
 }
 
-// 卡片视图：每只持仓一张卡（名称+代码 / 现价+当日% / 市值 / 累计盈亏），点击进详情。
-function renderCards(hs) {
-  const box = document.getElementById('cards');
-  if (!box) return;
-  if (!hs.length) { box.innerHTML = ''; return; }
-  box.innerHTML = hs.map((h) => {
-    const dpCls = cls(h.day_pnl);
-    const pCls = cls(h.pnl);
-    const fail = failedSymbols[h.symbol];
-    const dayHtml = '<span class="' + dpCls + '">' + pct(h.day_pnl_pct) + '</span>';
-    return `<div class="holding-card${fail ? ' card-failed' : ''}" data-card="${h.id}" data-category="${h.category}" data-linked-symbol="${esc(h.linked_symbol || '')}">
-      <div class="hc-top">
-        <div class="hc-name${h.day_pnl_pct > 0 ? ' name-up' : (h.day_pnl_pct < 0 ? ' name-down' : '')}">${h.day_pnl_pct > 0 ? '<span class="name-arrow">▲</span>' : (h.day_pnl_pct < 0 ? '<span class="name-arrow-down">▼</span>' : '')}${esc(h.name)}</div>
-        ${fail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">' + actIcon('warn') + '</span>' : ''}
-      </div>
-      <div class="hc-code" title="${esc(h.symbol)} · ${cat(h.category)} · ${h.market} · ${h.currency}${h.source_name ? ' · ' + esc(h.source_name) : ''}">${esc(h.symbol)} · ${cat(h.category)} · ${h.market} · ${h.currency}${h.source_name ? ' · <b class="hc-acct">' + esc(h.source_name) + '</b>' : ''}</div>
-      <div class="hc-row"><span class="hc-label">现价</span><span class="hc-val">${fmtNav(h.current_price, h.category)}</span><span class="hc-label">当日</span>${dayHtml}</div>
-      <div class="hc-row"><span class="hc-label">市值</span><span class="hc-val">¥${fmt(toRmb(h, h.market_value))}${mvOrigNote(h)}</span></div>
-      <div class="hc-row"><span class="hc-label">累计盈亏</span><span class="hc-val ${pCls}">¥${fmt(toRmb(h, h.pnl))} (${pct(h.pnl_pct)})</span></div>
-    </div>`;
-  }).join('');
-  box.querySelectorAll('[data-card]').forEach((c) => {
-    c.onclick = (e) => {
-      const fb = e.target.closest('[data-fail]');
-      if (fb) { e.stopPropagation(); toast(failedSymbols[fb.dataset.fail] || '刷新失败', 'err'); return; }
-      const id = c.dataset.card, catv = c.dataset.category, linked = c.dataset.linkedSymbol;
-      if (catv === 'fund' && !linked) { toast('该基金未设置关联股票代码，不支持技术分析', 'info'); return; }
-      openAnalysis(id);
-    };
-  });
-}
+// 卡片视图已移除（2026-10-19）：持仓仅保留按来源分组表格（#holdingsBySource），卡片网格 #cards 一并删除。
 
 function renderSummary(hs) {
   let totalCNY = 0, totalCostCNY = 0;
@@ -853,7 +751,7 @@ function buildFilters() {
 
   // 搜索框：替代原类别滑块（用户反馈显突兀），置于首页 .list-bar 左侧 #filters 容器。
   // 按名称 / 代码过滤持仓（filteredHoldings 用全局 textFilter 匹配 h.name + h.symbol）；
-  // 2026-10-14 起同时过滤首页跟随的理财区块（renderWealthInline 匹配 p.name + p.code）。
+  // 理财区已改为顶部「理财」切换进入，不再在持仓下方跟随展示（2026-10-19）。
   // 桌面端前置浅色「搜索」文字标签（.hf-label，手机端媒体查询隐藏）；放大镜图标按需求已移除。
   const row = document.createElement('div');
   row.className = 'filter-row cat-row hf-search-row';
@@ -1026,13 +924,12 @@ function sparkline(data, opts) {
   const pts = vals.map((v, i) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ');
   const last = pts.split(' ').pop();
   const gid = 'spk' + (++sparkUid);
-  // 渐变方向：默认 fade（顶深→底透明）；'panwatch' = 曲线下方同色柔和底色，
+  // 渐变：默认 fade（顶深→底透明）；'soft' = 曲线下方同色柔和底色，
   // 自上而下近乎均匀、底部保留可见色（不淡出到透明），仅紧贴曲线处略深
   const grad = (opts && opts.gradient) || 'fade';
   let topOp = '.20', botOp = '0';
-  // panwatch：曲线下方同色柔和底色，自上而下近乎均匀、底部保留可见色（不淡出到透明）。
-  // 此前 .26/.13 在深色卡片上几乎不可见，这里提高到可清晰辨识的强度。
-  if (grad === 'panwatch') { topOp = '.30'; botOp = '.22'; }
+  // soft：柔和底色强度（.26/.13 在深色卡片上几乎不可见，提高到可清晰辨识的强度）
+  if (grad === 'soft') { topOp = '.30'; botOp = '.22'; }
   const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity="${topOp}"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="${botOp}"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(#${gid})"/>`;
   // responsive:true → 去掉硬编码 width/height，只留 viewBox，由 CSS 容器控制尺寸
   const dimAttrs = (opts && opts.responsive) ? '' : ` width="${w}" height="${h}"`;
@@ -1712,7 +1609,7 @@ $('#dcaBtn').onclick = () => openDCAPlans();
 $('#dcaPlansClose').onclick = () => { $('#dcaPlansModal').hidden = true; };
 $('#dcaPlansNew').onclick = () => { $('#dcaPlansModal').hidden = true; openDCAModal(null); };
 function openAddPick() {
-  const wealthFirst = catFilter.size === 1 && catFilter.has('wealth');
+  const wealthFirst = homeSection === 'wealth';
   const box = document.querySelector('#addPickModal .add-pick');
   if (box) {
     // 顺序即默认项：胶囊选理财时把「理财」放首位并标 primary
@@ -1738,9 +1635,9 @@ wireSearch();
 // 首页「刷新」按钮已移除：手动整体刷新入口取消，行情改由定时快照自动更新。
 // （批量 /api/refresh 接口仍保留供定时任务复用。）
 
-// 视图切换（表格 / 卡片）：localStorage 记忆，桌面端默认表格
+// 首页主区切换（持仓 / 理财）：localStorage 记忆，默认持仓
 function syncViewToggle() {
-  document.querySelectorAll('#viewToggle .vt-btn').forEach((x) => x.classList.toggle('active', x.dataset.view === holdingsView));
+  document.querySelectorAll('#viewToggle .vt-btn').forEach((x) => x.classList.toggle('active', x.dataset.view === homeSection));
   positionIndicator();
 }
 // 滑动白块：根据当前 active 按钮定位指示器（宽 + 位移），实现左右平移动画
@@ -1752,18 +1649,7 @@ function positionIndicator() {
   ind.style.width = active.offsetWidth + 'px';
   ind.style.transform = 'translateX(' + active.offsetLeft + 'px)';
 }
-document.querySelectorAll('#viewToggle .vt-btn').forEach((b) => {
-  b.onclick = () => {
-    holdingsView = b.dataset.view;
-    wealthView = holdingsView;
-    localStorage.setItem('pf_view', holdingsView);
-    localStorage.setItem('pf_wealth_view', holdingsView);
-    syncViewToggle();
-    renderFiltered();
-  };
-});
-syncViewToggle();
-// 通用：根据当前 active 按钮定位滑动白块（支持首页与资产全景理财两个切换器）
+// 通用：根据指定切换器内当前 active 按钮定位滑动白块（首页/资产/日历多个切换器共用）
 function positionIndicatorFor(toggleId, indId) {
   const ind = document.getElementById(indId);
   if (!ind) return;
@@ -1772,18 +1658,16 @@ function positionIndicatorFor(toggleId, indId) {
   ind.style.width = active.offsetWidth + 'px';
   ind.style.transform = 'translateX(' + active.offsetLeft + 'px)';
 }
-function syncWealthToggle() {
-  document.querySelectorAll('#wealthViewToggle .vt-btn').forEach((x) => x.classList.toggle('active', x.dataset.wview === wealthView));
-  positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator');
-  setTimeout(() => positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator'), 0);
-}
-window.addEventListener('resize', () => { positionIndicator(); positionIndicatorFor('wealthViewToggle', 'wealthVtIndicator'); positionIndicatorFor('wealthInlineViewToggle', 'wealthInlineVtIndicator'); });
-// 首页「全部」下跟随展示的理财块切换器（与专属理财视图同款，仅在理财有产品时渲染）
-function syncWealthInlineToggle() {
-  document.querySelectorAll('#wealthInlineViewToggle .vt-btn').forEach((x) => x.classList.toggle('active', x.dataset.wview === wealthView));
-  positionIndicatorFor('wealthInlineViewToggle', 'wealthInlineVtIndicator');
-  setTimeout(() => positionIndicatorFor('wealthInlineViewToggle', 'wealthInlineVtIndicator'), 0);
-}
+document.querySelectorAll('#viewToggle .vt-btn').forEach((b) => {
+  b.onclick = () => {
+    homeSection = b.dataset.view;
+    localStorage.setItem('pf_home_section', homeSection);
+    syncViewToggle();
+    renderFiltered();
+  };
+});
+syncViewToggle();
+window.addEventListener('resize', () => { positionIndicator(); });
 setTimeout(positionIndicator, 0); // 字体/布局稳定后校正初始位置
 $('#emptyAddBtn').onclick = () => openModal(null);
 // 文本筛选（设计系统：搜索框 + 「/」聚焦 + Enter 提交）
@@ -1795,60 +1679,6 @@ $('#emptyAddBtn').onclick = () => openModal(null);
   fi.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
 })();
 
-// ---- 来源筛选：点击首页持仓表表头「来源」弹出复选框，勾选后仅显示对应来源的持仓 ----
-function renderSourceFilterList() {
-  const box = $('#sourceFilterList');
-  if (!box) return;
-  box.innerHTML = '';
-  const srcs = assetSources || [];
-  if (!srcs.length) {
-    box.innerHTML = '<p class="src-empty">暂无账户，请先在资产全景添加</p>';
-    return;
-  }
-  srcs.forEach((s) => {
-    const lbl = document.createElement('label');
-    lbl.className = 'src-item';
-    lbl.innerHTML = `<input type="checkbox" name="src-filter" value="${s.id}" ${sourceFilter.has(String(s.id)) ? 'checked' : ''}> <span>${esc(s.name)}</span>`;
-    lbl.querySelector('input').addEventListener('change', applySourceFilter);
-    box.appendChild(lbl);
-  });
-}
-function applySourceFilter() {
-  sourceFilter = new Set([...document.querySelectorAll('#sourceFilterList input:checked')].map((i) => i.value));
-  updateSourceBadge();
-  renderFiltered();
-}
-function updateSourceBadge() {
-  const b = $('#sourceBadge');
-  if (!b) return;
-  b.hidden = sourceFilter.size === 0;
-  b.textContent = String(sourceFilter.size);
-}
-function toggleSourceFilterPop(force) {
-  const th = $('#sourceTh');
-  const pop = $('#sourceFilterPop');
-  if (!th || !pop) return;
-  const show = (force === undefined) ? pop.hidden : force;
-  if (show) {
-    renderSourceFilterList();
-    const r = th.getBoundingClientRect();
-    pop.style.top = (r.bottom + 6) + 'px';
-    pop.style.left = Math.max(8, Math.min(r.right - 224, window.innerWidth - 232)) + 'px';
-    pop.hidden = false;
-  } else {
-    pop.hidden = true;
-  }
-}
-$('#sourceTh').onclick = (e) => { e.stopPropagation(); toggleSourceFilterPop(); };
-$('#srcApply').onclick = () => toggleSourceFilterPop(false);
-$('#srcAll').onclick = () => { document.querySelectorAll('#sourceFilterList input').forEach((i) => { i.checked = true; }); applySourceFilter(); };
-$('#srcNone').onclick = () => { document.querySelectorAll('#sourceFilterList input').forEach((i) => { i.checked = false; }); applySourceFilter(); };
-document.addEventListener('click', (e) => {
-  const pop = $('#sourceFilterPop');
-  if (pop && !pop.hidden && !pop.contains(e.target) && !e.target.closest('#sourceTh')) {
-    pop.hidden = true;
-  }
-});
 // 资产空状态内联"添加"按钮（各空 tab 共用，data-empty-add 区分类型）
 $('#assetTabBody').addEventListener('click', (e) => {
   const b = e.target.closest('[data-empty-add]');
@@ -4680,40 +4510,12 @@ function wRmbTitle(p, v) {
 
 function renderWealth(body) {
   const raw = (assetData.wealth || {}).products || [];
-  const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount)); // 按卡片显示的原币金额从大到小（与卡片展示口径一致）
-  const toggleHtml = w.length ? `<div class="view-toggle" id="wealthViewToggle">
-      <span class="vt-indicator" id="wealthVtIndicator"></span>
-      <button class="btn vt-btn ${wealthView === 'table' ? 'active' : ''}" data-wview="table" type="button">表格</button>
-      <button class="btn vt-btn ${wealthView === 'card' ? 'active' : ''}" data-wview="card" type="button">卡片</button>
-    </div>` : '';
-  // 「更新理财持仓」已上移到首页顶部操作条（#wealthSnapBtn，renderFiltered 不再隐藏 .list-actions）；
-  // 「添加理财」同样收敛到顶部 #addBtn（弹框内二选一），标题行只留视图切换器与「批量刷新净值」按钮。
-  const refreshNavBtn = w.length ? `<button class="btn btn-icon" id="wealthRefreshNavBtn" type="button" title="自动刷新含基金码的理财净值（银行理财无公开接口，需点「净值」手动录入）">${actIcon('refresh')} 批量刷新净值</button>` : '';
-  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3><div class="sec-actions">${toggleHtml ? toggleHtml : ''}${refreshNavBtn}</div></div>`;
+  const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount)); // 按金额从大到小
+  // 「更新理财持仓」已上移到首页顶部操作条（#wealthSnapBtn）；「添加理财」收敛到顶部 #addBtn。
+  // 「批量刷新净值」按钮及前端逻辑已删（2026-10-19）：自动/批量刷新净值尚未支持，后端接口保留。
+  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3></div>`;
   if (!w.length) html += `<div class="empty-state"><p>还没有理财，添加一个并每日录入持仓金额即可自动算每日盈亏。</p><button class="btn" data-empty-add="wealth" type="button">＋ 添加第一笔理财</button></div>`;
-  else if (wealthView === 'table') html += renderWealthTable(w);
-  else {
-    html += `<div class="asset-list wealth-list">`;
-    w.forEach((p, i) => {
-      const pnl = p.today_pnl || 0;
-      const cum = p.cum_pnl || 0;
-      html += `<div class="asset-card wealth-card"><div class="ac-head">
-          <div class="ac-idx">${i + 1}</div>
-          <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span>${p.archived ? ' <span class="cur-badge wb-archived" title="已清仓停用：保留历史收益，可启用或删除">已清仓</span>' : ''}</div>
-            <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天${p.nav > 0 ? ` ｜ 净值 <b class="ac-amount">${fmt(p.nav)}</b>${p.nav_updated_at ? ` <span class="u-sm u-muted">${esc(p.nav_updated_at.slice(5, 16))}</span>` : ''}` : ''}</div></div></div>
-        <div class="ac-sub">总金额：<span class="ac-amount"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
-        <div class="ac-actions">
-          <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">${actIcon('edit')} 编辑</button>
-          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('hist')} 每日盈亏</button>
-          <button class="btn btn-icon" data-act="wealth-nav" data-id="${p.id}">${actIcon('nav')} 净值</button>
-          ${p.archived
-            ? `<button class="btn btn-icon" data-act="enable-wealth" data-id="${p.id}">${actIcon('refresh')} 启用</button>`
-            : ''}
-          <button class="btn btn-icon" data-act="del-wealth" data-id="${p.id}">${actIcon('del')} 删除</button>
-        </div></div>`;
-    });
-    html += `</div>`;
-  }
+  else html += renderWealthTable(w);
   body.innerHTML = html;
   body.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHistory(Number(b.dataset.id)));
@@ -4721,78 +4523,9 @@ function renderWealth(body) {
   body.querySelectorAll('[data-act="enable-wealth"]').forEach((b) => b.onclick = () => enableWealthRow(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="del-wealth"]').forEach((b) => b.onclick = () => delWealthRow(Number(b.dataset.id)));
   bindCopyDelegation(body);
-  // 视图切换（表格 / 卡片），复用首页同款滑动切换器
-  body.querySelectorAll('#wealthViewToggle .vt-btn').forEach((b) => {
-    b.onclick = () => {
-      wealthView = b.dataset.wview;
-      localStorage.setItem('pf_wealth_view', wealthView);
-      renderWealth(body);
-    };
-  });
-  syncWealthToggle();
-  const rnb = body.querySelector('#wealthRefreshNavBtn');
-  if (rnb) rnb.onclick = batchRefreshWealthNav;
 }
 
-// 首页「全部 / 股票 / 基金」视图下跟随持仓展示的理财区块：标题 理财(N) + 账户分组二级表格，
-// 不带视图切换器（二级表格即账户分组表），折叠交互复用全局 .collapse-hat 委托。
-function renderWealthInline(container) {
-  const raw = (assetData.wealth || {}).products || [];
-  // 与持仓表共用同一搜索词（textFilter 匹配 名称 + 代码）：首页搜索框同时覆盖理财表格（2026-10-14 用户需求）
-  const kw = textFilter;
-  const w = raw
-    .filter((p) => !kw || ((p.name || '') + ' ' + (p.code || '')).toLowerCase().includes(kw))
-    .sort((a, b) => Number(b.amount) - Number(a.amount));
-  // 与专属「理财」视图一致的表格/卡片切换器：首页「全部」下跟随展示的理财块此前无切换器，
-  // 若 wealthView 在桌面端被记为 table，手机窄屏上会卡在表格且无入口切回卡片（见用户反馈）。
-  const toggleHtml = w.length ? `<div class="view-toggle" id="wealthInlineViewToggle">
-      <span class="vt-indicator" id="wealthInlineVtIndicator"></span>
-      <button class="btn vt-btn ${wealthView === 'table' ? 'active' : ''}" data-wview="table" type="button">表格</button>
-      <button class="btn vt-btn ${wealthView === 'card' ? 'active' : ''}" data-wview="card" type="button">卡片</button>
-    </div>` : '';
-  let html = `<div class="asset-section-head"><h3>理财（${w.length}）</h3>${toggleHtml ? `<div class="sec-actions">${toggleHtml}</div>` : ''}</div>`;
-  if (!w.length) html += '';
-  else if (wealthView === 'card') {
-    html += `<div class="asset-list wealth-list">`;
-    w.forEach((p, i) => {
-      const pnl = p.today_pnl || 0;
-      const cum = p.cum_pnl || 0;
-      html += `<div class="asset-card wealth-card"><div class="ac-head">
-          <div class="ac-idx">${i + 1}</div>
-          <div class="ac-main"><div class="ac-title">${esc(p.name)} <span class="cur-badge">${curSymbolJS(p.currency)}</span>${p.archived ? ' <span class="cur-badge wb-archived" title="已清仓停用：保留历史收益，可启用或删除">已清仓</span>' : ''}</div>
-            <div class="ac-sub">${esc(p.code || '-')} ${esc(p.source_name || '')} ｜ 已录入 ${p.snap_count || 0} 天${p.nav > 0 ? ` ｜ 净值 <b class="ac-amount">${fmt(p.nav)}</b>${p.nav_updated_at ? ` <span class="u-sm u-muted">${esc(p.nav_updated_at.slice(5, 16))}</span>` : ''}` : ''}</div></div></div>
-        <div class="ac-sub">总金额：<span class="ac-amount"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</span> ｜ 今日收益：<span class="${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</span> ｜ 累计收益：<span class="${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</span></div>
-        <div class="ac-actions">
-          <button class="btn btn-icon" data-act="edit-wealth" data-id="${p.id}">${actIcon('edit')} 编辑</button>
-          <button class="btn btn-icon" data-act="wealth-hist" data-id="${p.id}">${actIcon('hist')} 每日盈亏</button>
-          <button class="btn btn-icon" data-act="wealth-nav" data-id="${p.id}">${actIcon('nav')} 净值</button>
-          ${p.archived
-            ? `<button class="btn btn-icon" data-act="enable-wealth" data-id="${p.id}">${actIcon('refresh')} 启用</button>`
-            : ''}
-          <button class="btn btn-icon" data-act="del-wealth" data-id="${p.id}">${actIcon('del')} 删除</button>
-        </div></div>`;
-    });
-    html += `</div>`;
-  } else {
-    html += renderWealthTable(w);
-  }
-  container.innerHTML = html;
-  container.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
-  container.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHistory(Number(b.dataset.id)));
-  container.querySelectorAll('[data-act="wealth-nav"]').forEach((b) => b.onclick = () => openWealthNavModal(Number(b.dataset.id)));
-  container.querySelectorAll('[data-act="enable-wealth"]').forEach((b) => b.onclick = () => enableWealthRow(Number(b.dataset.id)));
-  container.querySelectorAll('[data-act="del-wealth"]').forEach((b) => b.onclick = () => delWealthRow(Number(b.dataset.id)));
-  // 理财块自带表格/卡片切换器（与专属理财视图同款），点击仅改 wealthView 并就地重渲染本块
-  container.querySelectorAll('#wealthInlineViewToggle .vt-btn').forEach((b) => {
-    b.onclick = () => {
-      wealthView = b.dataset.wview;
-      localStorage.setItem('pf_wealth_view', wealthView);
-      renderWealthInline(container);
-    };
-  });
-  syncWealthInlineToggle();
-  bindCopyDelegation(container);
-}
+// 首页跟随式理财区块（renderWealthInline）已移除（2026-10-19）：理财统一由顶部「理财」切换进入 #homeWealthBox，不再在持仓下方跟随展示。
 
 // 理财表格视图（账户分组折叠，样式复用持仓来源分组）：按 source_id 分组，组头显示账户名 + 款数 + 合计金额，
 // 悬停展开当日/累计收益。行内不再重复账户列（账户已是组头），其余列沿用原口径。
@@ -5003,23 +4736,7 @@ $('#wealthNavForm').onsubmit = async (e) => {
   } catch (err) { $('#wealthNavErr').textContent = '异常：' + err.message; }
 };
 
-// 批量自动刷新：对含 6 位基金码的理财抓东财最新净值并据份额重算金额；银行理财等无公开接口的产品标记为跳过。
-async function batchRefreshWealthNav() {
-  try {
-    const r = await api('/api/asset/wealth/nav/refresh', { method: 'POST' });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) { toast(d.error || '批量刷新失败', 'err'); return; }
-    const res = d.results || [];
-    const updated = res.filter((x) => x.status === 'updated').length;
-    const skipped = res.filter((x) => x.status === 'skipped').length;
-    const errored = res.filter((x) => x.status === 'error').length;
-    let msg = `自动刷新完成：更新 ${updated}`;
-    if (skipped) msg += `，跳过 ${skipped}（银行理财无公开接口）`;
-    if (errored) msg += `，失败 ${errored}`;
-    toast(msg, errored && !updated ? 'err' : 'ok');
-    await loadAsset();
-  } catch (err) { toast('异常：' + err.message, 'err'); }
-}
+// 批量自动刷新净值前端入口已删（2026-10-19，功能未支持）；后端 /api/asset/wealth/nav/refresh 保留。
 
 // ---- 子账户（现金）----
 // 现金已并入「账户」tab：作为各账户的子账户，在来源行下方折叠显示。
@@ -5302,10 +5019,6 @@ function fillAcctForm(kind, rec, srcIdLocked) {
   $('#c_source_sel_row').hidden = locked;
   // 币种下拉：仅列所属账户已勾选币种（编辑态并入当前币种），随父账户选择联动
   renderAcctCurrencyOptions(Number($('#c_source').value) || 0, rec ? (rec.currency || 'cny') : '');
-  // 编辑态信息条
-  $('#cashEditInfo').innerHTML = rec
-    ? `<span class="ce-bal">${kind === 'liability' ? '当前欠款余额' : '当前余额'} ${moneyCur(rec.amount || 0, rec.currency || 'cny')}</span>`
-    : '';
   applyAcctKind();
 }
 
