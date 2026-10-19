@@ -1,9 +1,9 @@
 # 持仓侠 UI 设计规范
 
-> **v3.2 · 2026-10-16 · 设计规范（已定案）**
+> **v3.3 · 2026-10-19 · 设计规范（已定案）**
 > 落地文件：`web/style.css`（**唯一样式真源**）、`web/index.html`（零样式）、`web/app.js`（仅主题变量注入）
-> 变更摘要：v3.0 → v3.1 — **Hero Banner 首屏视觉锚点 + 背景氛围层增强 + 卡片 hover 升级**
 > 变更摘要：v3.1 → v3.2 — **响应式适配定案（目标设备 / 断点白名单 / 资产构成卡三列布局 / 顶栏筛选行吸顶 / 超宽屏收边 / 安全区）**
+> 变更摘要：v3.2 → v3.3 — **合并根目录 design.md：页面骨架与标题层级、纵向节奏规约（分组卡 12/24、弹框行距 12/主分组断点 20/水平 28）、弹框宽度档以代码实测修正**
 
 ---
 
@@ -251,8 +251,9 @@
 | 内容 | `form` / 直接子 div | **唯一滚动区**：`flex: 1; min-height: 0; overflow-y: auto` |
 | 动作区 | `.modal-actions` | `flex: 0 0 auto` 常驻底部 + `border-top`；右对齐；padding 上下对称 |
 
-宽度档：`340px`（确认）/ `380px`（默认）/ `560px`（表单）/ `780px`（图表）。
+宽度档（v3.3 以代码实测修正）：`380px`（默认）/ `420px`（≤640 移动端上限）/ `560px`（#modal 持仓表单）/ `660px`（#calModal 日历）/ `780px`（.chart-card 图表）/ `900px`（#pnlModal 盈亏明细），一律叠 `min(…, 94vw)`。
 入场：`translateY(12px) scale(.98)` → 归零。
+纵向节奏（行距 / 主分组断点 / actions 对称）见 **§6.3**。
 
 ### 3.5 输入控件
 
@@ -530,6 +531,82 @@ CSS 侧消费：
 | 阴影与遮罩 | `rgba(0,0,0,.5)`、`rgba(15,23,42,.12)` | 无复用语义 |
 | 固定深色浮层内的取值 | `.trend-tip` 的 `#bcc0c7 / #ff7875 / #95de64 / #8a8f99` | 该浮层背景恒为深色，不随主题翻转 |
 | 2px 级光学值 | `gap: 2px`、`border-radius: 2px`、`1px` 描线 | 属视觉微调，不在网格体系内 |
+
+---
+
+## 6. 页面骨架、标题层级与纵向节奏（v3.3 合并自根目录 design.md）
+
+> 生效范围：`web/` 全部页面。维护约定：**改动布局间距前先读本文**；新规约落地后同步更新本文与 `web/check-ui.mjs` 校验白名单；新页面/新组件在 §6 补条目。
+
+### 6.1 首页骨架（v3.3 定案：持仓/理财 顶层切换）
+
+```
+header（顶栏）
+hero 区        ← 页面级 KPI（.hat-side 贴最右）
+list-bar       ← 搜索/筛选 + 操作按钮
+tbl-meta-bar   ← 左：tbl-desc「持仓（N）」；右：分段切换（.view-toggle + .vt-indicator，持仓/理财）
+内容区         ← 理财 #homeWealthBox ／ 持仓 #holdingsBySource（二选一）
+```
+
+- **切换行必须位于内容区 DOM 之前**（v3.3 修复：理财表格曾渲染在切换条上方，长表格把切换条挤出视野）。
+- 理财态 `tbl-desc` 留空——`renderWealth` 自带「理财（N）」小节标题，避免重复。
+- DOM 顺序：`.tbl-meta-bar` → `#homeWealthBox` → `#holdingsBySource`。
+
+### 6.2 标题层级（从严到松）
+
+| 层级 | 元素 | 字号/字重 | 备注 |
+|---|---|---|---|
+| L1 页面主数字 | hero | 26~28px / 700 | 唯一大字层 |
+| L2 弹框标题 | `.modal-card > h2` | `--fs-xl` / 700 | padding `24 28 12` |
+| L3 分组标题 | `.settings-group-title` / `.asset-section-head h3` | `--fs-lg` / 700 | |
+| L4 行描述 | `.tbl-desc` / `.settings-group-desc` | `--fs-sm` / 400 / muted | |
+
+### 6.3 纵向节奏（核心规约）
+
+**设置/AI 分组卡（`.pano-open .settings-group`）**：
+
+```
+┌ 标题   padding: 16 24 8            ┐
+│ 描述   padding: 4 24 12            │  ← 标题↔描述 = 12px
+│ 正文   padding: 12 24 24, 内部 gap 16 │  ← 描述↔内容 = 24px
+└                                    ┘
+```
+
+- 分组与分组之间：`settings-layout` gap = `--sp-6`（24px）。
+- 折叠态（`.collapsible.collapsed`）：只留标题行，标题 padding-bottom 补 `--sp-4`。
+- 间距 token 语义速记：`--sp-3`(12px)=**表单行距、分组标题↔描述**；`--sp-5`(20px)=**弹框主分组断点、actions 区上下**；`--sp-6`(24px)=卡片/分组水平内边距。
+
+**弹框（`.modal-card`）纵向节奏**：
+
+| 部位 | 规约 |
+|---|---|
+| 标题 `h2` | padding `24 28 12`，`--fs-xl`/700，flex-shrink:0 |
+| 滚动区 `form`/`.m-body` | padding `4 28`，flex:1 + overflow-y |
+| **普通行距** | label/行容器 `margin-bottom: --sp-3`（12px），全弹框统一 |
+| **主分组断点** | 首行（名称/代码联想）之后升到 20px：`#form > .f-search-label { margin-bottom: --sp-5 }` |
+| actions 区 | padding `20 28`，上描线，上下 padding 必须对称（防按钮贴底被裁） |
+| 水平内边距 | 28px 统一（h2/p/form/m-body/actions 同宽对齐） |
+
+**列表/表格区**：
+
+- `.tbl-meta-bar` 与内容区间距 16px。
+- 表头 11px（`--fs-xs`）/ td 13px（`--fs-md`）/ 数值列 `td.num` mono + tabular-nums。
+- **表格中性数字一律 `--text-muted`**（`td.num:not(.up):not(.down)`）；新红绿规则必须 `:not()` 排除中性。
+
+### 6.4 组件细则（补充条目，与 §3 重复处不另立）
+
+- badge：10px / 圆角 4 / 浅底 12% 透明度。
+- **弹框显隐兜底铁律**：凡元素自带 `display` 规则（如 `display:grid` 面板），必须显式配 `[hidden]{display:none}`，否则 `hidden` 属性被类规则压过而失效。
+- 动效曲线统一 `cubic-bezier(.32,.72,0,1)` 或 `var(--e)`，时长 0.12~0.2s。
+
+### 6.5 合规校验
+
+```bash
+node --check web/app.js        # 语法
+node web/check-ui.mjs          # 设计规范 12 项（含 4px 网格、语义色字面量、断点白名单）
+```
+
+新增间距必须过 4px 网格检查（§5 同款校验）。
 
 ---
 

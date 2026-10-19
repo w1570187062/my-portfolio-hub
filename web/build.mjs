@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync } from 'fs';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 
 mkdirSync('dist', { recursive: true });
 
@@ -23,7 +23,15 @@ await build({
   logLevel: 'info',
 });
 
-copyFileSync('index.html', 'dist/index.html');
+// index.html 同样去注释 + 压缩空白：剥离全部 HTML 注释、行首缩进、行尾空白，空行折叠为单换行。
+// 前提：源文件无内联 <script>，且 <pre>/<textarea> 均为空标签（内容由 JS 运行时填充）——
+// 若日后往标签内写默认文本，需先给压缩逻辑加 pre/textarea 保护。
+const html = readFileSync('index.html', 'utf8')
+  .replace(/<!--[\s\S]*?-->/g, '')
+  .replace(/^[ \t]+/gm, '')
+  .replace(/[ \t]+$/gm, '')
+  .replace(/\n{2,}/g, '\n');
+writeFileSync('dist/index.html', html);
 copyFileSync('favicon.svg', 'dist/favicon.svg');
 
 // PWA 静态资源（不压缩，原样拷贝进 dist 供 go:embed 嵌入）
