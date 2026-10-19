@@ -207,7 +207,7 @@ func aiSummary(c *gin.Context) {
 // gets injected into the {{DATA}} placeholder) for a given scope, so the frontend
 // can preview and let the user edit it before sending.
 //
-//	scope=all     -> 全部资产（权益 + 理财 + 负债 + 消费），等同 assetSummary 的 DATA
+//	scope=all     -> 全部资产（权益 + 理财 + 负债），等同 assetSummary 的 DATA
 //	scope=equity  -> 权益类（股票 / 基金），等同 aiSummary 的 DATA
 //	其他 / 缺省   -> 同 all
 func aiData(c *gin.Context) {

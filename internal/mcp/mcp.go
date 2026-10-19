@@ -37,9 +37,6 @@ type Config struct {
 // cfgUserID 记录 MCP 操作归属的用户（由配置 user_id 决定，0=默认首个用户）。
 var cfgUserID int64
 
-// SetUserID 设置 MCP 操作归属用户，供主程序在拉起前注入。
-func SetUserID(id int64) { cfgUserID = id }
-
 // Tool 是一个 MCP 工具的静态描述 + 处理函数。
 type Tool struct {
 	Name        string                 // 工具名（英文、无空格）

@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,15 +12,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ---- 数据导入（格式与「导出数据」一致：holdings/wealth/cash/liability/consumption；
-//   完整迁移（version=2）时额外包含 cashflow_plans/sources/ai_config/settings/calc_inputs/pnl_history）----
+// ---- 数据导入（格式与「导出数据」一致：holdings/wealth/cash/liability；
+//   完整迁移（version=2）时额外包含 cashflow_plans/sources/ai_config/settings/calc_inputs/pnl_history。
+//   消费模块已下线（2026-10-19）：旧备份 JSON 中的 consumption 字段直接忽略）----
 
 type importStats struct {
 	Holdings    int `json:"holdings"`
 	Wealth      int `json:"wealth"`
 	Cash        int `json:"cash"`
 	Liability   int `json:"liability"`
-	Consumption int `json:"consumption"`
 	Sources     int `json:"sources"`
 	Plans       int `json:"plans"`
 	AIConfig    int `json:"ai_config"`
@@ -54,10 +53,6 @@ type importLiability struct {
 	db.Liability
 	SourceName string `json:"source_name"`
 }
-type importConsumption struct {
-	db.Consumption
-	SourceName string `json:"source_name"`
-}
 type importSettings struct {
 	RiskProfiles    json.RawMessage `json:"risk_profiles"`
 	AssetTypeLabels json.RawMessage `json:"asset_type_labels"`
@@ -71,7 +66,6 @@ func importData(c *gin.Context) {
 		Wealth        []importWealth           `json:"wealth"`
 		Cash          []importCash             `json:"cash"`
 		Liability     []importLiability        `json:"liability"`
-		Consumption   []importConsumption      `json:"consumption"`
 		CashflowPlans []db.CashflowPlan        `json:"cashflow_plans"`
 		Sources       []db.AssetSource         `json:"sources"`
 		AIConfig      json.RawMessage          `json:"ai_config"`
@@ -277,29 +271,6 @@ func importData(c *gin.Context) {
 		}
 		existWealth[w.Name] = true
 		res.Imported.Wealth++
-	}
-
-	// 消费：date+category+amount 精确判重，避免重复导入产生垃圾流水
-	existCons := map[string]bool{}
-	if cs, e := db.ListConsumptions(100000, uid); e == nil {
-		for _, c := range cs {
-			existCons[fmt.Sprintf("%s|%s|%.4f", c.Date, c.Category, c.Amount)] = true
-		}
-	}
-	for _, c := range p.Consumption {
-		c.UserID = uid
-		key := fmt.Sprintf("%s|%s|%.4f", c.Date, c.Category, c.Amount)
-		if c.Date == "" || existCons[key] {
-			res.Skipped.Consumption++
-			continue
-		}
-		c.SourceID = resolveSource(c.SourceName)
-		if _, err := db.CreateConsumption(&c.Consumption); err != nil {
-			res.Errors = append(res.Errors, "消费记录导入失败: "+err.Error())
-			continue
-		}
-		existCons[key] = true
-		res.Imported.Consumption++
 	}
 
 	// 收支计划：type+title+day_of_month/one_time_date+pattern+currency 判重；关联账户/负债按 旧id→新id 重映射

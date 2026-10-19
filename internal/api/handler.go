@@ -189,7 +189,7 @@ func RegisterRoutes(r *gin.Engine) {
 		// 数据导入（格式与「导出数据」一致）
 		g.POST("/import", importData)
 
-		// 资产全景：来源 / 理财 / 负债 / 消费 / 汇总 / AI 总结
+		// 资产全景：来源 / 理财 / 负债 / 汇总 / AI 总结
 		g.GET("/asset/overview", assetOverview)
 		g.GET("/asset/sources", listSources)
 		g.POST("/asset/sources", createSource)
@@ -234,10 +234,6 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/asset/flows/:kind/:id", updateFlow)
 		g.DELETE("/asset/flows/:kind/:id", deleteFlow)
 		g.POST("/asset/flows/:kind/:id/rollback", rollbackFlow)
-		g.GET("/asset/consumptions", listConsumptionsH)
-		g.POST("/asset/consumptions", createConsumption)
-		g.PUT("/asset/consumptions/:id", updateConsumption)
-		g.DELETE("/asset/consumptions/:id", deleteConsumption)
 		g.POST("/asset/summary", assetSummary)
 
 		// 设置：风险偏好 / 资产类型标签（JSON 配置，按用户隔离）
@@ -1335,17 +1331,6 @@ func BackfillPnlBaseCNY() {
 			log.Printf("[backfill] base_cny 补齐失败(uid=%d): %v", u.ID, err)
 		}
 	}
-}
-
-// DoSnapshot is the exported entry for the daily ticker / startup backfill.
-// It records today's snapshot for every user.
-func DoSnapshot() error {
-	for _, u := range allUsers() {
-		if err := doSnapshot(u.ID); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // EnsureSnapshot records today's snapshot on startup if missing (per user).

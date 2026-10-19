@@ -226,22 +226,7 @@ func assetOverview(c *gin.Context) {
 		})
 	}
 
-	// 5) 消费（今日 / 本月 / 近期列表）
-	cons, _ := db.ListConsumptions(50, uid)
-	todayC, _ := db.ConsumptionSum(today, uid)
-	monthC, _ := db.ConsumptionSumMonth(today[:7], uid)
-	consItems := make([]gin.H, 0, len(cons))
-	for _, cc := range cons {
-		consItems = append(consItems, gin.H{
-			"id":          cc.ID,
-			"date":        cc.Date,
-			"category":    cc.Category,
-			"source_id":   cc.SourceID,
-			"source_name": srcName[cc.SourceID],
-			"amount":      round2(cc.Amount),
-			"note":        cc.Note,
-		})
-	}
+	// 5) 消费模块已下线（2026-10-19）：consumptions 表保留兼容旧库，不再输出
 
 	netAsset := round2(eqMV + wTotal + cTotalCNY - lTotal)
 
@@ -268,11 +253,6 @@ func assetOverview(c *gin.Context) {
 		"liability": gin.H{
 			"total": round2(lTotal),
 			"items": lItems,
-		},
-		"consumption": gin.H{
-			"today": round2(todayC),
-			"month": round2(monthC),
-			"items": consItems,
 		},
 		"net_asset": netAsset,
 		"currency_assets": curAssets,
@@ -317,49 +297,6 @@ func wealthCumPnl(wealthID int64) float64 {
 		hasPrev = true
 	}
 	return round2(cum)
-}
-
-// compute7DayAnnualized calculates the 7-day annualized return for a wealth product.
-// Formula: (sum of last 7 daily P&Ls / current amount) * (365/7) * 100
-// Returns NaN when there are insufficient snapshots or the current amount is negligible.
-func compute7DayAnnualized(wealthID int64, currentAmount float64) float64 {
-	if currentAmount < 0.005 {
-		return math.NaN()
-	}
-	snaps, err := db.ListWealthSnapshots(wealthID)
-	if err != nil || len(snaps) < 2 {
-		return math.NaN()
-	}
-	// ListWealthSnapshots returns ASC order; reverse to get DESC
-	for i, j := 0, len(snaps)-1; i < j; i, j = i+1, j-1 {
-		snaps[i], snaps[j] = snaps[j], snaps[i]
-	}
-	var sum7 float64
-	var prevAmt float64
-	hasPrev := false
-	days := 0
-	for _, s := range snaps {
-		if days >= 7 {
-			break
-		}
-		if hasPrev {
-			// 每日盈亏 = 当日金额 - 前一日金额 - 当日净存入（排除本金变动）
-			dailyPnl := s.Amount - prevAmt - s.Cashflow
-			sum7 += dailyPnl
-			days++
-		}
-		prevAmt = s.Amount
-		hasPrev = true
-	}
-	if days == 0 {
-		return math.NaN()
-	}
-	// 7日年化（单利简化公式，与持仓年化口径一致）
-	pct := (sum7 / currentAmount) * (365.0 / float64(days)) * 100
-	if math.IsNaN(pct) || math.IsInf(pct, 0) {
-		return math.NaN()
-	}
-	return math.Round(pct*100) / 100
 }
 
 // ---- 资产来源 CRUD ----
@@ -1361,70 +1298,6 @@ func deleteLiability(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// ---- 消费 CRUD ----
-
-func listConsumptionsH(c *gin.Context) {
-	out, err := db.ListConsumptions(200, currentUserID(c))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"consumptions": out})
-}
-
-func createConsumption(c *gin.Context) {
-	var cc db.Consumption
-	if err := c.ShouldBindJSON(&cc); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
-		return
-	}
-	if cc.Amount == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "金额不能为 0"})
-		return
-	}
-	cc.UserID = currentUserID(c)
-	id, err := db.CreateConsumption(&cc)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	cc.ID = id
-	c.JSON(http.StatusOK, gin.H{"consumption": cc})
-}
-
-func updateConsumption(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
-		return
-	}
-	var cc db.Consumption
-	if err := c.ShouldBindJSON(&cc); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
-		return
-	}
-	cc.ID = id
-	cc.UserID = currentUserID(c)
-	if err := db.UpdateConsumption(&cc); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"consumption": cc})
-}
-
-func deleteConsumption(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
-		return
-	}
-	if err := db.DeleteConsumption(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
 // ---- 一键 AI 总结（汇总全部资产） ----
 
 func assetSummary(c *gin.Context) {
@@ -1481,7 +1354,7 @@ func assetSummary(c *gin.Context) {
 }
 
 // buildAssetStats assembles a full text snapshot of ALL assets: equity (基金/股票),
-// wealth products (理财), liabilities (负债) and consumptions (消费).
+// wealth products (理财), liabilities (负债) and asset snapshot data.
 func buildAssetStats(uid int64) (string, error) {
 	cnyRate, hkdRate, _ := market.FetchFXRates()
 	today := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
@@ -1577,23 +1450,6 @@ func buildAssetStats(uid int64) (string, error) {
 		b.WriteString(line + "\n")
 	}
 	b.WriteString("负债合计(CNY)：" + nf(lTotal) + "\n")
-
-	// ---- 消费 ----
-	todayC, _ := db.ConsumptionSum(today, uid)
-	monthC, _ := db.ConsumptionSumMonth(today[:7], uid)
-	cons, _ := db.ListConsumptions(30, uid)
-	b.WriteString("\n【消费】\n")
-	b.WriteString("今日消费(CNY)：" + nf(todayC) + "  本月消费(CNY)：" + nf(monthC) + "\n")
-	if len(cons) > 0 {
-		b.WriteString("近期消费：\n")
-		for i, cc := range cons {
-			if i >= 15 {
-				break
-			}
-			line := fmt.Sprintf("  - %s %s %s(CNY)%s", cc.Date, cc.Category, nf(cc.Amount), cc.Note)
-			b.WriteString(line + "\n")
-		}
-	}
 
 	// ---- 现金 ----
 	cashs, _ := db.ListCash(uid)

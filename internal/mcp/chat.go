@@ -37,12 +37,3 @@ func CallToolByName(name string, args map[string]interface{}) (string, error) {
 	}
 	return "", fmt.Errorf("未注册的工具: %s", name)
 }
-
-// ChatToolNames 返回当前暴露给内置助手的工具名（便于日志与前端能力提示）。
-func ChatToolNames() []string {
-	out := make([]string, 0, len(chatServer.tools))
-	for _, t := range chatServer.tools {
-		out = append(out, t.Name)
-	}
-	return out
-}

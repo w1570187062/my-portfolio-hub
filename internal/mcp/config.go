@@ -122,17 +122,3 @@ func Run(cfg Config) error {
 	}
 	return srv.RunHTTP(cfg)
 }
-
-// ExampleConfigJSON 供生成示例配置文件使用（写入仓库根 mcp.example.json）。
-func ExampleConfigJSON() string {
-	cfg := DefaultConfig()
-	cfg.Enabled = true
-	cfg.Transport = "http"
-	cfg.HTTPAddr = ":9988"
-	cfg.Token = "请替换为你的令牌"
-	cfg.UserID = 0
-	cfg.ServerName = "portfolio-mcp"
-	cfg.ServerVersion = "1.0.0"
-	b, _ := json.MarshalIndent(cfg, "", "  ")
-	return string(b)
-}

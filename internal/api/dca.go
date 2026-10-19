@@ -12,7 +12,6 @@ package api
 import (
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -617,17 +616,4 @@ func EnsureDCA() {
 			log.Printf("[dca] 启动补齐 %d 期待确认(uid=%d)", n, u.ID)
 		}
 	}
-}
-
-// dcaIntervalLabel 间隔的中文短标签（导出/推送复用）。
-func dcaIntervalLabel(v string) string {
-	if s, ok := dcaIntervals[v]; ok {
-		return s
-	}
-	return "每月"
-}
-
-// dcaRoundQty 份额按标的小数位规整，避免超长尾数进库。
-func dcaRoundQty(v float64) float64 {
-	return math.Round(v*10000) / 10000
 }

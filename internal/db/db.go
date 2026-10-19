@@ -297,22 +297,7 @@ func SaveAnalysisCache(symbol, date, barsJSON, indicatorsJSON, probabilityJSON, 
 	return err
 }
 
-// ---- 补仓计划「已执行」标记（buy_plan_executed）----
-// 用户在某档补仓计划点「标记已补」后落库，用于界面置灰✓并排除出待触发信号。
-// 与 position_tx 区分：此处仅记录"计划档位已执行"，不改动持仓数量/成本。
-
-type BuyPlanExec struct {
-	ID         int64   `json:"id"`
-	HoldingID  int64   `json:"holding_id"`
-	TierIndex  int     `json:"tier_index"` // 补仓计划 Tiers 数组下标（档位稳定按序）
-	TierLabel  string  `json:"tier_label"`
-	Action     string  `json:"action"` // buy=标记已补, sell=标记已减
-	Price      float64 `json:"price"`
-	Amount     float64 `json:"amount"`
-	Note       string  `json:"note"`
-	CreatedAt  string  `json:"created_at"`
-}
-
+// buy_plan_executed 表为历史遗留（调仓计划功能已删），保留表结构以兼容旧库，新代码不再读写。
 func initBuyPlanExecuted() error {
 	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS buy_plan_executed (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -329,55 +314,6 @@ func initBuyPlanExecuted() error {
 		addColumnIfMissing("buy_plan_executed", "action", "TEXT NOT NULL DEFAULT 'buy'")
 	}
 	return err
-}
-
-// SaveExecutedBuyPlan records that a buy-plan tier was executed ("标记已补").
-func SaveExecutedBuyPlan(tx *BuyPlanExec) error {
-	tx.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	if tx.Action == "" {
-		tx.Action = "buy"
-	}
-	_, err := DB.Exec(`INSERT INTO buy_plan_executed(holding_id,tier_index,tier_label,action,price,amount,note,created_at) VALUES(?,?,?,?,?,?,?,?)`,
-		tx.HoldingID, tx.TierIndex, tx.TierLabel, tx.Action, tx.Price, tx.Amount, tx.Note, tx.CreatedAt)
-	return err
-}
-
-// ListExecutedBuyPlans returns executed tiers for a holding, newest first.
-func ListExecutedBuyPlans(holdingID int64) ([]BuyPlanExec, error) {
-	rows, err := DB.Query(`SELECT id,holding_id,tier_index,tier_label,action,price,amount,note,created_at FROM buy_plan_executed WHERE holding_id=? ORDER BY id DESC`, holdingID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []BuyPlanExec
-	for rows.Next() {
-		var t BuyPlanExec
-		if err := rows.Scan(&t.ID, &t.HoldingID, &t.TierIndex, &t.TierLabel, &t.Action, &t.Price, &t.Amount, &t.Note, &t.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
-}
-
-// ListExecutedBuyPlanKeys returns the set of executed tier keys as "holdingID:tierIndex".
-// Used by the notify path to exclude executed tiers from pending "补仓信号".
-func ListExecutedBuyPlanKeys() (map[string]bool, error) {
-	rows, err := DB.Query(`SELECT holding_id, tier_index FROM buy_plan_executed`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	m := map[string]bool{}
-	for rows.Next() {
-		var hid int64
-		var idx int
-		if err := rows.Scan(&hid, &idx); err != nil {
-			return nil, err
-		}
-		m[fmt.Sprintf("%d:%d", hid, idx)] = true
-	}
-	return m, rows.Err()
 }
 
 // ---- 通知渠道配置（单条 JSON 配置，id=1，与 ai_settings 同模式） ----
@@ -934,14 +870,6 @@ func Update(h *Holding) error {
 	h.TransactionCost = roundByCategory(h.Category, h.TransactionCost)
 	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=?,transaction_cost=?,asset_type=? WHERE id=?",
 		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.TransactionCost, h.AssetType, h.ID)
-	return err
-}
-
-// SaveBuyPlan persists the computed 补仓计划 JSON for a holding (used by the
-// net-value refresh path). It never touches the note column.
-func SaveBuyPlan(id int64, plan string) error {
-	_, err := DB.Exec("UPDATE holdings SET buy_plan=?, updated_at=? WHERE id=?",
-		plan, time.Now().Format("2006-01-02 15:04:05"), id)
 	return err
 }
 
@@ -2201,16 +2129,6 @@ func WealthProductOwner(wealthID int64) (int64, error) {
 }
 
 // GetWealthProduct 按 ID 取单个理财产品；不存在返回 (nil, nil)。
-// LatestWealthAmount 返回理财最近一次快照的持仓金额；无快照返回 0（减仓校验用）。
-func LatestWealthAmount(wealthID int64) (float64, error) {
-	var amt float64
-	err := DB.QueryRow(`SELECT amount FROM wealth_snapshots WHERE wealth_id=? ORDER BY date DESC LIMIT 1`, wealthID).Scan(&amt)
-	if err == sql.ErrNoRows {
-		return 0, nil
-	}
-	return amt, err
-}
-
 func GetWealthProduct(id int64) (*WealthProduct, error) {
 	var w WealthProduct
 	err := DB.QueryRow(`SELECT id,user_id,source_id,name,code,currency,cum_pnl,note,created_at FROM wealth_products WHERE id=?`, id).
@@ -2783,82 +2701,7 @@ func DeleteLiabilityFlowRecord(id int64) error {
 	return SetLiabilityAmount(old.LiabilityID, newBal)
 }
 
-// ---- Consumptions (消费) ----
-
-type Consumption struct {
-	ID        int64   `json:"id"`
-	UserID    int64   `json:"user_id"`
-	Date      string  `json:"date"`
-	SourceID  int64   `json:"source_id"`
-	Category  string  `json:"category"`
-	Amount    float64 `json:"amount"`
-	Note      string  `json:"note"`
-	CreatedAt string  `json:"created_at"`
-}
-
-func ListConsumptions(limit int, userID int64) ([]Consumption, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	rows, err := DB.Query(`SELECT id,user_id,date,source_id,category,amount,note,created_at FROM consumptions WHERE user_id=? ORDER BY date DESC, id DESC LIMIT ?`, userID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Consumption
-	for rows.Next() {
-		var c Consumption
-		if err := rows.Scan(&c.ID, &c.UserID, &c.Date, &c.SourceID, &c.Category, &c.Amount, &c.Note, &c.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
-}
-
-func CreateConsumption(c *Consumption) (int64, error) {
-	if err := checkEntityLimit(c.UserID, "consumptions"); err != nil {
-		return 0, err
-	}
-	if c.Date == "" {
-		c.Date = time.Now().Format("2006-01-02")
-	}
-	c.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO consumptions(user_id,date,source_id,category,amount,note,created_at) VALUES(?,?,?,?,?,?,?)`,
-		c.UserID, c.Date, c.SourceID, c.Category, c.Amount, c.Note, c.CreatedAt)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
-}
-
-func UpdateConsumption(c *Consumption) error {
-	if c.Date == "" {
-		c.Date = time.Now().Format("2006-01-02")
-	}
-	_, err := DB.Exec(`UPDATE consumptions SET user_id=?,date=?,source_id=?,category=?,amount=?,note=? WHERE id=?`,
-		c.UserID, c.Date, c.SourceID, c.Category, c.Amount, c.Note, c.ID)
-	return err
-}
-
-func DeleteConsumption(id int64) error {
-	_, err := DB.Exec(`DELETE FROM consumptions WHERE id=?`, id)
-	return err
-}
-
-// ConsumptionSum returns the total spent on a given day (YYYY-MM-DD) for a user.
-func ConsumptionSum(day string, userID int64) (float64, error) {
-	var s float64
-	err := DB.QueryRow(`SELECT COALESCE(SUM(amount),0) FROM consumptions WHERE date=? AND user_id=?`, day, userID).Scan(&s)
-	return s, err
-}
-
-// ConsumptionSumMonth returns the total spent in a given month (YYYY-MM) for a user.
-func ConsumptionSumMonth(month string, userID int64) (float64, error) {
-	var s float64
-	err := DB.QueryRow(`SELECT COALESCE(SUM(amount),0) FROM consumptions WHERE date LIKE ? AND user_id=?`, month+"%", userID).Scan(&s)
-	return s, err
-}
+// ---- Consumptions（消费）已下线（2026-10-19）：consumptions 表保留兼容旧库，CRUD/汇总函数随之删除 ----
 
 // ============================================================================
 // 小工具计算器录入持久化（全局单份：equity=权益盈亏，usd=美元资产盈亏）
@@ -2872,23 +2715,6 @@ func initCalcInputs() error {
 		updated_at TEXT NOT NULL DEFAULT ''
 	)`)
 	return err
-}
-
-// GetCalcInput returns the stored payload (raw JSON string) for a kind+user.
-// ok is false when no row exists yet (caller should treat as empty).
-func GetCalcInput(kind string, userID int64) (payload string, ok bool, err error) {
-	var p string
-	e := DB.QueryRow(`SELECT payload FROM calc_inputs WHERE kind=? AND user_id=?`, kind, userID).Scan(&p)
-	if e == sql.ErrNoRows {
-		return "", false, nil
-	}
-	if e != nil {
-		return "", false, e
-	}
-	if p == "" {
-		p = "[]"
-	}
-	return p, true, nil
 }
 
 // SaveCalcInput upserts the payload JSON for a kind+user.
@@ -2915,12 +2741,6 @@ func CalcHoldingDays(buyDate string) int {
 		return 0
 	}
 	return days
-}
-
-// DeleteCalcInput removes the stored inputs for a kind+user (used by 清空).
-func DeleteCalcInput(kind string, userID int64) error {
-	_, err := DB.Exec(`DELETE FROM calc_inputs WHERE kind=? AND user_id=?`, kind, userID)
-	return err
 }
 
 // ============================================================================
@@ -2971,21 +2791,8 @@ func DeleteSetting(kind string, userID int64) error {
 }
 
 // ============================================================================
-// 操作指南（买卖记录/笔记）—— operation_guides
+// operation_guides 表为历史遗留（操作指南功能已删），保留表结构以兼容旧库，新代码不再读写。
 // ============================================================================
-
-// OperationGuide records a trading decision / note.
-type OperationGuide struct {
-	ID        int64  `json:"id"`
-	UserID    int64  `json:"user_id"`
-	HoldingID int64  `json:"holding_id"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
-	Tags      string `json:"tags"`
-	Side      string `json:"side"` // buy / sell
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-}
 
 func initOperationGuides() error {
 	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS operation_guides (
@@ -3003,63 +2810,4 @@ func initOperationGuides() error {
 		addColumnIfMissing("operation_guides", "side", "TEXT NOT NULL DEFAULT 'buy'")
 	}
 	return err
-}
-
-func InsertOperationGuide(g *OperationGuide) (int64, error) {
-	now := time.Now().Format("2006-01-02 15:04:05")
-	g.CreatedAt = now
-	g.UpdatedAt = now
-	if g.Side == "" {
-		g.Side = "buy"
-	}
-	res, err := DB.Exec(`INSERT INTO operation_guides(user_id,holding_id,title,content,tags,side,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`,
-		g.UserID, g.HoldingID, g.Title, g.Content, g.Tags, g.Side, g.CreatedAt, g.UpdatedAt)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
-}
-
-func UpdateOperationGuide(g *OperationGuide) error {
-	now := time.Now().Format("2006-01-02 15:04:05")
-	if g.Side == "" {
-		g.Side = "buy"
-	}
-	_, err := DB.Exec(`UPDATE operation_guides SET holding_id=?,title=?,content=?,tags=?,side=?,updated_at=? WHERE id=?`,
-		g.HoldingID, g.Title, g.Content, g.Tags, g.Side, now, g.ID)
-	return err
-}
-
-func DeleteOperationGuide(id int64) error {
-	_, err := DB.Exec(`DELETE FROM operation_guides WHERE id=?`, id)
-	return err
-}
-
-func ListOperationGuides(userID int64) ([]OperationGuide, error) {
-	rows, err := DB.Query(`SELECT id,user_id,holding_id,title,content,tags,side,created_at,updated_at FROM operation_guides WHERE user_id=? ORDER BY id DESC`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []OperationGuide
-	for rows.Next() {
-		var r OperationGuide
-		if err := rows.Scan(&r.ID, &r.UserID, &r.HoldingID, &r.Title, &r.Content, &r.Tags, &r.Side, &r.CreatedAt, &r.UpdatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	if out == nil {
-		out = []OperationGuide{}
-	}
-	return out, rows.Err()
-}
-
-func GetOperationGuide(id int64) (*OperationGuide, error) {
-	row := DB.QueryRow(`SELECT id,holding_id,title,content,tags,side,created_at,updated_at FROM operation_guides WHERE id=?`, id)
-	var r OperationGuide
-	if err := row.Scan(&r.ID, &r.HoldingID, &r.Title, &r.Content, &r.Tags, &r.Side, &r.CreatedAt, &r.UpdatedAt); err != nil {
-		return nil, err
-	}
-	return &r, nil
 }
