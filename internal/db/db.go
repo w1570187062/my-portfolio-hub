@@ -914,12 +914,12 @@ func Create(h *Holding) (int64, error) {
 	return res.LastInsertId()
 }
 
-// roundByCategory 按类别约束价格小数位：基金保留 4 位，其余（股票等）保留 2 位。
+// roundByCategory 按类别约束价格小数位：股票 / 基金保留 4 位（美股/部分基金现价与成本价需 4 位精度），其余保留 2 位。
 // 采用四舍五入（与前端口径一致），清理浮点运算产生的超长尾数，避免摊薄成本 / 计算器展示爆位数。
 func roundByCategory(cat string, v float64) float64 {
-	prec := 4
-	if cat != "fund" {
-		prec = 2
+	prec := 2
+	if cat == "fund" || cat == "stock" {
+		prec = 4
 	}
 	scale := math.Pow(10, float64(prec))
 	return math.Round(v*scale) / scale

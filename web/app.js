@@ -185,19 +185,20 @@ const psHeadIcon = (k) => (PS_ICONS[k] ? `<span class="ps-ico">${PS_ICONS[k]}</s
 // 价格类字段统一截断到 4 位小数，避免 float64 全精度（如 12.34738291）污染输入框与落库。
 const round4 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return Math.round(v * 1e4) / 1e4; };
 const round2 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return Math.round(v * 1e2) / 1e2; };
-// 按类别保留小数：基金 4 位、股票 2 位（成本价/昨收/成交价口径）
-const roundByCat = (v, cat) => (cat === 'fund' ? round4(v) : round2(v));
-function fmtCat(n, cat) { return Number(n).toLocaleString('zh-CN', { maximumFractionDigits: cat === 'fund' ? 4 : 2 }); }
+// 按类别保留小数：股票 / 基金 4 位（美股/部分基金现价与成本价需 4 位精度）、其余 2 位（成本价/昨收/成交价口径）
+const roundByCat = (v, cat) => (cat === 'fund' || cat === 'stock' ? round4(v) : round2(v));
+function fmtCat(n, cat) { return Number(n).toLocaleString('zh-CN', { maximumFractionDigits: (cat === 'fund' || cat === 'stock') ? 4 : 2 }); }
 // 试算 Tab 上下文类别（决定价格输入框保留几位小数），由 prefillAdjCalc 写入
 let calcCat = 'stock';
-function clampCalc(el) { clampDecimals(el, calcCat === 'fund' ? 4 : 2); }
+function clampCalc(el) { clampDecimals(el, (calcCat === 'fund' || calcCat === 'stock') ? 4 : 2); }
 const pct = (n) => (n > 0 ? '+' : '') + (n == null ? '' : n.toFixed(2)) + '%';
 const cls = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat');
 const cat = (c) => (c === 'fund' ? '基金' : '股票');
-// 净值/成本价按类别精度显示：基金净值保留 4 位小数，股票保持 2 位。
+// 净值/成本价按类别精度显示：基金净值强制 4 位小数，股票保留最多 4 位（美股/部分基金需第 3-4 位），其余按货币默认 2 位。
 const fmtNav = (n, category) => {
   if (n == null) return '';
   if (category === 'fund') return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  if (category === 'stock') return Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 4 });
   return fmt(n);
 };
 // 输入框小数位限制：键入时直接截断到 max 位（不四舍五入），避免超长小数点。供 index.html 内联 oninput 调用。

@@ -4683,6 +4683,20 @@ textarea::placeholder {
   font-weight: 700;
   color: var(--text);
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.grp-title-main {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.grp-ico {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--primary);
 }
 .settings-group-body {
   padding: var(--sp-6);
@@ -4782,6 +4796,9 @@ textarea::placeholder {
   font-weight: 700;
   color: var(--text);
   border-bottom: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
 }
 .pano-open .settings-group-title::before { content: none; }
 /* 分区描述：标题下方一行静音色说明 */
