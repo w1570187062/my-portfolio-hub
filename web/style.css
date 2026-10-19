@@ -824,7 +824,7 @@ w {
 .holdings-group .holdings-subtable thead th.num,
 .wealth-group .wealth-subtable thead th.num { text-align: right; }
 .holdings-group .holdings-subtable :is(th, td):nth-child(13),
-.wealth-group .wealth-subtable :is(th, td):nth-child(9) { text-align: center; }
+.wealth-group .wealth-subtable :is(th, td):nth-child(10) { text-align: center; }
 /* 首页持仓子表：固定列宽，确保各来源子表的列头/列宽跨卡片完全一致对齐 */
 /* 持仓子表（13 列）：固定布局保证跨卡片列宽一致；**名称列不再给固定宽**（吃剩余空间，
    名称列吃剩余宽度、数值列内容驱动），数值列给略宽的像素值以适配「铺满卡片」后的宽度。
@@ -839,6 +839,14 @@ w {
 .holdings-group .holdings-subtable :is(th, td):nth-child(5) { width: 88px; }     /* 成本价 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(6) { width: 144px; }    /* 市值 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(7) { width: 72px; }     /* 仓位 */
+/* 仓位/占比列：数值右对齐 + 单元格背景当数据条（同资产页账户列表「占比」表现形式，从左往右延伸，不占布局宽度） */
+.holdings-group .holdings-subtable td.share,
+.wealth-group .wealth-subtable td.share {
+  color: var(--text-faint);
+  background-image: linear-gradient(to right, rgba(var(--tint), .10) var(--p, 0%), transparent var(--p, 0%));
+}
+.holdings-group .holdings-subtable td.share.is-empty,
+.wealth-group .wealth-subtable td.share.is-empty { background-image: none; }
 .holdings-group .holdings-subtable :is(th, td):nth-child(8) { width: 112px; }    /* 当日 */
 .holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: 80px; }     /* 当日% */
 .holdings-group .holdings-subtable :is(th, td):nth-child(10) { width: 80px; }    /* 盈亏% */
@@ -853,7 +861,7 @@ w {
 /* 子表按视口分档，避免平板/手机横向滚动（仅桌面 ≥1340 保持 固定列宽） */
 @media (min-width: 1340px) {
   .holdings-group .holdings-subtable { min-width: 1412px; }
-  .wealth-group .wealth-subtable { min-width: 1180px; }
+  .wealth-group .wealth-subtable { min-width: 1252px; }
 }
 /* 平板横屏 881–1339：铺满卡片，隐藏最宽的「趋势」sparkline 列（第2列），名称列让出空间 */
 @media (min-width: 881px) and (max-width: 1339px) {
@@ -886,13 +894,14 @@ w {
 .wealth-group .wealth-subtable :is(th, td):nth-child(1) { width: auto; }  /* 名称：吃剩余（序号 + 名称 + 币种徽标 + 已清仓徽标） */
 .wealth-group .wealth-subtable :is(th, td):nth-child(2) { width: 96px; }    /* 代码 */
 .wealth-group .wealth-subtable :is(th, td):nth-child(3) { width: 136px; }   /* 总金额 */
-.wealth-group .wealth-subtable :is(th, td):nth-child(4) { width: 136px; }   /* 今日收益 */
-.wealth-group .wealth-subtable :is(th, td):nth-child(5) { width: 136px; }   /* 累计收益 */
-.wealth-group .wealth-subtable :is(th, td):nth-child(6) { width: 96px; }    /* 年化 */
-.wealth-group .wealth-subtable :is(th, td):nth-child(7) { width: 96px; }    /* 累计收益率 */
-.wealth-group .wealth-subtable :is(th, td):nth-child(8) { width: 76px; }    /* 持有天数 */
-.wealth-group .wealth-subtable :is(th, td):nth-child(9) { width: 152px; }   /* 最新净值 */
-.wealth-group .wealth-subtable :is(th, td):nth-child(10) { width: 224px; }  /* 操作：编辑/每日盈亏/刷新净值/启用/删除，放宽避免按钮被裁切 */
+.wealth-group .wealth-subtable :is(th, td):nth-child(4) { width: 72px; }    /* 仓位（动态宽度颜色条 + 数字） */
+.wealth-group .wealth-subtable :is(th, td):nth-child(5) { width: 136px; }   /* 今日收益 */
+.wealth-group .wealth-subtable :is(th, td):nth-child(6) { width: 136px; }   /* 累计收益 */
+.wealth-group .wealth-subtable :is(th, td):nth-child(7) { width: 96px; }    /* 年化 */
+.wealth-group .wealth-subtable :is(th, td):nth-child(8) { width: 96px; }    /* 累计收益率 */
+.wealth-group .wealth-subtable :is(th, td):nth-child(9) { width: 76px; }    /* 持有天数 */
+.wealth-group .wealth-subtable :is(th, td):nth-child(10) { width: 152px; }  /* 最新净值 */
+.wealth-group .wealth-subtable :is(th, td):nth-child(11) { width: 224px; }  /* 操作：编辑/每日盈亏/刷新净值/启用/删除，放宽避免按钮被裁切 */
 /* 操作列按钮多，fixed 布局下需放行溢出（否则被 .wealth-subtable td{overflow:hidden} 裁掉看不见） */
 .wealth-group .wealth-subtable td.row-act-cell { overflow: visible; }
 .wealth-group .wealth-subtable td.wn-code { font-family: var(--font-mono); color: var(--text-muted); font-size: var(--fs-sm); }

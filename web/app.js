@@ -639,6 +639,8 @@ function renderGroupRow(h, i, maxItemMV, pool) {
   // 已清仓：份额为 0（卖出后 holdings 保留记录）。行整体置灰 + 名称后挂「已清仓」徽标，
   // 与理财表格的 wealth-archived 视觉口径一致；操作列仍可点（编辑/历史/删除）。
   const closed = (h.quantity || 0) <= 0;
+  // 仓位：同(来源,币种)资金池占比，动态宽度颜色条（同资产页账户列表「占比」表现形式）
+  const posPct = pool > 0 ? (Number(h.market_value) || 0) / pool * 100 : 0;
   const rowCls = [isFail ? 'row-failed' : '', closed ? 'holding-archived' : ''].filter(Boolean).join(' ');
   // 不再挂「已清仓」文字徽标（视觉噪音），改为整行置灰 + 名称 title 里说明清仓状态
   const nameTitle = closed ? esc(h.name) + '（已清仓：份额为 0，历史盈亏见「历史走势」，重新买入后自动恢复）' : esc(h.name);
@@ -654,7 +656,7 @@ function renderGroupRow(h, i, maxItemMV, pool) {
     <td class="num">${fmtNav(h.current_price, h.category)}</td>
     <td class="num" title="成本价（每份）">${fmtNav(h.cost_price, h.category)}</td>
     <td class="num"${mvOrigTitle(h)}>¥${fmt(mvCny)}</td>
-    <td class="num" title="占该账户同币种资金池比例（持仓市值 ÷ 持仓合计+现金子账户余额）">${pool > 0 ? ((h.market_value || 0) / pool * 100).toFixed(2) + '%' : '<span class="u-muted">—</span>'}</td>
+    <td class="num share${pool > 0 ? '' : ' is-empty'}"${pool > 0 ? ` style="--p:${posPct.toFixed(1)}%"` : ''} title="占该账户同币种资金池比例（持仓市值 ÷ 持仓合计+现金子账户余额）">${pool > 0 ? posPct.toFixed(2) + '%' : '—'}</td>
     <td class="num ${cls(h.day_pnl)}">¥${fmtPnl(toRmb(h, h.day_pnl))}</td>
     <td class="num ${cls(h.day_pnl_pct)}" title="当日盈亏率">${pct(h.day_pnl_pct)}</td>
     <td class="num ${cls(h.pnl_pct)}" title="持有期总盈亏率">${pct(h.pnl_pct)}</td>
@@ -5063,6 +5065,12 @@ function renderWealthTable(w) {
     if (!groups.has(sid)) groups.set(sid, { sid, name: p.source_name || (sid === 0 ? '未分组' : '账户' + sid), items: [] });
     groups.get(sid).items.push(p);
   }
+  // 仓位分母：同(来源,币种)理财金额合计；多币种各自成池，避免跨币种相加产生无意义占比
+  const wPool = {};
+  for (const p of w) {
+    const k = (p.source_id || 0) + ':' + normCur(p.currency);
+    wPool[k] = (wPool[k] || 0) + (Number(p.amount) || 0);
+  }
   const arr = [...groups.values()].sort((a, b) =>
     b.items.reduce((s, p) => s + wCny(p, p.amount), 0) - a.items.reduce((s, p) => s + wCny(p, p.amount), 0));
   return `<div class="wealth-groups">` + arr.map((g) => {
@@ -5089,6 +5097,10 @@ function renderWealthTable(w) {
       const pnl = p.today_pnl || 0;
       const cum = p.cum_pnl || 0;
       const arch = !!p.archived;
+      // 仓位：占同(来源,币种)理财合计比例，动态宽度颜色条（同资产页账户列表「占比」）
+      const wKey = (p.source_id || 0) + ':' + normCur(p.currency);
+      const wPoolSum = wPool[wKey] || 0;
+      const wPos = wPoolSum > 0 ? (Number(p.amount) || 0) / wPoolSum * 100 : 0;
       // 单利年化 = 累计收益 ÷ 当前持仓 ÷ 持有天数 × 365（当前持仓近似本金；已清仓/无天数不计算）
       const days = Number(p.holding_days || 0);
       const base = Number(p.amount || 0);
@@ -5097,6 +5109,7 @@ function renderWealthTable(w) {
       <td class="name-cell"><span class="wn-idx">${i + 1}</span><span class="name-cap"><span class="name-clickable" title="${esc(p.name)}">${esc(p.name)}</span></span><span class="cur-badge">${curSymbolJS(p.currency)}</span>${arch ? '<span class="cur-badge wb-archived" title="已清仓停用：保留历史收益，可启用或删除">已清仓</span>' : ''}</td>
       <td class="wn-code">${esc(p.code || '—')}</td>
       <td class="num"${wRmbTitle(p, p.amount)}>${moneyCur(p.amount || 0, p.currency)}</td>
+      <td class="num share${wPoolSum > 0 ? '' : ' is-empty'}"${wPoolSum > 0 ? ` style="--p:${wPos.toFixed(1)}%"` : ''} title="占该账户同币种理财总金额比例">${wPoolSum > 0 ? wPos.toFixed(2) + '%' : '—'}</td>
       <td class="num ${pnlCls(pnl)}"${wRmbTitle(p, pnl)}>${(pnl >= 0 ? '+' : '')}${moneyCur(pnl, p.currency)}</td>
       <td class="num ${pnlCls(cum)}"${wRmbTitle(p, cum)}>${(cum >= 0 ? '+' : '')}${moneyCur(cum, p.currency)}</td>
       <td class="num ${pnlCls(ann)}" title="单利年化 = 累计收益 ÷ 当前持仓 ÷ 持有天数 × 365（当前持仓近似本金）">${ann === null ? '—' : pct(ann)}</td>
@@ -5130,7 +5143,7 @@ function renderWealthTable(w) {
       <div class="collapse-body source-group-body">
         <div class="subtable-wrap"><table class="asset-table holdings-subtable wealth-subtable">
         <thead><tr><th>名称</th><th>代码</th>
-        <th class="num">总金额</th><th class="num">今日收益</th><th class="num">累计收益</th><th class="num">年化</th><th class="num">累计收益率</th>
+        <th class="num">总金额</th><th class="num" title="仓位 = 金额 ÷ 同账户同币种理财合计">仓位</th><th class="num">今日收益</th><th class="num">累计收益</th><th class="num">年化</th><th class="num">累计收益率</th>
         <th class="num">持有天数</th><th class="num">最新净值</th><th>操作</th>
         </tr></thead><tbody>${rows}</tbody>
         </table></div></div></div>`;
