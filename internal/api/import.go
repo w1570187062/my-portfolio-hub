@@ -54,7 +54,6 @@ type importLiability struct {
 	SourceName string `json:"source_name"`
 }
 type importSettings struct {
-	RiskProfiles    json.RawMessage `json:"risk_profiles"`
 	AssetTypeLabels json.RawMessage `json:"asset_type_labels"`
 	Notify          json.RawMessage `json:"notify"`
 }
@@ -266,7 +265,7 @@ func importData(c *gin.Context) {
 			res.Errors = append(res.Errors, "理财「"+w.Name+"」导入失败: "+err.Error())
 			continue
 		}
-		if err := db.UpsertWealthSnapshot(id, today, w.Amount, 0); err != nil {
+		if err := db.UpsertWealthSnapshot(id, today, w.Amount, 0, 0); err != nil {
 			res.Errors = append(res.Errors, "理财「"+w.Name+"」快照写入失败: "+err.Error())
 		}
 		existWealth[w.Name] = true
@@ -319,7 +318,7 @@ func importData(c *gin.Context) {
 		}
 	}
 
-	// 应用设置：风险偏好 / 资产类型标签 / 通知配置（payload 为 JSON 文本；兼容字符串/裸数组两种格式）
+	// 应用设置：资产类型标签 / 通知配置（payload 为 JSON 文本；兼容字符串/裸数组两种格式）
 	saveRaw := func(kind, raw string) {
 		s := unwrapJSONString(raw)
 		if s == "" || s == "null" {
@@ -331,8 +330,6 @@ func importData(c *gin.Context) {
 		}
 		var e error
 		switch kind {
-		case "risk_profiles":
-			e = db.SaveSetting("risk_profiles", s, uid)
 		case "asset_type_labels":
 			e = db.SaveSetting("asset_type_labels", s, uid)
 		case "notify":
@@ -344,7 +341,6 @@ func importData(c *gin.Context) {
 			res.Imported.Settings++
 		}
 	}
-	saveRaw("risk_profiles", string(p.Settings.RiskProfiles))
 	saveRaw("asset_type_labels", string(p.Settings.AssetTypeLabels))
 	saveRaw("notify", string(p.Settings.Notify))
 

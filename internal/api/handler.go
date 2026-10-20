@@ -144,6 +144,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/holdings/:id/adjust", adjustHolding)
 		g.POST("/holdings/:id/dividend", dividendHolding)
 		g.GET("/holdings/:id/transactions", listTransactions)
+		g.POST("/holdings/:id/transactions/:txid/revert", revertTransaction)
 		// 基金定投：计划（周期/金额/限购/暂停）+ 期次记录（逐期确认、可改可撤）
 		g.GET("/dca/plans", listDCAPlans)
 		g.POST("/dca/plans", createDCAPlan)
@@ -240,9 +241,6 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/settings/:kind", settingsGet)
 		g.PUT("/settings/:kind", settingsPut)
 		g.DELETE("/settings/:kind", settingsDelete)
-
-		// 资产再平衡：当前 vs 目标配置对比
-		g.GET("/asset/rebalance", assetRebalance)
 
 		// 自定义评级脚本（资产工具 → 评级逻辑）
 	}
@@ -454,8 +452,12 @@ func createHolding(c *gin.Context) {
 	// 与加减仓 applyCashForAdjust 同一套资金联动逻辑；cash_account_id 由前端传入，0 则回落来源默认子账户。
 	cost := h.Quantity*h.CostPrice + h.TransactionCost
 	if cost > 0 && req.CashAccountID >= 0 {
-		if e := applyCashForAdjust(uid, h, "BUY", h.Quantity, h.CostPrice, h.TransactionCost, req.CashAccountID, "新建持仓"); e != nil {
-			log.Printf("[createHolding] 新建持仓现金联动失败(uid=%d hid=%d): %v", uid, id, e)
+		if accID, ce := applyCashForAdjust(uid, h, "BUY", h.Quantity, h.CostPrice, h.TransactionCost, req.CashAccountID, "新建持仓"); ce != nil {
+			log.Printf("[createHolding] 新建持仓现金联动失败(uid=%d hid=%d): %v", uid, id, ce)
+		} else if accID > 0 {
+			if txID, le := db.LatestPositionTxID(id); le == nil {
+				_ = db.SetTxCashAccount(txID, accID)
+			}
 		}
 	}
 	v := enrich(h, uid)
@@ -562,13 +564,14 @@ func adjustHolding(c *gin.Context) {
 		Price         float64 `json:"price"`
 		Fee           float64 `json:"fee"`
 		Note          string  `json:"note"`
+		Date          string  `json:"date"` // 交易日期（YYYY-MM-DD 可回填历史）；为空则取当前时间
 		CashAccountID int64   `json:"cash_account_id"` // 资金往来账户：加仓付款 / 减仓回款；为空则回落到该来源的默认现金账户
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
-	h, realized, err := db.AdjustHolding(id, req.Type, req.Quantity, req.Price, req.Fee, strings.TrimSpace(req.Note))
+	h, realized, err := db.AdjustHolding(id, req.Type, req.Quantity, req.Price, req.Fee, strings.TrimSpace(req.Note), strings.TrimSpace(req.Date))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -578,8 +581,10 @@ func adjustHolding(c *gin.Context) {
 	if req.Type == "SELL" {
 		today := time.Now().Format("2006-01-02")
 		if realized < -1e-9 || realized > 1e-9 {
-			if e := db.RecordRealizedPnl(uid, today, id, h.Symbol, h.Name, h.Currency, realized); e != nil {
-				log.Printf("[adjust] 记录已实现盈亏失败(uid=%d hid=%d): %v", uid, id, e)
+			if txID, le := db.LatestPositionTxID(id); le == nil {
+				if e := db.RecordRealizedPnl(uid, today, id, h.Symbol, h.Name, h.Currency, realized, txID); e != nil {
+					log.Printf("[adjust] 记录已实现盈亏失败(uid=%d hid=%d): %v", uid, id, e)
+				}
 			}
 		}
 		// 立即将已实现盈亏并入当日盈亏（非交易日 doSnapshot 会提前返回，已实现盈亏仍保留在 ledger，下一交易日合并）
@@ -588,8 +593,13 @@ func adjustHolding(c *gin.Context) {
 		}
 	}
 	// 现金联动：加仓（BUY）从所选账户扣款，减仓（SELL）回款入账到所选账户。
-	if e := applyCashForAdjust(uid, *h, req.Type, req.Quantity, req.Price, req.Fee, req.CashAccountID, req.Note); e != nil {
-		log.Printf("[adjust] 现金联动失败(uid=%d hid=%d): %v", uid, id, e)
+	if accID, ce := applyCashForAdjust(uid, *h, req.Type, req.Quantity, req.Price, req.Fee, req.CashAccountID, req.Note); ce != nil {
+		log.Printf("[adjust] 现金联动失败(uid=%d hid=%d): %v", uid, id, ce)
+	} else if accID > 0 {
+		// 回填联动账户，供回退时冲正到同一账户
+		if txID, le := db.LatestPositionTxID(id); le == nil {
+			_ = db.SetTxCashAccount(txID, accID)
+		}
 	}
 	realizedTotal, _ := db.SumRealizedPnl(id)
 	c.JSON(http.StatusOK, gin.H{
@@ -617,6 +627,8 @@ func dividendHolding(c *gin.Context) {
 		Mode          string  `json:"mode"`            // per_share（默认）| total
 		Fee           float64 `json:"fee"`             // 扣除的费用（代扣税/手续费），单独记一笔费用流水
 		CashAccountID int64   `json:"cash_account_id"` // 分红入账账户；为空则回落到该来源的默认现金账户
+		Date          string  `json:"date"`            // 分红日期（YYYY-MM-DD 可回填历史）；为空则取当前时间
+		Method        string  `json:"method"`          // cash（默认，现金分红）| reinvest（红利再投：增加份额、不出现金）
 		Note          string  `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -645,16 +657,23 @@ func dividendHolding(c *gin.Context) {
 		}
 		perShare = req.TotalAmount / cur.Quantity
 	}
-	h, total, err := db.AdjustDividend(id, perShare, req.Fee, strings.TrimSpace(req.Note))
+	h, total, err := db.AdjustDividend(id, perShare, req.Fee, strings.TrimSpace(req.Note), strings.TrimSpace(req.Date), strings.TrimSpace(req.Method))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	// 现金联动：分红入账（失败不阻断——成本已摊薄，流水缺失可手工对账，与加减仓联动同风格）
+	// 红利再投（reinvest）不出现金，跳过整块现金入账逻辑。
 	netCash := total
-	if acc, accErr := resolveCashAccount(uid, req.CashAccountID, h.SourceID, h.Currency); accErr != nil {
+	if strings.TrimSpace(req.Method) == "reinvest" {
+		netCash = 0
+	} else if acc, accErr := resolveCashAccount(uid, req.CashAccountID, h.SourceID, h.Currency); accErr != nil {
 		log.Printf("[dividend] 解析现金账户失败(uid=%d hid=%d): %v", uid, id, accErr)
 	} else {
+		// 回填联动账户，供回退时冲正到同一账户
+		if txID, le := db.LatestPositionTxID(id); le == nil {
+			_ = db.SetTxCashAccount(txID, acc.ID)
+		}
 		modeTag := ""
 		if strings.TrimSpace(req.Mode) == "total" {
 			modeTag = "｜按总额录入"
@@ -705,12 +724,43 @@ func listTransactions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"transactions": txs, "realized_total": total})
 }
 
+// revertTransaction 回退一笔持仓交易（加仓/减仓/分红）。仅允许回退最新一笔（LIFO），
+// 对称还原持仓数量/成本价、资金账户余额与已实现盈亏台账，原交易保留并标记 reverted（审计）。
+func revertTransaction(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	txID, err := strconv.ParseInt(c.Param("txid"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad txid"})
+		return
+	}
+	uid := currentUserID(c)
+	if err := db.RevertHoldingTx(id, txID, uid); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// 重算当日盈亏（SELL 回退已撤销已实现盈亏台账，需并入快照）
+	if e := doSnapshot(uid); e != nil {
+		log.Printf("[revert] 重算当日盈亏失败(uid=%d hid=%d): %v", uid, id, e)
+	}
+	h, gErr := db.Get(id)
+	if gErr != nil || h == nil {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "holding": enrich(*h, uid)})
+}
+
 // applyCashForAdjust 把一次加仓/减仓的资金变动落到现金账户（并写一条流水）：
 //   加仓 BUY ：从账户扣款  数量×价格 + 费用
 //   减仓 SELL：回款入账    数量×价格 − 费用
 // 未指定账户时回落到该持仓所属来源的默认现金账户（★ 账户，不存在则自动创建）。
 // 注意：减仓不再自动生成「XX 减仓回款」现金条目，改为并入账户余额 + 记流水。
-func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee float64, cashID int64, note string) error {
+// 返回实际联动的现金账户 id（供回退时冲正到同一账户；无资金变动时返回 0）。
+func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee float64, cashID int64, note string) (int64, error) {
 	typ = strings.ToUpper(strings.TrimSpace(typ))
 	var delta float64
 	var flowType, label string
@@ -718,27 +768,30 @@ func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee flo
 	case "BUY":
 		cost := qty*price + fee
 		if cost <= 0 {
-			return nil
+			return 0, nil
 		}
 		delta, flowType, label = -cost, "adjust_buy", "加仓付款"
 	case "SELL":
 		proceeds := qty*price - fee
 		if proceeds <= 0 {
-			return nil
+			return 0, nil
 		}
 		delta, flowType, label = proceeds, "adjust_sell", "减仓回款"
 	default:
-		return nil
+		return 0, nil
 	}
 	acc, err := resolveCashAccount(uid, cashID, h.SourceID, h.Currency)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	detail := fmt.Sprintf("%s %s %s｜数量 %g｜价 %g｜费 %g", label, h.Name, h.Symbol, qty, price, fee)
 	if s := strings.TrimSpace(note); s != "" {
 		detail += "｜" + s
 	}
-	return db.AddCashAmount(acc.ID, delta, flowType, "holding", h.ID, h.Name, detail)
+	if e := db.AddCashAmount(acc.ID, delta, flowType, "holding", h.ID, h.Name, detail); e != nil {
+		return 0, e
+	}
+	return acc.ID, nil
 }
 
 // resolveCashAccount 返回本次资金变动使用的现金账户：显式指定优先（并校验归属当前用户、来源一致），
@@ -792,14 +845,9 @@ func normalize(h *db.Holding) {
 	if h.Currency == "" {
 		h.Currency = "CNY"
 	}
-	// Enforce the two-level category/market integrity.
-	if h.Category == "fund" {
-		switch h.Market {
-		case "QDII", "债券", "股票", "商品", "货币":
-		default:
-			h.Market = "股票"
-		}
-	} else {
+	// 市场合法性：基金不再手选细分市场（前端自动识别后留空，由行情/关联代码决定），故基金市场允许为空、不做强制；
+	// 股票仅认可 沪深/美股/港股，其它兜底为 沪深。
+	if h.Category != "fund" {
 		switch h.Market {
 		case "沪深", "美股", "港股":
 		default:
@@ -1629,7 +1677,7 @@ func wealthDailyPnlByDate(uid int64) map[string]*wealthDayPnl {
 		for _, s := range snaps {
 			var pnl float64
 			if hasPrev {
-				pnl = s.Amount - prevAmt - s.Cashflow
+				pnl = s.Amount - prevAmt - s.Cashflow + s.Dividend
 			}
 			pnlCNY := fxToCNY(pnl, w.Currency, cnyRate, hkdRate)
 			d := out[s.Date]
@@ -1663,6 +1711,10 @@ func mergeWealthDetail(orig string, items []wealthPnlItem) string {
 // computeSpark returns each symbol's last N trading-day close prices (ascending),
 // for the in-table mini sparklines. Shared by the merged
 // /api/home endpoint so the logic lives in exactly one place.
+// computeSpark returns each symbol's last N trading-day (back-adjusted) net values
+// (ascending), for the in-table mini sparklines. For holdings with cash dividends the
+// cumulative per-share dividend is added back to the raw NAV/price so the sparkline
+// stays continuous across ex-dividend days instead of showing a false crash.
 func computeSpark(uid int64, syms []string) map[string][]float64 {
 	const days = 30
 	out := make(map[string][]float64, len(syms))
@@ -1671,12 +1723,18 @@ func computeSpark(uid int64, syms []string) map[string][]float64 {
 		if err != nil || len(series) == 0 {
 			continue
 		}
-		if len(series) > days {
-			series = series[len(series)-days:]
-		}
+		// 后复权：累计现金分红加回净值（净值+分红口径），消除除息断崖
+		divs, _ := db.GetSymbolCashDividends(uid, s)
 		closes := make([]float64, 0, len(series))
+		var cum float64
 		for _, p := range series {
-			closes = append(closes, p.Close)
+			if d, ok := divs[p.Date]; ok {
+				cum += d
+			}
+			closes = append(closes, p.Close+cum)
+		}
+		if len(closes) > days {
+			closes = closes[len(closes)-days:]
 		}
 		out[s] = closes
 	}
@@ -1824,25 +1882,42 @@ func holdingPnlHistory(c *gin.Context) {
 		TotalPnlPct float64 `json:"total_pnl_pct"`
 		MarketValue float64 `json:"market_value"`
 	}
+	// 现金分红后复权：把累计每股现金分红加回净值，使分红日的当日盈亏不再假跌
+	// （净值+分红口径）。红利再投（REINVEST）不在此处理——分红已转为份额，市值连续。
+	divs := map[string]float64{}
+	for _, t := range txs {
+		if t.TxType == "DIV" && t.Reverted != 1 && len(t.CreatedAt) >= 10 {
+			divs[t.CreatedAt[:10]] = t.Price
+		}
+	}
 	var rows []Row
+	var cumDiv float64
+	var prevAdj float64
 	for i, p := range series {
 		// 已清仓：曲线截止清仓日（含），之后的行情与持仓无关，不能再算成持仓盈亏
 		if closed && closedDate != "" && p.Date > closedDate {
 			break
 		}
+		if d, ok := divs[p.Date]; ok {
+			cumDiv += d
+		}
+		adj := p.Close + cumDiv
 		mv := p.Close * qty * fx
-		totalPnl := (p.Close - cost) * qty * fx
+		// 累计盈亏用复权净值口径：把累计现金分红加回净值，反映「含分红的真实总收益」。
+		// 否则分红日净值除息下降会让累计盈亏凭空少一块分红、显示为负的虚假亏损。
+		totalPnl := (adj - cost) * qty * fx
 		var totalPct, dayPnl, dayPct float64
 		if cost > 0 {
 			totalPct = totalPnl / (cost * qty * fx) * 100
 		}
 		if i > 0 {
-			prev := series[i-1].Close
-			dayPnl = (p.Close - prev) * qty * fx
-			if prev > 0 {
-				dayPct = dayPnl / (prev * qty * fx) * 100
+			// 当日盈亏用复权净值差值：分红日净值因除息跳降的部分由累计分红补回
+			dayPnl = (adj - prevAdj) * qty * fx
+			if prevAdj > 0 {
+				dayPct = dayPnl / (prevAdj * qty * fx) * 100
 			}
 		}
+		prevAdj = adj
 		// 清仓日当天的累计盈亏用已实现口径（卖出价落袋），而不是收盘价浮盈，避免与交易记录对不上
 		if closed && closedDate != "" && p.Date == closedDate && realizedSum != 0 {
 			totalPnl = realizedSum
@@ -1930,8 +2005,13 @@ func holdingPnlHistory(c *gin.Context) {
 		}
 		closedInfo = info
 	}
+	holdPnl := round2((h.CurrentPrice - h.CostPrice) * h.Quantity * fx)
+	var holdPct float64
+	if cb := h.CostPrice * h.Quantity * fx; cb > 0 {
+		holdPct = round2(holdPnl / cb * 100)
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"holding":     gin.H{"id": h.ID, "name": h.Name, "symbol": h.Symbol, "currency": h.Currency, "quantity": h.Quantity, "cost_price": h.CostPrice, "category": h.Category, "closed": closed, "closed_date": closedDate},
+		"holding":     gin.H{"id": h.ID, "name": h.Name, "symbol": h.Symbol, "currency": h.Currency, "quantity": h.Quantity, "cost_price": h.CostPrice, "category": h.Category, "closed": closed, "closed_date": closedDate, "pnl": holdPnl, "pnl_pct": holdPct},
 		"currency":    h.Currency,
 		"fx":          fx,
 		"series":      rows,

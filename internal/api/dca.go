@@ -85,6 +85,7 @@ func createDCAPlan(c *gin.Context) {
 		StartDate    string  `json:"start_date"`
 		EndDate      string  `json:"end_date"`
 		MaxAmount    float64 `json:"max_amount"`
+		FeeRate      float64 `json:"fee_rate"` // 费率（%），每期执行时按 金额×费率 预填费用，可改
 		CashAccount  int64   `json:"cash_account_id"`
 		Note         string  `json:"note"`
 		CreateHolding *struct {
@@ -141,7 +142,7 @@ func createDCAPlan(c *gin.Context) {
 		}
 		req.HoldingID = id
 	}
-	p, bad := buildDCAPlan(uid, req.HoldingID, req.Amount, req.Interval, req.DayOfMonth, req.StartDate, req.EndDate, req.MaxAmount, req.CashAccount, req.Note)
+	p, bad := buildDCAPlan(uid, req.HoldingID, req.Amount, req.Interval, req.DayOfMonth, req.StartDate, req.EndDate, req.MaxAmount, req.FeeRate, req.CashAccount, req.Note)
 	if bad != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": bad})
 		return
@@ -180,6 +181,7 @@ func updateDCAPlan(c *gin.Context) {
 		StartDate   string  `json:"start_date"`
 		EndDate     string  `json:"end_date"`
 		MaxAmount   float64 `json:"max_amount"`
+		FeeRate     float64 `json:"fee_rate"` // 费率（%），每期执行时按 金额×费率 预填费用，可改
 		Status      string  `json:"status"`
 		CashAccount int64   `json:"cash_account_id"`
 		Note        string  `json:"note"`
@@ -188,7 +190,7 @@ func updateDCAPlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式错误"})
 		return
 	}
-	p, bad := buildDCAPlan(uid, old.HoldingID, req.Amount, req.Interval, req.DayOfMonth, req.StartDate, req.EndDate, req.MaxAmount, req.CashAccount, req.Note)
+	p, bad := buildDCAPlan(uid, old.HoldingID, req.Amount, req.Interval, req.DayOfMonth, req.StartDate, req.EndDate, req.MaxAmount, req.FeeRate, req.CashAccount, req.Note)
 	if bad != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": bad})
 		return
@@ -217,7 +219,7 @@ func updateDCAPlan(c *gin.Context) {
 }
 
 // buildDCAPlan 校验并组装计划（共用新建/编辑校验）。
-func buildDCAPlan(uid, holdingID int64, amount float64, interval string, day int, start, end string, maxAmount float64, cashID int64, note string) (*db.DCAPlan, string) {
+func buildDCAPlan(uid, holdingID int64, amount float64, interval string, day int, start, end string, maxAmount, feeRate float64, cashID int64, note string) (*db.DCAPlan, string) {
 	interval = strings.TrimSpace(interval)
 	if interval == "" {
 		interval = "monthly"
@@ -266,6 +268,7 @@ func buildDCAPlan(uid, holdingID int64, amount float64, interval string, day int
 		StartDate:   start,
 		EndDate:     end,
 		MaxAmount:   round2(maxAmount),
+		FeeRate:     round4(feeRate),
 		Status:      "active",
 		CashAccount: cashID,
 		Note:        strings.TrimSpace(note),
@@ -426,7 +429,7 @@ func doExecuteDCA(uid int64, rec *db.DCARecord, req dcaExecReq, revert bool) err
 		note += "｜" + s
 	}
 	// 1) 加仓（写 position_tx）
-	if _, _, err := db.AdjustHolding(rec.HoldingID, "BUY", qty, price, fee, note); err != nil {
+	if _, _, err := db.AdjustHolding(rec.HoldingID, "BUY", qty, price, fee, note, ""); err != nil {
 		return err
 	}
 	txID, _ := db.LatestPositionTxID(rec.HoldingID)

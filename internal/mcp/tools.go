@@ -282,7 +282,7 @@ func recordHoldingTX(uid int64, hit *entityHit, action string, args map[string]i
 			return "", fmt.Errorf("加仓/减仓需要 quantity>0 且 price>=0")
 		}
 		typ := strings.ToUpper(action)
-		upd, realized, err := db.AdjustHolding(h.ID, typ, qty, price, fee, mcpNote)
+		upd, realized, err := db.AdjustHolding(h.ID, typ, qty, price, fee, mcpNote, "")
 		if err != nil {
 			return "", err
 		}
@@ -303,7 +303,7 @@ func recordHoldingTX(uid int64, hit *entityHit, action string, args map[string]i
 		}
 		if action == "sell" && (realized > 1e-9 || realized < -1e-9) {
 			today := time.Now().Format("2006-01-02")
-			if e := db.RecordRealizedPnl(uid, today, h.ID, h.Symbol, h.Name, h.Currency, realized); e != nil {
+			if e := db.RecordRealizedPnl(uid, today, h.ID, h.Symbol, h.Name, h.Currency, realized, 0); e != nil {
 				log.Printf("[mcp] 记录已实现盈亏失败: %v", e)
 			}
 		}
@@ -315,7 +315,7 @@ func recordHoldingTX(uid int64, hit *entityHit, action string, args map[string]i
 		if per < 0 {
 			return "", fmt.Errorf("分红每股金额不能为负")
 		}
-		upd, total, err := db.AdjustDividend(h.ID, per, 0, mcpNote)
+		upd, total, err := db.AdjustDividend(h.ID, per, 0, mcpNote, "", "cash")
 		if err != nil {
 			return "", err
 		}
@@ -388,8 +388,8 @@ func recordWealthTX(uid int64, hit *entityHit, action string, args map[string]in
 	}
 	newAmount := round2(lastAmount + cashflow)
 	// 当日净存入按累计差值语义更新：不覆盖当日已录的其他申赎（与快照保存口径一致）
-	_, oldCf, _, _ := db.GetWealthSnapshot(w.ID, today)
-	if e := db.UpsertWealthSnapshot(w.ID, today, newAmount, round2(oldCf+cashflow)); e != nil {
+	_, oldCf, oldDiv, _, _ := db.GetWealthSnapshot(w.ID, today)
+	if e := db.UpsertWealthSnapshot(w.ID, today, newAmount, round2(oldCf+cashflow), oldDiv); e != nil {
 		return "", e
 	}
 	return fmt.Sprintf("已记录理财%s流水：%s(%s) 当日净%s %.2f，持仓金额更新为 %.2f。",

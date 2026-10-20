@@ -29,6 +29,7 @@ type DCAPlan struct {
 	StartDate   string  `json:"start_date"`   // 首期日期 YYYY-MM-DD
 	EndDate     string  `json:"end_date"`     // 截止日期 YYYY-MM-DD，空=长期
 	MaxAmount   float64 `json:"max_amount"`   // 单期限购上限，0=不限
+	FeeRate     float64 `json:"fee_rate"`     // 费率（%），每期执行时按 金额×费率 预填费用，可改
 	Status      string  `json:"status"`       // active | paused | ended
 	CashAccount int64   `json:"cash_account_id"`
 	Note        string  `json:"note"`
@@ -113,6 +114,7 @@ func initDCATables() error {
 			return err
 		}
 	}
+	addColumnIfMissing("dca_plans", "fee_rate", "REAL NOT NULL DEFAULT 0")
 	return nil
 }
 
@@ -120,9 +122,9 @@ func initDCATables() error {
 
 func CreateDCAPlan(p *DCAPlan) (int64, error) {
 	now := time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO dca_plans(user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,status,cash_account_id,note,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		p.UserID, p.HoldingID, p.Amount, p.Interval, p.DayOfMonth, p.StartDate, p.EndDate, p.MaxAmount, p.Status, p.CashAccount, p.Note, now)
+	res, err := DB.Exec(`INSERT INTO dca_plans(user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,fee_rate,status,cash_account_id,note,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		p.UserID, p.HoldingID, p.Amount, p.Interval, p.DayOfMonth, p.StartDate, p.EndDate, p.MaxAmount, p.FeeRate, p.Status, p.CashAccount, p.Note, now)
 	if err != nil {
 		return 0, err
 	}
@@ -130,8 +132,8 @@ func CreateDCAPlan(p *DCAPlan) (int64, error) {
 }
 
 func UpdateDCAPlan(p *DCAPlan) error {
-	_, err := DB.Exec(`UPDATE dca_plans SET holding_id=?,amount=?,interval=?,day_of_month=?,start_date=?,end_date=?,max_amount=?,status=?,cash_account_id=?,note=? WHERE id=? AND user_id=?`,
-		p.HoldingID, p.Amount, p.Interval, p.DayOfMonth, p.StartDate, p.EndDate, p.MaxAmount, p.Status, p.CashAccount, p.Note, p.ID, p.UserID)
+	_, err := DB.Exec(`UPDATE dca_plans SET holding_id=?,amount=?,interval=?,day_of_month=?,start_date=?,end_date=?,max_amount=?,fee_rate=?,status=?,cash_account_id=?,note=? WHERE id=? AND user_id=?`,
+		p.HoldingID, p.Amount, p.Interval, p.DayOfMonth, p.StartDate, p.EndDate, p.MaxAmount, p.FeeRate, p.Status, p.CashAccount, p.Note, p.ID, p.UserID)
 	return err
 }
 
@@ -142,9 +144,9 @@ func SetDCAStatus(id, uid int64, status string) error {
 
 func GetDCAPlan(id int64) (*DCAPlan, error) {
 	var p DCAPlan
-	err := DB.QueryRow(`SELECT id,user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,status,cash_account_id,note,created_at
+	err := DB.QueryRow(`SELECT id,user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,fee_rate,status,cash_account_id,note,created_at
 		FROM dca_plans WHERE id=?`, id).
-		Scan(&p.ID, &p.UserID, &p.HoldingID, &p.Amount, &p.Interval, &p.DayOfMonth, &p.StartDate, &p.EndDate, &p.MaxAmount, &p.Status, &p.CashAccount, &p.Note, &p.CreatedAt)
+		Scan(&p.ID, &p.UserID, &p.HoldingID, &p.Amount, &p.Interval, &p.DayOfMonth, &p.StartDate, &p.EndDate, &p.MaxAmount, &p.FeeRate, &p.Status, &p.CashAccount, &p.Note, &p.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +154,7 @@ func GetDCAPlan(id int64) (*DCAPlan, error) {
 }
 
 func ListDCAPlans(uid int64) ([]DCAPlan, error) {
-	rows, err := DB.Query(`SELECT id,user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,status,cash_account_id,note,created_at
+	rows, err := DB.Query(`SELECT id,user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,fee_rate,status,cash_account_id,note,created_at
 		FROM dca_plans WHERE user_id=? ORDER BY
 			CASE status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END, id DESC`, uid)
 	if err != nil {
@@ -162,7 +164,7 @@ func ListDCAPlans(uid int64) ([]DCAPlan, error) {
 	var out []DCAPlan
 	for rows.Next() {
 		var p DCAPlan
-		if err := rows.Scan(&p.ID, &p.UserID, &p.HoldingID, &p.Amount, &p.Interval, &p.DayOfMonth, &p.StartDate, &p.EndDate, &p.MaxAmount, &p.Status, &p.CashAccount, &p.Note, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &p.HoldingID, &p.Amount, &p.Interval, &p.DayOfMonth, &p.StartDate, &p.EndDate, &p.MaxAmount, &p.FeeRate, &p.Status, &p.CashAccount, &p.Note, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -449,6 +451,124 @@ func RevertBuyTx(holdingID, txID int64) error {
 		return err
 	}
 	_, err = DB.Exec(`DELETE FROM position_tx WHERE id=?`, txID)
+	return err
+}
+
+// DeleteRealizedPnlByTx removes the realized-P&L ledger rows tied to a reverted SELL.
+func DeleteRealizedPnlByTx(holdingID, txID int64) error {
+	_, err := DB.Exec(`DELETE FROM realized_pnl_daily WHERE holding_id=? AND tx_id=?`, holdingID, txID)
+	return err
+}
+
+// cashAccForRevert 定位回退时冲正的资金账户：优先用原交易记录的账户；不存在/非本人则
+// 回落到该来源同币种余额最大的子账户，仍没有则现场补建（与 adjustHolding 同款口径）。
+func cashAccForRevert(uid, cashAccID, sourceID int64, currency string) (*Cash, error) {
+	if cashAccID > 0 {
+		if acc, err := GetCash(cashAccID); err == nil && acc != nil && acc.UserID == uid {
+			return acc, nil
+		}
+	}
+	if acc, err := PickCashAccount(uid, sourceID, currency); err == nil && acc != nil {
+		return acc, nil
+	}
+	if sourceID <= 0 {
+		return nil, fmt.Errorf("没有可用的 %s 子账户", strings.ToUpper(NormCurrency(currency)))
+	}
+	id, err := EnsureCashForCurrency(uid, sourceID, "", currency)
+	if err != nil {
+		return nil, err
+	}
+	return GetCash(id)
+}
+
+// RevertHoldingTx 回退一笔持仓交易（LIFO：仅允许回退当前最新一笔），对称还原其对
+// 持仓数量/成本价、资金账户余额、已实现盈亏台账的影响，并把原交易标记 reverted=1 保留审计。
+//   - BUY：逆运算还原份额与平均成本，资金账户加回付款（数量×价+费）
+//   - SELL：加回份额（清仓则恢复 LastQuantity/LastCostPrice），撤销已实现盈亏台账，资金账户扣回回款
+//   - DIV：成本价加回每股分红，资金账户扣回分红入账并加回代扣费用
+func RevertHoldingTx(holdingID, txID, uid int64) error {
+	var typ string
+	var qty, price, fee, realized, amount float64
+	var cashAcc int64
+	if err := DB.QueryRow(`SELECT tx_type,quantity,price,fee,realized_pnl,amount,cash_account_id FROM position_tx WHERE id=? AND holding_id=?`,
+		txID, holdingID).Scan(&typ, &qty, &price, &fee, &realized, &amount, &cashAcc); err != nil {
+		return fmt.Errorf("未找到该笔交易（tx=%d）", txID)
+	}
+	if typ != "BUY" && typ != "SELL" && typ != "DIV" && typ != "REINVEST" {
+		return fmt.Errorf("不支持回退的交易类型 %s", typ)
+	}
+	// LIFO：仅最新一笔（按 id 最大且未回退）可回退，避免乱序导致平均成本错乱
+	var latest int64
+	if err := DB.QueryRow(`SELECT id FROM position_tx WHERE holding_id=? AND reverted=0 ORDER BY id DESC LIMIT 1`, holdingID).Scan(&latest); err != nil {
+		return err
+	}
+	if latest != txID {
+		return fmt.Errorf("只能回退最新一笔交易（请先回退较新的记录）")
+	}
+	h, err := Get(holdingID)
+	if err != nil {
+		return err
+	}
+	switch typ {
+	case "BUY", "REINVEST":
+		// REINVEST 与 BUY 同一套数量/成本还原；但 REINVEST 不联动现金（再投不出现金），跳过现金冲正。
+		oldQty := h.Quantity - qty
+		if oldQty < -1e-9 {
+			return fmt.Errorf("回退数量超过当前份额（当前 %g，回退 %g），可能已被后续减仓影响", h.Quantity, qty)
+		}
+		if oldQty <= 1e-9 {
+			oldQty = 0
+			h.CostPrice = 0
+		} else {
+			oldCost := (h.Quantity*h.CostPrice - qty*price - fee) / oldQty
+			if oldCost < 0 {
+				oldCost = 0
+			}
+			h.CostPrice = roundByCategory(h.Category, oldCost)
+		}
+		h.Quantity = oldQty
+		if typ == "REINVEST" {
+			if err := Update(h); err != nil {
+				return err
+			}
+			_, err = DB.Exec(`UPDATE position_tx SET reverted=1 WHERE id=?`, txID)
+			return err
+		}
+		if oldQty > 0 && h.Closed {
+			h.Closed = false
+		}
+		if acc, e := cashAccForRevert(uid, cashAcc, h.SourceID, h.Currency); e == nil {
+			_ = AddCashAmount(acc.ID, qty*price+fee, "revert", "holding", h.ID, h.Name, "回退加仓付款")
+		}
+	case "SELL":
+		if h.Closed && h.LastQuantity > 0 {
+			h.Quantity = h.LastQuantity
+			h.CostPrice = h.LastCostPrice
+			h.Closed = false
+		} else {
+			h.Quantity = h.Quantity + qty
+		}
+		_ = DeleteRealizedPnlByTx(holdingID, txID)
+		if acc, e := cashAccForRevert(uid, cashAcc, h.SourceID, h.Currency); e == nil {
+			_ = AddCashAmount(acc.ID, -(qty*price - fee), "revert", "holding", h.ID, h.Name, "回退减仓回款")
+		}
+	case "DIV":
+		newCost := roundByCategory(h.Category, h.CostPrice+price)
+		if newCost < 0 {
+			newCost = 0
+		}
+		h.CostPrice = newCost
+		if acc, e := cashAccForRevert(uid, cashAcc, h.SourceID, h.Currency); e == nil {
+			_ = AddCashAmount(acc.ID, -amount, "revert", "holding", h.ID, h.Name, "回退分红入账")
+			if fee > 0 {
+				_ = AddCashAmount(acc.ID, fee, "revert", "holding", h.ID, h.Name, "回退分红费用")
+			}
+		}
+	}
+	if err := Update(h); err != nil {
+		return err
+	}
+	_, err = DB.Exec(`UPDATE position_tx SET reverted=1 WHERE id=?`, txID)
 	return err
 }
 

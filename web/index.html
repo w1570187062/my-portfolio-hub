@@ -221,15 +221,6 @@
         </div>
       </section>
 
-      <!-- ② 风险偏好（可折叠，默认收起） -->
-      <section class="settings-group collapsible collapsed">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 15a9 9 0 1 1 17 0"/><path d="m12 14 4.5-4"/><circle cx="12" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg>风险偏好</span><span class="group-chevron" aria-hidden="true">▾</span></h3>
-        <p class="settings-group-desc">设定目标资产配置比例，供资产再平衡使用。</p>
-        <div class="settings-group-body">
-          <div id="stPanelAsset"></div>
-        </div>
-      </section>
-
       <!-- ③ AI 配置（可折叠，默认收起） -->
       <section class="settings-group collapsible collapsed">
         <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.4 9.4l-4.6 1.8L12 15.8l-1.8-4.6L5.6 9.4l4.6-1.8L12 3Z"/><path d="M18.5 14.5l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"/></svg>AI 配置</span><span class="group-chevron" aria-hidden="true">▾</span></h3>
@@ -365,14 +356,6 @@
 
     <div id="toolsView" class="page-view settings-page pano-open" hidden>
     <div class="settings-layout">
-
-      <!-- 决策分析 -->
-      <section class="settings-group">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>决策分析</span></h3>
-        <div class="settings-group-body">
-          <div id="tlPanelRebal" class="rebal-decision"></div>
-        </div>
-      </section>
 
       <!-- 即时换算 -->
       <section class="settings-group">
@@ -535,26 +518,20 @@
           </label>
           <input type="hidden" id="f_name">
           <input type="hidden" id="f_symbol">
-          <input type="hidden" id="f_category">
           <input type="hidden" id="f_market">
-          <!-- 类别 + 市场合并一行（原两行各带一个 cap），弹框高度再省一行 -->
-          <div class="f-pills-row f-pills-duo">
-            <span class="f-pill-cap">类别</span>
-            <div id="fCatPills" class="f-pills"></div>
-            <span class="f-pill-cap f-pill-cap-2">市场</span>
-            <div id="fMktPills" class="f-pills"></div>
-          </div>
-          <!-- 两列两行：份额·成本价一排 / 交易成本·日期一排（电脑端与手机端一致），与其余输入框同宽 -->
-          <div class="f-row f-row4">
+          <!-- 份额·成本价·交易成本三列一排；交易日期拆成独立一行 -->
+          <div class="f-row">
             <label>份额 <input id="f_quantity" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="股数 / 份数" required></label>
             <label>成本价 <input id="f_cost_price" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="均价" required></label>
             <label>交易成本 <input id="f_cost" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="手续费"></label>
+          </div>
+          <div class="f-row f-row2">
             <label>交易日期 <input id="f_buy_date" type="date"></label>
           </div>
             <div class="f-row">
               <!-- 账户·币种合并选择器（带二级子账户折叠面板，同「添加流水」）；编辑模式只列当前父账户的子账户 -->
               <div class="hold-acct-wrap">
-                <label class="hold-acct-label">账户 · 币种
+                <label class="hold-acct-label">账户
                   <div class="ac-picker" id="holdCashPicker">
                     <button type="button" class="ac-picker-btn" id="holdCashBtn">请选择子账户</button>
                     <div class="ac-picker-panel" id="holdCashPanel" hidden></div>
@@ -563,18 +540,16 @@
                 </label>
               </div>
             </div>
-            <div id="linked_symbol_row" class="linked-sym-row" style="display:none">
+            <div id="linked_symbol_row" class="linked-sym-row">
               <span class="linked-sym-label">关联股票代码</span>
               <select id="f_linked_market" class="linked-sym-mkt"><option value="a">A 股</option><option value="hk">港股</option><option value="us">美股</option></select>
-              <input id="f_linked_code" class="linked-sym-code" placeholder="如 600519 / 00700 / AAPL">
+              <input id="f_linked_code" class="linked-sym-code" placeholder="如 600519 / 00700 / AAPL" oninput="syncCatFromLinked()">
             </div>
           <!-- 低频字段收进高级折叠：主流程只留 名称/类别/数量成本/账户，弹框高度降约 30% -->
           <details class="f-adv" id="fAdv">
-            <summary><span class="hat-chevron">▾</span>高级选项 · 备注 / 资产类型标签</summary>
+            <summary><span class="hat-chevron">▾</span>高级选项</summary>
             <div class="f-adv-body">
               <label>备注 <input id="f_note" placeholder="备注（可选）"></label>
-              <div class="f-adv-cap">资产类型标签（可多选）</div>
-              <div id="f_at_chips" class="at-chips-row"></div>
             </div>
           </details>
           <div id="formErr" class="err"></div>
@@ -597,24 +572,32 @@
         <form id="dividendForm">
           <input type="hidden" id="div_id">
           <input type="hidden" id="div_mode" value="per_share">
+          <input type="hidden" id="div_method" value="cash">
           <div class="adj-pills">
             <div class="f-pills-row">
               <span class="f-pill-cap">分红方式</span>
               <div id="divModePills" class="f-pills"></div>
             </div>
+            <div class="f-pills-row" id="divMethodRow">
+              <span class="f-pill-cap">分红去向</span>
+              <div id="divMethodPills" class="f-pills"></div>
+            </div>
           </div>
-          <label id="divPerWrap">每股分红<span class="ua-hint">税前口径；份额不变，成本价按此下调</span>
+          <label id="divPerWrap">每股分红<span class="ua-hint">税前口径</span>
             <input id="div_per_share" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4); computeDivPreview()" placeholder="如 1.35" required>
           </label>
-          <label id="divTotalWrap" hidden>分红总额<span class="ua-hint">直接填本次分红总额，系统按「总额 ÷ 份额」反推每股并一次摊薄成本</span>
+          <label id="divTotalWrap" hidden>分红总额
             <input id="div_total" type="number" step="any" min="0" oninput="clampDecimals(this,2); computeDivPreview()" placeholder="如 132.50">
           </label>
           <label id="divAmountWrap" hidden>分红总额（自动）<input id="div_amount" type="number" step="any" readonly></label>
           <label id="divPerShareOutWrap" hidden>折算每股（自动）<input id="div_per_share_out" type="number" step="0.0001" readonly></label>
-          <label>扣除费用<span class="ua-hint">代扣税 / 手续费等，单独记一笔「费用」流水；成本按税前摊薄，不扣此费用</span>
+          <label id="divFeeWrap">扣除费用<span class="ua-hint">代扣税 / 手续费等</span>
             <input id="div_fee" type="number" step="any" min="0" oninput="clampDecimals(this,2); computeDivPreview()" placeholder="如 0 或 19.88">
           </label>
-          <label>入账账户<span class="ua-hint">分红金额入此账户（留空则进入余额最大的同币种子账户）</span>
+          <label id="divDateWrap">分红日期<span class="ua-hint">可回填历史日期</span>
+            <input id="div_date" type="date">
+          </label>
+          <label id="divCashWrap">入账账户<span class="ua-hint">分红金额入此账户</span>
             <select id="div_cash_id"></select>
           </label>
           <div id="divPreview" class="adj-preview"></div>
@@ -624,7 +607,6 @@
             <button class="btn primary" type="submit">确认分红</button>
           </div>
         </form>
-        <p class="tool-hint">分红记录见「加减仓」tab 的交易记录（标记为「分红」），同时在现金账户流水中留痕；扣除的费用会另记一笔「费用」流水。</p>
       </div>
       <div class="adj-panel m-body" data-panel="calc">
         <input type="hidden" id="adj_id">
@@ -655,15 +637,16 @@
           <label class="adj-inline cf-add-account">资金账户<span class="ua-hint">计入持仓时的付款/回款账户（留空用余额最大的同币种子账户）</span>
             <select id="add_cash_id"></select>
           </label>
+          <div class="adj-row">
+            <label class="adj-inline">交易日期<span class="ua-hint">可回填历史日期（留空为今天）</span>
+              <input id="add_date" type="date">
+            </label>
+          </div>
           <div class="tool-actions">
             <button id="addCalc" class="btn" type="button">计算</button>
             <button id="addClear" class="btn danger" type="button">清空</button>
             <button id="addApply" class="btn primary" type="button" disabled>计入持仓</button>
           </div>
-        </div>
-        <div class="adj-history">
-          <h3>交易记录</h3>
-          <div id="adjHistoryList" class="adj-history-list"><div class="adj-empty">暂无记录</div></div>
         </div>
       </div>
     </div>
@@ -746,6 +729,9 @@
         <div class="df-row">
           <label>每期金额<input id="dcaAmount" type="number" step="0.01" min="0" placeholder="0.00" /></label>
           <label>单期上限<input id="dcaMax" type="number" step="0.01" min="0" placeholder="限购时填，可空" /></label>
+        </div>
+        <div class="df-row">
+          <label>费率（%）<span class="ua-hint">每期按 金额×费率 预填费用，可改</span><input id="dcaFeeRate" type="number" step="0.0001" min="0" placeholder="如 0.15 表示 0.15%" /></label>
         </div>
         <div class="df-field">
           <span class="df-label">定投间隔</span>
@@ -856,11 +842,18 @@
   </div>
 
 
-  <!-- ===== 持仓历史盈亏弹框（独立，无 tab，直接展示盈亏曲线）===== -->
+  <!-- ===== 持仓历史盈亏弹框（3 段切换：盈亏金额曲线 / 盈亏率曲线 / 交易记录表格）===== -->
   <div id="histModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
       <h2 id="histTitle" data-icon="hist">历史盈亏</h2>
-      <div class="m-body"><div id="histChartBody"></div></div>
+      <div class="m-body">
+        <div class="wh-range-bar ds-t-seg" id="histSegBar">
+          <button data-seg="amount" class="active" type="button">盈亏金额</button>
+          <button data-seg="tx" type="button">交易记录</button>
+        </div>
+        <div id="histChartBody"></div>
+        <div id="histTxBody" class="hist-table" hidden></div>
+      </div>
     </div>
   </div>
 
@@ -882,6 +875,20 @@
         </div>
         <div id="wealthHistTable" class="hist-table"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== 编辑理财每日快照弹框（修正分红日历史曲线） ===== -->
+  <div id="whEditModal" class="modal" hidden>
+    <div class="modal-card" style="width:480px; max-width:94vw;">
+      <h2 data-icon="edit">编辑当日记录</h2>
+      <p id="whEditHint" class="snap-hint"></p>
+      <div class="m-body">
+        <div class="sr-field"><label>持仓金额</label><input type="number" step="0.01" id="whEditAmt"></div>
+        <div class="sr-field"><label>净存入</label><input type="number" step="0.01" id="whEditCf"></div>
+        <div class="sr-field"><label>当日分红</label><input type="number" step="0.01" id="whEditDiv"></div>
+      </div>
+      <div class="modal-actions"><button type="button" id="whEditCancel" class="btn">取消</button><button type="button" id="whEditSave" class="btn primary">保存</button></div>
     </div>
   </div>
 
@@ -940,7 +947,7 @@
             <input type="hidden" id="w_cash" value="0">
           </label>
         </div>
-        <label>备注 <input id="w_note" placeholder="备注（可选）"></label>
+        <label>备注 <input id="w_note" placeholder="备注"></label>
         <label>最新净值（可选） <input id="w_nav" type="number" step="0.0001" min="0" placeholder="净值型产品填，自动按 份额×净值 算金额"></label>
         <label>持有份额（可选） <input id="w_shares" type="number" step="0.0001" min="0" placeholder="留空则按 最新金额÷净值 反推"></label>
         <div id="wealthErr" class="err"></div>

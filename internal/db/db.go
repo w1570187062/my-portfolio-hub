@@ -365,16 +365,18 @@ func GetPnlLatest(userID int64) (*PnlDay, error) {
 
 // PositionTx is one 加仓/减仓 transaction against a holding.
 type PositionTx struct {
-	ID          int64   `json:"id"`
-	HoldingID   int64   `json:"holding_id"`
-	TxType      string  `json:"tx_type"` // BUY (加仓) | SELL (减仓)
-	Quantity    float64 `json:"quantity"`
-	Price       float64 `json:"price"`
-	Amount      float64 `json:"amount"` // 成交金额 = quantity * price
-	Fee         float64 `json:"fee"`    // 买入/卖出成本（手续费/佣金）
-	RealizedPnl float64 `json:"realized_pnl"`
-	Note        string  `json:"note"`
-	CreatedAt   string  `json:"created_at"`
+	ID            int64   `json:"id"`
+	HoldingID     int64   `json:"holding_id"`
+	TxType        string  `json:"tx_type"` // BUY (加仓) | SELL (减仓) | DIV (分红)
+	Quantity      float64 `json:"quantity"`
+	Price         float64 `json:"price"`
+	Amount        float64 `json:"amount"` // 成交金额 = quantity * price；DIV 为分红总额
+	Fee           float64 `json:"fee"`    // 买入/卖出成本（手续费/佣金）；DIV 为代扣费用
+	RealizedPnl   float64 `json:"realized_pnl"`
+	Note          string  `json:"note"`
+	CreatedAt     string  `json:"created_at"`
+	CashAccountID int64   `json:"cash_account_id"` // 联动的资金账户（回退时冲正到该账户，0=回落默认）
+	Reverted      int     `json:"reverted"`        // 1=已回退（审计保留，原记录不删）
 }
 
 func initPositionTx() error {
@@ -390,7 +392,12 @@ func initPositionTx() error {
 		note TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL
 	)`)
-	return err
+	if err != nil {
+		return err
+	}
+	addColumnIfMissing("position_tx", "cash_account_id", "INTEGER NOT NULL DEFAULT 0")
+	addColumnIfMissing("position_tx", "reverted", "INTEGER NOT NULL DEFAULT 0")
+	return nil
 }
 
 // initRealizedPnl creates the daily realized-P&L ledger (减仓落库).
@@ -409,19 +416,31 @@ func initRealizedPnl() error {
 		return err
 	}
 	_, _ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_realized_pnl_user_date ON realized_pnl_daily(user_id, date)`)
+	addColumnIfMissing("realized_pnl_daily", "tx_id", "INTEGER NOT NULL DEFAULT 0")
 	return nil
 }
 
-// InsertPositionTx records one 加仓/减仓 transaction.
-func InsertPositionTx(tx *PositionTx) error {
-	_, err := DB.Exec(`INSERT INTO position_tx(holding_id,tx_type,quantity,price,amount,fee,realized_pnl,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-		tx.HoldingID, tx.TxType, tx.Quantity, tx.Price, tx.Amount, tx.Fee, tx.RealizedPnl, tx.Note, tx.CreatedAt)
+// InsertPositionTx records one 加仓/减仓/分红 transaction. Returns the new row id.
+func InsertPositionTx(tx *PositionTx) (int64, error) {
+	res, err := DB.Exec(`INSERT INTO position_tx(holding_id,tx_type,quantity,price,amount,fee,realized_pnl,note,created_at,cash_account_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		tx.HoldingID, tx.TxType, tx.Quantity, tx.Price, tx.Amount, tx.Fee, tx.RealizedPnl, tx.Note, tx.CreatedAt, tx.CashAccountID)
+	if err != nil {
+		return 0, err
+	}
+	id, _ := res.LastInsertId()
+	return id, nil
+}
+
+// SetTxCashAccount backfills the linked cash account onto a transaction (set right
+// after the cash side-effect is applied, so a later revert can reverse to the same account).
+func SetTxCashAccount(txID, cashAccountID int64) error {
+	_, err := DB.Exec(`UPDATE position_tx SET cash_account_id=? WHERE id=?`, cashAccountID, txID)
 	return err
 }
 
 // ListPositionTx returns all transactions for a holding, newest first.
 func ListPositionTx(holdingID int64) ([]PositionTx, error) {
-	rows, err := DB.Query(`SELECT id,holding_id,tx_type,quantity,price,amount,fee,realized_pnl,note,created_at FROM position_tx WHERE holding_id=? ORDER BY id DESC`, holdingID)
+	rows, err := DB.Query(`SELECT id,holding_id,tx_type,quantity,price,amount,fee,realized_pnl,note,created_at,cash_account_id,reverted FROM position_tx WHERE holding_id=? ORDER BY id DESC`, holdingID)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +448,7 @@ func ListPositionTx(holdingID int64) ([]PositionTx, error) {
 	var out []PositionTx
 	for rows.Next() {
 		var t PositionTx
-		if err := rows.Scan(&t.ID, &t.HoldingID, &t.TxType, &t.Quantity, &t.Price, &t.Amount, &t.Fee, &t.RealizedPnl, &t.Note, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.HoldingID, &t.TxType, &t.Quantity, &t.Price, &t.Amount, &t.Fee, &t.RealizedPnl, &t.Note, &t.CreatedAt, &t.CashAccountID, &t.Reverted); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -461,9 +480,10 @@ type RealizedPnl struct {
 }
 
 // RecordRealizedPnl persists one 减仓's realized P&L into the daily ledger.
-func RecordRealizedPnl(uid int64, date string, holdingID int64, symbol, name, currency string, amount float64) error {
-	_, err := DB.Exec(`INSERT INTO realized_pnl_daily(user_id,date,holding_id,symbol,name,currency,amount,created_at) VALUES(?,?,?,?,?,?,?,?)`,
-		uid, date, holdingID, symbol, name, currency, amount, time.Now().Format("2006-01-02 15:04:05"))
+// txID ties the ledger row back to the position_tx so a revert can delete it precisely.
+func RecordRealizedPnl(uid int64, date string, holdingID int64, symbol, name, currency string, amount float64, txID int64) error {
+	_, err := DB.Exec(`INSERT INTO realized_pnl_daily(user_id,date,holding_id,symbol,name,currency,amount,tx_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+		uid, date, holdingID, symbol, name, currency, amount, txID, time.Now().Format("2006-01-02 15:04:05"))
 	return err
 }
 
@@ -485,14 +505,29 @@ func ListRealizedPnl(uid int64, date string) ([]RealizedPnl, error) {
 	return out, rows.Err()
 }
 
+// txCreatedAt returns the position_tx created_at timestamp for a transaction.
+// An empty date defaults to now; a back-dated YYYY-MM-DD uses that day at 00:00:00
+// so historical entries ledger by their real occurrence date.
+func txCreatedAt(date string) string {
+	if strings.TrimSpace(date) == "" {
+		return time.Now().Format("2006-01-02 15:04:05")
+	}
+	if _, e := time.Parse("2006-01-02", strings.TrimSpace(date)); e == nil {
+		return strings.TrimSpace(date) + " 00:00:00"
+	}
+	return time.Now().Format("2006-01-02 15:04:05")
+}
+
 // AdjustHolding applies a 加仓/减仓 transaction to a holding: it updates the
-// holding's quantity & average cost basis and records the transaction.
+// holding's quantity & average cost basis and records the transaction. The optional
+// `date` (YYYY-MM-DD) back-dates the transaction's created_at and (for SELL) the
+// realized-P&L ledger entry.
 //   - BUY:  new_qty = qty + quantity;
 //           new_cost = (qty*cost + quantity*price + fee) / new_qty   (摊薄后的平均成本)
 //   - SELL: realized = (price - cost)*quantity - fee;
 //           remaining cost basis unchanged; if qty hits 0 the cost basis resets to 0.
 // Returns the updated holding and the realized P&L of THIS transaction.
-func AdjustHolding(id int64, txType string, quantity, price, fee float64, note string) (h *Holding, realizedPnl float64, err error) {
+func AdjustHolding(id int64, txType string, quantity, price, fee float64, note, date string) (h *Holding, realizedPnl float64, err error) {
 	cur, err := Get(id)
 	if err != nil {
 		return nil, 0, err
@@ -550,19 +585,20 @@ func AdjustHolding(id int64, txType string, quantity, price, fee float64, note s
 		Fee:         fee,
 		RealizedPnl: realized,
 		Note:        note,
-		CreatedAt:   time.Now().Format("2006-01-02 15:04:05"),
+		CreatedAt:   txCreatedAt(date),
 	}
-	if err := InsertPositionTx(&tx); err != nil {
+	if _, err := InsertPositionTx(&tx); err != nil {
 		return nil, 0, err
 	}
 	return cur, realized, nil
 }
 
-// AdjustDividend 处理一次现金分红：份额不变、成本价按每股分红下调（除息摊薄口径），
-// 并以 tx_type=DIV 在 position_tx 留痕（quantity=当日份额、price=每股分红、amount=分红总额、
-// fee=扣除的费用）。fee 仅留痕，不参与摊薄（按税前口径摊薄），费用流水由 handler 层单独记。
-// 不做任何买卖，因此 realized_pnl 恒为 0；现金入账由 handler 层联动完成（与本函数解耦，沿用项目无事务风格）。
-func AdjustDividend(id int64, perShare, fee float64, note string) (h *Holding, dividendTotal float64, err error) {
+// AdjustDividend 处理一次分红。method="cash"（默认）：份额不变、成本价按每股分红下调
+// （除息摊薄口径），并以 tx_type=DIV 在 position_tx 留痕；现金入账由 handler 层完成。
+// method="reinvest"：红利再投——以当前净值（NAV）把分红金额买入更多份额，份额增加、
+// 平均成本按加权口径重算，不出现金、不产生 DIV 现金流水（落账为 tx_type=REINVEST）。
+// 两种方式的 fee 仅留痕/不参与摊薄（现金分红按税前口径）。
+func AdjustDividend(id int64, perShare, fee float64, note, date, method string) (h *Holding, dividendTotal float64, err error) {
 	cur, err := Get(id)
 	if err != nil {
 		return nil, 0, err
@@ -575,6 +611,9 @@ func AdjustDividend(id int64, perShare, fee float64, note string) (h *Holding, d
 	}
 	if fee < 0 {
 		fee = 0
+	}
+	if strings.TrimSpace(method) == "reinvest" {
+		return adjustDividendReinvest(cur, perShare, note, date)
 	}
 	newCost := roundByCategory(cur.Category, cur.CostPrice-perShare)
 	if newCost < 0 {
@@ -594,12 +633,49 @@ func AdjustDividend(id int64, perShare, fee float64, note string) (h *Holding, d
 		Fee:         math.Round(fee*100) / 100,
 		RealizedPnl: 0,
 		Note:        note,
-		CreatedAt:   time.Now().Format("2006-01-02 15:04:05"),
+		CreatedAt:   txCreatedAt(date),
 	}
-	if err := InsertPositionTx(&tx); err != nil {
+	if _, err := InsertPositionTx(&tx); err != nil {
 		return nil, 0, err
 	}
 	return cur, dividendTotal, nil
+}
+
+// adjustDividendReinvest 红利再投：分红金额按当前净值（NAV）买入更多份额。
+// 新份额 = 分红总额 ÷ NAV；新均价 =（旧份额×旧成本 + 分红总额）÷ 新总份额（加权口径）。
+// 落账为 tx_type=REINVEST（quantity=新增份额、price=NAV、amount=分红总额），不出现金。
+func adjustDividendReinvest(cur *Holding, perShare float64, note, date string) (*Holding, float64, error) {
+	nav := cur.CurrentPrice
+	if nav <= 0 {
+		return nil, 0, fmt.Errorf("红利再投需要最新净值（NAV），当前无行情价，请先刷新净值")
+	}
+	total := perShare * cur.Quantity
+	if total <= 0 {
+		return nil, 0, fmt.Errorf("每股分红必须大于 0")
+	}
+	newShares := total / nav
+	newQty := cur.Quantity + newShares
+	newCost := roundByCategory(cur.Category, (cur.Quantity*cur.CostPrice+total)/newQty)
+	cur.Quantity = newQty
+	cur.CostPrice = newCost
+	if err := Update(cur); err != nil {
+		return nil, 0, err
+	}
+	tx := PositionTx{
+		HoldingID:   cur.ID,
+		TxType:      "REINVEST",
+		Quantity:    newShares,
+		Price:       nav,
+		Amount:      total,
+		Fee:         0,
+		RealizedPnl: 0,
+		Note:        strings.TrimSpace(note) + " · 红利再投",
+		CreatedAt:   txCreatedAt(date),
+	}
+	if _, err := InsertPositionTx(&tx); err != nil {
+		return nil, 0, err
+	}
+	return cur, total, nil
 }
 
 // ---- FX rate cache (persisted last-good USD->CNY / USD->HKD rates) ----
@@ -842,8 +918,8 @@ func Create(h *Holding) (int64, error) {
 	}
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
 	h.Currency = normCurrency(h.Currency) // 币种统一小写（人民币归一 cny），防 'usd'/'USD' 混写导致前端漏折算
-	res, err := DB.Exec("INSERT INTO holdings(name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost,asset_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost, h.AssetType)
+	res, err := DB.Exec("INSERT INTO holdings(name,symbol,market,category,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost,asset_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		h.Name, h.Symbol, h.Market, h.Category, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost, h.AssetType)
 	if err != nil {
 		return 0, err
 	}
@@ -864,12 +940,21 @@ func roundByCategory(cat string, v float64) float64 {
 func Update(h *Holding) error {
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
 	h.Currency = normCurrency(h.Currency) // 币种统一小写（人民币归一 cny），防 'usd'/'USD' 混写导致前端漏折算
-	h.CostPrice = roundByCategory(h.Category, h.CostPrice)
-	h.CurrentPrice = roundByCategory(h.Category, h.CurrentPrice)
-	h.PrevClose = roundByCategory(h.Category, h.PrevClose)
-	h.TransactionCost = roundByCategory(h.Category, h.TransactionCost)
-	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,category=?,market=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=?,transaction_cost=?,asset_type=? WHERE id=?",
-		h.Name, h.Symbol, h.Category, h.Market, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.TransactionCost, h.AssetType, h.ID)
+	// 类别由持久化的 category 决定（来自前端自动识别 / normalize 兜底），价格精度按此推导
+	cat := h.Category
+	if cat == "" {
+		if h.LinkedSymbol != "" {
+			cat = "fund"
+		} else {
+			cat = "stock"
+		}
+	}
+	h.CostPrice = roundByCategory(cat, h.CostPrice)
+	h.CurrentPrice = roundByCategory(cat, h.CurrentPrice)
+	h.PrevClose = roundByCategory(cat, h.PrevClose)
+	h.TransactionCost = roundByCategory(cat, h.TransactionCost)
+	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,market=?,category=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=?,transaction_cost=?,asset_type=? WHERE id=?",
+		h.Name, h.Symbol, h.Market, h.Category, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.TransactionCost, h.AssetType, h.ID)
 	return err
 }
 
@@ -984,6 +1069,34 @@ func GetPriceSeries(symbol string, userID int64) ([]PriceDay, error) {
 			return nil, err
 		}
 		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// GetSymbolCashDividends returns the per-share cash dividend (ex-dividend amount) for a
+// symbol, keyed by ex-dividend date (YYYY-MM-DD). Used to build a back-adjusted
+// (后复权) net-value series so the in-table sparkline and P&L curve don't show a false
+// crash on ex-dividend days. Only cash dividends (tx_type='DIV', not reverted) are
+// included; reinvested dividends (tx_type='REINVEST') are excluded because the cash
+// stays in the position as extra shares and the market value is already continuous.
+func GetSymbolCashDividends(uid int64, symbol string) (map[string]float64, error) {
+	rows, err := DB.Query(`SELECT substr(t.created_at,1,10), t.price
+		FROM position_tx t JOIN holdings h ON h.id=t.holding_id
+		WHERE h.user_id=? AND h.symbol=? AND t.tx_type='DIV' AND t.reverted=0`, uid, symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]float64)
+	for rows.Next() {
+		var d string
+		var per float64
+		if err := rows.Scan(&d, &per); err != nil {
+			return nil, err
+		}
+		if per > 0 {
+			out[d] = per // 同一基金同一除息日每股分红唯一，直接覆盖
+		}
 	}
 	return out, rows.Err()
 }
@@ -1303,6 +1416,12 @@ func initAssetTables() error {
 	addColumnIfMissing("wealth_snapshot_audit", "cash_account_id", "INTEGER NOT NULL DEFAULT 0")
 	// 理财产品停用标记：清仓后归档（保留产品与历史收益），可重新启用或永久删除。
 	addColumnIfMissing("wealth_products", "archived", "INTEGER NOT NULL DEFAULT 0")
+	// 理财每日快照：分红金额（现金分红；红利再投资因金额不变故恒为 0）。
+	// 计入每日盈亏 = 当日持仓 − 前一日持仓 − 当日净存入 + 当日分红，避免分红导致净值跳降被误判为亏损。
+	addColumnIfMissing("wealth_snapshots", "dividend", "REAL NOT NULL DEFAULT 0")
+	// 审计记录分红：撤销时按旧/新分红值还原。
+	addColumnIfMissing("wealth_snapshot_audit", "old_dividend", "REAL NOT NULL DEFAULT 0")
+	addColumnIfMissing("wealth_snapshot_audit", "new_dividend", "REAL NOT NULL DEFAULT 0")
 	// 存量回填：早期 MCP 写入的流水未记录 source，其 type 以 'mcp_' 开头，一次性补齐来源标记。
 	_, _ = DB.Exec(`UPDATE cash_flow SET source='mcp' WHERE COALESCE(source,'')='' AND substr(type,1,4)='mcp_'`)
 	return nil
@@ -2016,19 +2135,20 @@ type WealthSnapshot struct {
 	Date     string  `json:"date"`
 	Amount   float64 `json:"amount"`
 	Cashflow float64 `json:"cashflow"`
+	Dividend float64 `json:"dividend"`
 }
 
 // GetWealthSnapshot returns the snapshot for a wealth product on a specific date.
-func GetWealthSnapshot(wealthID int64, date string) (amount, cashflow float64, ok bool, err error) {
-	err = DB.QueryRow(`SELECT amount, cashflow FROM wealth_snapshots WHERE wealth_id=? AND date=?`, wealthID, date).
-		Scan(&amount, &cashflow)
+func GetWealthSnapshot(wealthID int64, date string) (amount, cashflow, dividend float64, ok bool, err error) {
+	err = DB.QueryRow(`SELECT amount, cashflow, dividend FROM wealth_snapshots WHERE wealth_id=? AND date=?`, wealthID, date).
+		Scan(&amount, &cashflow, &dividend)
 	if err == sql.ErrNoRows {
-		return 0, 0, false, nil
+		return 0, 0, 0, false, nil
 	}
 	if err != nil {
-		return 0, 0, false, err
+		return 0, 0, 0, false, err
 	}
-	return amount, cashflow, true, nil
+	return amount, cashflow, dividend, true, nil
 }
 
 // GetWealthLatest returns the most recent snapshot (highest date) for a product.
@@ -2071,15 +2191,15 @@ func GetWealthPrevSnapshot(wealthID int64, date string) (dateStr string, amount 
 	return dateStr, amount, true, nil
 }
 
-func UpsertWealthSnapshot(wealthID int64, date string, amount, cashflow float64) error {
-	_, err := DB.Exec(`INSERT INTO wealth_snapshots(wealth_id,date,amount,cashflow) VALUES(?,?,?,?)
-		ON CONFLICT(wealth_id,date) DO UPDATE SET amount=excluded.amount, cashflow=excluded.cashflow`,
-		wealthID, date, amount, cashflow)
+func UpsertWealthSnapshot(wealthID int64, date string, amount, cashflow, dividend float64) error {
+	_, err := DB.Exec(`INSERT INTO wealth_snapshots(wealth_id,date,amount,cashflow,dividend) VALUES(?,?,?,?,?)
+		ON CONFLICT(wealth_id,date) DO UPDATE SET amount=excluded.amount, cashflow=excluded.cashflow, dividend=excluded.dividend`,
+		wealthID, date, amount, cashflow, dividend)
 	return err
 }
 
 func ListWealthSnapshots(wealthID int64) ([]WealthSnapshot, error) {
-	rows, err := DB.Query(`SELECT wealth_id,date,amount,cashflow FROM wealth_snapshots WHERE wealth_id=? ORDER BY date ASC`, wealthID)
+	rows, err := DB.Query(`SELECT wealth_id,date,amount,cashflow,dividend FROM wealth_snapshots WHERE wealth_id=? ORDER BY date ASC`, wealthID)
 	if err != nil {
 		return nil, err
 	}
@@ -2087,7 +2207,7 @@ func ListWealthSnapshots(wealthID int64) ([]WealthSnapshot, error) {
 	var out []WealthSnapshot
 	for rows.Next() {
 		var s WealthSnapshot
-		if err := rows.Scan(&s.WealthID, &s.Date, &s.Amount, &s.Cashflow); err != nil {
+		if err := rows.Scan(&s.WealthID, &s.Date, &s.Amount, &s.Cashflow, &s.Dividend); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -2112,6 +2232,8 @@ type WealthAudit struct {
 	OldCash       float64 `json:"old_cashflow"`
 	NewAmount     float64 `json:"new_amount"`
 	NewCash       float64 `json:"new_cashflow"`
+	OldDividend   float64 `json:"old_dividend"`
+	NewDividend   float64 `json:"new_dividend"`
 	OldExists     bool    `json:"old_exists"`
 	CashAccountID int64   `json:"cash_account_id"` // 本次操作现金落账实际使用的子账户（撤销时优先冲正回该账户，0=未落账/未知）
 	UserID        int64   `json:"user_id"`
@@ -2150,15 +2272,15 @@ func DeleteWealthSnapshot(wealthID int64, date string) error {
 
 // InsertWealthAudit 写入一条审计记录。
 func InsertWealthAudit(a WealthAudit) error {
-	_, err := DB.Exec(`INSERT INTO wealth_snapshot_audit(wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,cash_account_id,user_id,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		a.WealthID, a.Date, a.Action, a.Field, a.OldAmount, a.OldCash, a.NewAmount, a.NewCash, boolToInt(a.OldExists), a.CashAccountID, a.UserID, a.CreatedAt)
+	_, err := DB.Exec(`INSERT INTO wealth_snapshot_audit(wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_dividend,new_dividend,old_exists,cash_account_id,user_id,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		a.WealthID, a.Date, a.Action, a.Field, a.OldAmount, a.OldCash, a.NewAmount, a.NewCash, a.OldDividend, a.NewDividend, boolToInt(a.OldExists), a.CashAccountID, a.UserID, a.CreatedAt)
 	return err
 }
 
 // ListWealthAudit 返回某产品的审计记录（新→旧）。
 func ListWealthAudit(wealthID int64) ([]WealthAudit, error) {
-	rows, err := DB.Query(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,cash_account_id,user_id,created_at
+	rows, err := DB.Query(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_dividend,new_dividend,old_exists,cash_account_id,user_id,created_at
 		FROM wealth_snapshot_audit WHERE wealth_id=? ORDER BY id DESC`, wealthID)
 	if err != nil {
 		return nil, err
@@ -2168,7 +2290,7 @@ func ListWealthAudit(wealthID int64) ([]WealthAudit, error) {
 	for rows.Next() {
 		var a WealthAudit
 		var oldExists int
-		if err := rows.Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &oldExists, &a.CashAccountID, &a.UserID, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &a.OldDividend, &a.NewDividend, &oldExists, &a.CashAccountID, &a.UserID, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		a.OldExists = oldExists != 0
@@ -2181,9 +2303,9 @@ func ListWealthAudit(wealthID int64) ([]WealthAudit, error) {
 func GetWealthAudit(id int64) (WealthAudit, error) {
 	var a WealthAudit
 	var oldExists int
-	err := DB.QueryRow(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_exists,cash_account_id,user_id,created_at
+	err := DB.QueryRow(`SELECT id,wealth_id,date,action,field,old_amount,old_cashflow,new_amount,new_cashflow,old_dividend,new_dividend,old_exists,cash_account_id,user_id,created_at
 		FROM wealth_snapshot_audit WHERE id=?`, id).
-		Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &oldExists, &a.CashAccountID, &a.UserID, &a.CreatedAt)
+		Scan(&a.ID, &a.WealthID, &a.Date, &a.Action, &a.Field, &a.OldAmount, &a.OldCash, &a.NewAmount, &a.NewCash, &a.OldDividend, &a.NewDividend, &oldExists, &a.CashAccountID, &a.UserID, &a.CreatedAt)
 	if err != nil {
 		return a, err
 	}

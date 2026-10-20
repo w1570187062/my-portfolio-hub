@@ -125,7 +125,7 @@ func assetOverview(c *gin.Context) {
 		amt = round2(amt)
 		todayPnl = round2(todayPnl)
 		// 当日已录净存入 + 前一快照金额：供「更新理财持仓」弹框预填与盈亏预览（绝对值语义）
-		_, todayCf, todayFound, _ := db.GetWealthSnapshot(w.ID, today)
+		_, todayCf, _, todayFound, _ := db.GetWealthSnapshot(w.ID, today)
 		_, prevAmt, prevOk, _ := db.GetWealthPrevSnapshot(w.ID, today)
 		if !todayFound {
 			todayCf = 0
@@ -267,7 +267,7 @@ func assetOverview(c *gin.Context) {
 // pnl = today's amount − previous day's amount − today's net cashflow.
 // Returns 0 when there is no snapshot for the date or no previous-day baseline.
 func computeWealthPnl(wealthID int64, date string) float64 {
-	amt, cash, ok, _ := db.GetWealthSnapshot(wealthID, date)
+	amt, cash, div, ok, _ := db.GetWealthSnapshot(wealthID, date)
 	if !ok {
 		return 0
 	}
@@ -275,7 +275,8 @@ func computeWealthPnl(wealthID int64, date string) float64 {
 	if !pok {
 		return 0
 	}
-	return round2(amt - prevAmt - cash)
+	// 分红（现金分红）作为已实现收益计入：净值因分红跳降不计入亏损。红利再投资金额不变，dividend 恒为 0。
+	return round2(amt - prevAmt - cash + div)
 }
 
 // wealthCumPnl returns the cumulative P&L of a wealth product = sum of all daily
@@ -291,7 +292,7 @@ func wealthCumPnl(wealthID int64) float64 {
 	var cum float64
 	for _, s := range snaps {
 		if hasPrev {
-			cum += s.Amount - prevAmt - s.Cashflow
+			cum += s.Amount - prevAmt - s.Cashflow + s.Dividend
 		}
 		prevAmt = s.Amount
 		hasPrev = true
@@ -826,6 +827,7 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 			WealthID      int64   `json:"wealth_id"`
 			Amount        float64 `json:"amount"`
 			Cashflow      float64 `json:"cashflow"`
+			Dividend      float64 `json:"dividend"`
 			CashAccountID int64   `json:"cash_account_id"`
 		} `json:"items"`
 	}
@@ -870,7 +872,7 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 			return
 		}
 		// 拉取当日已存快照：用于「本次实际资金变动」差值计算（cfDelta = 新 cashflow − 旧 cashflow）。
-		oldAmt, oldCf, existed, _ := db.GetWealthSnapshot(it.WealthID, b.Date)
+		oldAmt, oldCf, oldDiv, existed, _ := db.GetWealthSnapshot(it.WealthID, b.Date)
 		// 净存入正负均合法：正数=存入（子账户扣款），负数=取出（回款入账，2026-10-18 减仓弹框删除后
 		// 由「更新理财持仓」的负净存入承担；当日盈亏按 computeWealthPnl 口径天然剔除本金变动）。
 		// phantom 盈亏拦截：当日净存入≠0 但持仓金额与前一日完全相同，会产生错误盈亏
@@ -900,15 +902,16 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 			}
 			cashAccID = acc.ID
 		}
-		if err := db.UpsertWealthSnapshot(it.WealthID, b.Date, it.Amount, it.Cashflow); err != nil {
+		if err := db.UpsertWealthSnapshot(it.WealthID, b.Date, it.Amount, it.Cashflow, it.Dividend); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		// 净存入变动联动现金账户（按新旧 cashflow 差值落账，重复保存只补差额，天然幂等）。
+		// 分红不联动现金账户（分红现金由用户在银行子账户自行登记，避免与已对账余额重复计入）。
 		// 落账失败时回滚快照到改前值，保证「快照 + 现金」原子生效（审计未写，无残留）。
 		if e := applyWealthCash(uid, it.WealthID, b.Date, cfDelta, cashAccID); e != nil {
 			if existed {
-				_ = db.UpsertWealthSnapshot(it.WealthID, b.Date, oldAmt, oldCf)
+				_ = db.UpsertWealthSnapshot(it.WealthID, b.Date, oldAmt, oldCf, oldDiv)
 			} else {
 				_ = db.DeleteWealthSnapshot(it.WealthID, b.Date)
 			}
@@ -917,7 +920,8 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 		}
 		if e := db.InsertWealthAudit(db.WealthAudit{
 			WealthID: it.WealthID, Date: b.Date, Action: "upsert", Field: "row",
-			OldAmount: oldAmt, OldCash: oldCf, NewAmount: it.Amount, NewCash: it.Cashflow,
+			OldAmount: oldAmt, OldCash: oldCf, OldDividend: oldDiv,
+			NewAmount: it.Amount, NewCash: it.Cashflow, NewDividend: it.Dividend,
 			OldExists: existed, CashAccountID: cashAccID, UserID: uid, CreatedAt: now,
 		}); e != nil {
 			log.Printf("[wealth-audit] 写入审计失败(wealth=%d date=%s): %v", it.WealthID, b.Date, e)
@@ -1006,7 +1010,7 @@ func assetWealthSnapshotDelete(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该理财"})
 		return
 	}
-	oldAmt, oldCf, existed, err := db.GetWealthSnapshot(wid, date)
+	oldAmt, oldCf, oldDiv, existed, err := db.GetWealthSnapshot(wid, date)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1021,7 +1025,7 @@ func assetWealthSnapshotDelete(c *gin.Context) {
 	}
 	if e := db.InsertWealthAudit(db.WealthAudit{
 		WealthID: wid, Date: date, Action: "delete", Field: "row",
-		OldAmount: oldAmt, OldCash: oldCf, OldExists: true, UserID: uid,
+		OldAmount: oldAmt, OldCash: oldCf, OldDividend: oldDiv, OldExists: true, UserID: uid,
 		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
 	}); e != nil {
 		log.Printf("[wealth-audit] 写入审计失败(wealth=%d date=%s): %v", wid, date, e)
@@ -1088,7 +1092,7 @@ func assetWealthSnapshotUndo(c *gin.Context) {
 				return
 			}
 		} else {
-			if err := db.UpsertWealthSnapshot(a.WealthID, a.Date, a.OldAmount, a.OldCash); err != nil {
+			if err := db.UpsertWealthSnapshot(a.WealthID, a.Date, a.OldAmount, a.OldCash, a.OldDividend); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
@@ -1104,7 +1108,7 @@ func assetWealthSnapshotUndo(c *gin.Context) {
 		}
 	} else if a.Action == "delete" {
 		// 恢复被删除的行
-		if err := db.UpsertWealthSnapshot(a.WealthID, a.Date, a.OldAmount, a.OldCash); err != nil {
+		if err := db.UpsertWealthSnapshot(a.WealthID, a.Date, a.OldAmount, a.OldCash, a.OldDividend); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -1113,7 +1117,8 @@ func assetWealthSnapshotUndo(c *gin.Context) {
 	}
 	if e := db.InsertWealthAudit(db.WealthAudit{
 		WealthID: a.WealthID, Date: a.Date, Action: "undo", Field: "row",
-		OldAmount: a.OldAmount, OldCash: a.OldCash, NewAmount: a.OldAmount, NewCash: a.OldCash,
+		OldAmount: a.OldAmount, OldCash: a.OldCash, OldDividend: a.OldDividend,
+		NewAmount: a.OldAmount, NewCash: a.OldCash, NewDividend: a.OldDividend,
 		OldExists: true, UserID: uid, CreatedAt: now,
 	}); e != nil {
 		log.Printf("[wealth-audit] 写入审计失败(wealth=%d date=%s): %v", a.WealthID, a.Date, e)
@@ -1145,13 +1150,14 @@ func assetWealthHistory(c *gin.Context) {
 	for _, s := range snaps {
 		var pnl float64
 		if hasPrev {
-			pnl = s.Amount - prevAmt - s.Cashflow
+			pnl = s.Amount - prevAmt - s.Cashflow + s.Dividend
 		}
 		cum += pnl
 		rows = append(rows, gin.H{
 			"date":     s.Date,
 			"amount":   round2(s.Amount),
 			"cashflow": round2(s.Cashflow),
+			"dividend": round2(s.Dividend),
 			"pnl":      round2(pnl),
 			"cum_pnl":  round2(cum),
 		})

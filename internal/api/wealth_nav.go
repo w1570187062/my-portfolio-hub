@@ -84,10 +84,10 @@ func updateWealthNav(c *gin.Context) {
 	if date == "" {
 		date = now[:10]
 	}
-	// 保留该日已录入的净存入（申购/赎回），仅重算金额
-	_, cf, _, _ := db.GetWealthSnapshot(id, date)
+	// 保留该日已录入的净存入（申购/赎回）与分红，仅重算金额
+	_, cf, div, _, _ := db.GetWealthSnapshot(id, date)
 	amount := round2(shares * b.Nav)
-	if err := db.UpsertWealthSnapshot(id, date, amount, cf); err != nil {
+	if err := db.UpsertWealthSnapshot(id, date, amount, cf, div); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -164,9 +164,10 @@ func refreshWealthNavBatch(c *gin.Context) {
 			})
 			continue
 		}
-		_, cf, _, _ := db.GetWealthSnapshot(w.ID, today)
+		_, cf, div, _, _ := db.GetWealthSnapshot(w.ID, today)
 		amount := round2(shares * q.CurrentPrice)
-		if err := db.UpsertWealthSnapshot(w.ID, today, amount, cf); err != nil {
+		// 保留该日已录入的分红（避免自动刷新净值时清掉手工补录的分红）
+		if err := db.UpsertWealthSnapshot(w.ID, today, amount, cf, div); err != nil {
 			results = append(results, gin.H{
 				"id":     w.ID,
 				"name":   w.Name,
