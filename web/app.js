@@ -3183,8 +3183,8 @@ function renderHistTxTable() {
   const h = (histPnlData && histPnlData.holding) || {};
   const txs = d.transactions || [];
   // 头部口径沿用原卡片视图：实现盈亏=只有减仓才落袋；加仓浮动盈亏=当前持仓的浮动盈亏（与列表同源）
-  let html = '<div class="adj-realized">累计实现盈亏：<b>' + fmt(d.realized_total || 0) + '</b>';
-  if ((h.quantity || 0) > 0) html += `<span class="adj-float ${cls(h.pnl)}">｜加仓浮动盈亏：<b>${fmt(h.pnl)}</b>${h.pnl_pct != null ? ` <small>(${pct(h.pnl_pct)})</small>` : ''}</span>`;
+  let html = '<div class="adj-realized">累计实现盈亏：<b>' + histHistCur + fmt(d.realized_total || 0) + '</b>';
+  if ((h.quantity || 0) > 0) html += `<span class="adj-float ${cls(h.pnl)}">｜加仓浮动盈亏：<b>${histHistCur}${fmt(h.pnl)}</b>${h.pnl_pct != null ? ` <small>(${pct(h.pnl_pct)})</small>` : ''}</span>`;
   html += '</div>';
   if (!txs.length) { body.innerHTML = html + '<div class="adj-empty">暂无记录</div>'; return; }
   html += '<table class="asset-table"><thead><tr>' +
@@ -4276,7 +4276,7 @@ function renderAssetSummary() {
   // --acc 走「自定义属性注入」通道（由 style.css 消费），不是内联具体颜色声明。
   const msItem = (o) => {
     const footPlain = o.foot ? ' · ' + String(o.foot).replace(/<[^>]+>/g, '') : '';
-    return `<div class="mstrip-it${o.hero ? ' hero' : ''}" style="--acc:${o.acc}" title="${o.lbl} ${yuanOf(o.v)}${footPlain}">` +
+    return `<div class="mstrip-it${o.hero ? ' hero' : ''}${o.cls ? ' ' + o.cls : ''}" style="--acc:${o.acc}" title="${o.lbl} ${yuanOf(o.v)}${footPlain}">` +
       `<span class="ms-lbl"><i></i>${o.lbl}${o.code ? `<em>${o.code}</em>` : ''}</span>` +
       `<span class="ms-val${o.v < 0 ? ' neg' : ''}">${yuanOfW(o.v)}</span>` +
       (o.foot ? `<span class="ms-foot">${o.foot}</span>` : '') +
@@ -4286,7 +4286,7 @@ function renderAssetSummary() {
     msItem({ lbl: '净资产', v: net, hero: true, acc: 'rgb(var(--tint))', foot: `占总资产 ${pctOf(net, total)}` }) +
     msItem({ lbl: '总资产', v: total, acc: 'rgb(var(--cat-cash))',
       foot: `权益 ${pctOf(eqMV, total)} · 理财 ${pctOf(wTotal, total)} · 现金 ${pctOf(cTotal, total)}` }) +
-    msItem({ lbl: '负债', v: lTotal, acc: 'rgb(var(--cat-debt))', foot: `占总资产 ${pctOf(lTotal, total)}` }) +
+    msItem({ lbl: '负债', v: lTotal, acc: 'rgb(var(--cat-debt))', cls: 'debt', foot: `占总资产 ${pctOf(lTotal, total)}` }) +
     regKeys.map((k) => {
       const netK = (regA[k] || 0) - (regL[k] || 0);
       const m = REGION_META[k] || { zh: k.toUpperCase(), en: '', code: k.toUpperCase() };

@@ -1301,7 +1301,7 @@ header {
     padding: var(--sp-2) var(--sp-3);
   }
   .hero-panel-value {
-    font-size: var(--fs-base); /* 12px → 14px（手机可接受更大一点） */
+    font-size: var(--fs-lg); /* 与资产页指标条数值同尺度（fs-lg），桌面/移动统一 */
   }
   .hero-spark-wrap {
     /* 手机上 spark-wrap 也不 flex:1，固定跟桌面同高 100px */
@@ -1319,11 +1319,12 @@ header {
 }
 .hero-summary-pair {
   display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3);
-  flex: 0 0 72px;              /* 固定高度（让 spark-wrap 的 1.5× 以此为基准） */
+  flex: 0 0 auto; min-height: 72px;   /* 高度随内容自适应（防止大字号被裁切）；min-height 保留与 spark 区的比例基准 */
 }
 /* 通用 panel：左渐变条 + 中心泛光 */
 .hero-panel {
   position: relative; display: flex; flex-direction: column;
+  justify-content: space-between;   /* head(title) 顶对齐、底部行(segs/detail) 压到底；配合 .hero-panel 上下对称 padding，使「底部行到卡边」==「title 到卡边」 */
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--r);
   background-color: rgba(var(--accent-rgb, var(--tint)), .04);
@@ -1347,16 +1348,18 @@ header {
 .hero-panel-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2);
 }
-.hero-panel-label { font-size: var(--fs-xs); color: var(--text-faint); letter-spacing: .5px; text-transform: uppercase; font-weight: 500; }
+.hero-panel-label { font-size: var(--fs-xs); color: var(--text-muted); letter-spacing: .3px; font-weight: 500; }
 .hero-panel-value {
-  font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums;
+  font-size: var(--fs-lg); font-weight: 700; font-variant-numeric: tabular-nums;
   color: #fff; letter-spacing: -.3px; line-height: 1;
 }
 :root[data-theme="light"] .hero-panel-value { color: var(--text); }
 /* mini 分类横条 */
 .hero-mv-segs {
   display: flex; flex-wrap: wrap; gap: 4px var(--sp-3);
+  align-items: center;            /* 单行时垂直居中，避免顶着上沿 */
   margin-top: var(--sp-2);
+  min-height: 36px;               /* 与 .hero-pnl-detail 等高 → 两卡底部间距一致（抵消市值分段 2 行折行造成的高度差） */
 }
 .hero-mv-seg {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1373,7 +1376,7 @@ header {
 /* 收益率 panel：大数字（只保留 %，删除金额；删除涨跌家数）
    v3.4 精简：pnl-big 只显示百分比；pnl-detail 只留当日/本月金额 */
 .hero-pnl-big {
-  font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums;
+  font-size: var(--fs-lg); font-weight: 700; font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .hero-pnl-big.up { color: var(--up); }
@@ -1382,6 +1385,7 @@ header {
 .hero-pnl-detail {
   display: flex; gap: var(--sp-4); align-items: center;
   margin-top: var(--sp-2);
+  min-height: 36px;               /* 与 .hero-mv-segs 等高，保证两卡底边距一致 */
 }
 .hero-pnl-item { font-size: var(--fs-sm); color: var(--text-muted); }
 .hero-pnl-item b { font-size: var(--fs-base); font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 4px; }
@@ -2567,7 +2571,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 /* 卡内摘要头：上内边距 + 与表格之间的全宽分隔发丝线（与卡边对齐，非内缩） */
 .as-card-sum { padding: var(--sp-4) var(--sp-5) 0; border-bottom: 1px solid var(--border); }
 .mstrip { display: flex; align-items: stretch; }
-.mstrip-it { flex: 1 1 auto; min-width: 0; padding: 12px 16px 12px 0; display: flex; flex-direction: column; gap: 2px; }
+.mstrip-it { flex: 1 1 auto; min-width: 0; padding: 12px 16px 12px 0; display: flex; flex-direction: column; gap: 2px; justify-content: center; }
 .mstrip-it + .mstrip-it { padding-left: 16px; border-left: 1px solid var(--border); }
 .mstrip-it:last-child { padding-right: 0; }
 .ms-lbl {
@@ -2589,6 +2593,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 }
 .mstrip-it.hero .ms-val { font-size: 26px; font-weight: 700; letter-spacing: -.9px; }
 .ms-val.neg { color: rgb(var(--down-rgb)); }
+/* 资产页指标条「负债」金额用绿色（与 涨红跌绿 体系中的绿一致，主题自适应） */
+.mstrip-it.debt .ms-val { color: var(--down); }
 .ms-foot {
   font-size: 10.5px; color: var(--text-faint); font-family: var(--font-mono);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

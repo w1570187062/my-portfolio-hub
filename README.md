@@ -1,13 +1,23 @@
 # 持仓侠 / MoneyComes
 
-![GitHub stars](https://img.shields.io/github/stars/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=yellow) ![GitHub last commit](https://img.shields.io/github/last-commit/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=2ea44f) ![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat) ![MCP ready](https://img.shields.io/badge/MCP-ready-5A0FC8?style=flat)
+![GitHub stars](https://img.shields.io/github/stars/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=yellow)
 
-> 「牛来：妈妈，我的账户又绿了，牛还来吗？」
+![GitHub last commit](https://img.shields.io/github/last-commit/w1570187062/my-portfolio-hub?style=flat\&logo=github\&color=2ea44f)
+
+![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)
+
+
+
+![MCP ready](https://img.shields.io/badge/MCP-ready-5A0FC8?style=flat)
+
+> 「牛来：妈妈，我的账户又绿了，牛还来吗？」>   
 > 「妈妈：牛会回来的。」
 >
 > 在牛回来之前，先把家底交给 **持仓侠（MoneyComes）**：股票、基金、理财、现金、负债、收支一个账本全收；盈亏自动算、历史天天记；房贷车贷到点自动提醒你别逾期。牛来牛去，心里有数。
 
 > 自托管的多用户个人投资持仓看板，统一管理 **A 股 / 美股 / 港股 / 基金** 持仓（含理财）/ 现金 / 负债 / 流水 / 收支等。自动刷新行情（不含理财）、计算盈亏、记录历史，提供盈亏日历、技术分析/**基金关联股票代码**与 AI 助手。桌面与移动端自适应。
+>
+> 配套 **PySide6 手机采集客户端（pfclient）**：把手机券商 / 基金 App 的持仓与理财页面通过 **USB 自动截图 + 本地 OCR** 采集并写回后端，自动完成持仓导入与净值更新，告别手工抄录。当前主力支持 **iOS**，Android 通道规划中。
 
 ## 📖 目录
 
@@ -15,6 +25,7 @@
 - [✨ 功能一览](#-功能一览)
 - [界面预览](#界面预览)
 - [MCP 服务（连接 hermes 等 AI 客户端）](#-mcp-服务连接-hermes-等-ai-客户端)
+- [📱 手机采集客户端（pfclient）](#手机采集客户端pfclient)
 - [快速开始](#快速开始)
 - [贡献与支持](#贡献与支持)
 - [许可](#许可)
@@ -63,6 +74,12 @@
 - 可每日收盘后自动生成，并随净值推送发送。
 - 结果按 Markdown 渲染（支持表格），渲染前做 XSS 转义。
 
+**手机采集客户端（pfclient）**
+
+- 配套 PySide6 桌面端，连接手机后把券商 / 基金 App 的**持仓页**与**理财页**经 **USB 自动截图 + 本地 OCR** 采集并写回后端。
+- 自动流水线：**自动截图 → 持仓导入 → 净值更新**，覆盖 Windows / macOS；iOS 17+ 走 USB DVT 原生截图（App 无感知），长列表走 CoreDevice 自动长屏。
+- 当前主力支持 **iOS**（含开发者模式解锁、环境自愈）；**Android 通道规划中**（Scrcpy / adb）。
+
 **其他**
 
 - 通知支持钉钉（加签）与邮件（TLS），可按策略推送当日盈亏明细。
@@ -71,13 +88,13 @@
 
 ## 界面预览
 
-|                                                预览图                                               |
-| :----------------------------------------------------------------------------------------------: |
-|       **主页（亮色）**<br /><img src="docs/screenshots/home-light.png" width="760" alt="主页（亮色）">       |
-|              **资产**<br /><img src="docs/screenshots/asset.png" width="760" alt="资产">             |
-|        **盈亏日历**<br /><img src="docs/screenshots/calendar-pnl.png" width="760" alt="盈亏日历">        |
-|     **技术分析（QQQ）**<br /><img src="docs/screenshots/analysis.png" width="760" alt="技术分析（QQQ）">     |
-|        **AI 助手**<br /><img src="docs/screenshots/ai-assistant.png" width="760" alt="AI 助手">        |
+|                                            预览图                                           |
+| :--------------------------------------------------------------------------------------: |
+|   **主页（亮色）**<br /><img src="docs/screenshots/home-light.png" width="760" alt="主页（亮色）">   |
+|          **资产**<br /><img src="docs/screenshots/asset.png" width="760" alt="资产">         |
+|    **盈亏日历**<br /><img src="docs/screenshots/calendar-pnl.png" width="760" alt="盈亏日历">    |
+| **技术分析（QQQ）**<br /><img src="docs/screenshots/analysis.png" width="760" alt="技术分析（QQQ）"> |
+|   **AI 助手**<br /><img src="docs/screenshots/ai-assistant.png" width="760" alt="AI 助手">   |
 
 ## MCP 服务（连接 hermes 等 AI 客户端）
 
@@ -90,6 +107,48 @@
 - **流水来源**：MCP 写入的流水 `source='mcp'`、`type` 以 `mcp_` 开头，前端流水表打高亮 **MCP** 标签。
 
 完整参数、返回结构与调用示例见 [`docs/mcp-api.md`](docs/mcp-api.md)。
+
+## 📱 手机采集客户端（pfclient）
+
+为摆脱手工抄录，项目附带一个 PySide6 桌面客户端（`client/`），把手机券商 / 基金 App 的**持仓**与**理财**页面通过**自动截图 + 本地 OCR** 采集并写入后端，覆盖 Windows / macOS。
+
+### 自动采集流水线：截图 → 持仓导入 → 净值更新
+
+```
+手机 App 持仓 / 理财页 ──(USB DVT 原生截图 / CoreDevice 自动长屏)──▶ 原生 PNG
+        │
+        ▼
+本地 RapidOCR 识别（表格结构解析 + 千分位消歧）
+        │
+        ▼
+核对窗（列映射 + 人工修正错别字）
+        │
+        ├─▶ 持仓导入   POST /api/holdings（新建）｜ PUT /api/holdings/:id（更新现价）
+        ├─▶ 净值更新   POST /api/asset/wealth/snapshots（理财快照，刷新产品净值）
+        └─▶ 现金调整   POST /api/asset/cash/adjust
+```
+
+- **自动化截图**：iOS 17+ 主力走 `usb` 源（pymobiledevice3 `developer dvt screenshot` 原生 PNG，App 完全无感知）；长列表走 **CoreDevice 自动长屏**（注入真实触摸自动滚动 + 原生截图 + NCC 纵向拼接），无需逐屏手动。投屏镜像（uxplay）为备选方案，因银行 App 会检测投屏拦截，主力采集不用它。
+- **持仓导入**：`flow/guide.py` 引导式判页状态机，OCR 命中持仓列表即自动触发截图，核对窗确认后写库。
+- **净值更新**：持仓导入时把识别到的现价 / 市值回写 `PUT /api/holdings/:id`；理财产品走 `POST /api/asset/wealth/snapshots` 写入当日净值快照，后端据此刷新盈亏，无需手工录入。
+
+> 通道原理、前置条件（Apple Devices 驱动 / 开发者模式解锁）、环境自愈等细节见 [`client/README.md`](client/README.md)。
+
+### TodoList（当前进度）
+
+> **当前正在实现 iOS 相关功能；Android 暂未实现**（计划 Scrcpy / `adb shell input tap` + `exec-out screencap`）。
+
+- [x] USB DVT 原生截图通道（iOS 17+ 主力，App 无感知）
+- [x] CoreDevice 自动长屏（滚动 + 截图 + 拼接，验证脚本已通）
+- [x] 解锁开发者模式（AMFI reveal，GUI 按钮 + 脚本）
+- [x] 持仓导入链路（引导 + OCR 判页 + 核对窗 + 写库）
+- [x] 净值更新接口串联（holdings 现价回写 / wealth 快照）
+- [ ] OCR 提速（表格区域裁剪、长边缩到 ~1600、ONNXRuntime GPU / TensorRT）
+- [ ] 多屏持仓列表与自动长屏融合（现多屏手动逐屏，自动长屏独立）
+- [ ] 流水（flows）核对后自动写库（现仅核对，避免重复记账）
+- [ ] 采集安全收尾自动化（撤销配对 + 删除描述文件）
+- [ ] **Android 采集通道**（Scrcpy / adb）
+- [ ] 打包（PyInstaller Win / py2app mac）
 
 ## 快速开始
 
