@@ -1,9 +1,30 @@
 # 持仓侠 UI 设计规范
 
-> **v3.3 · 2026-10-19 · 设计规范（已定案）**
+> **v3.4 · 2026-10-21 · 设计规范（已定案）**
 > 落地文件：`web/style.css`（**唯一样式真源**）、`web/index.html`（零样式）、`web/app.js`（仅主题变量注入）
-> 变更摘要：v3.1 → v3.2 — **响应式适配定案（目标设备 / 断点白名单 / 资产构成卡三列布局 / 顶栏筛选行吸顶 / 超宽屏收边 / 安全区）**
 > 变更摘要：v3.2 → v3.3 — **合并根目录 design.md：页面骨架与标题层级、纵向节奏规约（分组卡 12/24、弹框行距 12/主分组断点 20/水平 28）、弹框宽度档以代码实测修正**
+> 变更摘要：v3.3 → v3.4 — **体验质感升级：卡片三级视觉层级、弹框入场动效升级、表格微交互增强、按钮物理反馈强化、空态/加载态治理、留白微纹理、亮暗主题背景微调**
+
+---
+
+## 0.0 本轮（v3.4）定案
+
+**路线决策**：参考同类成熟项目的体验优化思路，采纳 **"统一视觉基底 + 保留金融语义"** 的折中方案——保留科技玻璃基底与金融场景必需的语义色（涨红跌绿、资产分类色），但在组件层级、动效、微交互上全面升级。
+
+| 议题 | 结论 |
+|---|---|
+| 整体质感 | **保留玻璃基底但收强度**：`blur 6→4px`、`saturate 110%→105%`、角光 alpha `.07→.04`。卡片 hover 不再只升 shadow，改 `translateY(-2px) + --sh-2` 产生"悬浮"物理感 |
+| 卡片视觉层级 | **三级 tier 体系**：① Tier-1 Hero/全景卡（带角光 + 稍深底 + 微渐变）② Tier-2 内容卡（玻璃 + 1px 细边 + hover 悬浮）③ Tier-3 工具微件（半透明 + `--r-xs` 圆角）。用 `--card-tier-1/2/3` 变量统一声明 |
+| 卡片异色 | Hero/全景卡保留角光但降低饱和度（alpha `.04`），让它"有光"而不是"换色"。普通卡统一 `--bg-card` + 1px `inset` 顶部高光线（暗色下 `rgba(255,255,255,.04)`、亮色下底部），消除突兀异色 |
+| 弹框入场 | 从纯 fade 升级为 `scale(.94→1) + fade(0→1)`，曲线 `--e-out`，时长 240ms。backdrop 从纯半透明改为 `rgba(0,0,0,.4)` 径向渐变到 `.6`，blur 8px。关闭按钮热区 36×36，hover 浅底圆圈 |
+| 表格微交互 | 新增极浅斑马纹（暗色 `rgba(255,255,255,.018)` / 亮色 `rgba(0,0,0,.025)`）；表头底色加深 6% 提升与表体的明度差；排序列加 ▲▼ 三角指示器；行密度提供紧凑(32px)/标准(40px) 两档切换（`--row-h: 32px` ↔ `40px`） |
+| 按钮物理反馈 | active 从 `scale(.96)` 收为 `scale(.98)`（当前 .96 太夸张、像塌陷），过渡从 200ms 收为 120ms（按下应快弹）；primary 按钮 focus-visible 加 `0 0 0 3px rgba(var(--tint), .20)` 外圈焦点环 |
+| 空态治理 | 空数据区不再纯文字——加极简 SVG 线条插画（与项目 stroke 图标风格一致）；加载态从纯 spinner 升级为 skeleton 骨架屏（`linear-gradient` shimmer 动画 1.4s 循环） |
+| 大面积留白 | 弹框 body 底部、工具页空区等大面积纯背景 → 加 3% opacity 的极浅 `radial-gradient` 装饰点（只在 Tier-1 卡和弹框出现，不铺全屏） |
+| 亮暗底微调 | 暗色 `--bg: #0a0e14 → #0e1115`（稍暖稍亮，纯 #0a 太冷太黑）；亮色 `--bg-card: rgba(255,255,255,.85) → #fbfcfe`（实色 + 微蓝，半透明在亮色下容易发灰看不清） |
+| 保留特色（不碰） | 涨跌红绿语义色、资产分类 6 色、Hero 卡微弱渐变、表格行 hover 高亮、导航栏毛玻璃——这些是金融场景必需的语义表达或品牌记忆点 |
+
+**与 v3.3 的关系**：完全兼容增量升级——所有 token、组件类名保留，仅追加 tier 变量、升级现有组件的 hover/active/动效参数。
 
 ---
 
@@ -47,7 +68,7 @@
 1. **层级决定形状** —— 圆角/阴影按「控件 → 卡片 → 浮层」三级取值，不按元素随手取。
 2. **描线优先于色块** —— 面的边界用 1px 描线表达；实色块只留给主操作与选中态。
 3. **眉标统一次级文字** —— 表头、表单标签、卡片小标题统一走 `.eyebrow` 规格（11–12px / 字距 .5px / muted）。
-4. **高度靠阴影，不靠位移** —— 悬停提升阴影层级。
+4. **阴影为主、位移为辅**（v3.4 修订）—— 默认悬停提升阴影层级；但卡片级悬停（非表格行）允许叠加 `translateY(-2px)` 产生"悬浮"物理感（控件/表格行仍禁位移）。
 5. **提示条优于告警块** —— 用「淡底 + inset 描线 + 色点」承载提示，不用整块饱和色。
 6. **数字等宽对齐** —— 所有金额、百分比、日期必须 `tabular-nums`。
 7. **同层只用一种材质** —— 卡片与表格不同时挂 `backdrop-filter`。
@@ -607,6 +628,151 @@ node web/check-ui.mjs          # 设计规范 12 项（含 4px 网格、语义�
 ```
 
 新增间距必须过 4px 网格检查（§5 同款校验）。
+
+---
+
+## 7. v3.4 组件升级规范
+
+> v3.4 在 v3 基底上增量升级，所有既有 token / 类名保留，仅追加新变量与新状态。
+
+### 7.1 卡片三级视觉层级（新增）
+
+引入 tier 体系，消除"所有卡片一个样"的扁平感：
+
+| Tier | 适用 | 底 | 边界 | 装饰 | Hover |
+|---|---|---|---|---|---|
+| **Tier-1** `.card.tier-1` | Hero、资产全景、汇总 Hero 卡 | 比页面底亮一档：暗色 `rgba(22,28,38,.84)`（略亮于 `--bg-card`），亮色必须**亮于页面底** `#ffffff`（页面 `#f4f6f9`、普通卡 `#fbfcfe`） | 1px `--border`（Hero 用 `rgba(var(--tint),.14)`） | `--card-glow` 角光 alpha `.04`（v3.4 降）+ 微弱 `radial-gradient` 装饰点 | `translateY(-2px) + --sh-2` |
+| **Tier-2** `.card`（默认） | 普通内容卡：持仓卡、工具卡、设置分组 | `--bg-card`（玻璃） | 1px `--border` + 顶部 inset 高光线 `rgba(255,255,255,.04)`（亮色下改底部） | 无 | `translateY(-2px) + --sh-2` |
+| **Tier-3** `.card.tier-3` | 工具微件、inline 统计 chip | `--bg-soft` 半透明 | 1px `--border` | 无 | 无位移，仅阴影微升 |
+
+**token 新增**（写入 `:root`）：
+
+```css
+/* Tier-1 专属（Tier-2/3 继续用既有 --bg-card） */
+--bg-card-tier1: rgba(22, 28, 38, .84);    /* 暗色：略亮于 --bg-card（.84 vs .82） */
+--bg-card-tier1-light: #ffffff;             /* 亮色：必须亮于页面底 #f4f6f9；用浅灰会低于页面明度，读成"凹陷卡" */
+--card-glow-v34: radial-gradient(122% 94% at 100% 0%, rgba(var(--tint), .04) 0%, rgba(var(--tint), 0) 58%);
+--card-inset-line: inset 0 1px 0 rgba(255,255,255,.04);  /* Tier-2 顶部高光线（暗色） */
+--card-inset-line-light: inset 0 -1px 0 rgba(0,0,0,.05); /* Tier-2 底部高光线（亮色） */
+```
+
+### 7.2 弹框入场动效（v3.4 升级）
+
+**遮罩 backdrop**：
+
+```css
+.modal {
+  background: radial-gradient(ellipse at center, rgba(0,0,0,.40) 0%, rgba(0,0,0,.60) 100%);
+  backdrop-filter: blur(8px);
+}
+```
+
+**入场动画**（替代 v3.3 的纯 fade）：
+
+```css
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.modal-card-enter { animation: modalIn 240ms var(--e-out); }
+```
+
+**关闭按钮**：热区从 24px → 36px（`.modal-close { width: 36px; height: 36px }`），hover 加 `background: var(--bg-hover)` + `border-radius: 50%`。
+
+### 7.3 表格微交互（v3.4 增强）
+
+**新增斑马纹**（极浅，不抢内容）：
+
+```css
+tbody tr:nth-child(even) { background: rgba(255,255,255,.018); }  /* 暗色 */
+:root[data-theme="light"] tbody tr:nth-child(even) { background: rgba(0,0,0,.025); }
+```
+
+**表头底色加深**：从 v3.3 的 `rgba(255,255,255,.03)` → `rgba(255,255,255,.05)`，提升与表体的明度差。
+
+**排序列指示器**：排序激活列的表头右侧加 8px ▲▼（`color: var(--primary)`），未排序列不显示。
+
+**行密度切换**（新增）：
+
+```css
+/* 默认：标准 40px（--row-h 原值） */
+/* 紧凑档：--row-h 降为 32px，字号不变，padding 上下各减 4px */
+body[data-density="compact"] .holdings-subtable td { padding-top: 4px; padding-bottom: 4px; }
+body[data-density="compact"] .holdings-subtable { --row-h: 32px; }
+```
+
+切换入口：表格右上角新增 `.density-toggle` 分段控件（紧凑 / 标准），`localStorage` 记忆用户选择。
+
+### 7.4 按钮物理反馈（v3.4 调整）
+
+| 状态 | v3.3 | v3.4 | 理由 |
+|---|---|---|---|
+| `:hover` | `translateY(-1.5px)` + `--btn-shadow-hover` | `translateY(-2px)` + `--btn-shadow-hover` | 与卡片悬浮统一 |
+| `:active` | `scale(.96)` + 过渡 200ms | `scale(.98)` + 过渡 120ms | .96 太夸张像塌陷；按下应快弹 |
+| `:focus-visible` | 无 | `box-shadow: 0 0 0 3px rgba(var(--tint), .20)` | 主按钮外圈焦点环，符合 WCAG 可访问性 |
+
+### 7.5 空态与加载态（新增）
+
+**空态（Empty State）**：统一 `.empty-state` 组件
+
+```
+[SVO 线条插画]      ← 120×120，stroke var(--text-faint)，与项目图标风格一致
+[主标题]            ← --fs-base / var(--text-muted)
+[副描述（可选）]     ← --fs-sm / var(--text-faint)
+[主操作按钮（可选）]  ← .btn.primary
+```
+
+插画参考 key（与 §3.3.2 图标字典对齐）：
+- 持仓空 → `inbox`（空盒子）
+- 搜索无结果 → `search-x`（搜索 + 叉）
+- 加载失败 → `alert-triangle`
+
+**骨架屏（Skeleton）**：`.skeleton` 组件，shimmer 动画 1.4s 循环
+
+```css
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,.04) 0%,
+    rgba(255,255,255,.10) 50%,
+    rgba(255,255,255,.04) 100%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--r-sm);
+}
+```
+
+骨架屏应用场景：表格首次加载、弹框内容加载、Hero 数据拉取中。**已有缓存数据时不显示骨架屏，直接渲染**（避免闪烁）。
+
+### 7.6 大面积留白填充（新增）
+
+在 Tier-1 卡和弹框 body 底部等大面积纯背景区，加 3% opacity 极浅径向装饰点，避免"一整片死白/死黑"：
+
+```css
+/* 只在 .tier-1 卡和 .modal-card 内生效，不铺全屏 */
+.tier-1::after, .modal-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 20% 120%, rgba(var(--tint), .03) 0%, transparent 50%);
+}
+```
+
+**禁止在页面 body 或 Tier-2/3 卡铺此纹理**——会与密集表格行线打架。
+
+### 7.7 亮暗主题背景微调（v3.4）
+
+| token | v3.3 | v3.4 | 理由 |
+|---|---|---|---|
+| `--bg`（暗色） | `#0a0e14` | `#0e1115` | 纯 #0a 太冷太黑，微提亮后毛玻璃卡的明度差更自然 |
+| `--bg-card`（亮色） | `rgba(255,255,255,.85)` | `#fbfcfe`（实色 + 微蓝） | 半透明在亮色下容易透出 body 背景发灰；实色保证内容清晰度 |
+| `--bg-card-solid`（暗色） | `#141a24` | `#161c26` | 与 `--bg-card`（半透明合成后）的明度差更均匀 |
+
+**影响面**：仅 `:root` 和 `[data-theme="light"]` 两处 token 定义行，不涉及组件选择器。
 
 ---
 
