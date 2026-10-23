@@ -40,13 +40,23 @@ def _is_foreign(path: str, keep: set[Path]) -> bool:
     p = Path(path)
     if not p.exists():
         return False
-    # 解释器自身、venv、标准库、当前工作目录 → 保留
-    for root in (Path(sys.prefix), Path(sys.base_prefix), Path(sysconfig.get_paths()["stdlib"])):
+    # 解释器自身、venv、标准库 → 保留
+    roots = [Path(sys.prefix), Path(sys.base_prefix), Path(sysconfig.get_paths()["stdlib"])]
+    # 用户 site-packages（site 模块自动注入，不属于 prefix）→ 保留
+    try:
+        import site as _site
+        up = _site.getusersitepackages()
+        if up:
+            roots.append(Path(up))
+    except Exception:
+        pass
+    for root in roots:
         try:
             p.relative_to(root)
             return False
         except ValueError:
             pass
+    # 当前工作目录 → 保留
     if p == Path.cwd() or p == Path(sys.path[0] if sys.path else "").resolve():
         return False
     # 落在 keep 集合里的（如用户显式加的）→ 保留
