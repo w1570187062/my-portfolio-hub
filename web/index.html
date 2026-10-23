@@ -20,14 +20,17 @@
       <h1 id="brandTitle" title="点击回到主页" style="cursor:pointer"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>持仓侠</h1>
     </div>
     <nav id="mainNav" class="main-nav">
-      <button class="nav-pill" data-view="holdings" type="button" onclick="navigate('holdings')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9.5h16M4 15h16M9.5 4v16"/></svg><span>持仓</span>
+      <button class="nav-pill" data-view="home" type="button" onclick="navigate('home')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 12 3l9 9"/><path d="M5 10v10h14V10"/></svg><span>首页</span>
+      </button>
+      <button class="nav-pill" data-view="invest" type="button" onclick="navigate('invest')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-3 4 4 5-6"/></svg><span>投资</span>
       </button>
       <button class="nav-pill" data-view="asset" type="button" onclick="navigate('asset')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 3.4"/></svg><span>资产</span>
       </button>
-      <button class="nav-pill" data-view="tools" type="button" onclick="navigate('tools')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2.5"/><rect x="7.5" y="5.5" width="9" height="4" rx="1" fill="currentColor" opacity=".8" stroke="none"/><circle cx="9" cy="13" r="1.15" fill="currentColor" stroke="none"/><circle cx="12" cy="13" r="1.15" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="1.15" fill="currentColor" stroke="none"/><circle cx="9" cy="16.5" r="1.15" fill="currentColor" stroke="none"/><circle cx="12" cy="16.5" r="1.15" fill="currentColor" stroke="none"/><circle cx="15" cy="16.5" r="1.15" fill="currentColor" stroke="none"/></svg><span>工具</span>
+      <button class="nav-pill" data-view="finance" type="button" onclick="navigate('finance')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M7 15h4"/></svg><span>财务</span>
       </button>
       <button class="nav-pill" data-view="settings" type="button" onclick="navigate('settings')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>设置</span>
@@ -35,98 +38,123 @@
     </nav>
     <div class="act-group">
       <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式" aria-label="切换主题"></button>
+      <button id="aiChatTopBtn" class="btn icon-btn" type="button" title="AI 助手" aria-label="AI 助手"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+      <button id="pnlCalTopBtn" class="btn icon-btn" type="button" title="盈亏日历" aria-label="盈亏日历"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8 3v4M16 3v4M3 10h18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>
       <button id="userBtn" class="btn act-user" type="button" title="用户切换"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto"><circle cx="12" cy="8.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M4.8 19.2 C4.8 15.3 8 13.6 12 13.6 C16 13.6 19.2 15.3 19.2 19.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span id="userNameText" style="display:none">默认</span></button>
     </div>
   </header>
 
-  <!-- v3.3 Hero Summary Banner：320px 高双栏式，左品牌 + 右数据（总市值 + 收益率 + sparkline 三合一）
-       原独立的总市值 donut 卡、收益率卡都已合并进来；收支计划移 header。 -->
-  <section id="heroBanner" class="hero-banner" aria-label="持仓侠 品牌横幅">
-    <div class="hero-bg-blob hero-bg-blob-a"></div>
-    <div class="hero-bg-blob hero-bg-blob-b"></div>
-    <div class="hero-content">
-      <!-- 左栏：品牌信息 + 核心数据（总市值 / 收益率 双 panel 已迁至品牌区下方） -->
-      <div class="hero-left">
-        <div class="hero-brand">
-          <div class="hero-headline">
-            <h2 class="hero-title">持仓<span>侠</span></h2>
-            <p class="hero-slogan">一站式持仓管理 · 盈亏追踪 · AI 智能分析</p>
-          </div>
-        </div>
-        <div class="hero-summary-pair">
-          <div class="hero-panel hero-panel-mv" id="heroMvSummary">
-            <div class="hero-panel-head">
-              <span class="hero-panel-label">总市值</span>
-              <span id="heroMvValue" class="hero-panel-value">—</span>
+  <!-- ===== 首页 Dashboard（2026-10-20 tab 重构）：净资产 Hero + 资产分布 + 快捷功能 + 最新流水 ===== -->
+  <div id="homeView" hidden>
+    <section class="home-dash">
+      <div class="networth-hero tier-1" id="homeHero">
+        <div class="nw-main">
+          <div class="nw-left">
+            <div class="nw-info">
+              <div class="nw-brand">
+                <svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg2)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>
+                <div>
+                  <div style="font-weight:700;font-size:15px;">持仓侠 <span style="color:var(--muted);font-weight:400;font-size:12px;">Portfolio Tracker</span></div>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:2px;letter-spacing:.5px;">一站式管理 · 持仓 · 理财 · 现金 · 负债</div>
+                </div>
+              </div>
+              <div class="nw-networth-col">
+                <div class="nw-networth">
+                  <div class="networth-label">净资产 NET WORTH</div>
+                  <div class="networth-value" id="homeNetWorth">—</div>
+                </div>
+                <div class="hero-changes" id="homeNetChanges"></div>
+              </div>
             </div>
-            <div id="heroMvSegs" class="hero-mv-segs"></div>
+            <div class="nw-asset-row" id="homeAssetBreakdown"></div>
           </div>
-          <div class="hero-panel hero-panel-pnl" id="heroPnlSummary">
-            <div class="hero-panel-head">
-              <span class="hero-panel-label">收益率</span>
-              <span id="heroPnlBig" class="hero-pnl-big">—</span>
+          <div class="nw-right">
+            <div class="nw-spark">
+              <div class="rate-spark-head">
+                <span class="rate-spark-label">权益收益曲线</span>
+                <div class="rate-spark-right">
+                  <div class="range-tabs" id="homeRangeTabs">
+                    <button class="range-tab" data-range="7" type="button">近7天</button>
+                    <button class="range-tab active" data-range="30" type="button">近30天</button>
+                    <button class="range-tab" data-range="0" type="button">全部</button>
+                  </div>
+                  <span class="rate-spark-legend" id="homeRateLegend" hidden>
+                    <span class="legend-item"><span class="lg-swatch lg-solid"></span>权益净值</span>
+                    <span class="legend-item"><span class="lg-swatch lg-dash"></span>持仓成本</span>
+                  </span>
+                </div>
+                <span id="homeRateSparkTrend" class="hero-mini-trend flat">—</span>
+              </div>
+              <div id="homeRateSpark" class="rate-spark-box"></div>
             </div>
-            <div class="hero-pnl-detail" id="heroPnlDetail"></div>
           </div>
         </div>
       </div>
-      <!-- 中栏：近30日权益曲线（总市值 / 收益率 双 panel 已迁至左栏品牌区下方） -->
-      <div class="hero-center">
-        <!-- sparkline 卡片顶部内嵌 label + trend -->
-        <div class="hero-spark-wrap">
-          <div class="hero-spark-head">
-            <span class="hero-spark-label">近30日权益曲线</span>
-            <span id="heroSparkTrend" class="hero-spark-trend">—</span>
-          </div>
-          <div id="heroSpark" class="hero-spark" aria-label="近30日权益曲线"></div>
+      <div class="section-title">快捷功能</div>
+      <div class="shortcut-grid" id="homeShortcuts"></div>
+      <div class="section-title">最新流水</div>
+      <div class="card recent-card">
+        <div class="recent-filter" id="homeRecentFilter">
+          <button class="rf-pill active" data-rf="all" type="button">全部</button>
+          <button class="rf-pill" data-rf="in" type="button">收入</button>
+          <button class="rf-pill" data-rf="out" type="button">支出</button>
+          <button class="rf-pill" data-rf="neutral" type="button">中性</button>
         </div>
+        <div class="recent-list" id="homeRecentFlows"></div>
       </div>
-      <!-- 右栏：收支计划卡片（原 header 右上角 pill 迁回 hero） -->
-      <div class="hero-right" id="heroCfSlot"></div>
+    </section>
+  </div>
+
+  <div id="holdingsView">
+  <!-- 投资页 Hero：原型 3-KPI 居中卡（持仓市值 / 本月盈亏 / 持仓收益率） -->
+  <section class="networth-hero invest-hero tier-1" id="investHero">
+    <div class="nw-center-label">持仓总市值 · 本月盈亏</div>
+    <div class="invest-kpis">
+      <div class="invest-kpi">
+        <div class="kpi-label">持仓市值</div>
+        <div class="kpi-value" id="investMv">—</div>
+      </div>
+      <div class="invest-kpi">
+        <div class="kpi-label">本月盈亏</div>
+        <div class="kpi-value" id="investMonthPnl">—</div>
+      </div>
+      <div class="invest-kpi">
+        <div class="kpi-label">持仓收益率</div>
+        <div class="kpi-value" id="investPct">—</div>
+      </div>
     </div>
   </section>
 
-  <div id="holdingsView">
-  <!-- accountCard (总市值/收益率卡) v3.3 已迁移到 hero banner 双 panel，整块删除 -->
-  <div id="cashflowCard" class="cf-card" hidden>
-    <div class="cf-head">
-      <span class="cf-title" data-icon="calendar">收支计划</span>
-      <span class="cf-dot" aria-hidden="true"></span>
-      <span class="cf-month" id="cfMonth"></span>
-      <span class="cf-sub" id="cfSub"></span>
-      <span class="cf-net" id="cfNet"></span>
-      <button id="cfViewToggle" class="cf-toggle" type="button" title="切换为表格" aria-label="切换为表格"></button>
-    </div>
-    <div id="cfList" class="cf-list"></div>
+  <!-- 持仓/理财切换：原型下划线样式（替代原 pill 分段控件）；必须位于内容区之前 -->
+  <div class="sub-tabs" id="viewToggle">
+    <button class="sub-tab active" data-view="holdings" type="button">持仓<span class="sub-tab-count" data-count="holdings"></span></button>
+    <button class="sub-tab" data-view="wealth" type="button">理财<span class="sub-tab-count" data-count="wealth"></span></button>
+    <button class="sub-tab" data-view="deposits" type="button">存款<span class="sub-tab-count" data-count="deposits"></span></button>
+    <button class="sub-tab" data-view="closed" type="button">已平仓<span class="sub-tab-count" data-count="closed"></span></button>
   </div>
 
-  <div class="list-bar">
-    <div id="filters" class="filters"></div>
-    <div class="list-actions">
-      <div class="action-btns">
-        <button id="wealthSnapBtn" class="btn icon-btn" title="更新理财持仓" aria-label="更新理财持仓"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><path d="M20 12a8 8 0 1 1-2.4-5.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button id="pnlCalBtn" class="btn icon-btn" title="盈亏日历" aria-label="查看盈亏日历"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8 3v4M16 3v4M3 10h18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>
-        <button id="dcaBtn" class="btn icon-btn" title="基金定投" aria-label="基金定投"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="4" y="5.5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9.5h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 3.2v3M16 3.2v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 11.6v4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.6 13.4 12 15.8 14.4 13.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button id="addBtn" class="btn icon-btn" title="添加" aria-label="添加"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 7.8 V16.2 M7.8 12 H16.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 持仓/理财切换行：上方分割线；左侧为列表描述（数量动态计算），右侧为分区切换；上下间距一致。
-       切换行必须位于两个内容区（#homeWealthBox / #holdingsBySource）之前，否则理财表格渲染在切换条上方会把控件挤出视野 -->
-  <div class="tbl-meta-bar">
-    <span class="tbl-desc" id="tblDesc">持仓（0）</span>
-    <div class="view-toggle" id="viewToggle">
-      <span class="vt-indicator" id="vtIndicator"></span>
-      <button class="btn vt-btn active" data-view="holdings" type="button">持仓</button>
-      <button class="btn vt-btn" data-view="wealth" type="button">理财</button>
-    </div>
-  </div>
+  <!-- 投资页表头工具条：复用原型 holding-toolbar（筛选 chips + 排序下拉）；持仓/理财切换时由 renderInvestToolbar 重渲染 -->
+  <div id="investToolbar" class="holding-toolbar"></div>
 
   <!-- 首页理财视图：由顶部 #viewToggle 切到「理财」时显示，复用 renderWealth 渲染（标题/操作/表格，已移除卡片展示） -->
   <div id="homeWealthBox" class="home-wealth-box" hidden></div>
 
+  <!-- 首页存款视图：由顶部 #viewToggle 切到「存款」时显示，renderDeposits 渲染（标题/新增按钮/表格） -->
+  <div id="homeDepositBox" class="home-wealth-box" hidden></div>
+
   <div id="holdingsBySource" class="holdings-by-source"></div>
+
+  <!-- 已平仓汇总视图：持仓(quantity<=0) + 理财(archived=1) 的落袋收益总览 -->
+  <div id="closedView" class="closed-view" hidden></div>
+  <!-- 已平仓表「类型」列筛选：点击表头弹出，勾选多选（全不勾=全部） -->
+  <div id="closedTypePop" class="src-pop" hidden>
+    <div class="src-pop-head">
+      <span>类型筛选</span>
+      <span><button type="button" class="src-link" id="ctPopReset">重置</button></span>
+    </div>
+    <div id="closedTypeList" class="src-pop-list"></div>
+    <div class="src-pop-foot"><button type="button" class="btn btn-sm" id="ctPopApply">确定</button></div>
+  </div>
   <div id="mktFilterPop" class="src-pop" hidden>
     <div class="src-pop-head">
       <span>按市场筛选</span>
@@ -155,9 +183,26 @@
     <div id="settingsView" class="page-view settings-page pano-open" hidden>
     <div class="settings-layout">
 
+      <!-- ④ 外观主题（已置顶） -->
+      <section class="settings-group">
+        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 2-2 0-1.4 1-2 2.3-2H18a3.5 3.5 0 0 0 3.5-3.5C21.5 7 17 3 12 3Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16.5" cy="11" r="1"/></svg>外观主题</span></h3>
+        <p class="settings-group-desc">设置网站主题色，及时生效。</p>
+		<div class="settings-group-body">
+          <div class="grp-label">主题色</div>
+          <div class="accent-swatches" id="accentSwatches">
+                  <button class="accent-swatch" type="button" data-accent="gold" title="土豪金（默认）" aria-label="土豪金"></button>
+                  <button class="accent-swatch" type="button" data-accent="green" title="豆沙护眼绿" aria-label="豆沙绿"></button>
+                  <button class="accent-swatch" type="button" data-accent="blue" title="经典蓝" aria-label="经典蓝"></button>
+                  <button class="accent-swatch accent-custom" type="button" id="accentCustomBtn" title="自定义主题色（铅笔挑选任意颜色）" aria-label="自定义主题色"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;margin:auto"><path d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"/><path d="M14.5 6.5 17.5 9.5"/></svg></button>
+                  <input type="color" id="accentCustom" value="#d9a52b" style="position:absolute;opacity:0;width:0;height:0;border:0;padding:0" tabindex="-1" aria-hidden="true">
+                </div>
+          <label class="switch-row" style="margin-top:var(--sp-4);">深色模式<span class="switch"><input type="checkbox" id="themeSwitch"><span class="switch-knob"></span></span></label>
+        </div>
+      </section>
+
       <!-- ① 通知与推送 -->
-      <section class="settings-group collapsible">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 4 1 5.5 2 6.5H4c1-1 2-2.5 2-6.5"/><path d="M10.5 19a1.5 1.5 0 0 0 3 0"/></svg>通知与推送</span><span class="group-chevron" aria-hidden="true">▾</span></h3>
+      <section class="settings-group">
+        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 4 1 5.5 2 6.5H4c1-1 2-2.5 2-6.5"/><path d="M10.5 19a1.5 1.5 0 0 0 3 0"/></svg>通知与推送</span></h3>
         <p class="settings-group-desc">控制净值更新后何时推送，以及钉钉 / 邮箱渠道。</p>
         <div class="settings-group-body">
           <div id="ntPanelPolicy">
@@ -221,9 +266,31 @@
         </div>
       </section>
 
+      <!-- ② 风险偏好分组已移除（2026-10-22）：资产类型标签设置保留后端 /api/settings/asset_type_labels，仍供持仓编辑多选 chip 使用，仅不再在设置页暴露 -->
+
+      <!-- ⑥ 收支分类（常驻展开，不再可折叠）：自定义分类与内置分类合并进「记收入/记支出」与「收支计划」选择器 -->
+      <section class="settings-group">
+        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="10" rx="2"/><path d="M4 11h16"/><circle cx="16" cy="14.5" r="1.2"/></svg>收支分类</span></h3>
+        <p class="settings-group-desc">自定义收支分类。内置已含：收入（工资薪金/经营收入/投资分红/投资利息/落袋收益/其他收入）、支出（日常消费/居住支出/资本开支/负债偿还/税费/保险保障/教育医疗/投资费用/其他支出）；投资活动与内部划转为中性类不计收支。</p>
+        <div class="settings-group-body" id="stPanelFinCat">
+          <div id="finCatList" class="fincat-list"></div>
+          <div class="fincat-add">
+            <input id="finCatNewLabel" placeholder="新分类名称，如 宠物 / 健身" maxlength="12" />
+            <select id="finCatNewDir">
+              <option value="expense">支出</option>
+              <option value="income">收入</option>
+            </select>
+            <button class="btn btn-sm" type="button" id="finCatAddBtn">＋ 添加</button>
+          </div>
+          <div class="modal-actions">
+            <button class="btn primary" type="button" id="finCatSaveBtn">保存</button>
+          </div>
+        </div>
+      </section>
+
       <!-- ③ AI 配置（可折叠，默认收起） -->
-      <section class="settings-group collapsible collapsed">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.4 9.4l-4.6 1.8L12 15.8l-1.8-4.6L5.6 9.4l4.6-1.8L12 3Z"/><path d="M18.5 14.5l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"/></svg>AI 配置</span><span class="group-chevron" aria-hidden="true">▾</span></h3>
+      <section class="settings-group">
+        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.4 9.4l-4.6 1.8L12 15.8l-1.8-4.6L5.6 9.4l4.6-1.8L12 3Z"/><path d="M18.5 14.5l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"/></svg>AI 配置</span></h3>
         <p class="settings-group-desc">模型与提示词模板；MCP 等开发者参数在「MCP 参数」子页签。</p>
         <div class="settings-group-body">
           <div id="stPanelAi">
@@ -317,35 +384,28 @@
         </div>
       </section>
 
-      <!-- ④ 外观主题 -->
-      <section class="settings-group collapsible collapsed">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 2-2 0-1.4 1-2 2.3-2H18a3.5 3.5 0 0 0 3.5-3.5C21.5 7 17 3 12 3Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16.5" cy="11" r="1"/></svg>外观主题</span><span class="group-chevron" aria-hidden="true">▾</span></h3>
-        <p class="settings-group-desc">设置网站主题色，及时生效。</p>
-		<div class="settings-group-body">
-          <div class="accent-swatches" id="accentSwatches">
-                  <button class="accent-swatch" type="button" data-accent="gold" title="土豪金（默认）" aria-label="土豪金"></button>
-                  <button class="accent-swatch" type="button" data-accent="green" title="豆沙护眼绿" aria-label="豆沙绿"></button>
-                  <button class="accent-swatch" type="button" data-accent="blue" title="经典蓝" aria-label="经典蓝"></button>
-                  <button class="accent-swatch accent-custom" type="button" id="accentCustomBtn" title="自定义主题色（铅笔挑选任意颜色）" aria-label="自定义主题色"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;margin:auto"><path d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"/><path d="M14.5 6.5 17.5 9.5"/></svg></button>
-                  <input type="color" id="accentCustom" value="#d9a52b" style="position:absolute;opacity:0;width:0;height:0;border:0;padding:0" tabindex="-1" aria-hidden="true">
-                </div>
-        </div>
-      </section>
-
-      <!-- ⑤ 数据迁移与备份（原「用户」弹框中的迁移 / 清空迁入） -->
-      <section class="settings-group collapsible collapsed">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="7.5" ry="3"/><path d="M4.5 5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V5"/><path d="M4.5 11v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>数据迁移与备份</span><span class="group-chevron" aria-hidden="true">▾</span></h3>
-        <p class="settings-group-desc">导出 / 导入全部数据用于迁移备份，或清空当前用户数据。</p>
+      <!-- 数据管理（原「用户切换」相关设置，按原型布局移至此） -->
+      <section class="settings-group">
+        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M10 11v6M14 11v6"/></svg>数据管理</span></h3>
+        <p class="settings-group-desc">导出 / 导入全部数据，或清空当前用户数据。</p>
         <div class="settings-group-body">
-          <label class="full-migrate" title="勾选后导出/导入将包含：收支计划、来源账户(类型/地域/币种)、AI配置(密钥/模型/模板)、应用设置与净值历史，实现完整迁移">
-            <input type="checkbox" id="fullMigrateChk"> 完整迁移（含收支计划 / 来源 / AI配置 / 设置 / 净值历史）
-          </label>
-          <div class="user-data">
-            <button class="btn" type="button" id="ai_export_json"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.8v10.4"/><path d="M8 10.2 12 14.2 16 10.2"/><path d="M4.6 16.6v2.2a1.6 1.6 0 0 0 1.6 1.6h11.6a1.6 1.6 0 0 0 1.6-1.6v-2.2"/></svg>导出数据</button>
-            <button class="btn" type="button" id="ai_import_json"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14.4V3.8"/><path d="M8 7.8 12 3.8 16 7.8"/><path d="M4.6 16.6v2.2a1.6 1.6 0 0 0 1.6 1.6h11.6a1.6 1.6 0 0 0 1.6-1.6v-2.2"/></svg>导入数据</button>
-          </div>
-          <div class="user-clear">
-            <button class="btn danger" type="button" id="userClearBtn">清空当前用户数据</button>
+          <label class="full-migrate"><input type="checkbox" id="fullMigrateChk"> 完整迁移（含收支计划 / 来源 / AI配置 / 设置 / 净值历史）</label>
+          <div class="data-mgmt-grid">
+            <button class="btn data-mgmt-card" type="button" id="ai_export_json">
+              <svg class="dm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.8v10.4"/><path d="M8 10.2 12 14.2 16 10.2"/><path d="M4.6 16.6v2.2a1.6 1.6 0 0 0 1.6 1.6h11.6a1.6 1.6 0 0 0 1.6-1.6v-2.2"/></svg>
+              <span class="dm-title">导出数据</span>
+              <span class="dm-sub">全部 JSON 备份</span>
+            </button>
+            <button class="btn data-mgmt-card" type="button" id="ai_import_json">
+              <svg class="dm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14.4V3.8"/><path d="M8 7.8 12 3.8 16 7.8"/><path d="M4.6 16.6v2.2a1.6 1.6 0 0 0 1.6 1.6h11.6a1.6 1.6 0 0 0 1.6-1.6v-2.2"/></svg>
+              <span class="dm-title">导入数据</span>
+              <span class="dm-sub">从 JSON 恢复</span>
+            </button>
+            <button class="btn data-mgmt-card danger-soft" type="button" id="userClearBtn">
+              <svg class="dm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M10 11v6M14 11v6"/></svg>
+              <span class="dm-title">清空数据</span>
+              <span class="dm-sub">不可恢复</span>
+            </button>
           </div>
         </div>
       </section>
@@ -354,69 +414,6 @@
   </div><!-- /settingsView -->
 
 
-    <div id="toolsView" class="page-view settings-page pano-open" hidden>
-    <div class="settings-layout">
-
-      <!-- 即时换算 -->
-      <section class="settings-group">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>即时换算</span></h3>
-        <div class="settings-group-body">
-          <div class="ana-tabs ac-tabs" id="toolsTabs">
-            <button class="ana-tab-btn active" type="button" data-tab="fx">汇率计算</button>
-            <button class="ana-tab-btn" type="button" data-tab="loan">贷款计算</button>
-          </div>
-          <div class="ac-panel" data-tab="fx" hidden>
-                  <p class="tool-hint">在 CNY / HKD / USD 之间换算金额，汇率取页面实时汇率。<span class="tool-fx" id="fxRateHint"></span></p>
-                  <div class="fx-calc">
-                    <div class="fx-row">
-                      <div class="fx-side">
-                        <label>金额</label>
-                        <!-- 币种下拉 + 金额输入合并为一个组合控件（同「权益盈亏」录入行） -->
-                        <div class="combo">
-                          <select id="fxFrom">
-                            <option value="cny">CNY</option>
-                            <option value="hkd">HKD</option>
-                            <option value="usd">USD</option>
-                          </select>
-                          <input id="fxAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="0.00">
-                        </div>
-                      </div>
-                      <div class="fx-arrow">⇄</div>
-                      <div class="fx-side">
-                        <label>到</label>
-                        <select id="fxTo">
-                          <option value="cny">CNY</option>
-                          <option value="usd">USD</option>
-                          <option value="hkd">HKD</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div class="tool-result" id="fxResult"></div>
-                  </div>
-                </div>
-          <div id="tlPanelLoan" class="ac-panel" data-tab="loan" hidden>
-                  <div class="loan-grid">
-                    <label>贷款本金（¥） <input id="loanAmount" type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" placeholder="如 1000000"></label>
-                    <label>年利率（%） <input id="loanRate" type="number" step="0.01" min="0" oninput="clampDecimals(this,2)" placeholder="如 3.6"></label>
-                    <label>贷款月数 <input id="loanMonths" type="number" step="1" min="1" placeholder="如 360"></label>
-                    <label>还款方式
-                      <select id="loanType">
-                        <option value="bx" selected>等额本息</option>
-                        <option value="bj">等额本金</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div class="tool-actions"><button id="loanCalc" class="btn" type="button">计算</button></div>
-                  <div class="tool-result" id="loanResult" hidden></div>
-                  <div id="loanBarWrap" hidden>
-                    <div class="loan-bar" id="loanBar"></div>
-                    <div class="loan-legend" id="loanLegend"></div>
-                  </div>
-                </div>
-        </div>
-      </section>
-
-    </div>
   </div><!-- /toolsView -->
 
 
@@ -450,31 +447,6 @@
   </div>
 
   <!-- ===== AI 助手：右下角悬浮按钮 + 聊天面板（不在 #app 内，避免未登录/boot 前被隐藏） ===== -->
-  <button id="aiFab" class="ai-fab" type="button" title="AI 助手" aria-label="打开 AI 助手" aria-haspopup="dialog" aria-expanded="false">
-    <!-- 牛来（电影《牛来》小黄牛）上半身剪影：镂空八字眉/眼/鼻孔/微笑 -->
-    <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true">
-      <mask id="pfNiuMask">
-        <rect width="48" height="48" fill="#fff"/>
-        <path d="M15 9.7 L20.2 11.4" stroke="#000" stroke-width="2" stroke-linecap="round"/>
-        <path d="M33 9.7 L27.8 11.4" stroke="#000" stroke-width="2" stroke-linecap="round"/>
-        <ellipse cx="18.5" cy="14" rx="1.7" ry="2" fill="#000"/>
-        <ellipse cx="29.5" cy="14" rx="1.7" ry="2" fill="#000"/>
-        <path d="M20.6 21.9 q-1.2 1.2 -0.2 2.4" stroke="#000" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-        <path d="M27.4 21.9 q1.2 1.2 0.2 2.4" stroke="#000" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-        <path d="M20.6 25.4 Q24 26.8 27.4 25.2" stroke="#000" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-        <path d="M12.5 28.2 Q24 31.5 35.5 28.2" stroke="#000" stroke-width="2.4" fill="none"/>
-      </mask>
-      <g mask="url(#pfNiuMask)">
-        <ellipse cx="9.4" cy="14.5" rx="4.8" ry="3" transform="rotate(-20 9.4 14.5)"/>
-        <ellipse cx="38.6" cy="14.5" rx="4.8" ry="3" transform="rotate(20 38.6 14.5)"/>
-        <path d="M14.5 8.5 Q10.5 4.5 13.5 1.8 Q17 4 16.2 8.2 Z"/>
-        <path d="M33.5 8.5 Q37.5 4.5 34.5 1.8 Q31 4 31.8 8.2 Z"/>
-        <path d="M12.5 11 Q12.5 4.5 24 4.5 Q35.5 4.5 35.5 11 L35.5 22 Q35.5 26.5 29.5 27.5 L18.5 27.5 Q12.5 26.5 12.5 22 Z"/>
-        <path d="M9 48 Q9 31.5 24 31.5 Q39 31.5 39 48 Z"/>
-      </g>
-    </svg>
-  </button>
-
   <div id="aiChatPanel" class="ai-chat-panel" role="dialog" aria-label="AI 助手" hidden>
     <div class="acp-head">
       <span class="acp-title">AI 助手</span>
@@ -540,15 +512,25 @@
                 </label>
               </div>
             </div>
-            <div id="linked_symbol_row" class="linked-sym-row">
-              <span class="linked-sym-label">关联股票代码</span>
-              <select id="f_linked_market" class="linked-sym-mkt"><option value="a">A 股</option><option value="hk">港股</option><option value="us">美股</option></select>
-              <input id="f_linked_code" class="linked-sym-code" placeholder="如 600519 / 00700 / AAPL" oninput="syncCatFromLinked()">
-            </div>
-          <!-- 低频字段收进高级折叠：主流程只留 名称/类别/数量成本/账户，弹框高度降约 30% -->
+          <!-- 低频字段收进高级折叠：主流程只留 名称/代码/数量成本/日期/账户，弹框高度降约 30%。
+               持仓类型（独立一行）与关联股票代码均为基金分类相关低频项：输入关联代码会实时反推
+               持仓类型（syncCatFromLinked），二者收在同一折叠里保持联动可见。 -->
           <details class="f-adv" id="fAdv">
             <summary><span class="hat-chevron">▾</span>高级选项</summary>
             <div class="f-adv-body">
+              <label>持仓类型
+                <select id="f_hold_type" class="hold-type-select">
+                  <option value="stock">股票</option>
+                  <option value="fund">基金</option>
+                  <option value="etf">ETF</option>
+                  <option value="bond">债券</option>
+                </select>
+              </label>
+              <div id="linked_symbol_row" class="linked-sym-row">
+                <span class="linked-sym-label">关联股票代码</span>
+                <select id="f_linked_market" class="linked-sym-mkt"><option value="a">A 股</option><option value="hk">港股</option><option value="us">美股</option></select>
+                <input id="f_linked_code" class="linked-sym-code" placeholder="如 600519 / 00700 / AAPL" oninput="syncCatFromLinked()">
+              </div>
               <label>备注 <input id="f_note" placeholder="备注（可选）"></label>
             </div>
           </details>
@@ -671,6 +653,11 @@
         <div class="f-pills-row">
           <span class="f-pill-cap">模式</span>
           <div class="f-pills" id="cfPatternPills"></div>
+        </div>
+        <div class="f-pills-row">
+          <span class="f-pill-cap">分类</span>
+          <div class="f-pills" id="cfCatPills"></div>
+          <input type="hidden" id="cf_category" value="">
         </div>
         <label>名称
           <input id="cf_title" placeholder="名称" maxlength="40" />
@@ -842,17 +829,69 @@
   </div>
 
 
-  <!-- ===== 持仓历史盈亏弹框（3 段切换：盈亏金额曲线 / 盈亏率曲线 / 交易记录表格）===== -->
+  <!-- ===== 持仓历史盈亏弹框（3 段切换：盈亏走势曲线 / 历史净值表格 / 交易记录表格）===== -->
   <div id="histModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
       <h2 id="histTitle" data-icon="hist">历史盈亏</h2>
       <div class="m-body">
         <div class="wh-range-bar ds-t-seg" id="histSegBar">
-          <button data-seg="amount" class="active" type="button">盈亏金额</button>
+          <button data-seg="amount" class="active" type="button">盈亏走势</button>
+          <button data-seg="nav" type="button">历史净值</button>
           <button data-seg="tx" type="button">交易记录</button>
         </div>
         <div id="histChartBody"></div>
+        <div id="histNavBody" hidden>
+          <div class="wh-range-bar ds-t-seg hist-nav-range" id="histNavRangeBar">
+            <button data-range="7" class="active" type="button">近7天</button>
+            <button data-range="30" type="button">近30天</button>
+            <button data-range="0" type="button">全部</button>
+            <button data-range="custom" type="button">自定义</button>
+          </div>
+          <div class="wh-custom-row" id="histNavCustomRow" hidden>
+            <label>起 <input type="date" id="histNavFrom"></label>
+            <label>止 <input type="date" id="histNavTo"></label>
+          </div>
+          <div id="histNavTable" class="hist-table"></div>
+        </div>
         <div id="histTxBody" class="hist-table" hidden></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 已平仓记录：手动新增 / 编辑（纯记录，不入账）===== -->
+  <div id="closedRecordModal" class="modal" hidden>
+    <div class="modal-card" style="width:480px; max-width:94vw;">
+      <h2 id="crTitle" data-icon="check">新增已平仓记录</h2>
+      <p id="crHint" class="snap-hint"></p>
+      <form id="closedRecordForm">
+        <input type="hidden" id="cr_id">
+        <input type="hidden" id="cr_sys" value="0">
+        <input type="hidden" id="cr_target_id">
+        <input type="hidden" id="cr_kind">
+        <div class="f-row">
+          <label>名称 <input id="cr_name" placeholder="如 贵州茅台 / 某理财" required></label>
+          <label>类型
+            <select id="cr_kind_sel">
+              <option value="hold">持仓</option>
+              <option value="wealth">理财</option>
+            </select>
+          </label>
+        </div>
+        <div class="f-row">
+          <label>盈亏金额 <input id="cr_amount" type="number" step="0.01" placeholder="正=赚，负=亏"></label>
+          <label>持仓天数 <input id="cr_days" type="number" step="1" min="0" placeholder="如 120"></label>
+        </div>
+        <div class="f-row">
+          <label>来源 / 账户名 <input id="cr_source" placeholder="如 招商银行"></label>
+          <label>清仓时间 <input id="cr_realized_at" type="date"></label>
+        </div>
+        <label>备注 <input id="cr_note" placeholder="可选"></label>
+        <div id="crErr" class="err"></div>
+      </form>
+      <div class="modal-actions">
+        <span class="modal-actions-spacer"></span>
+        <button type="button" id="crCancel" class="btn">取消</button>
+        <button type="button" id="crSave" class="btn primary">保存</button>
       </div>
     </div>
   </div>
@@ -884,9 +923,9 @@
       <h2 data-icon="edit">编辑当日记录</h2>
       <p id="whEditHint" class="snap-hint"></p>
       <div class="m-body">
-        <div class="sr-field"><label>持仓金额</label><input type="number" step="0.01" id="whEditAmt"></div>
-        <div class="sr-field"><label>净存入</label><input type="number" step="0.01" id="whEditCf"></div>
-        <div class="sr-field"><label>当日分红</label><input type="number" step="0.01" id="whEditDiv"></div>
+        <div class="sr-field"><label class="sr-label">持仓金额</label><input type="number" step="0.01" id="whEditAmt"></div>
+        <div class="sr-field"><label class="sr-label">净存入</label><input type="number" step="0.01" id="whEditCf"></div>
+        <div class="sr-field"><label class="sr-label">当日分红</label><input type="number" step="0.01" id="whEditDiv"></div>
       </div>
       <div class="modal-actions"><button type="button" id="whEditCancel" class="btn">取消</button><button type="button" id="whEditSave" class="btn primary">保存</button></div>
     </div>
@@ -917,7 +956,7 @@
           <select id="as_region"><option value="cn">CN</option><option value="hk">HK</option><option value="us">US</option></select>
         </label>
         <label><span id="as_account_label">银行卡号</span> <input id="as_account_no" placeholder="如 6225••••••••1234（可选，展示时脱敏）" maxlength="64"></label>
-        <label>币种</label>
+        <label class="field-label">币种</label>
         <div id="as_currencies" class="cur-checks" title="勾选该账户用到的币种；子账户币种只能从这里选（一个子账户一种币种）">
           <label class="cur-check"><input type="checkbox" value="cny"> CNY</label>
           <label class="cur-check"><input type="checkbox" value="hkd"> HKD</label>
@@ -1006,20 +1045,36 @@
     <div class="modal-card">
       <h2 class="m-head" data-icon="plus">添加流水</h2>
       <form id="flowForm">
-        <label>子账户</label>
-        <div class="ac-picker" id="flowCashPicker">
-          <button type="button" class="ac-picker-btn" id="flowCashBtn">请选择子账户</button>
-          <div class="ac-picker-panel" id="flowCashPanel" hidden></div>
-        </div>
-        <input type="hidden" id="flow_cash" value="0">
+        <label><span>子账户</span>
+          <div class="ac-picker" id="flowCashPicker">
+            <button type="button" class="ac-picker-btn" id="flowCashBtn">请选择子账户</button>
+            <div class="ac-picker-panel" id="flowCashPanel" hidden></div>
+          </div>
+          <input type="hidden" id="flow_cash" value="0">
+        </label>
         <div class="sign-edit">
-          <div class="field-label">资金变动</div>
-          <span class="seg-flat" id="flow_sign_toggle" role="group" aria-label="存入或取出">
+          <label class="field-label" for="flow_delta">资金变动</label>
+          <span class="seg-flat" id="flow_sign_toggle" role="group" aria-label="存入或取出" hidden>
             <button type="button" class="sign-opt active" data-sign="in">＋</button>
             <span class="seg-sep">/</span>
             <button type="button" class="sign-opt" data-sign="out">－</button>
           </span>
           <input id="flow_delta" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="金额（正数）">
+          <input type="hidden" id="flow_sign" value="in">
+        </div>
+        <div class="sign-edit" id="flowCatRow">
+          <label class="field-label">收支分类</label>
+          <div class="cat-chips" id="flowCatChips" role="group" aria-label="收支分类"></div>
+          <input type="hidden" id="flow_cat" value="">
+        </div>
+        <!-- 还款到负债：仅 sign=out 时显示，选中后走原子还款 endpoint -->
+        <div class="sign-edit" id="flowRepayRow" hidden>
+          <label class="field-label">还款到负债（可选）</label>
+          <div class="ac-picker" id="flowRepayPicker">
+            <button type="button" class="ac-picker-btn" id="flowRepayBtn">不关联（普通支出）</button>
+            <div class="ac-picker-panel" id="flowRepayPanel" hidden></div>
+          </div>
+          <input type="hidden" id="flow_liability_id" value="0">
         </div>
         <label>说明（可选）<input id="flow_note" placeholder="如 发工资 / 还信用卡"></label>
         <div id="flowErr" class="err"></div>
@@ -1065,6 +1120,57 @@
           <button class="btn primary" type="submit" id="ctSubmit">确认转账</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- 存款：新建 / 编辑（定期存款 / 大额存单）。新增时从子账户扣款，到期确认落袋后才入账本息 -->
+  <div id="depositModal" class="modal" hidden>
+    <div class="modal-card" style="width:480px; max-width:94vw;">
+      <h2 id="depModalTitle" data-icon="deposit">新增存款</h2>
+      <form id="depositForm">
+        <input type="hidden" id="dep_id" />
+        <label>名称
+          <input id="dep_name" placeholder="如 工行 3 年期大额存单" maxlength="40" />
+        </label>
+        <div class="df-row">
+          <label>金额<input id="dep_amount" type="number" step="0.01" min="0.01" placeholder="0.00" /></label>
+          <label>年利率（%）<input id="dep_rate" type="number" step="0.01" min="0" max="20" placeholder="如 2.75" /></label>
+        </div>
+        <div class="df-row">
+          <label>起息日<input id="dep_start" type="date" /></label>
+          <label>到期时间<input id="dep_end" type="date" /></label>
+        </div>
+        <label>扣款 / 落袋子账户
+          <select id="dep_account"></select>
+        </label>
+        <label>备注
+          <input id="dep_note" placeholder="可选" maxlength="120" />
+        </label>
+        <div id="depErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="depCancel">取消</button>
+          <button class="btn primary" type="submit" id="depSubmit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 存款确认落袋：本金 + 利息入账（利息预填估算值，可改；确认才落账） -->
+  <div id="depositSettleModal" class="modal" hidden>
+    <div class="modal-card" style="width:440px; max-width:94vw;">
+      <h2 data-icon="deposit">确认落袋</h2>
+      <div class="m-body">
+        <p class="dep-settle-desc" id="depSettleDesc"></p>
+        <div class="df-row">
+          <label>本金<input id="depSettlePrincipal" type="text" readonly disabled /></label>
+          <label>利息（可改）<input id="depSettleInterest" type="number" step="0.01" min="0" /></label>
+        </div>
+        <div id="depSettleErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="depSettleCancel">取消</button>
+          <button class="btn primary" type="button" id="depSettleOk">确认入账</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1120,6 +1226,7 @@
       <button class="btn icon-btn" type="button" id="userAddBtn" title="新增用户" aria-label="新增用户"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.2v13.6M5.2 12h13.6"/></svg></button>
     </div>
 </div>
+<input type="file" id="importFile" accept=".json,application/json" hidden>
 
 <!-- 删除用户：需输入「我已知晓」确认 -->
 <div id="userDeleteModal" class="modal" hidden>
