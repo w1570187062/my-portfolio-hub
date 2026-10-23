@@ -168,14 +168,28 @@
   </div>
   <!-- 持仓/理财切换：持仓显示在 #holdingsBySource，理财显示在 #homeWealthBox（由顶部 #viewToggle 切换） -->
   <div id="holdingsEmpty" class="empty-state" hidden>
-    <div class="empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 13.4h4.2l1.6 3h5.6l1.6-3h4.2"/><path d="M6.2 5.6h11.6l2.8 7.8v4.6a1.6 1.6 0 0 1-1.6 1.6H5a1.6 1.6 0 0 1-1.6-1.6v-4.6l2.8-7.8Z"/></svg></div>
-    <p id="emptyMsg">还没有任何持仓，添加第一笔开始记录吧。</p>
-    <button class="btn" id="emptyAddBtn" type="button">＋ 添加第一笔持仓</button>
+    <div class="empty-icon" id="emptyIcon" aria-hidden="true">
+      <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 66h13l5 9h40l5-9h13"/><path d="M30 38h60l9 24v18a5 5 0 0 1-5 5H26a5 5 0 0 1-5-5V62l9-24Z"/><path d="M44 38V30a16 16 0 0 1 32 0v8"/></svg>
+    </div>
+    <h3 class="empty-title" id="emptyTitle">还没有任何持仓</h3>
+    <p class="empty-desc" id="emptyMsg">添加第一笔开始记录吧。</p>
+    <button class="btn primary" id="emptyAddBtn" type="button">＋ 添加第一笔持仓</button>
   </div>
+
+  </div>
+
+  <!-- ===== 财务（2026-10-20 tab 重构）：被动收入 Hero + 月度/年度收支概览 + 收支计划 ===== -->
+  <div id="financeView" hidden>
+    <!-- 一张合并卡（2026-10-23 一、二卡合并）：hero 收支行（上）+ 分隔线 + 本月/年度概览（下），由 JS 整体渲染 -->
+    <section class="passive-hero tier-1 fin-hero-merged" id="finPassiveHero"></section>
+    <div class="fin-plans-head">
+      <div class="section-title">收支计划</div>
+      <button class="plan-add-btn plan-add-btn-inline" id="finPlanAddBtn" type="button"><span style="font-size:18px;">+</span> 新增</button>
+    </div>
+    <div class="plan-list" id="finPlanList"></div>
   </div>
 
   <div id="assetView" hidden>
-    <input type="file" id="importFile" accept=".json,application/json" hidden>
     <!-- 资产页唯一视图（2026-10-18）：账户区标题行 + 「指标条摘要头 + 账户主表」一张卡，由 renderSources 渲染 -->
     <div id="assetTabBody"></div>
   </div>

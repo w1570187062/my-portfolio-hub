@@ -5919,6 +5919,184 @@ textarea::placeholder {
 .recent-amt.up { color: var(--up); }
 .recent-amt.down { color: var(--down); }
 
+/* ===== 财务 ===== */
+.passive-hero {
+  display: grid; grid-template-columns: 1fr auto; gap: var(--sp-8);
+  align-items: center;
+  background: linear-gradient(135deg, rgba(var(--tint), .08), rgba(var(--tint), .02));
+  border: 1px solid rgba(var(--tint), .14);
+  border-radius: var(--r-lg); padding: var(--sp-6) var(--sp-8);
+  box-shadow: 0 10px 34px rgba(0,0,0,.14);
+}
+.passive-hero-main { display: flex; flex-direction: column; gap: var(--sp-2); }
+/* 收支平衡卡（2026-10-23 由被动收入 hero 改造）：年度收支三件套 + 顶部可选年份 */
+.fin-bal-main { display: flex; flex-direction: column; gap: var(--sp-2); }
+.fin-bal-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.fin-bal-label { font-size: var(--fs-xs); color: var(--text-muted); letter-spacing: 1.5px; text-transform: uppercase; font-weight: 500; }
+/* 年度信息：浅色外边框 + 浅底，内部 select 去原生边框，由外壳承载 */
+.fin-bal-year-box { position: relative; display: inline-flex; align-items: center; gap: 2px; padding: 4px 8px;
+  border: 1px solid var(--border); background: var(--bg-soft); border-radius: var(--r-sm); transition: border-color .15s var(--e); }
+.fin-bal-year-box:hover, .fin-bal-year-box:focus-within { border-color: rgba(var(--tint), .45); }
+.fin-bal-year-sel { appearance: none; -webkit-appearance: none; border: none; background: transparent; color: var(--text);
+  font-family: inherit; font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; padding: 0; cursor: pointer; }
+.fin-bal-year-sel:focus { outline: none; }
+.fin-bal-year-sel option { background: var(--bg-card-solid, var(--bg-card)); color: var(--text); }
+.fin-bal-year-caret { font-size: 10px; color: var(--text-muted); pointer-events: none; line-height: 1; }
+.fin-bal-value { font-size: 38px; font-weight: 800; letter-spacing: -.5px; font-variant-numeric: tabular-nums; color: var(--text); line-height: 1.1; }
+.fin-bal-value.up { color: var(--up); }
+.fin-bal-value.down { color: var(--down); }
+.fin-bal-sub { font-size: var(--fs-sm); color: var(--text-muted); }
+.fin-bal-sub b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.passive-hero-label { font-size: var(--fs-xs); color: var(--text-muted); letter-spacing: 1.5px; text-transform: uppercase; font-weight: 500; margin-bottom: 2px; }
+.passive-hero-value { font-size: 38px; font-weight: 800; letter-spacing: -.5px; font-variant-numeric: tabular-nums; color: var(--text); line-height: 1.1; }
+.passive-hero-sub { font-size: var(--fs-sm); color: var(--text-muted); }
+.passive-hero-side { display: flex; flex-direction: column; gap: 8px; justify-content: center; min-width: 200px; }
+.ph-cov-val { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); text-align: right; line-height: 1.1; }
+.ph-cov-bar { height: 8px; border-radius: 999px; background: rgba(var(--tint), .15); overflow: hidden; }
+.ph-cov-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--primary); width: var(--cov); }
+.ph-side-label { font-size: var(--fs-xs); color: var(--text-muted); text-align: right; }
+
+/* 财务页合并卡（2026-10-23 一、二卡合并）：hero 收支行（上）+ 发丝线 + 本月/年度概览（下）。
+   覆盖 .passive-hero 的 grid 双列布局，改为纵向堆叠；双列结构由内层 .fin-hero-top 承担 */
+.fin-hero-merged { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-4); }
+.fin-hero-top { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-8); align-items: center; }
+/* 发丝线通到卡片两缘（负 margin 抵消卡 padding 的左右 32px） */
+.fin-hero-sep { height: 1px; background: var(--border); margin: 0 calc(-1 * var(--sp-8)); }
+.fin-hero-merged .fin-overview-tabs { margin-bottom: 0; }
+/* 原型：分段控件（容器带浅底+内边距，tab 为分段而非胶囊）。对齐原型 .fin-overview-tabs/.fin-overview-tab */
+.fin-overview-tabs { display: flex; width: auto; align-self: flex-start; gap: 4px; padding: 4px; background: var(--bg-soft); border-radius: var(--r-sm); margin-bottom: var(--sp-4); }
+.fin-overview-tab { flex: 0 0 auto; border: none; background: transparent; color: var(--text-muted); padding: 6px var(--sp-4); border-radius: 6px; cursor: pointer; font-size: var(--fs-sm); font-family: inherit; transition: all .15s var(--e); text-align: center; }
+.fin-overview-tab.active { background: var(--bg-card); color: var(--text); box-shadow: var(--card-shadow); }
+.fin-overview-kpis { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); }
+.fin-kpi { display: flex; flex-direction: column; gap: 2px; }
+.fin-kpi-val { font-size: var(--fs-xl); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--kpi-c, var(--text)); }
+.fin-kpi-label { font-size: var(--fs-xs); color: var(--text-muted); }
+.fin-kpi.up .fin-kpi-val { color: var(--up); }
+.fin-kpi.down .fin-kpi-val { color: var(--down); }
+.fin-kpi-divider { width: 1px; align-self: stretch; background: var(--border); margin: 2px 0; }
+.fin-overview-breakdown { margin-top: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); }
+.fin-breakdown-row { display: grid; grid-template-columns: 16px 120px 1fr auto; gap: var(--sp-3); align-items: center; cursor: pointer; }
+.fin-breakdown-caret { color: var(--text-muted); font-size: var(--fs-md); line-height: 1; display: inline-block; transition: transform .15s; user-select: none; }
+.fin-breakdown-row.open .fin-breakdown-caret { transform: rotate(90deg); }
+.fin-breakdown-label { font-size: var(--fs-sm); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-breakdown-bar { height: 8px; border-radius: 999px; background: rgba(var(--tint), .12); overflow: hidden; }
+.fin-breakdown-fill { height: 100%; border-radius: 999px; }
+.fin-breakdown-fill.income { background: var(--up); }
+.fin-breakdown-fill.expense { background: var(--down); }
+.fin-breakdown-amt { font-variant-numeric: tabular-nums; font-weight: 600; font-size: var(--fs-sm); }
+.fin-breakdown-amt.up { color: var(--up); }
+.fin-breakdown-amt.down { color: var(--down); }
+/* 分类折叠下钻明细：紧贴分类行下方，左缘与名称对齐 */
+.fin-breakdown-detail { margin: 2px 0 var(--sp-1) 16px; padding-left: var(--sp-3); border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+/* hidden 切换：.fin-breakdown-detail 的 display:flex 会压过 [hidden] 的 UA 规则，须显式兜底（否则收不回去） */
+.fin-breakdown-detail[hidden] { display: none; }
+.fin-detail-row { position: relative; display: grid; grid-template-columns: 48px 1fr auto; gap: var(--sp-3); align-items: center; padding: 3px 0; }
+/* 左侧分割线上主题色小圆点 */
+.fin-detail-row::before { content: ''; position: absolute; left: calc(-1 * var(--sp-3) - 4px); top: 50%; transform: translateY(-50%); width: 6px; height: 6px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 2px var(--bg-card); }
+.fin-detail-date { font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.fin-detail-name { font-size: var(--fs-sm); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-detail-amt { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; font-weight: 600; }
+.fin-detail-amt.up { color: var(--up); }
+.fin-detail-amt.down { color: var(--down); }
+.fin-detail-empty { font-size: var(--fs-xs); color: var(--text-muted); padding: 4px 0; }
+
+/* 新增收支计划虚线按钮：边框用主题色 38% 透明度（原 --border 仅 8–10% 透明度，
+   在卡片底上几乎不可见）；hover 转实线主题色 */
+.plan-add-btn { display: flex; width: 100%; justify-content: center; align-items: center; gap: var(--sp-1); margin: var(--sp-3) 0; padding: var(--sp-2) var(--sp-4); border: 1px dashed rgba(var(--tint), .38); background: transparent; color: var(--primary); border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-md); font-family: inherit; transition: all .15s var(--e); }
+.plan-add-btn:hover { border-color: var(--primary); background: var(--bg-hover); }
+.plan-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.plan-item { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-sm); --fp-dur: .24s; }
+/* 空态不复用 .plan-item：无子元素时匿名文本会落进 10px 首列，逐字竖排 */
+.plan-empty { display: flex; align-items: center; justify-content: center; padding: var(--sp-4); background: var(--bg-card); border: 1px dashed var(--border); border-radius: var(--r-sm); }
+.plan-dot { width: 10px; height: 10px; border-radius: 50%; }
+.plan-dot.income { background: var(--up); }
+.plan-dot.expense { background: var(--down); }
+.plan-title { font-size: var(--fs-md); color: var(--text); }
+.plan-meta { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 1px; }
+.plan-amt { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+.plan-amt.income { color: var(--up); }
+
+/* ===== 财务页 · 收支计划卡片 ===== */
+.fin-plans-head { display: flex; justify-content: space-between; align-items: center; margin-top: var(--sp-3); margin-bottom: var(--sp-2); }
+.plan-add-btn-inline { width: auto; margin: 0; padding: 4px 12px; font-size: var(--fs-sm); border-radius: 999px; gap: 4px; }
+
+/* 单张计划卡：recurring = 左右箭头切换单月（各卡独立）；one_time = 单卡无箭头 */
+.plan-item.fp-deck { display: flex; align-items: center; gap: var(--sp-3); }
+
+/* 翻月箭头：与编辑 icon 同尺寸、弱描边；和金额 / 编辑按钮靠 flex gap 拉开间距 */
+.fp-nav-btn {
+  flex: 0 0 auto;
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0;
+  transition: all .15s var(--e);
+}
+.fp-nav-btn:hover { border-color: var(--primary); color: var(--primary); }
+.fp-nav-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 内容区：占满剩余空间承载月卡行；翻月时做滑动 + 淡入淡出 */
+.fp-content { flex: 1 1 auto; min-width: 0; display: flex; }
+.fp-content { transition: transform .13s ease, opacity .13s ease; }
+.fp-content.fp-out-prev { transform: translateX(18px); opacity: 0; }
+.fp-content.fp-out-next { transform: translateX(-18px); opacity: 0; }
+.fp-content.fp-in-prev { animation: fpSlideInPrev .18s ease; }
+.fp-content.fp-in-next { animation: fpSlideInNext .18s ease; }
+@keyframes fpSlideInPrev { from { transform: translateX(-18px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes fpSlideInNext { from { transform: translateX(18px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* 页内行内容：dot | 标题/日期 | （金额 / 月份） */
+.fp-row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1 1 auto; }
+.fp-main { flex: 1 1 auto; min-width: 0; }
+/* 右列竖排：金额在上，月份信息在其下方并贴卡片最右 */
+.fp-side { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+/* 月份信息：只有淡化字色（无底色 / 无主题色 / 无箭头） */
+.fp-month-pill { display: inline-flex; align-items: center; color: var(--text-muted); opacity: .72; white-space: nowrap; }
+.fp-month-label { padding: 0 1px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .2px; }
+
+/* 右侧圆形编辑 icon：未完成=铅笔；完成=对勾（不置灰） */
+.plan-item .fp-act {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all .15s var(--e);
+  flex-shrink: 0;
+}
+.plan-item .fp-act:hover { border-color: var(--primary); color: var(--primary); }
+.plan-item .fp-act svg { width: 14px; height: 14px; stroke-width: 1.8; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+.plan-item .fp-act.fp-done { border-color: var(--up); color: var(--up); background: transparent; }
+.plan-item .fp-act.fp-done svg { stroke-width: 2.4; }
+
+/* 完成态图标提示：hover 显 tooltip 风格 */
+.plan-item .fp-act[title] { position: relative; }
+
+@media (max-width: 768px) {
+  #homeHero { padding: var(--sp-5); }
+  .nw-main { display: flex; flex-direction: column; gap: var(--sp-5); }
+  .nw-info { flex-direction: column; align-items: center; text-align: center; gap: var(--sp-6); }
+  .nw-brand { align-self: center; max-width: none; }
+  .nw-networth-col { align-items: center; align-self: center; }
+  .nw-asset-row { grid-template-columns: repeat(2, 1fr); }
+  .passive-hero { grid-template-columns: 1fr; gap: var(--sp-5); padding: var(--sp-5); }
+  /* 合并卡移动端：hero 行改纵向堆叠，发丝线负 margin 同步改 20px 对齐卡缘 */
+  .fin-hero-merged { gap: var(--sp-4); }
+  .fin-hero-top { grid-template-columns: 1fr; gap: var(--sp-5); }
+  .fin-hero-sep { margin: 0 calc(-1 * var(--sp-5)); }
+  .passive-hero-side { min-width: 0; }
+  .ph-cov-val, .ph-side-label { text-align: left; }
+  .passive-hero-value { font-size: 30px; }
+  .shortcut-grid { grid-template-columns: repeat(3, 1fr); }
+  .fin-breakdown-row { grid-template-columns: 14px 88px 1fr auto; }
+  .recent-sub { max-width: 160px; }
+}
+
 /* —— 内联样式合规化所需的 helper（2026-10-20） —— */
 .empty-hint { color: var(--text-muted); font-size: var(--fs-sm); }
 .hl-primary { color: var(--primary); font-weight: 600; }

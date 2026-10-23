@@ -2977,15 +2977,579 @@ async function openPnlModal() {
 
 function showHoldingsView() {
   $('#assetView').hidden = true;
-  $('#toolsView').hidden = true;
   $('#settingsView').hidden = true;
   $('#holdingsView').hidden = false;
   syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
 }
 
-// 「持仓侠」标题文本：点击回到主页
+// ===== 首页 Dashboard（2026-10-20 tab 重构）=====
+// 复用 /api/asset/overview（assetData）已有的净资产/资产分布口径，不重复请求。
+async function showHomeView() {
+  $('#homeView').hidden = false; // hideAllViews 后必须显式恢复，否则首页空白
+  renderHomeDashboard();
+}
+
+async function renderHomeDashboard() {
+  // 净资产 + 资产分布（来自 overview，已在 load() 时 fetchOverview 拉取）
+  const ov = assetData || {};
+  const net = ov.net_asset != null ? ov.net_asset : 0;
+  const eqMV = (ov.equity && ov.equity.market_value) || 0;
+  const wTotal = (ov.wealth && ov.wealth.total) || 0;
+  const cTotal = (ov.cash && ov.cash.total) || 0;
+  const lTotal = (ov.liability && ov.liability.total) || 0;
+  // 今日变动 = 持仓当日盈亏 + 理财当日盈亏（CNY）；本月变动复用 summary 的持仓本月盈亏
+  const dayPnl = ((ov.equity && ov.equity.day_pnl) || 0) + ((ov.wealth && ov.wealth.today_pnl) || 0);
+  const monthPnl = monthPnlCNY || 0;
+
+  const nw = $('#homeNetWorth'); if (nw) nw.textContent = yuanOfW(net);
+  const ch = $('#homeNetChanges');
+  if (ch) {
+    const segs = [];
+    if (dayPnl) segs.push(`<span class="hc-item"><span class="hc-label">今日</span><span class="hc-val ${clsPnl(dayPnl)}">${dayPnl > 0 ? '+' : ''}${yuanOfW(dayPnl)} <em class="hc-pct">(${pct(dayPnl / Math.max(net - dayPnl, 1) * 100)})</em></span></span>`);
+    if (monthPnl) segs.push(`<span class="hc-item"><span class="hc-label">本月</span><span class="hc-val ${clsPnl(monthPnl)}">${monthPnl > 0 ? '+' : ''}${yuanOfW(monthPnl)}</span></span>`);
+    ch.innerHTML = segs.join('');
+  }
+
+  // 资产分布条：持仓 / 理财 / 现金 / 负债（负债以负向展示）
+  const bd = $('#homeAssetBreakdown');
+  if (bd) {
+    const rows = [
+      { label: '持仓', val: eqMV, color: '#4a9eff' },
+      { label: '理财', val: wTotal, color: '#a78bfa' },
+      { label: '现金', val: cTotal, color: '#00d084' },
+      { label: '负债', val: lTotal, color: '#ff4d4f', neg: true },
+    ];
+    const max = Math.max(eqMV, wTotal, cTotal, lTotal, 1);
+    bd.innerHTML = rows.map((r) => {
+      const pctW = (Math.min(r.val, max) / max * 100).toFixed(1);
+      const valCls = r.neg ? 'down' : '';
+      const valTxt = (r.neg ? '−' : '') + yuanOfW(r.val);
+      return `<div class="home-asset-item">
+        <div class="label"><span class="dot" style="--dot-c:${r.color}"></span>${r.label}</div>
+        <div class="val ${valCls}">${valTxt}</div>
+        <div class="home-asset-bar"><span style="--bar-w:${pctW}%;--bar-c:${r.color}"></span></div>
+      </div>`;
+    }).join('');
+  }
+
+  // 快捷功能（复用既有入口函数，避免重复实现弹框逻辑）
+  const sc = $('#homeShortcuts');
+  if (sc) {
+    const items = [
+      { ico: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="9"/>', label: '新增持仓', fn: () => openAddPick() },
+      { ico: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/>', label: '理财快照', fn: () => openSnapModal() },
+      { ico: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', label: '记收入', fn: async () => { await openFlowModal('in'); } },
+      { ico: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>', label: '记支出', fn: async () => { await openFlowModal('out'); } },
+      { ico: '<rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 9.5h16"/><path d="M8 3.2v3M16 3.2v3"/><path d="M12 11.6v4.2"/>', label: '基金定投', fn: () => openDCAPlans() },
+      { ico: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>', label: '新增平仓', fn: () => openClosedRecordModal(null) },
+      { ico: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>', label: '截图导入', fn: () => toast('截图导入：请通过 AI 助手或 MCP 客户端导入', 'info') },
+    ];
+    // 每个快捷功能取一个独立强调色（注入 --tint，仅作用于该微件子树，不影响全局强调色）
+    const SC_TINTS = ['217, 165, 43', '42, 163, 155', '232, 110, 145', '56, 132, 232', '139, 92, 246', '150, 165, 180', '120, 140, 170'];
+    sc.innerHTML = items.map((it, i) => `<div class="shortcut tier-3" data-i="${i}" style="--tint:${SC_TINTS[i] || 'var(--tint)'}">
+      <div class="shortcut-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${it.ico}</svg></div>
+      <div class="shortcut-label">${it.label}</div></div>`).join('');
+    sc.querySelectorAll('.shortcut').forEach((el) => {
+      el.style.cursor = 'pointer';
+      el.onclick = items[Number(el.dataset.i)].fn;
+    });
+  }
+
+  // 最新流水（近 45 天，取最近 8 笔；复用 /api/asset/flows）+ 类型过滤胶囊
+  const rf = $('#homeRecentFlows');
+  if (rf) {
+    rf.innerHTML = '<div class="recent-item"><div class="skeleton-line" style="--sk-w:80%"></div><div class="skeleton-line" style="--sk-w:55%"></div><div class="skeleton-line" style="--sk-w:65%"></div></div>';
+    try {
+      const end = new Date();
+      const start = new Date(end.getTime() - 45 * 864e5);
+      const fmtD = (d) => d.toISOString().slice(0, 10);
+      const r = await api(`/api/asset/flows?start=${fmtD(start)}&end=${fmtD(end)}`);
+      if (r.ok) {
+        const d = await r.json();
+        homeRecentFlowsData = (d.flows || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
+        renderRecentFlows();
+      }
+    } catch (_) { rf.innerHTML = '<div class="recent-item empty-hint">流水加载失败</div>'; }
+  }
+  // 首页「净资产走势」卡片：近 N 日净资产累计走势（数据复用盈亏日历 /api/pnl/history）
+  renderRateSpark(30, net);
+  bindHomeRangeTabs();
+}
+
+// ===== 财务（2026-10-20 tab 重构）=====
+async function showFinanceView() {
+  $('#financeView').hidden = false; // hideAllViews 后必须显式恢复，否则财务页空白
+  renderFinanceView();
+}
+
+// 首页最新流水：按类型过滤胶囊重渲染（全部 / 收入 / 支出 / 中性）
+function renderRecentFlows() {
+  const rf = $('#homeRecentFlows');
+  if (!rf) return;
+  const flows = homeRecentFlowsData.filter((f) => {
+    if (homeRecentFilter === 'all') return true;
+    const dir = finCatDir(flowCatOf(f)); // 'income' | 'expense' | 'neutral'
+    const short = dir === 'income' ? 'in' : (dir === 'expense' ? 'out' : 'neutral');
+    if (homeRecentFilter === 'neutral') return short === 'neutral';
+    return short === homeRecentFilter;
+  });
+  if (!flows.length) { rf.innerHTML = '<div class="recent-item empty-hint">该类型下暂无近期流水</div>'; return; }
+  rf.innerHTML = flows.map((f) => {
+    const isIn = f.direction === 'in';
+    const amtCls = isIn ? 'up' : 'down';
+    const amt = (isIn ? '+' : '−') + moneyCurW(f.amount, f.currency);
+    const dd = (f.date || '').slice(5);
+    const sub = [f.name, f.ref_name].filter(Boolean).join(' · ');
+    return `<div class="recent-item">
+      <span class="recent-date">${dd}</span>
+      <div><div class="recent-title">${cashFlowTypeTag(f)}</div><div class="recent-sub">${esc(sub || '')}</div></div>
+      <span class="recent-amt ${amtCls}">${amt}</span></div>`;
+  }).join('');
+}
+// 首页最新流水类型过滤胶囊（委托到容器，重渲染后依旧生效）
+(function bindRecentFilter() {
+  const box = document.getElementById('homeRecentFilter');
+  if (!box) return;
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('.rf-pill');
+    if (!b) return;
+    homeRecentFilter = b.dataset.rf;
+    box.querySelectorAll('.rf-pill').forEach((x) => x.classList.toggle('active', x === b));
+    renderRecentFlows();
+  });
+})();
+
+// 所有循环计划共享一个查看月份 YYYY-MM（统一翻页：滑动任意一张，全部一起翻）；默认当前月
+let cfViewYm = null;
+// 按月份缓存的 doneMap：ym -> { [planId]: {...} }
+const _planDoneCache = {};
+
+// 财务页当前查看的年度（YYYY 字符串）。切换后整页（收支平衡卡 + 概览卡）按该年度重算。
+let finYear = String(new Date().getFullYear());
+
+async function renderFinanceView() {
+  const hero = $('#finPassiveHero');
+  if (hero) hero.innerHTML = '<div class="passive-hero-main"><div class="passive-hero-label">收支平衡</div><div class="skeleton" style="--sk-w:220px;--sk-h:38px"></div></div>';
+  try {
+    const year = finYear;
+    api(`/api/asset/flows?start=${year}-01-01&end=${year}-12-31`).then(async (rf) => {
+      if (rf.ok) { const df = await rf.json(); finFlowsCache = df.flows || []; }
+    }).catch(() => {});
+    const r = await api(`/api/finance/summary?year=${encodeURIComponent(year)}`);
+    if (r.ok) {
+      const d = await r.json();
+      // 一张合并卡：hero 收支行（上）+ 分隔线 + 本月/年度概览（下）
+      if (hero) {
+        hero.innerHTML = finBalanceHeroHTML(d) + finOverviewSectionHTML(d);
+        const body = $('#finOverviewBody');
+        if (body) body.innerHTML = finOverviewHTML(d);
+      }
+      bindFinOverviewTabs(year !== String(new Date().getFullYear()));
+      bindFinYearSelect();
+      } else if (hero) {
+        hero.innerHTML = '<div class="passive-hero-main"><div class="passive-hero-value err">加载失败</div></div>';
+    }
+  } catch (_) {
+    if (hero) hero.innerHTML = '<div class="passive-hero-main"><div class="passive-hero-value err">加载失败</div></div>';
+  }
+
+  // 收支计划列表（每张循环卡 = 单月视图 + 左右箭头独立切换；one_time = 单卡）
+  await loadCashflow(); // 填充 cashflowPlans / cashflowDone（默认当前月），done 按当前月
+  // 统一查看月份：所有循环计划一起翻
+  _planDoneCache[cashflowMonth || cfNowYm] = cashflowDone;
+  cfViewYm = cashflowMonth || cfNowYm;
+  renderFinPlanList();
+  const addBtn = document.getElementById('finPlanAddBtn');
+  if (addBtn) addBtn.onclick = () => openCashflowModal();
+}
+
+// 取该 plan 在某月是否已完成（一次性计划忽略月份；循环计划用共享查看月份）
+function _planDoneAt(p, ym) {
+  if (p.pattern === 'one_time') return !!cashflowDone[p.id];
+  const dm = _planDoneCache[ym || cfViewYm || cfNowYm];
+  return !!(dm && dm[p.id]);
+}
+
+const FP_PREV_SVG = '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>';
+const FP_NEXT_SVG = '<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>';
+const _fpCardYm = {};         // 每张循环卡独立维护一个查看月份，箭头单独前后切换
+
+function ymShift(ym, delta) {
+  const [y, m] = (ym || '').split('-').map(Number);
+  const d = new Date(y || 2000, (m || 1) - 1 + delta, 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function ymLabel(ym) { const [y, m] = (ym || '').split('-'); return y + '/' + (m || ''); }
+function sleepMs(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// 某月的完成状态（带缓存，缺失才请求）
+async function ensurePlanDoneYm(ym) {
+  if (!ym || _planDoneCache[ym]) return;
+  try {
+    const r = await api('/api/cashflow/plans?month=' + ym);
+    if (r.ok) {
+      const d = await r.json();
+      const done = {};
+      const raw = d.done || {};
+      Object.keys(raw).forEach((k) => { done[Number(k)] = raw[k]; });
+      _planDoneCache[ym] = done;
+    }
+  } catch (_) { /* 拉失败按空处理 */ }
+  if (!_planDoneCache[ym]) _planDoneCache[ym] = {};
+}
+
+// 单张月卡的内容：一个「计划 × 月份」
+function fpRowHTML(p, ym) {
+  const isRecurring = p.pattern !== 'one_time';
+  const isIn = p.type === 'income';
+  const dotCls = isIn ? 'income' : 'expense';
+  const amtCur = curSymbolJS(p.currency || 'cny');
+  const amt = Math.abs(Number(p.amount) || 0);
+  const meta = p.pattern === 'one_time'
+    ? (p.one_time_date ? `一次性 · ${p.one_time_date}` : '一次性计划')
+    : `每月 ${cfSortDay(p)} 日`;
+  const liabTag = (p.type === 'expense' && p.liability_mode === 'incur') ? '<span class="cf-tag">新负债</span>'
+    : (p.liability_id ? '<span class="cf-tag">负债</span>' : '');
+  // 月份信息：金额下方、卡片最右；只用淡化字色，无底色无主题色无箭头
+  const monthPill = isRecurring ? `<span class="fp-month-pill" data-ym="${ym}">${ymLabel(ym)}</span>` : '';
+  return `<div class="fp-row">
+      <span class="plan-dot ${dotCls}"></span>
+      <div class="fp-main">
+        <div class="plan-title">${esc(p.title || '')}${liabTag} ${finCatBadge(p.category || (isIn ? 'other_in' : 'other_out'))}</div>
+        <div class="plan-meta">${esc(meta)}</div>
+      </div>
+      <div class="fp-side">
+        <span class="plan-amt ${dotCls}">${isIn ? '+' : '-'}${amtCur}${amt.toFixed(2)}</span>
+        ${monthPill}
+      </div>
+    </div>`;
+}
+
+// 右侧圆形 icon：未完成=铅笔编辑；已完成=对勾（不置灰）。计划级控件，不属于某一月，故放卡堆外
+function fpActHTML(p, ym) {
+  const done = _planDoneAt(p, ym);
+  return done
+    ? `<button class="fp-act fp-done" data-act="cf-edit" data-id="${p.id}" title="已完成 · 点击编辑计划" aria-label="已完成"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></button>`
+    : `<button class="fp-act" data-act="cf-edit" data-id="${p.id}" title="编辑计划" aria-label="编辑计划"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>`;
+}
+
+// 整卡内容：recurring = 单月视图 + 左右翻月箭头（各卡独立）；one_time = 单卡，无箭头
+function fpCardHTML(p) {
+  const isRecurring = p.pattern !== 'one_time';
+  if (!isRecurring) {
+    return `<div class="fp-row">${fpRowHTML(p, '')}</div>${fpActHTML(p, '')}`;
+  }
+  const ym = _fpCardYm[p.id] || cfViewYm || cfNowYm;
+  return `<button class="fp-nav-btn fp-prev" data-act="fp-prev" data-id="${p.id}" aria-label="上一月" title="上一月">${FP_PREV_SVG}</button>`
+       + `<div class="fp-content">${fpRowHTML(p, ym)}</div>`
+       + fpActHTML(p, ym)
+       + `<button class="fp-nav-btn fp-next" data-act="fp-next" data-id="${p.id}" aria-label="下一月" title="下一月">${FP_NEXT_SVG}</button>`;
+}
+
+// ---- 收支计划卡片：每张 recurring 卡 = 单月视图，左右箭头各自独立前后切换 ----
+// 切换只做简单的滑入/淡出过渡，不再堆叠。每张卡维护自己的查看月份 _fpCardYm[id]。
+
+// 单张卡翻到上/下一月：先按方向滑出，取数到位后换内容并滑入
+async function fpNav(cardEl, id, dir) {
+  if (cardEl.dataset.fpNavBusy === '1') return;
+  cardEl.dataset.fpNavBusy = '1';
+  try {
+    const p = (cashflowPlans || []).find((x) => x.id === Number(id));
+    if (!p) return;
+    const cur = _fpCardYm[id] || cfViewYm || cfNowYm;
+    const nextYm = ymShift(cur, dir);
+    const ready = ensurePlanDoneYm(nextYm);            // 与滑出动画并行取数
+    const content = cardEl.querySelector('.fp-content');
+    if (!content) return;
+    content.classList.add(dir < 0 ? 'fp-out-prev' : 'fp-out-next');
+    await Promise.all([ready, sleepMs(130)]);
+    _fpCardYm[id] = nextYm;
+    content.innerHTML = fpRowHTML(p, nextYm);
+    content.classList.remove('fp-out-prev', 'fp-out-next');
+    content.classList.add(dir < 0 ? 'fp-in-prev' : 'fp-in-next');
+    // 编辑按钮完成态随月份变化
+    const act = cardEl.querySelector('.fp-act');
+    if (act) act.outerHTML = fpActHTML(p, nextYm);
+    setTimeout(() => content.classList.remove('fp-in-prev', 'fp-in-next'), 200);
+  } finally {
+    delete cardEl.dataset.fpNavBusy;
+  }
+}
+
+// 渲染整个计划列表：一张 plan-item 对应一个计划（事件走 document 级委托，无需逐卡绑定）
+async function renderFinPlanList() {
+  const box = document.getElementById('finPlanList');
+  if (!box) return;
+  const list = cashflowPlans || [];
+  if (!list.length) {
+    box.innerHTML = '<div class="plan-empty empty-hint">暂无收支计划 · 点右上角「新增」建立</div>';
+    return;
+  }
+  await prefetchPlanMonths();                          // 先把相邻月份完成态取齐，避免显示成铅笔
+  box.innerHTML = list.map((p) => `<div class="plan-item${p.pattern !== 'one_time' ? ' fp-deck' : ''}" data-id="${p.id}">${fpCardHTML(p)}</div>`).join('');
+}
+
+// 预拉各卡当前月 ±1 的完成状态（按 ym 全局缓存，箭头切换即时生效）
+async function prefetchPlanMonths() {
+  const need = new Set();
+  need.add(cfViewYm || cfNowYm);
+  for (const id in _fpCardYm) {
+    const y = _fpCardYm[id];
+    need.add(y); need.add(ymShift(y, 1)); need.add(ymShift(y, -1));
+  }
+  const miss = [...need].filter((ym) => !_planDoneCache[ym]);
+  if (miss.length) await Promise.all(miss.map(ensurePlanDoneYm));
+}
+
+// 计划卡交互：翻月箭头 / 编辑 icon（document 级委托，卡片重渲染后仍生效）
+document.addEventListener('click', (e) => {
+  const card = e.target.closest ? e.target.closest('#finPlanList .plan-item') : null;
+  if (!card) return;
+  const navBtn = e.target.closest('.fp-nav-btn');
+  if (navBtn) {
+    fpNav(card, navBtn.dataset.id, navBtn.classList.contains('fp-prev') ? -1 : 1);
+    return;
+  }
+  const actBtn = e.target.closest('.fp-act');
+  if (actBtn) {
+    openCashflowModal((cashflowPlans || []).find((p) => p.id === Number(actBtn.dataset.id)));
+  }
+});
+
+// ---- 收支语义分类（与 internal/db/fincat.go BuiltinFinCats 同款，改这里同步改 Go）----
+// 方向：income=收入 / expense=支出 / neutral=中性（投资活动、内部划转、融资借贷，不计收支）
+const FIN_CATS = [
+  { key: 'salary', label: '工资薪金', dir: 'income' },
+  { key: 'business', label: '经营收入', dir: 'income' },
+  { key: 'invest_div', label: '投资分红', dir: 'income' },
+  { key: 'invest_int', label: '投资利息', dir: 'income' },
+  { key: 'gain', label: '落袋收益', dir: 'income' },
+  { key: 'other_in', label: '其他收入', dir: 'income' },
+  { key: 'living', label: '日常消费', dir: 'expense' },
+  { key: 'housing', label: '居住支出', dir: 'expense' },
+  { key: 'capex', label: '资本开支', dir: 'expense' },
+  { key: 'debt', label: '负债偿还', dir: 'expense' },
+  { key: 'tax', label: '税费', dir: 'expense' },
+  { key: 'insurance', label: '保险保障', dir: 'expense' },
+  { key: 'edu_health', label: '教育医疗', dir: 'expense' },
+  { key: 'fee', label: '投资费用', dir: 'expense' },
+  { key: 'other_out', label: '其他支出', dir: 'expense' },
+  { key: 'invest', label: '投资活动', dir: 'neutral' },
+  { key: 'transfer', label: '内部划转', dir: 'neutral' },
+  { key: 'financing', label: '融资借贷', dir: 'neutral' },
+];
+// 用户自定义分类（settings flow_categories，P3）：与内置分类合并进选择器与统计
+let customFlowCats = [];
+async function loadCustomFlowCats() {
+  try {
+    const r = await api('/api/settings/flow_categories');
+    if (r.ok) {
+      const d = await r.json();
+      let ls = [];
+      try { ls = JSON.parse(d.payload || '[]'); } catch (_) { ls = []; }
+      customFlowCats = (Array.isArray(ls) ? ls : []).filter((c) => c && c.key);
+    }
+  } catch (_) { customFlowCats = []; }
+}
+function finCatDef(key) {
+  const b = FIN_CATS.find((c) => c.key === key);
+  if (b) return b;
+  const c = (customFlowCats || []).find((x) => x.key === key);
+  return c ? { key: c.key, label: c.label || c.key, dir: c.dir || 'expense' } : null;
+}
+function finCatLabel(key) {
+  const d = finCatDef(key);
+  return d ? d.label : (key || '其他');
+}
+function finCatDir(key) {
+  const d = finCatDef(key);
+  return d ? d.dir : 'neutral';
+}
+// 某方向可选分类（内置 + 自定义，按内置序在前）
+function finCatOptions(dir) {
+  const builtin = FIN_CATS.filter((c) => c.dir === dir);
+  const custom = (customFlowCats || []).filter((c) => (c.dir || 'expense') === dir)
+    .map((c) => ({ key: c.key, label: c.label || c.key, dir: c.dir || 'expense' }));
+  return builtin.concat(custom);
+}
+// 存量/空分类兜底：按流水 type 推导（后端已批量回填，这里仅防御旧缓存）
+function autoCatOfFlow(type, amount) {
+  const inCats = { dividend: 'invest_div', mcp_dividend: 'invest_div', interest: 'invest_int', deposit_interest: 'invest_int', fee: 'fee' };
+  if (inCats[type]) return inCats[type];
+  if (['adjust_buy', 'adjust_sell', 'dca_buy', 'mcp_buy', 'mcp_sell', 'wealth_deposit', 'wealth_redeem', 'wealth_clear', 'wealth_reverse', 'mcp_subscribe', 'mcp_redeem', 'deposit_out', 'deposit_back'].includes(type)) return 'invest';
+  if (['transfer_in', 'transfer_out', 'transfer_rollback'].includes(type)) return 'transfer';
+  if (type === 'loan') return 'financing';
+  if (type === 'repay') return 'debt';
+  return (amount || 0) >= 0 ? 'other_in' : 'other_out';
+}
+function flowCatOf(f) {
+  return f && f.category ? f.category : autoCatOfFlow(f ? f.type : '', f ? f.amount : 0);
+}
+// 分类徽标（色点 + 标签）：收入红、支出绿（涨红跌绿），中性灰
+function finCatBadge(key, cls) {
+  const dir = finCatDir(key);
+  const tone = dir === 'income' ? 'in' : (dir === 'expense' ? 'out' : 'neu');
+  return `<span class="flow-tag cat ${tone} ${cls || ''}">${esc(finCatLabel(key))}</span>`;
+}
+
+// 月度 / 年度收支概览 HTML（被动收入 hero 之外；输入 financeSummary 响应）
+// 口径：收入/支出按语义分类（category）拆分；投资活动、内部划转、融资借贷不计收支，单独列中性小计。
+// 合并卡下半段：分隔线 + 本月/年度 tabs + 概览容器（内容另由 finOverviewHTML 填充）
+function finOverviewSectionHTML(d) {
+  const pastYear = String(d.selected_year || finYear) !== String(new Date().getFullYear());
+  return `<div class="fin-hero-sep"></div>
+    <div class="fin-overview-tabs">
+      <button class="fin-overview-tab active" data-fin="month" type="button"${pastYear ? ' hidden' : ''}>本月</button>
+      <button class="fin-overview-tab" data-fin="year" type="button">年度</button>
+    </div>
+    <div id="finOverviewBody"></div>`;
+}
+
+function finOverviewHTML(d) {
+  const mk = (blk, title) => {
+    const scope = title === '本月' ? 'month' : 'year';
+    const inc = blk.income || 0, exp = blk.expense || 0, net = blk.net || 0;
+    const rows = (blk.breakdown || []).map((c) => {
+      const isInc = c.type === 'income';
+      const w = Math.min(100, Math.abs(c.amount) / Math.max(inc, exp, 1) * 100);
+      return `<div class="fin-breakdown-row" data-cat="${esc(c.category)}" data-scope="${scope}">
+        <span class="fin-breakdown-caret" aria-hidden="true">▸</span>
+        <span class="fin-breakdown-label">${esc(finCatLabel(c.category))}</span>
+        <div class="fin-breakdown-bar"><div class="fin-breakdown-fill ${isInc ? 'income' : 'expense'}" style="--bw:${w.toFixed(1)}%"></div></div>
+        <span class="fin-breakdown-amt ${isInc ? 'up' : 'down'}">${isInc ? '+' : '−'}${moneyCurW(c.amount, 'cny')}</span>
+      </div>
+      <div class="fin-breakdown-detail" data-cat="${esc(c.category)}" data-scope="${scope}" hidden></div>`;
+    }).join('') || '<div class="fin-breakdown-row"><span class="fin-breakdown-label empty-hint">暂无数据</span></div>';
+    // 中性项：投资活动 / 内部划转 / 融资借贷（不影响结余）
+    const neutral = [];
+    if (blk.invest_in || blk.invest_out) neutral.push(`投资活动 流入 ${moneyCurW(blk.invest_in || 0, 'cny')} / 流出 ${moneyCurW(blk.invest_out || 0, 'cny')}`);
+    if (blk.transfer) neutral.push(`内部划转 ${moneyCurW(blk.transfer || 0, 'cny')}`);
+    if (blk.financing) neutral.push(`融资借贷 ${moneyCurW(blk.financing || 0, 'cny')}`);
+    const neutralHtml = neutral.length
+      ? `<div class="fin-neutral-row">${neutral.map((t) => `<span>${t}</span>`).join('')}</div>` : '';
+    return `<div class="fin-overview-body" data-fin="${title === '本月' ? 'month' : 'year'}">
+      <div class="fin-overview-kpis">
+        <div class="fin-kpi up"><div class="fin-kpi-val">${moneyCurW(inc, 'cny')}</div><div class="fin-kpi-label">收入</div></div>
+        <div class="fin-kpi-divider"></div>
+        <div class="fin-kpi down"><div class="fin-kpi-val">${moneyCurW(exp, 'cny')}</div><div class="fin-kpi-label">支出</div></div>
+        <div class="fin-kpi-divider"></div>
+        <div class="fin-kpi"><div class="fin-kpi-val" style="--kpi-c:${net >= 0 ? 'var(--up)' : 'var(--down)'}">${net >= 0 ? '+' : '−'}${moneyCurW(Math.abs(net), 'cny')}</div><div class="fin-kpi-label">结余</div></div>
+      </div>
+      <div class="fin-overview-breakdown">${rows}</div>
+      ${neutralHtml}
+    </div>`;
+  };
+  return mk(d.month, '本月') + mk(d.year, '年度');
+}
+
+// 被动收入来源拆分（分红 / 利息 / 落袋收益 / 理财派息），仅展示非零项
+function passiveBreakdownHTML(list) {
+  const items = (list || []).filter((x) => Math.abs(x.amount || 0) >= 0.005);
+  if (!items.length) return '';
+  return `<div class="ph-src">${items.map((x) =>
+    `<span class="ph-src-item">${esc(x.label)} <b class="up">+${moneyCurW(x.amount || 0, 'cny')}</b></span>`).join('')}</div>`;
+}
+
+// 收支平衡卡（原被动收入 hero）：年度收入/支出/结余 + 结余率，顶部年度可选。
+// 年份下拉只列后端返回的「有数据年份」（available_years）。
+function finBalanceHeroHTML(d) {
+  const curY = String(new Date().getFullYear());
+  const y = String(d.selected_year || finYear || curY);
+  const list = (d.available_years && d.available_years.length) ? d.available_years : [curY];
+  if (!list.includes(y)) list.unshift(y);
+  const yr = d.year || {};
+  const inc = Number(yr.income) || 0, exp = Number(yr.expense) || 0, net = Number(yr.net) || 0;
+  const rate = Math.max(-100, Math.min(100, Math.round((Number(d.save_rate) || 0) * 100)));
+  const months = Number(d.months_covered) || 0;
+  const opts = list.map((v) => `<option value="${esc(String(v))}"${String(v) === y ? ' selected' : ''}>${esc(String(v))} 年</option>`).join('');
+  return `<div class="fin-hero-top">
+    <div class="fin-bal-main">
+      <div class="fin-bal-head">
+        <span class="fin-bal-label">收支平衡</span>
+        <span class="fin-bal-year-box">
+          <select id="finYearSel" class="fin-bal-year-sel" aria-label="选择年度">${opts}</select>
+          <span class="fin-bal-year-caret" aria-hidden="true">▾</span>
+        </span>
+      </div>
+      <div class="fin-bal-value ${net >= 0 ? 'up' : 'down'}">${net >= 0 ? '+' : '−'}${yuanOfW(Math.abs(net))}</div>
+      <div class="fin-bal-sub">收入 <b class="up">${moneyCurW(inc, 'cny')}</b> · 支出 <b class="down">${moneyCurW(exp, 'cny')}</b></div>
+      <div class="fin-bal-sub">被动收入 ${yuanOfW(d.passive_income_year || 0)} · 已覆盖 <span class="hl-primary">${months.toFixed(1)} / 12 月</span> 支出</div>
+      ${passiveBreakdownHTML(d.passive_breakdown)}
+    </div>
+    <div class="passive-hero-side">
+      <div class="ph-cov-val">${rate}%</div>
+      <div class="ph-cov-bar"><span style="--cov:${Math.abs(rate)}%"></span></div>
+      <div class="ph-side-label">结余率</div>
+    </div>
+  </div>`;
+}
+
+// 年度下拉：切换后整页按该年度重算（hero 重建 + 概览卡重渲染）
+function bindFinYearSelect() {
+  const sel = document.getElementById('finYearSel');
+  if (!sel) return;
+  sel.onchange = () => {
+    finYear = sel.value;
+    renderFinanceView();
+  };
+}
+
+// pastYear=true 表示所选年度非当年：「本月」无意义，隐藏该 tab 并强制显示年度
+function bindFinOverviewTabs(pastYear) {
+  const tabs = Array.from(document.querySelectorAll('#financeView .fin-overview-tab'));
+  const show = (target) => {
+    tabs.forEach((x) => x.classList.toggle('active', x.dataset.fin === target));
+    document.querySelectorAll('#financeView .fin-overview-body').forEach((b) => { b.style.display = (b.dataset.fin === target) ? '' : 'none'; });
+  };
+  tabs.forEach((t) => { t.onclick = () => show(t.dataset.fin); });
+  const monthTab = tabs.find((t) => t.dataset.fin === 'month');
+  if (monthTab) monthTab.hidden = !!pastYear;
+  // 默认显示「本月」；往年则直接显示年度
+  show(pastYear ? 'year' : 'month');
+}
+
+// 收支汇总分类行可折叠明细：点击行左侧三角，下钻该分类下的具体流水（日期 / 名称 / 金额）
+// 一次性委托到 #financeView（内部 HTML 每次重渲染，委托不重复绑定）。
+(function bindFinOverviewDetail() {
+  const wrap = document.getElementById('financeView');
+  if (!wrap) return;
+  wrap.addEventListener('click', (e) => {
+    const row = e.target.closest('.fin-breakdown-row[data-cat]');
+    if (!row) return;
+    const cat = row.dataset.cat, scope = row.dataset.scope;
+    const detail = wrap.querySelector(`.fin-breakdown-detail[data-cat="${cssEsc(cat)}"][data-scope="${scope}"]`);
+    if (!detail) return;
+    const willOpen = detail.hidden;
+    // 切换三角（旋转）与明细显隐：detail 的 hidden 由 CSS [hidden] 兜底生效
+    row.classList.toggle('open', willOpen);
+    if (!willOpen) { detail.hidden = true; return; }
+    // 展开：从全年流水缓存筛选该分类 + 区间
+    let items = (finFlowsCache || []).filter((f) => flowCatOf(f) === cat);
+    if (scope === 'month') {
+      const ym = new Date(); const yms = ym.getFullYear() + '-' + String(ym.getMonth() + 1).padStart(2, '0');
+      items = items.filter((f) => (f.date || '').slice(0, 7) === yms);
+    }
+    items = items.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+    if (!items.length) { detail.innerHTML = '<div class="fin-detail-empty">该分类下暂无流水明细</div>'; detail.hidden = false; return; }
+    detail.innerHTML = items.map((f) => {
+      const isIn = f.direction === 'in';
+      const amtCls = isIn ? 'up' : 'down';
+      const amt = (isIn ? '+' : '−') + moneyCurW(f.amount, f.currency);
+      const sub = [f.name, f.ref_name, f.note].filter(Boolean).join(' · ');
+      return `<div class="fin-detail-row">
+        <span class="fin-detail-date">${(f.date || '').slice(5)}</span>
+        <span class="fin-detail-name">${esc(sub || cashFlowTypeTag(f))}</span>
+        <span class="fin-detail-amt ${amtCls}">${amt}</span></div>`;
+    }).join('');
+    detail.hidden = false;
+  });
+})();
+// CSS 选择器转义（分类 key 可能含字母数字下划线，安全转义兜底）
+function cssEsc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
+
+// 「持仓侠」标题文本：点击回到首页
 $('#brandTitle').onclick = () => {
-  navigate('holdings');
+  navigate('home');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 // ESC 键：从任意二级页（资产/速算/日历）返回主页
