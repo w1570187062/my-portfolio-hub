@@ -17,31 +17,31 @@ import (
 var DB *sql.DB
 
 type Holding struct {
-	ID           int64   `json:"id"`
-	Name         string  `json:"name"`
-	Symbol       string  `json:"symbol"`
-	Category     string  `json:"category"` // stock | fund
-	Market       string  `json:"market"`   // stock: 沪深|美股|港股 ; fund: QDII|债券|股票
-	Currency     string  `json:"currency"` // CNY | USD
-	SourceID     int64   `json:"source_id"` // 所属平台/来源（asset_sources）
-	Quantity     float64 `json:"quantity"`
-	CostPrice    float64 `json:"cost_price"`
-	CurrentPrice float64 `json:"current_price"`
-	PrevClose    float64 `json:"prev_close"`
-	Note         string  `json:"note"`
-	LinkedSymbol string  `json:"linked_symbol"` // 基金关联的股票代码，非空时点击基金可做技术分析
-	BuyDate      string  `json:"buy_date"`       // 买入日期（交易日期），YYYY-MM-DD，为空则不计持有天数
-	AssetType    string  `json:"asset_type"`     // 资产类型标签（红利价值/成长科技/消费/医药等，来自设置）
+	ID              int64   `json:"id"`
+	Name            string  `json:"name"`
+	Symbol          string  `json:"symbol"`
+	Category        string  `json:"category"`  // stock | fund
+	Market          string  `json:"market"`    // stock: 沪深|美股|港股 ; fund: QDII|债券|股票
+	Currency        string  `json:"currency"`  // CNY | USD
+	SourceID        int64   `json:"source_id"` // 所属平台/来源（asset_sources）
+	Quantity        float64 `json:"quantity"`
+	CostPrice       float64 `json:"cost_price"`
+	CurrentPrice    float64 `json:"current_price"`
+	PrevClose       float64 `json:"prev_close"`
+	Note            string  `json:"note"`
+	LinkedSymbol    string  `json:"linked_symbol"`    // 基金关联的股票代码，非空时点击基金可做技术分析
+	BuyDate         string  `json:"buy_date"`         // 买入日期（交易日期），YYYY-MM-DD，为空则不计持有天数
+	AssetType       string  `json:"asset_type"`       // 资产类型标签（红利价值/成长科技/消费/医药等，来自设置）
 	TransactionCost float64 `json:"transaction_cost"` // 交易成本/手续费，按持仓币种计，可选
-	BuyPlan       string  `json:"buy_plan"`       // 基金补仓计划 JSON（净值刷新时计算，不写 note 列）
-	Closed        bool    `json:"closed"`          // 是否已清仓（份额已归零）
-	LastQuantity  float64 `json:"last_quantity"`   // 清仓前最后份额（供历史盈亏重算基准）
-	LastCostPrice float64 `json:"last_cost_price"` // 清仓前最后成本价（供历史盈亏重算基准）
-	AnalysisSignal string `json:"analysis_signal"`  // 自动技术分析信号：buy/sell/hold（刷新时计算）
-	AnalysisUpPct  float64 `json:"analysis_up_pct"` // 自动分析看涨概率 up_pct（刷新时计算）
-	AnalysisAt     string `json:"analysis_at"`      // 自动分析生成时间（本地时区）
-	UserID        int64   `json:"user_id"`
-	UpdatedAt     string  `json:"updated_at"`
+	BuyPlan         string  `json:"buy_plan"`         // 基金补仓计划 JSON（净值刷新时计算，不写 note 列）
+	Closed          bool    `json:"closed"`           // 是否已清仓（份额已归零）
+	LastQuantity    float64 `json:"last_quantity"`    // 清仓前最后份额（供历史盈亏重算基准）
+	LastCostPrice   float64 `json:"last_cost_price"`  // 清仓前最后成本价（供历史盈亏重算基准）
+	AnalysisSignal  string  `json:"analysis_signal"`  // 自动技术分析信号：buy/sell/hold（刷新时计算）
+	AnalysisUpPct   float64 `json:"analysis_up_pct"`  // 自动分析看涨概率 up_pct（刷新时计算）
+	AnalysisAt      string  `json:"analysis_at"`      // 自动分析生成时间（本地时区）
+	UserID          int64   `json:"user_id"`
+	UpdatedAt       string  `json:"updated_at"`
 }
 
 func Init(path string) error {
@@ -128,12 +128,12 @@ func Init(path string) error {
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='transaction_cost'`).Scan(&tcc); e == nil && tcc == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN transaction_cost REAL NOT NULL DEFAULT 0`)
 	}
-		// 兼容旧库：新增 asset_type 列（资产类型标签：红利价值/成长科技/消费/医药等，来自设置）
+	// 兼容旧库：新增 asset_type 列（资产类型标签：红利价值/成长科技/消费/医药等，来自设置）
 	var atc int
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='asset_type'`).Scan(&atc); e == nil && atc == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN asset_type TEXT NOT NULL DEFAULT ''`)
 	}
-_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
+	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 		date    TEXT NOT NULL,
 		symbol  TEXT NOT NULL,
 		close   REAL NOT NULL,
@@ -144,11 +144,14 @@ _, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 		return fmt.Errorf("create price_daily: %w", err)
 	}
 	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS pnl_daily (
-		date      TEXT PRIMARY KEY,
-		total_cny REAL NOT NULL DEFAULT 0,
-		total_usd REAL NOT NULL DEFAULT 0,
-		rate      REAL NOT NULL DEFAULT 0,
-		detail    TEXT NOT NULL DEFAULT '{}'
+		date       TEXT NOT NULL,
+		user_id    INTEGER NOT NULL DEFAULT 0,
+		total_cny  REAL NOT NULL DEFAULT 0,
+		total_usd  REAL NOT NULL DEFAULT 0,
+		rate       REAL NOT NULL DEFAULT 0,
+		base_cny   REAL NOT NULL DEFAULT 0,
+		detail     TEXT NOT NULL DEFAULT '{}',
+		PRIMARY KEY (date, user_id)
 	)`)
 	if err != nil {
 		return fmt.Errorf("create pnl_daily: %w", err)
@@ -179,6 +182,9 @@ _, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 	}
 	if err := initOperationGuides(); err != nil {
 		return fmt.Errorf("init operation_guides: %w", err)
+	}
+	if err := initManualClosed(); err != nil {
+		return fmt.Errorf("init manual_closed_records: %w", err)
 	}
 	if err := initPortfolioSettings(); err != nil {
 		return fmt.Errorf("init portfolio_settings: %w", err)
@@ -257,14 +263,14 @@ func addAnalysisCacheColumn(col, def string) error {
 
 // AnalysisCacheRow is one cached analysis result for a symbol on a date.
 type AnalysisCacheRow struct {
-	Symbol             string
-	Date               string
-	BarsJSON           string
-	IndicatorsJSON     string
-	ProbabilityJSON   string
-	DailySignalsJSON   string
-	ValuationJSON      string
-	GeneratedAt        string
+	Symbol           string
+	Date             string
+	BarsJSON         string
+	IndicatorsJSON   string
+	ProbabilityJSON  string
+	DailySignalsJSON string
+	ValuationJSON    string
+	GeneratedAt      string
 }
 
 // GetAnalysisCache returns the cached row for a symbol on a date, if any.
@@ -460,8 +466,97 @@ func ListPositionTx(holdingID int64) ([]PositionTx, error) {
 // across all transactions of a holding.
 func SumRealizedPnl(holdingID int64) (float64, error) {
 	var s float64
-	err := DB.QueryRow(`SELECT COALESCE(SUM(realized_pnl),0) FROM position_tx WHERE holding_id=?`, holdingID).Scan(&s)
+	err := DB.QueryRow(`SELECT COALESCE(SUM(realized_pnl),0) FROM position_tx WHERE holding_id=? AND reverted=0`, holdingID).Scan(&s)
 	return s, err
+}
+
+// BatchSumRealizedPnl 批量返回每个 holding_id 的累计已实现盈亏（reverted 交易不计）。
+func BatchSumRealizedPnl(uid int64, holdingIDs []int64) (map[int64]float64, error) {
+	out := map[int64]float64{}
+	if len(holdingIDs) == 0 {
+		return out, nil
+	}
+	ph := make([]string, len(holdingIDs))
+	args := make([]interface{}, 0, len(holdingIDs)+1)
+	args = append(args, uid)
+	for i, id := range holdingIDs {
+		ph[i] = "?"
+		args = append(args, id)
+	}
+	rows, err := DB.Query(`SELECT holding_id, COALESCE(SUM(realized_pnl),0) FROM position_tx WHERE holding_id IN (`+strings.Join(ph, ",")+`) AND reverted=0 GROUP BY holding_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hid int64
+		var s float64
+		if err := rows.Scan(&hid, &s); err != nil {
+			return nil, err
+		}
+		out[hid] = s
+	}
+	return out, rows.Err()
+}
+
+// BatchLastSellDate 批量返回每个 holding_id 的最后一次 SELL（减仓）日期（YYYY-MM-DD），
+// 用于「已平仓」视图展示真实清仓时间。reverted=1 的回滚交易不计。无 SELL 的持仓返回空串。
+func BatchLastSellDate(uid int64, holdingIDs []int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	if len(holdingIDs) == 0 {
+		return out, nil
+	}
+	ph := make([]string, len(holdingIDs))
+	args := make([]interface{}, 0, len(holdingIDs)+1)
+	args = append(args, uid)
+	for i, id := range holdingIDs {
+		ph[i] = "?"
+		args = append(args, id)
+	}
+	rows, err := DB.Query(`SELECT holding_id, substr(MAX(created_at),1,10) FROM position_tx WHERE user_id=? AND holding_id IN (`+strings.Join(ph, ",")+`) AND tx_type='SELL' AND reverted=0 GROUP BY holding_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hid int64
+		var d string
+		if err := rows.Scan(&hid, &d); err != nil {
+			return nil, err
+		}
+		out[hid] = d
+	}
+	return out, rows.Err()
+}
+
+// BatchInvestedCost 批量返回每个 holding_id 的累计买入成本（BUY 交易金额之和，reverted 不计），
+// 用于「已平仓」视图计算盈亏率（清仓后 quantity=0 导致 cost_value 归零，需用原始买入成本作分母）。
+func BatchInvestedCost(uid int64, holdingIDs []int64) (map[int64]float64, error) {
+	out := map[int64]float64{}
+	if len(holdingIDs) == 0 {
+		return out, nil
+	}
+	ph := make([]string, len(holdingIDs))
+	args := make([]interface{}, 0, len(holdingIDs)+1)
+	args = append(args, uid)
+	for i, id := range holdingIDs {
+		ph[i] = "?"
+		args = append(args, id)
+	}
+	rows, err := DB.Query(`SELECT holding_id, COALESCE(SUM(amount),0) FROM position_tx WHERE user_id=? AND holding_id IN (`+strings.Join(ph, ",")+`) AND tx_type='BUY' AND reverted=0 GROUP BY holding_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hid int64
+		var s float64
+		if err := rows.Scan(&hid, &s); err != nil {
+			return nil, err
+		}
+		out[hid] = s
+	}
+	return out, rows.Err()
 }
 
 // RealizedPnl is one recorded realized gain/loss from a 减仓 (SELL) on a given day.
@@ -560,7 +655,7 @@ func AdjustHolding(id int64, txType string, quantity, price, fee float64, note, 
 		if quantity > cur.Quantity {
 			return nil, 0, fmt.Errorf("减仓数量不能超过当前份额")
 		}
-		realized = (price - cur.CostPrice) * quantity - fee
+		realized = (price-cur.CostPrice)*quantity - fee
 		newQty = cur.Quantity - quantity
 		if newQty <= 0 {
 			// 清仓：保留清仓前的份额与成本快照，供历史盈亏重算；持仓行标记 closed 且份额归零（列表显示为空仓）
@@ -740,116 +835,6 @@ func LoadFXRate() (cny, hkd, yesterdayCny, yesterdayHkd float64, updated string,
 		return 0, 0, 0, 0, "", false
 	}
 	return cny, hkd, yesterdayCny, yesterdayHkd, updated, true
-}
-
-// ---- Market value migration (one-time, idempotent) ----
-//
-// Legacy market codes (A_SH/A_SZ/FUND_ETF/FUND_OPEN/US/OTHER) are remapped to the
-// two-level scheme: fund -> {QDII, 债券, 股票}; stock -> {沪深, 美股, 港股}.
-
-func classifyFundMarket(name string) string {
-	if strings.Contains(name, "债") {
-		return "债券"
-	}
-	qdiiKeys := []string{"QDII", "全球", "纳指", "标普", "道琼斯", "道琼", "日本", "美国", "德国", "法国", "亚太", "海外", "互联", "中概", "普尔", "纳斯达克"}
-	for _, k := range qdiiKeys {
-		if strings.Contains(name, k) {
-			return "QDII"
-		}
-	}
-	return "股票"
-}
-
-// migrateMarkets remaps any legacy market codes to the new two-level scheme.
-// Safe to call on every startup: once migrated there are no legacy values left.
-func migrateMarkets() error {
-	// 全局一次性迁移：遍历所有用户的持仓（List(0) 返回全部），按主键更新 market。
-	hs, err := List(0)
-	if err != nil {
-		return err
-	}
-	for _, h := range hs {
-		var nm string
-		switch {
-		case h.Market == "US":
-			nm = "美股"
-		case h.Market == "A_SH", h.Market == "A_SZ", h.Market == "FUND_ETF":
-			nm = "沪深"
-		case h.Market == "FUND_OPEN":
-			nm = classifyFundMarket(h.Name)
-		case h.Market == "OTHER":
-			nm = "沪深"
-		case h.Market == "A股":
-			nm = "沪深"
-		default:
-			continue // already a new value
-		}
-		if nm != h.Market {
-			if _, e := DB.Exec("UPDATE holdings SET market=? WHERE id=?", nm, h.ID); e != nil {
-				return e
-			}
-		}
-	}
-	return nil
-}
-
-// migrateRoundHoldingPrices 一次性把存量持仓的价格字段按类别规整到标准小数位
-// （股票 2 位、基金 4 位），清理早期浮点运算产生的超长尾数（如 PEP 成本价 138.45769393791218）。
-func migrateRoundHoldingPrices() error {
-	hs, err := List(0)
-	if err != nil {
-		return err
-	}
-	for _, h := range hs {
-		nc := roundByCategory(h.Category, h.CostPrice)
-		np := roundByCategory(h.Category, h.CurrentPrice)
-		npc := roundByCategory(h.Category, h.PrevClose)
-		if nc == h.CostPrice && np == h.CurrentPrice && npc == h.PrevClose {
-			continue
-		}
-		if _, e := DB.Exec("UPDATE holdings SET cost_price=?,current_price=?,prev_close=? WHERE id=?", nc, np, npc, h.ID); e != nil {
-			return e
-		}
-	}
-	return nil
-}
-
-// migrateCurrencyCNY 一次性把存量币种标识统一为小写 cny/usd/hkd（2026-10-16）：
-// 人民币的 rmb/CNY/RMB 混写归一为 cny，美元/港币统一小写；asset_sources.currencies
-// 逗号串里的 rmb 替换为 cny。幂等：迁移后再次执行为 0 行更新，随每次启动安全检查。
-func migrateCurrencyCNY() error {
-	stmts := []string{
-		// 持仓：历史上写入口是大写归一，存量以 CNY/USD/HKD 为主
-		`UPDATE holdings SET currency='cny' WHERE UPPER(TRIM(currency)) IN ('CNY','RMB')`,
-		`UPDATE holdings SET currency='usd' WHERE UPPER(TRIM(currency))='USD'`,
-		`UPDATE holdings SET currency='hkd' WHERE UPPER(TRIM(currency))='HKD'`,
-		`UPDATE holdings SET currency='cny' WHERE TRIM(currency)=''`,
-		// 理财 / 现金 / 收支计划：历史上为小写 rmb
-		`UPDATE wealth_products SET currency='cny' WHERE UPPER(TRIM(currency)) IN ('CNY','RMB')`,
-		`UPDATE wealth_products SET currency='usd' WHERE UPPER(TRIM(currency))='USD'`,
-		`UPDATE wealth_products SET currency='hkd' WHERE UPPER(TRIM(currency))='HKD'`,
-		`UPDATE wealth_products SET currency='cny' WHERE TRIM(currency)=''`,
-		`UPDATE cash_accounts SET currency='cny' WHERE UPPER(TRIM(currency)) IN ('CNY','RMB')`,
-		`UPDATE cash_accounts SET currency='usd' WHERE UPPER(TRIM(currency))='USD'`,
-		`UPDATE cash_accounts SET currency='hkd' WHERE UPPER(TRIM(currency))='HKD'`,
-		`UPDATE cash_accounts SET currency='cny' WHERE TRIM(currency)=''`,
-		`UPDATE liabilities SET currency='cny' WHERE UPPER(TRIM(currency)) IN ('CNY','RMB')`,
-		`UPDATE liabilities SET currency='usd' WHERE UPPER(TRIM(currency))='USD'`,
-		`UPDATE liabilities SET currency='hkd' WHERE UPPER(TRIM(currency))='HKD'`,
-		`UPDATE liabilities SET currency='cny' WHERE TRIM(currency)=''`,
-		`UPDATE cashflow_plans SET currency='cny' WHERE UPPER(TRIM(currency)) IN ('CNY','RMB')`,
-		`UPDATE cashflow_plans SET currency='usd' WHERE UPPER(TRIM(currency))='USD'`,
-		`UPDATE cashflow_plans SET currency='hkd' WHERE UPPER(TRIM(currency))='HKD'`,
-		`UPDATE cashflow_plans SET currency='cny' WHERE TRIM(currency)=''`,
-		// 账户币种集合逗号串
-		`UPDATE asset_sources SET currencies=REPLACE(currencies,'rmb','cny') WHERE INSTR(currencies,'rmb')>0`,
-	}
-	for _, s := range stmts {
-		if _, err := DB.Exec(s); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // List returns holdings for a user (userID). Pass 0 to get all (used by scheduled jobs).
@@ -1111,13 +1096,14 @@ func SavePnlDaily(date string, totalCNY, totalUSD, rate, baseCNY float64, detail
 
 // PnlDay is one day's P&L record.
 type PnlDay struct {
-	Date     string  `json:"date"`
-	UserID   int64   `json:"user_id"`
-	TotalCNY float64 `json:"total_cny"`
-	TotalUSD float64 `json:"total_usd"`
-	Rate     float64 `json:"rate"`     // 汇率快照（CNY→USD），非收益率
-	BaseCNY  float64 `json:"base_cny"` // 当日净资产基数（CNY），用于真实日收益率 = 当日盈亏 / base_cny
-	Detail   string  `json:"detail"`
+	Date       string  `json:"date"`
+	UserID     int64   `json:"user_id"`
+	TotalCNY   float64 `json:"total_cny"`
+	TotalUSD   float64 `json:"total_usd"`
+	Rate       float64 `json:"rate"`                  // 汇率快照（CNY→USD），非收益率
+	BaseCNY    float64 `json:"base_cny"`              // 当日净资产基数（CNY），用于真实日收益率 = 当日盈亏 / base_cny
+	ContribCNY float64 `json:"contrib_cny,omitempty"` // 截至该日的累计净投入（CNY），由前端或后端推算
+	Detail     string  `json:"detail"`
 }
 
 // BackfillPnlBase 将历史 pnl_daily 中 base_cny 仍为 0/空 的行补齐为指定基数（幂等：仅更新 0 值行）。
@@ -1158,8 +1144,9 @@ func HasPnlDate(date string, userID int64) (bool, error) {
 
 func initAISettings() error {
 	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS ai_settings (
-		id INTEGER PRIMARY KEY CHECK (id = 1),
-		cfg TEXT NOT NULL DEFAULT '{}'
+		user_id INTEGER NOT NULL DEFAULT 0,
+		cfg     TEXT NOT NULL DEFAULT '{}',
+		PRIMARY KEY (user_id)
 	)`)
 	return err
 }
@@ -1318,10 +1305,10 @@ func initAssetTables() error {
 			note TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT ''
 			)`,
-			// 月度待入账/待还款计划：每月固定某日发生的收支（工资待入账 / 房贷待还款 等）。
-			// type: income=待入账(入账) / expense=待还款(出账)；account_id 关联已有现金账户系统；
-			// liability_id 仅 expense 有意义，关联某笔负债，完成时同步记一笔负债还款流水。
-			`CREATE TABLE IF NOT EXISTS cashflow_plans (
+		// 月度待入账/待还款计划：每月固定某日发生的收支（工资待入账 / 房贷待还款 等）。
+		// type: income=待入账(入账) / expense=待还款(出账)；account_id 关联已有现金账户系统；
+		// liability_id 仅 expense 有意义，关联某笔负债，完成时同步记一笔负债还款流水。
+		`CREATE TABLE IF NOT EXISTS cashflow_plans (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				user_id INTEGER NOT NULL DEFAULT 0,
 				type TEXT NOT NULL DEFAULT 'income',
@@ -1338,9 +1325,9 @@ func initAssetTables() error {
 				liability_mode TEXT NOT NULL DEFAULT 'repay',
 				created_at TEXT NOT NULL DEFAULT ''
 			)`,
-			// 完成记录：某计划在某一月份(ym)被勾选完成后落库一条，保证幂等（同 plan+ym 唯一）。
-			// ref_type/ref_id 指向完成时所记的真实资金流水（cash_flow.id / liability_flows.id），供撤销时反向记账。
-			`CREATE TABLE IF NOT EXISTS cashflow_plan_done (
+		// 完成记录：某计划在某一月份(ym)被勾选完成后落库一条，保证幂等（同 plan+ym 唯一）。
+		// ref_type/ref_id 指向完成时所记的真实资金流水（cash_flow.id / liability_flows.id），供撤销时反向记账。
+		`CREATE TABLE IF NOT EXISTS cashflow_plan_done (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				user_id INTEGER NOT NULL DEFAULT 0,
 				plan_id INTEGER NOT NULL DEFAULT 0,
@@ -1351,16 +1338,16 @@ func initAssetTables() error {
 				note TEXT NOT NULL DEFAULT '',
 				done_at TEXT NOT NULL DEFAULT ''
 			)`,
-			// 待还款提醒发送日志：每个计划每个月(ym)只提醒一次，避免重复推送。
-			`CREATE TABLE IF NOT EXISTS cashflow_reminder_log (
+		// 待还款提醒发送日志：每个计划每个月(ym)只提醒一次，避免重复推送。
+		`CREATE TABLE IF NOT EXISTS cashflow_reminder_log (
 				plan_id INTEGER NOT NULL DEFAULT 0,
 				user_id INTEGER NOT NULL DEFAULT 0,
 				ym TEXT NOT NULL DEFAULT '',
 				sent_at TEXT NOT NULL DEFAULT '',
 				PRIMARY KEY (plan_id, ym)
 			)`,
-			}
-			for _, s := range stmts {
+	}
+	for _, s := range stmts {
 		if _, err := DB.Exec(s); err != nil {
 			return err
 		}
@@ -1424,7 +1411,43 @@ func initAssetTables() error {
 	addColumnIfMissing("wealth_snapshot_audit", "new_dividend", "REAL NOT NULL DEFAULT 0")
 	// 存量回填：早期 MCP 写入的流水未记录 source，其 type 以 'mcp_' 开头，一次性补齐来源标记。
 	_, _ = DB.Exec(`UPDATE cash_flow SET source='mcp' WHERE COALESCE(source,'')='' AND substr(type,1,4)='mcp_'`)
+	// 收支语义分类（2026-10-22）：cash_flow / cashflow_plans 增加 category 列，
+	// 存量回填按 type 自动映射 + manual 按备注关键词启发式（见 fincat.go）。
+	addColumnIfMissing("cash_flow", "category", "TEXT NOT NULL DEFAULT ''")
+	addColumnIfMissing("cashflow_plans", "category", "TEXT NOT NULL DEFAULT ''")
+	migrateFinCategory()
+	if err := initDeposits(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// migrateFinCategory 存量流水分类回填（幂等：只更新 category 为空的行）。
+func migrateFinCategory() {
+	rows, err := DB.Query(`SELECT id,type,amount,note FROM cash_flow WHERE COALESCE(category,'')=''`)
+	if err != nil {
+		return
+	}
+	type row struct {
+		id     int64
+		typ    string
+		amount float64
+		note   string
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if e := rows.Scan(&r.id, &r.typ, &r.amount, &r.note); e != nil {
+			rows.Close()
+			return
+		}
+		pending = append(pending, r)
+	}
+	rows.Close()
+	for _, r := range pending {
+		cat := AutoCategory(r.typ, r.amount, r.note)
+		_, _ = DB.Exec(`UPDATE cash_flow SET category=? WHERE id=?`, cat, r.id)
+	}
 }
 
 // ---- Asset sources (资产来源 / 账户) ----
@@ -1433,8 +1456,8 @@ type AssetSource struct {
 	ID         int64  `json:"id"`
 	UserID     int64  `json:"user_id"`
 	Name       string `json:"name"`
-	Type       string `json:"type"` // bank | securities | software | platform
-	Region     string `json:"region"` // cn | hk | us，账户归属地域（账户内资产默认即该地域资产）
+	Type       string `json:"type"`       // bank | securities | software | platform
+	Region     string `json:"region"`     // cn | hk | us，账户归属地域（账户内资产默认即该地域资产）
 	Currencies string `json:"currencies"` // 币种集合（逗号分隔：cny/hkd/usd），为空时按存量推断回填
 	AccountNo  string `json:"account_no"` // 账户唯一标识：CN=银行卡号，HK/US=账户/券商账号；可选、不强制唯一
 	Note       string `json:"note"`
@@ -1538,18 +1561,18 @@ func DeleteSource(id int64) error {
 // ---- Wealth products (理财) ----
 
 type WealthProduct struct {
-	ID        int64   `json:"id"`
-	UserID    int64   `json:"user_id"`
-	SourceID  int64   `json:"source_id"`
-	Name      string  `json:"name"`
-	Code      string  `json:"code"`
-	Currency  string  `json:"currency"`
+	ID           int64   `json:"id"`
+	UserID       int64   `json:"user_id"`
+	SourceID     int64   `json:"source_id"`
+	Name         string  `json:"name"`
+	Code         string  `json:"code"`
+	Currency     string  `json:"currency"`
 	Note         string  `json:"note"`
-	CumPnl       float64 `json:"cum_pnl"`       // 累计收益：手动编辑值优先；为 0 时由每日快照自动累计。
-	Archived     bool    `json:"archived"`     // 已清仓停用：保留产品与历史收益，可重新启用或永久删除。
-	Nav          float64 `json:"nav"`          // 最新净值（基金码产品自动抓取；银行理财由用户在 App 看一眼录入）。0 表示未录入/不适用。
+	CumPnl       float64 `json:"cum_pnl"`        // 累计收益：手动编辑值优先；为 0 时由每日快照自动累计。
+	Archived     bool    `json:"archived"`       // 已清仓停用：保留产品与历史收益，可重新启用或永久删除。
+	Nav          float64 `json:"nav"`            // 最新净值（基金码产品自动抓取；银行理财由用户在 App 看一眼录入）。0 表示未录入/不适用。
 	NavUpdatedAt string  `json:"nav_updated_at"` // 净值更新时间（YYYY-MM-DD HH:MM:SS）。
-	Shares       float64 `json:"shares"`       // 持有份额：>0 时持仓金额 = 份额 × 净值，净值刷新即自动重算金额与每日盈亏。
+	Shares       float64 `json:"shares"`         // 持有份额：>0 时持仓金额 = 份额 × 净值，净值刷新即自动重算金额与每日盈亏。
 	CreatedAt    string  `json:"created_at"`
 }
 
@@ -1633,37 +1656,40 @@ func DeleteWealth(id int64) error {
 // ---- Cash accounts (现金) ----
 
 type Cash struct {
-	ID        int64   `json:"id"`
-	UserID    int64   `json:"user_id"`
-	SourceID  int64   `json:"source_id"`
-	Name      string  `json:"name"`
-	Currency  string  `json:"currency"`
-	Type      string  `json:"type"` // 子账户类型：活期/定期/零钱/保证金等，自由填写
-	Amount    float64 `json:"amount"`
-	Note      string  `json:"note"`
+	ID       int64   `json:"id"`
+	UserID   int64   `json:"user_id"`
+	SourceID int64   `json:"source_id"`
+	Name     string  `json:"name"`
+	Currency string  `json:"currency"`
+	Type     string  `json:"type"` // 子账户类型：活期/定期/零钱/保证金等，自由填写
+	Amount   float64 `json:"amount"`
+	Note     string  `json:"note"`
 	// IsDefault：已废弃的「默认子账户」标记。2026-10-16 移除默认子账户概念（所有子账户
 	// 均可单独删除、资金兜底改按余额最大选取），列与字段保留仅为兼容存量数据，不再读写、
 	// 不输出到 API（json:"-"）。
-	IsDefault bool `json:"-"`
-	CreatedAt string  `json:"created_at"`
+	IsDefault bool   `json:"-"`
+	CreatedAt string `json:"created_at"`
 }
 
 // ---- 现金流水（余额变动历史）----
 
 type CashFlow struct {
-	ID        int64   `json:"id"`
-	UserID    int64   `json:"user_id"`
-	CashID    int64   `json:"cash_id"`
-	Date      string  `json:"date"`     // YYYY-MM-DD
-	Type      string  `json:"type"`     // adjust_buy 加仓付款 | adjust_sell 减仓回款 | manual 手工调整
-	Amount    float64 `json:"amount"`   // 变动额：正=入账，负=出账
-	Balance   float64 `json:"balance"`  // 变动后的账户余额
-	RefType   string  `json:"ref_type"` // holding | wealth | ""
-	RefID     int64   `json:"ref_id"`
-	RefName   string  `json:"ref_name"`
-	Note      string  `json:"note"`
-	Source    string  `json:"source"` // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
-	CreatedAt string  `json:"created_at"`
+	ID      int64   `json:"id"`
+	UserID  int64   `json:"user_id"`
+	CashID  int64   `json:"cash_id"`
+	Date    string  `json:"date"`     // YYYY-MM-DD
+	Type    string  `json:"type"`     // adjust_buy 加仓付款 | adjust_sell 减仓回款 | manual 手工调整
+	Amount  float64 `json:"amount"`   // 变动额：正=入账，负=出账
+	Balance float64 `json:"balance"`  // 变动后的账户余额
+	RefType string  `json:"ref_type"` // holding | wealth | ""
+	RefID   int64   `json:"ref_id"`
+	RefName string  `json:"ref_name"`
+	Note    string  `json:"note"`
+	// Category 收支语义分类（工资/消费/资本开支/投资分红…，见 fincat.go）。
+	// 空值 = 未显式选择，展示与统计时按 type 自动推导（AutoCategory）。
+	Category  string `json:"category"`
+	Source    string `json:"source"` // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
+	CreatedAt string `json:"created_at"`
 }
 
 func ListCash(userID int64) ([]Cash, error) {
@@ -1857,12 +1883,12 @@ func EnsureCashForCurrency(userID, sourceID int64, sourceName, currency string) 
 		display = name + " " + strings.ToUpper(cur) + " 子账户"
 	}
 	return CreateCash(&Cash{
-		UserID:    userID,
-		SourceID:  sourceID,
-		Name:      display,
-		Currency:  cur,
-		Amount:    0,
-		Note:      "按需自动创建（资金联动落点）",
+		UserID:   userID,
+		SourceID: sourceID,
+		Name:     display,
+		Currency: cur,
+		Amount:   0,
+		Note:     "按需自动创建（资金联动落点）",
 	})
 }
 
@@ -1900,8 +1926,11 @@ func SyncSourceCurrency(userID, sourceID int64, currency string) error {
 
 func AddCashFlow(f *CashFlow) error {
 	f.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	_, err := DB.Exec(`INSERT INTO cash_flow(user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		f.UserID, f.CashID, f.Date, f.Type, f.Amount, f.Balance, f.RefType, f.RefID, f.RefName, f.Note, f.Source, f.CreatedAt)
+	if strings.TrimSpace(f.Category) == "" {
+		f.Category = AutoCategory(f.Type, f.Amount, f.Note)
+	}
+	_, err := DB.Exec(`INSERT INTO cash_flow(user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,category,source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		f.UserID, f.CashID, f.Date, f.Type, f.Amount, f.Balance, f.RefType, f.RefID, f.RefName, f.Note, f.Category, f.Source, f.CreatedAt)
 	return err
 }
 
@@ -1909,7 +1938,7 @@ func ListCashFlows(cashID int64, limit int) ([]CashFlow, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
-	rows, err := DB.Query(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,COALESCE(source,''),created_at FROM cash_flow WHERE cash_id=? ORDER BY id DESC LIMIT ?`, cashID, limit)
+	rows, err := DB.Query(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,COALESCE(category,''),COALESCE(source,''),created_at FROM cash_flow WHERE cash_id=? ORDER BY id DESC LIMIT ?`, cashID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1917,7 +1946,7 @@ func ListCashFlows(cashID int64, limit int) ([]CashFlow, error) {
 	var out []CashFlow
 	for rows.Next() {
 		var f CashFlow
-		if err := rows.Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.Source, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.Category, &f.Source, &f.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, f)
@@ -1939,7 +1968,45 @@ type AggFlow struct {
 	Balance   float64 `json:"balance"`
 	Direction string  `json:"direction"` // "in" | "out"
 	Note      string  `json:"note"`
-	Source    string  `json:"source"` // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
+	Category  string  `json:"category"` // 收支语义分类（空=按 type 自动推导）
+	Source    string  `json:"source"`   // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
+}
+
+// ListFlowYears 返回该用户存在收支数据的年份（YYYY，降序去重）。
+// 来源覆盖现金流水、负债流水、减仓落袋、手动平仓、理财派息五处，
+// 供财务页年度选择器只列出真正有数据的年份。
+func ListFlowYears(userID int64) ([]string, error) {
+	qs := []string{
+		`SELECT DISTINCT substr(date,1,4) FROM cash_flow WHERE user_id=? AND date<>''`,
+		`SELECT DISTINCT substr(date,1,4) FROM liability_flows WHERE user_id=? AND date<>''`,
+		`SELECT DISTINCT substr(date,1,4) FROM realized_pnl_daily WHERE user_id=? AND date<>''`,
+		`SELECT DISTINCT substr(realized_at,1,4) FROM manual_closed_records WHERE user_id=? AND realized_at<>''`,
+		`SELECT DISTINCT substr(s.date,1,4) FROM wealth_snapshots s JOIN wealth_products w ON w.id=s.wealth_id
+		 WHERE w.user_id=? AND s.date<>'' AND s.dividend<>0`,
+	}
+	set := map[string]bool{}
+	for _, q := range qs {
+		rows, err := DB.Query(q, userID)
+		if err != nil {
+			continue // 单表缺失/无数据不影响其余来源
+		}
+		for rows.Next() {
+			var y string
+			if e := rows.Scan(&y); e == nil && len(y) == 4 && y >= "2000" && y <= "2999" {
+				set[y] = true
+			}
+		}
+		rows.Close()
+	}
+	out := make([]string, 0, len(set))
+	for y := range set {
+		out = append(out, y)
+	}
+	sort.Strings(out)
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
 }
 
 // ListFlows 返回某用户在 [start,end] 日期区间内的全部资金流水（现金+负债），按日期倒序。
@@ -1947,7 +2014,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 	out := []AggFlow{}
 	// 现金流水：持仓调仓/理财调仓/转账/手工调整，关联 cash_accounts 取币种与名称。
 	// 来源(source)：优先取显式落库的 source 列；兼容存量数据——早期 MCP 流水 type 以 'mcp_' 开头。
-	q1 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.ref_name, f.note, COALESCE(c.name,''), COALESCE(c.currency,'cny'),
+	q1 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.ref_name, f.note, COALESCE(c.name,''), COALESCE(c.currency,'cny'), COALESCE(f.category,''),
 	              CASE WHEN COALESCE(f.source,'')<>'' THEN f.source
 	                   WHEN substr(f.type,1,4)='mcp_' THEN 'mcp'
 	                   ELSE '' END
@@ -1960,7 +2027,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 	for rows.Next() {
 		var f AggFlow
 		var amt float64
-		if e := rows.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.RefName, &f.Note, &f.Name, &f.Currency, &f.Source); e != nil {
+		if e := rows.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.RefName, &f.Note, &f.Name, &f.Currency, &f.Category, &f.Source); e != nil {
 			rows.Close()
 			return nil, e
 		}
@@ -1970,7 +2037,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		out = append(out, f)
 	}
 	rows.Close()
-	// 负债流水：贷款/还款，关联 liabilities 取币种与名称
+	// 负债流水：贷款/还款，关联 liabilities 取币种与名称；分类由 type 推导（loan=融资借贷 / repay=负债偿还）
 	q2 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.note, COALESCE(l.name,''), COALESCE(l.currency,'cny')
 	       FROM liability_flows f LEFT JOIN liabilities l ON l.id=f.liability_id
 	       WHERE f.user_id=? AND f.date>=? AND f.date<=?`
@@ -1988,6 +2055,11 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		f.Kind = "liability"
 		f.Amount = amt
 		f.Direction = dirOf(amt)
+		if f.Type == "loan" {
+			f.Category = CatFinancing
+		} else if f.Type == "repay" {
+			f.Category = CatDebt
+		}
 		out = append(out, f)
 	}
 	// 按日期倒序，日期相同按 id 倒序
@@ -2031,13 +2103,24 @@ func FlowYears(userID int64) ([]int, error) {
 
 // AddCashAmount 调整现金账户余额（delta 正=入账 / 负=出账）并写入一条流水，
 // 保证账户余额与流水始终成对一致。调用方需保证 cashID 属于当前用户。
+// 收支分类为空时按流水类型自动推导（见 fincat.go AutoCategory）。
 func AddCashAmount(cashID int64, delta float64, typ, refType string, refID int64, refName, note string) error {
-	return AddCashAmountFrom("", cashID, delta, typ, refType, refID, refName, note)
+	return AddCashAmountCat(cashID, delta, typ, refType, refID, refName, note, "")
+}
+
+// AddCashAmountCat 同 AddCashAmount，但显式指定收支语义分类（category 传空 = 自动推导）。
+func AddCashAmountCat(cashID int64, delta float64, typ, refType string, refID int64, refName, note, category string) error {
+	return AddCashAmountFromCat("", cashID, delta, typ, refType, refID, refName, note, category)
 }
 
 // AddCashAmountFrom 同 AddCashAmount，但额外记录流水来源（source），
 // 例如 source="mcp" 表示该流水由 MCP 服务写入，前端流水表格据此打标签突出显示。
 func AddCashAmountFrom(source string, cashID int64, delta float64, typ, refType string, refID int64, refName, note string) error {
+	return AddCashAmountFromCat(source, cashID, delta, typ, refType, refID, refName, note, "")
+}
+
+// AddCashAmountFromCat 同 AddCashAmountFrom，但显式指定收支语义分类。
+func AddCashAmountFromCat(source string, cashID int64, delta float64, typ, refType string, refID int64, refName, note, category string) error {
 	c, err := GetCash(cashID)
 	if err != nil {
 		return err
@@ -2050,17 +2133,18 @@ func AddCashAmountFrom(source string, cashID int64, delta float64, typ, refType 
 		return err
 	}
 	return AddCashFlow(&CashFlow{
-		UserID:  c.UserID,
-		CashID:  cashID,
-		Date:    time.Now().Format("2006-01-02"),
-		Type:    typ,
-		Amount:  math.Round(delta*100) / 100,
-		Balance: bal,
-		RefType: refType,
-		RefID:   refID,
-		RefName: refName,
-		Note:    note,
-		Source:  source,
+		UserID:   c.UserID,
+		CashID:   cashID,
+		Date:     time.Now().Format("2006-01-02"),
+		Type:     typ,
+		Amount:   math.Round(delta*100) / 100,
+		Balance:  bal,
+		RefType:  refType,
+		RefID:    refID,
+		RefName:  refName,
+		Note:     note,
+		Category: strings.TrimSpace(category),
+		Source:   source,
 	})
 }
 
@@ -2251,16 +2335,20 @@ func WealthProductOwner(wealthID int64) (int64, error) {
 }
 
 // GetWealthProduct 按 ID 取单个理财产品；不存在返回 (nil, nil)。
+// 注意：archived 必须一并查出——「已清仓停用」的录入拦截与清仓幂等校验都依赖它
+// （早期版本漏查该列，导致 p.Archived 恒 false，相关守卫全部落空）。
 func GetWealthProduct(id int64) (*WealthProduct, error) {
 	var w WealthProduct
-	err := DB.QueryRow(`SELECT id,user_id,source_id,name,code,currency,cum_pnl,note,created_at FROM wealth_products WHERE id=?`, id).
-		Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.CumPnl, &w.Note, &w.CreatedAt)
+	var archived int
+	err := DB.QueryRow(`SELECT id,user_id,source_id,name,code,currency,cum_pnl,note,archived,created_at FROM wealth_products WHERE id=?`, id).
+		Scan(&w.ID, &w.UserID, &w.SourceID, &w.Name, &w.Code, &w.Currency, &w.CumPnl, &w.Note, &archived, &w.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	w.Archived = archived != 0
 	return &w, nil
 }
 
@@ -2440,21 +2528,22 @@ func ListLiabilityFlows(userID, liabilityID int64) ([]LiabilityFlow, error) {
 // ---- Cashflow plans (月度待入账 / 待还款计划) ----
 
 type CashflowPlan struct {
-	ID           int64   `json:"id"`
-	UserID       int64   `json:"user_id"`
-	Type         string  `json:"type"`         // income 待入账 | expense 待还款
-	Title        string  `json:"title"`
-	DayOfMonth   int     `json:"day_of_month"` // 每月几号（1-31），recurring_* 模式使用
-	Amount       float64 `json:"amount"`
-	Currency     string  `json:"currency"`
-	AccountID    int64   `json:"account_id"`    // 关联子账户（入账/还款账户；incur 模式必填）
-	LiabilityID  int64   `json:"liability_id"`  // 关联负债（仅 expense）
-	Note         string  `json:"note"`
-	EndDate      string  `json:"end_date"`      // 截止日期 YYYY-MM-DD，空=长期有效
-	Pattern      string  `json:"pattern"`       // recurring_fixed | recurring_variable | one_time
-	OneTimeDate  string  `json:"one_time_date"` // 一次性计划归属具体日期 YYYY-MM-DD
-	LiabilityMode string `json:"liability_mode"` // repay(还款已有) | incur(产生新负债)，仅 expense
-	CreatedAt    string  `json:"created_at"`
+	ID            int64   `json:"id"`
+	UserID        int64   `json:"user_id"`
+	Type          string  `json:"type"` // income 待入账 | expense 待还款
+	Title         string  `json:"title"`
+	DayOfMonth    int     `json:"day_of_month"` // 每月几号（1-31），recurring_* 模式使用
+	Amount        float64 `json:"amount"`
+	Currency      string  `json:"currency"`
+	AccountID     int64   `json:"account_id"`   // 关联子账户（入账/还款账户；incur 模式必填）
+	LiabilityID   int64   `json:"liability_id"` // 关联负债（仅 expense）
+	Note          string  `json:"note"`
+	EndDate       string  `json:"end_date"`       // 截止日期 YYYY-MM-DD，空=长期有效
+	Pattern       string  `json:"pattern"`        // recurring_fixed | recurring_variable | one_time
+	OneTimeDate   string  `json:"one_time_date"`  // 一次性计划归属具体日期 YYYY-MM-DD
+	LiabilityMode string  `json:"liability_mode"` // repay(还款已有) | incur(产生新负债)，仅 expense
+	Category      string  `json:"category"`       // 收支语义分类（完成入账时落到现金流水；空=按方向兜底 other_in/other_out）
+	CreatedAt     string  `json:"created_at"`
 }
 
 type CashflowDone struct {
@@ -2470,7 +2559,7 @@ type CashflowDone struct {
 }
 
 func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
-	rows, err := DB.Query(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,created_at FROM cashflow_plans WHERE user_id=? ORDER BY (CASE WHEN pattern='one_time' THEN 1 ELSE 0 END), day_of_month ASC, id ASC`, uid)
+	rows, err := DB.Query(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),created_at FROM cashflow_plans WHERE user_id=? ORDER BY (CASE WHEN pattern='one_time' THEN 1 ELSE 0 END), day_of_month ASC, id ASC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -2478,11 +2567,11 @@ func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
 	var out []CashflowPlan
 	for rows.Next() {
 		var p CashflowPlan
-		var typ, title, cur, note, pat, otd, lmode string
-		if err := rows.Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &p.CreatedAt); err != nil {
+		var typ, title, cur, note, pat, otd, lmode, cat string
+		if err := rows.Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.CreatedAt); err != nil {
 			return nil, err
 		}
-		p.Type, p.Title, p.Currency, p.Note, p.Pattern, p.OneTimeDate, p.LiabilityMode = typ, title, cur, note, pat, otd, lmode
+		p.Type, p.Title, p.Currency, p.Note, p.Pattern, p.OneTimeDate, p.LiabilityMode, p.Category = typ, title, cur, note, pat, otd, lmode, cat
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -2490,16 +2579,16 @@ func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
 
 func GetCashflowPlan(id int64) (*CashflowPlan, error) {
 	var p CashflowPlan
-	var typ, title, cur, note, pat, otd, lmode string
-	err := DB.QueryRow(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,created_at FROM cashflow_plans WHERE id=?`, id).
-		Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &p.CreatedAt)
+	var typ, title, cur, note, pat, otd, lmode, cat string
+	err := DB.QueryRow(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),created_at FROM cashflow_plans WHERE id=?`, id).
+		Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	p.Type, p.Title, p.Currency, p.Note, p.Pattern, p.OneTimeDate, p.LiabilityMode = typ, title, cur, note, pat, otd, lmode
+	p.Type, p.Title, p.Currency, p.Note, p.Pattern, p.OneTimeDate, p.LiabilityMode, p.Category = typ, title, cur, note, pat, otd, lmode, cat
 	return &p, nil
 }
 
@@ -2518,8 +2607,8 @@ func CreateCashflowPlan(p *CashflowPlan) (int64, error) {
 		p.LiabilityMode = "repay"
 	}
 	p.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO cashflow_plans(user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		p.UserID, p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, p.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO cashflow_plans(user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,category,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		p.UserID, p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -2537,8 +2626,8 @@ func UpdateCashflowPlan(p *CashflowPlan) error {
 	if p.LiabilityMode == "" {
 		p.LiabilityMode = "repay"
 	}
-	_, err := DB.Exec(`UPDATE cashflow_plans SET type=?,title=?,day_of_month=?,amount=?,currency=?,account_id=?,liability_id=?,note=?,end_date=?,pattern=?,one_time_date=?,liability_mode=? WHERE id=? AND user_id=?`,
-		p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, p.ID, p.UserID)
+	_, err := DB.Exec(`UPDATE cashflow_plans SET type=?,title=?,day_of_month=?,amount=?,currency=?,account_id=?,liability_id=?,note=?,end_date=?,pattern=?,one_time_date=?,liability_mode=?,category=? WHERE id=? AND user_id=?`,
+		p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.ID, p.UserID)
 	return err
 }
 
@@ -2657,32 +2746,32 @@ func SetLiabilityAmount(id int64, amount float64) error {
 // GetCashFlow 按 id 取单条现金流水（撤销待还款入账时定位当初落账的流水）。
 func GetCashFlow(id int64) (*CashFlow, error) {
 	var f CashFlow
-	var refName, note string
-	err := DB.QueryRow(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at FROM cash_flow WHERE id=?`, id).
-		Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &refName, &note, &f.CreatedAt)
+	var refName, note, category string
+	err := DB.QueryRow(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,COALESCE(category,''),created_at FROM cash_flow WHERE id=?`, id).
+		Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &refName, &note, &category, &f.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	f.RefName, f.Note = refName, note
+	f.RefName, f.Note, f.Category = refName, note, category
 	return &f, nil
 }
 
 // GetLatestCashFlowByRef 取某引用（ref_type+ref_id）最近一条现金流水，用于定位待还款完成所记的真实流水。
 func GetLatestCashFlowByRef(refType string, refID int64) (*CashFlow, error) {
 	var f CashFlow
-	var refName, note string
-	err := DB.QueryRow(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at FROM cash_flow WHERE ref_type=? AND ref_id=? ORDER BY id DESC LIMIT 1`, refType, refID).
-		Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &refName, &note, &f.CreatedAt)
+	var refName, note, category string
+	err := DB.QueryRow(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,COALESCE(category,''),created_at FROM cash_flow WHERE ref_type=? AND ref_id=? ORDER BY id DESC LIMIT 1`, refType, refID).
+		Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &refName, &note, &category, &f.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	f.RefName, f.Note = refName, note
+	f.RefName, f.Note, f.Category = refName, note, category
 	return &f, nil
 }
 
@@ -2718,9 +2807,10 @@ func AdjustCashBalance(cashID int64, delta float64) (float64, error) {
 	return bal, nil
 }
 
-// UpdateCashFlowRecord 修改一条现金流水的归属账户 / 金额 / 备注，并同步两个账户余额
+// UpdateCashFlowRecord 修改一条现金流水的归属账户 / 金额 / 备注 / 收支分类，并同步两个账户余额
 // （旧账户冲销原金额、新账户应用新金额）。返回更新后的流水。
-func UpdateCashFlowRecord(id, newCashID int64, newAmount float64, newNote string) (*CashFlow, error) {
+// category 传空串 = 保持原分类不变。
+func UpdateCashFlowRecord(id, newCashID int64, newAmount float64, newNote, newCategory string) (*CashFlow, error) {
 	old, err := GetCashFlow(id)
 	if err != nil {
 		return nil, err
@@ -2738,8 +2828,12 @@ func UpdateCashFlowRecord(id, newCashID int64, newAmount float64, newNote string
 	if err != nil {
 		return nil, err
 	}
-	if _, err := DB.Exec(`UPDATE cash_flow SET cash_id=?, amount=?, balance=?, note=? WHERE id=?`,
-		newCashID, newAmount, bal, strings.TrimSpace(newNote), id); err != nil {
+	category := old.Category
+	if strings.TrimSpace(newCategory) != "" {
+		category = strings.TrimSpace(newCategory)
+	}
+	if _, err := DB.Exec(`UPDATE cash_flow SET cash_id=?, amount=?, balance=?, note=?, category=? WHERE id=?`,
+		newCashID, newAmount, bal, strings.TrimSpace(newNote), category, id); err != nil {
 		return nil, err
 	}
 	return GetCashFlow(id)
@@ -2832,9 +2926,11 @@ func DeleteLiabilityFlowRecord(id int64) error {
 // initCalcInputs creates the keyed JSON store for calculator inputs.
 func initCalcInputs() error {
 	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS calc_inputs (
-		kind      TEXT PRIMARY KEY,
-		payload   TEXT NOT NULL DEFAULT '[]',
-		updated_at TEXT NOT NULL DEFAULT ''
+		kind       TEXT NOT NULL,
+		user_id    INTEGER NOT NULL DEFAULT 0,
+		payload    TEXT NOT NULL DEFAULT '[]',
+		updated_at TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (kind, user_id)
 	)`)
 	return err
 }

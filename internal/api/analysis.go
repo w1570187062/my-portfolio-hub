@@ -40,11 +40,6 @@ func capSeries(bars []market.KlineBar) []market.KlineBar {
 	return bars
 }
 
-// signalFromUpPct 将看涨概率映射为归一化信号（与持仓角标、自动分析一致）。
-func signalFromUpPct(upPct float64) string {
-	return market.SignalFromUpPct(upPct)
-}
-
 // ---- 分析缓存新鲜度（命中缓存也做新鲜度校验）----
 const (
 	analysisCacheHardTTL    = 6 * time.Hour
@@ -141,7 +136,7 @@ func getAnalysis(c *gin.Context) {
 			// 缓存命中也回写角标信号，使首页角标与弹框结论一致
 			var prob market.ProbabilityResult
 			if e2 := json.Unmarshal([]byte(row.ProbabilityJSON), &prob); e2 == nil && prob.UpPct > 0 {
-				resp.Signal = signalFromUpPct(prob.UpPct)
+				resp.Signal = market.SignalFromUpPct(prob.UpPct)
 				if e := db.UpdateAnalysis(h.ID, resp.Signal, prob.UpPct, genAt); e != nil {
 					log.Printf("[analysis] 回写信号失败 id=%d: %v", h.ID, e)
 				}
@@ -177,7 +172,7 @@ func getAnalysis(c *gin.Context) {
 
 	if prob != nil && prob.UpPct > 0 {
 		// 回写最新信号到持仓，使首页角标与弹框结论保持一致（中性→hold，不展示角标）
-		resp.Signal = signalFromUpPct(prob.UpPct)
+		resp.Signal = market.SignalFromUpPct(prob.UpPct)
 		if err := db.UpdateAnalysis(h.ID, resp.Signal, prob.UpPct, genAt); err != nil {
 			log.Printf("[analysis] 回写信号失败 id=%d: %v", h.ID, err)
 		}

@@ -416,7 +416,7 @@ func chatToolAnalyzeHolding(uid int64, args map[string]interface{}) string {
 	}
 	if prob != nil {
 		sb.WriteString(fmt.Sprintf("看涨概率 %.1f%% / 看跌 %.1f%% | 信号置信度 %d/5 | 综合信号 %s\n",
-			prob.UpPct, prob.DownPct, prob.Confidence, signalFromUpPct(prob.UpPct)))
+			prob.UpPct, prob.DownPct, prob.Confidence, market.SignalFromUpPct(prob.UpPct)))
 		if strings.TrimSpace(prob.Summary) != "" {
 			sb.WriteString("指标小结：" + prob.Summary + "\n")
 		}

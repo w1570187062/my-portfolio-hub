@@ -23,6 +23,7 @@ type importStats struct {
 	Liability   int `json:"liability"`
 	Sources     int `json:"sources"`
 	Plans       int `json:"plans"`
+	Deposits    int `json:"deposits"`
 	AIConfig    int `json:"ai_config"`
 	Settings    int `json:"settings"`
 	CalcInputs  int `json:"calc_inputs"`
@@ -66,6 +67,7 @@ func importData(c *gin.Context) {
 		Cash          []importCash             `json:"cash"`
 		Liability     []importLiability        `json:"liability"`
 		CashflowPlans []db.CashflowPlan        `json:"cashflow_plans"`
+		Deposits      []db.Deposit             `json:"deposits"`
 		Sources       []db.AssetSource         `json:"sources"`
 		AIConfig      json.RawMessage          `json:"ai_config"`
 		Settings      importSettings           `json:"settings"`
@@ -307,6 +309,50 @@ func importData(c *gin.Context) {
 		}
 		existPlan[key] = true
 		res.Imported.Plans++
+	}
+
+	// 存款：name+amount+end_date 判重；仅导入存期中的记录（已落袋的流水已在源系统入账，不重复搬）。
+	// 注意：导入只写存款记录、不再扣子账户款——现金余额是随 cash 数组整体导入的（已含扣款后余额）。
+	existDep := map[string]bool{}
+	depKey := func(d db.Deposit) string {
+		return d.Name + "|" + strconv.FormatFloat(d.Amount, 'f', -1, 64) + "|" + d.EndDate
+	}
+	if ds, e := db.ListDeposits(uid); e == nil {
+		for _, d := range ds {
+			existDep[depKey(d)] = true
+		}
+	}
+	for _, d := range p.Deposits {
+		d.UserID = uid
+		if d.Name == "" || d.Amount <= 0 || d.Status == "settled" || existDep[depKey(d)] {
+			res.Skipped.Deposits++
+			continue
+		}
+		d.Status = "active"
+		d.ActualInterest, d.SettledAt = 0, ""
+		if d.Currency == "" {
+			d.Currency = "cny"
+		}
+		if id := cashOldToNew[d.CashAccountID]; id > 0 {
+			d.CashAccountID = id
+			if acc, e := db.GetCash(id); e == nil && acc != nil {
+				d.SourceID = acc.SourceID
+			}
+		} else {
+			// 账户 id 丢失（导出时清零）：回落同币种余额最大的子账户
+			if acc, e := db.PickCashAccount(uid, 0, d.Currency); e == nil && acc != nil {
+				d.CashAccountID, d.SourceID = acc.ID, acc.SourceID
+			} else {
+				res.Skipped.Deposits++
+				continue
+			}
+		}
+		if _, err := db.CreateDeposit(&d); err != nil {
+			res.Errors = append(res.Errors, "存款「"+d.Name+"」导入失败: "+err.Error())
+			continue
+		}
+		existDep[depKey(d)] = true
+		res.Imported.Deposits++
 	}
 
 	// AI 配置（含 API Key / 模型 / 提示词模板）

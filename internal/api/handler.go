@@ -28,6 +28,9 @@ type HoldingView struct {
 	DayPnlPct   float64 `json:"day_pnl_pct"`
 	HoldingDays int     `json:"holding_days"` // 持仓天数，从 buy_date 算起
 	SourceName   string  `json:"source_name"`  // 所属平台/来源名称（来自 asset_sources）
+	RealizedPnl  float64 `json:"realized_pnl"` // 累计已实现盈亏（position_tx 聚合，含 SELL/DIV）
+	ClosedDate   string  `json:"closed_date"`  // 清仓日期（最后一次 SELL 的日期，YYYY-MM-DD；未清仓为空）
+	InvestedCost float64 `json:"invested_cost"` // 累计买入成本（BUY 金额之和；清仓后 quantity=0 致 cost_value 归零，供已平仓盈亏率分母）
 }
 
 // usMarketInSession reports whether the US regular trading session (09:30–16:00 ET,
@@ -89,7 +92,16 @@ func enrich(h db.Holding, userID int64) HoldingView {
 	dayPnl := 0.0
 	dayPnlPct := 0.0
 	today := time.Now().Format("2006-01-02")
-	if h.PrevClose > 0 {
+	// 首日（买入日=今天）：当日盈亏基准是买入成本而非昨收。买入前那段涨跌（现价-昨收）
+	// 与持有人无关，券商口径为 (现价-成本)×份额；次日恢复昨收口径。
+	// 美股跨时区下该判据依然成立：北京时间当天买入（=美东前一交易日盘中）后，
+	// 当天早上 7 点的快照夜恰好是买入所属交易日，昨收还是买入前一日收盘价。
+	if h.BuyDate == today {
+		dayPnl = (h.CurrentPrice - h.CostPrice) * h.Quantity
+		if costMv := h.CostPrice * h.Quantity; costMv > 0 {
+			dayPnlPct = dayPnl / costMv * 100
+		}
+	} else if h.PrevClose > 0 {
 		dayPnl = (h.CurrentPrice - h.PrevClose) * h.Quantity
 		if prevMv := h.PrevClose * h.Quantity; prevMv > 0 {
 			dayPnlPct = dayPnl / prevMv * 100
@@ -145,6 +157,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/holdings/:id/dividend", dividendHolding)
 		g.GET("/holdings/:id/transactions", listTransactions)
 		g.POST("/holdings/:id/transactions/:txid/revert", revertTransaction)
+		g.POST("/holdings/:id/reopen", reopenHolding)
 		// 基金定投：计划（周期/金额/限购/暂停）+ 期次记录（逐期确认、可改可撤）
 		g.GET("/dca/plans", listDCAPlans)
 		g.POST("/dca/plans", createDCAPlan)
@@ -164,6 +177,12 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/pnl/snapshot", snapshotHandler)
 		g.GET("/pnl/history", pnlHistory)
 		g.GET("/holdings/:id/pnl-history", holdingPnlHistory)
+
+		// 已平仓视图：手动补录的平仓记录（纯记录，不入账）+ 系统记录「回退（撤销清仓/重开）」
+		g.GET("/manual-closed", listManualClosed)
+		g.POST("/manual-closed", createManualClosed)
+		g.PUT("/manual-closed/:id", updateManualClosed)
+		g.DELETE("/manual-closed/:id", deleteManualClosed)
 		g.GET("/ai/settings", aiSettingsGet)
 		g.POST("/ai/settings", aiSettingsPost)
 		g.GET("/mcp/config", mcpConfigGet)
@@ -201,6 +220,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/asset/wealth/:id", updateWealth)
 		g.DELETE("/asset/wealth/:id", deleteWealth)
 		g.POST("/asset/wealth/:id/enable", enableWealth)
+		g.POST("/asset/wealth/:id/clear", clearWealth)
 		g.POST("/asset/wealth/:id/nav", updateWealthNav)
 		g.POST("/asset/wealth/nav/refresh", refreshWealthNavBatch)
 		g.POST("/asset/wealth/snapshots", assetWealthSnapshotsPost)
@@ -212,6 +232,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/asset/cash/:id/flows", listCashFlows)
 		g.POST("/asset/cash", createCash)
 		g.POST("/asset/cash/adjust", adjustCash)
+		g.POST("/asset/cash/repay-liability", repayLiability)
 		g.POST("/asset/balance/sync", balanceSync)
 		g.POST("/asset/cash/transfer", transferCash)
 		g.PUT("/asset/cash/:id", updateCash)
@@ -221,6 +242,12 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/asset/liabilities/:id", updateLiability)
 		g.DELETE("/asset/liabilities/:id", deleteLiability)
 		g.GET("/asset/liabilities/:id/flows", liabilityFlows)
+		// 存款（定期存款 / 大额存单）：新增扣款、到期确认落袋后才入账利息
+		g.GET("/asset/deposits", listDeposits)
+		g.POST("/asset/deposits", createDeposit)
+		g.PUT("/asset/deposits/:id", updateDeposit)
+		g.DELETE("/asset/deposits/:id", deleteDeposit)
+		g.POST("/asset/deposits/:id/settle", settleDeposit)
 		// 统一账户表单：子账户 ⇄ 负债 换性质（无流水、无引用时才允许）
 		g.POST("/asset/accounts/convert", convertAccount)
 
@@ -232,6 +259,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/cashflow/plans/:id/complete", completeCashflowPlan)
 		g.POST("/cashflow/plans/:id/uncomplete", uncompleteCashflowPlan)
 		g.GET("/asset/flows", listFlows)
+		g.GET("/finance/summary", financeSummary)
 		g.PUT("/asset/flows/:kind/:id", updateFlow)
 		g.DELETE("/asset/flows/:kind/:id", deleteFlow)
 		g.POST("/asset/flows/:kind/:id/rollback", rollbackFlow)
@@ -346,6 +374,16 @@ func computeHoldings(uid int64) ([]HoldingView, string, string, string, error) {
 	if err != nil {
 		return nil, "", "", "", err
 	}
+
+	// 批量聚合每个 holding 的已实现盈亏（SELL/DIV 累计 realized_pnl），一次查询搞定。
+	ids := make([]int64, 0, len(hs))
+	for _, h := range hs {
+		ids = append(ids, h.ID)
+	}
+	realizedMap, _ := db.BatchSumRealizedPnl(uid, ids)
+	closeDateMap, _ := db.BatchLastSellDate(uid, ids)
+	investMap, _ := db.BatchInvestedCost(uid, ids)
+
 	out := make([]HoldingView, 0, len(hs))
 	srcName := map[int64]string{}
 	if srcs, e := db.ListSources(uid); e == nil {
@@ -356,6 +394,9 @@ func computeHoldings(uid int64) ([]HoldingView, string, string, string, error) {
 	for _, h := range hs {
 		v := enrich(h, uid)
 		v.SourceName = srcName[h.SourceID]
+		v.RealizedPnl = realizedMap[h.ID]
+		v.ClosedDate = closeDateMap[h.ID]
+		v.InvestedCost = investMap[h.ID]
 		out = append(out, v)
 	}
 	return out,
@@ -875,9 +916,17 @@ func refresh(c *gin.Context) {
 			srcName[s.ID] = s.Name
 		}
 	}
+	rids := make([]int64, 0, len(hs))
+	for _, h := range hs {
+		rids = append(rids, h.ID)
+	}
+	closeDateMap, _ := db.BatchLastSellDate(uid, rids)
+	investMap, _ := db.BatchInvestedCost(uid, rids)
 	for _, h := range hs {
 		v := enrich(h, uid)
 		v.SourceName = srcName[h.SourceID]
+		v.ClosedDate = closeDateMap[h.ID]
+		v.InvestedCost = investMap[h.ID]
 		out = append(out, v)
 	}
 	_ = doSnapshot(uid)
@@ -1111,7 +1160,7 @@ func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
 		var prob market.ProbabilityResult
 		if e2 := json.Unmarshal([]byte(row.ProbabilityJSON), &prob); e2 == nil && prob.UpPct > 0 {
 			upPct = prob.UpPct
-			return signalFromUpPct(upPct), upPct
+			return market.SignalFromUpPct(upPct), upPct
 		}
 	}
 
@@ -1133,7 +1182,7 @@ func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
 		probJSON, _ := json.Marshal(prob)
 		_ = db.SaveAnalysisCache(sym, today, string(barsJSON), string(indJSON), string(probJSON), "[]", "{}", time.Now().Format("2006-01-02 15:04:05"))
 	}()
-	return signalFromUpPct(upPct), upPct
+	return market.SignalFromUpPct(upPct), upPct
 }
 
 // autoAnalyzeAndStore 对一只持仓跑自动技术分析并落库（best-effort：网络失败/数据不足仅记日志，不阻断刷新）。
@@ -1247,6 +1296,11 @@ func doSnapshot(uid int64) error {
 		lastClose, lastOk, lastErr := db.GetPrevClose(h.Symbol, today, uid)
 		staleQuote := lastErr == nil && lastOk && lastClose == h.CurrentPrice
 		switch {
+		case h.BuyDate == today && h.CostPrice > 0:
+			// 首日（买入日=今天）：基准是买入成本而非昨收，买入前那段涨跌（现价-昨收）
+			// 不计入当日盈亏——与持仓列表 enrich 的首日口径一致（2026-10-23 NVDA 复现：
+			// 美东 10-22 盘中买入成本 213，昨收 221.97，误计 -4.4%）。
+			dp = (h.CurrentPrice - h.CostPrice) * h.Quantity
 		case staleQuote:
 			dp = 0
 		case h.Market == "美股":
@@ -1621,6 +1675,18 @@ func pnlHistory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 叠加理财之前，保存一份纯持仓的 total_cny 给 equity_pnl_cny ——
+	// 前端权益曲线用它（去理财波动），盈亏日历/其他地方继续用叠加后的 total_cny。
+	type eqRow struct {
+		Date       string  `json:"date"`
+		EquityCNY  float64 `json:"equity_pnl_cny"` // 纯持仓每日盈亏（CNY）
+	}
+	eqByDate := map[string]float64{}
+	for _, r := range rows {
+		eqByDate[r.Date] = r.TotalCNY
+	}
+
 	// 合并理财每日盈亏：折算 CNY 叠加进当日 total_cny（盈亏日历/走势即自动包含理财收益）；
 	// 理财有快照而持仓无 pnl_daily 记录的日期补行。detail 追加 by_wealth 供当日明细弹框展示，
 	// 原 by_symbol/by_category 结构保持不变。
@@ -1637,11 +1703,89 @@ func pnlHistory(c *gin.Context) {
 			} else {
 				detail, _ := json.Marshal(map[string]interface{}{"by_wealth": wp.items})
 				rows = append(rows, db.PnlDay{Date: date, TotalCNY: wp.totalCNY, Rate: cnyRate, Detail: string(detail)})
+				eqByDate[date] = 0 // 新补行：只有理财，持仓无盈亏
 			}
 		}
 		sort.Slice(rows, func(a, b int) bool { return rows[a].Date < rows[b].Date })
 	}
-	c.JSON(http.StatusOK, gin.H{"history": rows})
+
+	// 给每行追加 equity_pnl_cny（纯持仓）：前端曲线用它去理财噪声
+	type pnlWrap struct {
+		db.PnlDay
+		EquityCNY float64 `json:"equity_pnl_cny"`
+	}
+	out := make([]pnlWrap, len(rows))
+	for i, r := range rows {
+		out[i] = pnlWrap{PnlDay: r, EquityCNY: round2(eqByDate[r.Date])}
+	}
+
+	// 推算每日累计净投入 contrib_cny（纯持仓成本）
+	calcContribCNY(uid, rows)
+	// calcContribCNY 写的是 rows（无 equity_pnl_cny），同步给 out
+	for i := range out {
+		out[i].ContribCNY = rows[i].ContribCNY
+	}
+
+	c.JSON(http.StatusOK, gin.H{"history": out})
+}
+
+// calcContribCNY 根据 position_tx 的 BUY/SELL 交易还原"每日持仓本金"（CNY）。
+// 正向逐月累加：BUY 按买入金额加本金，SELL 按 (amount − realized_pnl) 减本金（即卖出部分的原始成本）；
+// DIV 分红不动本金（分红是已实现收益，不影响持仓投入）。未发生任何交易的日期沿用上一值。
+func calcContribCNY(uid int64, rows []db.PnlDay) {
+	if len(rows) == 0 {
+		return
+	}
+
+	// 1) 收集所有非 reverted 交易，按日期归组，并折算 CNY
+	cnyRate, hkdRate, _ := market.GetFXRates()
+	txByDate := map[string]float64{}
+	if dbs, err := db.DB.Query(`SELECT substr(pt.created_at,1,10) AS date, pt.amount, pt.realized_pnl, pt.tx_type, h.currency
+		FROM position_tx pt JOIN holdings h ON h.id=pt.holding_id
+		WHERE pt.reverted=0 AND h.user_id=?`, uid); err == nil {
+		for dbs.Next() {
+			var date, txType, cur string
+			var amt, rp float64
+			if dbs.Scan(&date, &amt, &rp, &txType, &cur) != nil {
+				continue
+			}
+			var delta float64
+			switch txType {
+			case "BUY":
+				delta = amt
+			case "SELL":
+				delta = -(amt - rp) // 卖出部分的原始成本
+			default:
+				delta = 0 // DIV 不动本金
+			}
+			txByDate[date] += fxToCNY(delta, cur, cnyRate, hkdRate)
+		}
+		dbs.Close()
+	}
+
+	// 2) 当前持仓总本金（CNY），作为最后一天的锚点
+	var holdCost float64
+	if hs, err := db.List(uid); err == nil {
+		for _, h := range hs {
+			holdCost += fxToCNY(h.CostPrice*h.Quantity, h.Currency, cnyRate, hkdRate)
+		}
+	}
+
+	// 3) 正向累加：rows[i] 表示"当天结束时的本金"，顺序 = pnl_daily ASC。
+	//    非交易日没有 txMap[r.Date] → contrib 不变；交易日先加 delta 再赋值。
+	//    初始 contrib = holdCost（最终锚） − Σ 所有历史交易 delta（反向推到起始值）
+	var totalDelta float64
+	for _, v := range txByDate {
+		totalDelta += v
+	}
+	contrib := holdCost - totalDelta
+
+	for i := range rows {
+		if v, ok := txByDate[rows[i].Date]; ok {
+			contrib += v // 当天有交易，先加 delta 再赋值
+		}
+		rows[i].ContribCNY = round2(contrib)
+	}
 }
 
 // wealthPnlItem 理财单日盈亏条目（盈亏日历/走势合并展示用）。
@@ -1715,10 +1859,14 @@ func mergeWealthDetail(orig string, items []wealthPnlItem) string {
 // (ascending), for the in-table mini sparklines. For holdings with cash dividends the
 // cumulative per-share dividend is added back to the raw NAV/price so the sparkline
 // stays continuous across ex-dividend days instead of showing a false crash.
-func computeSpark(uid int64, syms []string) map[string][]float64 {
+// minDates：每个 symbol 的最早买入日（home 收集）。price_daily 按 symbol 全量取数，
+// 同 symbol 旧持仓遗留的快照不属于当前持仓生命周期——否则「近20日走势」会拿两个月前
+// 的旧点当起点画出假趋势（2026-10-23 NVDA 复现：8-27 旧快照 → 两点上升假阳线）。
+func computeSpark(uid int64, syms []string, minDates map[string]string) map[string][]float64 {
 	const days = 30
 	out := make(map[string][]float64, len(syms))
 	for _, s := range syms {
+		minDate := minDates[s]
 		series, err := db.GetPriceSeries(s, uid)
 		if err != nil || len(series) == 0 {
 			continue
@@ -1728,6 +1876,9 @@ func computeSpark(uid int64, syms []string) map[string][]float64 {
 		closes := make([]float64, 0, len(series))
 		var cum float64
 		for _, p := range series {
+			if minDate != "" && p.Date < minDate {
+				continue
+			}
 			if d, ok := divs[p.Date]; ok {
 				cum += d
 			}
@@ -1761,14 +1912,20 @@ func home(c *gin.Context) {
 	fx := market.GetFXInfo()
 	srcs, _ := db.ListSources(uid)
 	seen := map[string]bool{}
+	minDates := map[string]string{} // symbol → 最早买入日，供 computeSpark 截掉旧持仓遗留快照
 	syms := make([]string, 0, len(out))
 	for _, h := range out {
+		if d := h.BuyDate; d != "" {
+			if cur, ok := minDates[h.Symbol]; !ok || d < cur {
+				minDates[h.Symbol] = d
+			}
+		}
 		if !seen[h.Symbol] {
 			seen[h.Symbol] = true
 			syms = append(syms, h.Symbol)
 		}
 	}
-	spark := computeSpark(uid, syms)
+	spark := computeSpark(uid, syms, minDates)
 	// 现金子账户余额：key = "sourceID:currency"（币种小写），value = 该 (来源,币种) 下所有现金子账户余额合计。
 	// 供首页持仓表「仓位」列计算分母（同账户同币种持仓市值合计 + 现金余额）；匹配不到 key 时前端显示 —。
 	cashBal := make(map[string]float64)
@@ -1893,10 +2050,18 @@ func holdingPnlHistory(c *gin.Context) {
 	var rows []Row
 	var cumDiv float64
 	var prevAdj float64
-	for i, p := range series {
+	// 曲线截断到买入日：price_daily 按 symbol 全量取数，同 symbol 旧持仓遗留的
+	// 历史快照不属于本持仓生命周期——否则首行基准错乱，两个月前的价差会被算成
+	// 「当日盈亏」（2026-10-23 NVDA 复现：8-27 旧快照 209.66 作基准，10-23 虚增 +7.65）。
+	startDate := h.BuyDate
+	n := 0 // 纳入曲线的点数：过滤（continue）不重置 range 索引，首条判定必须用独立计数
+	for _, p := range series {
 		// 已清仓：曲线截止清仓日（含），之后的行情与持仓无关，不能再算成持仓盈亏
 		if closed && closedDate != "" && p.Date > closedDate {
 			break
+		}
+		if startDate != "" && p.Date < startDate {
+			continue
 		}
 		if d, ok := divs[p.Date]; ok {
 			cumDiv += d
@@ -1904,18 +2069,24 @@ func holdingPnlHistory(c *gin.Context) {
 		adj := p.Close + cumDiv
 		mv := p.Close * qty * fx
 		// 累计盈亏用复权净值口径：把累计现金分红加回净值，反映「含分红的真实总收益」。
-		// 否则分红日净值除息下降会让累计盈亏凭空少一块分红、显示为负的虚假亏损。
+		// 否则分红日净值除息跳降会让累计盈亏凭空少一块分红、显示为负的虚假亏损。
 		totalPnl := (adj - cost) * qty * fx
 		var totalPct, dayPnl, dayPct float64
 		if cost > 0 {
 			totalPct = totalPnl / (cost * qty * fx) * 100
 		}
-		if i > 0 {
+		n++
+		if n > 1 {
 			// 当日盈亏用复权净值差值：分红日净值因除息跳降的部分由累计分红补回
 			dayPnl = (adj - prevAdj) * qty * fx
 			if prevAdj > 0 {
 				dayPct = dayPnl / (prevAdj * qty * fx) * 100
 			}
+		} else {
+			// 首点没有前一快照可差值：当日盈亏按成本基准（与持仓列表 enrich 首日口径一致），
+			// 即首日「盈亏金额 = 累计盈亏」——不是 0。
+			dayPnl = totalPnl
+			dayPct = totalPct
 		}
 		prevAdj = adj
 		// 清仓日当天的累计盈亏用已实现口径（卖出价落袋），而不是收盘价浮盈，避免与交易记录对不上
@@ -1926,6 +2097,23 @@ func holdingPnlHistory(c *gin.Context) {
 			}
 		}
 		rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})
+	}
+	// 买入日之后尚无快照（刚买入、当日快照任务未跑）：回退用最后一个 ≤买入日 的点
+	// 保底，避免弹框空图（day_pnl 缺省 0，首行无基准问题）。
+	if !closed && len(rows) == 0 && len(series) > 0 && startDate != "" {
+		for i := len(series) - 1; i >= 0; i-- {
+			if series[i].Date <= startDate {
+				p := series[i]
+				mv := p.Close * qty * fx
+				totalPnl := (p.Close - cost) * qty * fx
+				var totalPct float64
+				if cost > 0 {
+					totalPct = totalPnl / (cost * qty * fx) * 100
+				}
+				rows = append(rows, Row{Date: p.Date, Close: p.Close, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})
+				break
+			}
+		}
 	}
 	// 清仓日之后没有价格序列时（清仓日超出已有行情范围），曲线至少保留最后一个点
 	if closed && closedDate != "" && len(rows) == 0 && len(series) > 0 {

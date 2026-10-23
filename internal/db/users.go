@@ -27,208 +27,34 @@ func initUsers() error {
 // EnsureUsers 在启动时保证多用户体系就绪：
 //  1. 创建 users 表；
 //  2. 为所有现存数据表补充 user_id 列（幂等）；
-//  3. 重建需要复合主键的表（pnl_daily / calc_inputs / ai_settings）以支持按用户隔离；
-//  4. 若 users 表为空，创建默认用户"默认"，并把所有现存数据归属到该用户。
+//  3. 若 users 表为空，创建默认用户"默认"。
+//
+// 注：pnl_daily / price_daily / calc_inputs / ai_settings 的表结构已由 db.Init 按最新
+// 多用户复合主键直接创建，无需再执行重建迁移。
 func EnsureUsers() error {
 	if err := initUsers(); err != nil {
 		return err
 	}
-	// 1) 为子表补充 user_id 列
+	// 为子表补充 user_id 列（幂等，新库 Init 已包含 user_id 列时自动跳过）
 	for _, t := range []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
 		"cash_accounts", "consumptions", "operation_guides", "dca_plans",
 	} {
 		addColumnIfMissing(t, "user_id", "INTEGER NOT NULL DEFAULT 0")
 	}
-	// 2) 重建需要按用户隔离主键的表
-	if err := rebuildPnlDaily(); err != nil {
-		return err
-	}
-	// 2.1) pnl_daily 兼容旧库：新增 base_cny（当日净资产基数，用于真实日收益率）
+	// pnl_daily 兼容旧库：新增 base_cny（新库 Init 已包含此列）
 	addColumnIfMissing("pnl_daily", "base_cny", "REAL NOT NULL DEFAULT 0")
-	if err := rebuildPriceDaily(); err != nil {
+	// 默认用户：若 users 表为空，创建"默认"
+	if _, err := ListUsers(); err != nil {
 		return err
 	}
-	if err := rebuildCalcInputs(); err != nil {
-		return err
-	}
-	if err := rebuildAISettings(); err != nil {
-		return err
-	}
-	// 3) 默认用户 + 回填
-	users, err := ListUsers()
-	if err != nil {
-		return err
-	}
+	users, _ := ListUsers()
 	if len(users) == 0 {
 		if _, e := CreateUser("默认"); e != nil {
 			return e
 		}
-		users, _ = ListUsers()
-	}
-	if len(users) > 0 {
-		def := users[0].ID
-		backfillUser(def)
-	}
-	// 市场代码迁移需在 user_id 列就绪后执行（List 会读取 user_id）。
-	if err := migrateMarkets(); err != nil {
-		return err
-	}
-	// 存量价格字段按类别规整小数位，清理浮点超长尾数。
-	if err := migrateRoundHoldingPrices(); err != nil {
-		return err
-	}
-	// 存量币种标识统一为小写 cny/usd/hkd（人民币 rmb/CNY 混写归一 cny）。
-	if err := migrateCurrencyCNY(); err != nil {
-		return err
 	}
 	return nil
-}
-
-// backfillUser 把所有 user_id 为 0/NULL 的现存行归属到指定默认用户。
-func backfillUser(def int64) {
-	tables := []string{
-		"holdings", "asset_sources", "wealth_products", "liabilities",
-		"cash_accounts", "consumptions", "operation_guides", "dca_plans",
-		"pnl_daily", "price_daily", "calc_inputs", "ai_settings",
-	}
-	for _, t := range tables {
-		// 忽略不存在的列（安全）
-		_, _ = DB.Exec(fmt.Sprintf("UPDATE %s SET user_id=? WHERE COALESCE(user_id,0)=0", t), def)
-	}
-}
-
-// rebuildPnlDaily 将 pnl_daily(date) 改为 (date, user_id)，并保留既有数据（归属默认用户）。
-func rebuildPnlDaily() error {
-	has, _ := columnExists("pnl_daily", "user_id")
-	if has {
-		return nil
-	}
-	_, err := DB.Exec(`ALTER TABLE pnl_daily RENAME TO pnl_daily_old`)
-	if err != nil {
-		return err
-	}
-	_, err = DB.Exec(`CREATE TABLE pnl_daily (
-		date TEXT NOT NULL,
-		user_id INTEGER NOT NULL DEFAULT 0,
-		total_cny REAL NOT NULL DEFAULT 0,
-		total_usd REAL NOT NULL DEFAULT 0,
-		rate REAL NOT NULL DEFAULT 0,
-		detail TEXT NOT NULL DEFAULT '{}',
-		PRIMARY KEY (date, user_id)
-	)`)
-	if err != nil {
-		return err
-	}
-	_, err = DB.Exec(`INSERT INTO pnl_daily(date,user_id,total_cny,total_usd,rate,detail)
-		SELECT date, 0, total_cny, total_usd, rate, detail FROM pnl_daily_old`)
-	if err != nil {
-		return err
-	}
-	_, _ = DB.Exec(`DROP TABLE pnl_daily_old`)
-	return nil
-}
-
-// rebuildPriceDaily 将 price_daily(date,symbol) 改为 (date,symbol,user_id)，
-// 保留既有数据（归属默认用户），避免多用户刷新同一标的同日期时主键冲突。
-func rebuildPriceDaily() error {
-	has, _ := columnExists("price_daily", "user_id")
-	if has {
-		return nil
-	}
-	_, err := DB.Exec(`ALTER TABLE price_daily RENAME TO price_daily_old`)
-	if err != nil {
-		return err
-	}
-	_, err = DB.Exec(`CREATE TABLE price_daily (
-		date    TEXT NOT NULL,
-		symbol  TEXT NOT NULL,
-		close   REAL NOT NULL,
-		user_id INTEGER NOT NULL DEFAULT 0,
-		PRIMARY KEY (date, symbol, user_id)
-	)`)
-	if err != nil {
-		return err
-	}
-	_, err = DB.Exec(`INSERT INTO price_daily(date,symbol,close,user_id) SELECT date, symbol, close, 0 FROM price_daily_old`)
-	if err != nil {
-		return err
-	}
-	_, _ = DB.Exec(`DROP TABLE price_daily_old`)
-	return nil
-}
-
-// rebuildCalcInputs 将 calc_inputs(kind) 改为 (kind, user_id)。
-func rebuildCalcInputs() error {
-	has, _ := columnExists("calc_inputs", "user_id")
-	if has {
-		return nil
-	}
-	_, err := DB.Exec(`ALTER TABLE calc_inputs RENAME TO calc_inputs_old`)
-	if err != nil {
-		return err
-	}
-	_, err = DB.Exec(`CREATE TABLE calc_inputs (
-		kind TEXT NOT NULL,
-		user_id INTEGER NOT NULL DEFAULT 0,
-		payload TEXT NOT NULL DEFAULT '[]',
-		updated_at TEXT NOT NULL DEFAULT '',
-		PRIMARY KEY (kind, user_id)
-	)`)
-	if err != nil {
-		return err
-	}
-	_, err = DB.Exec(`INSERT INTO calc_inputs(kind,user_id,payload,updated_at)
-		SELECT kind, 0, payload, updated_at FROM calc_inputs_old`)
-	if err != nil {
-		return err
-	}
-	_, _ = DB.Exec(`DROP TABLE calc_inputs_old`)
-	return nil
-}
-
-// rebuildAISettings 将 ai_settings(id=1) 改为以 user_id 为主键。
-func rebuildAISettings() error {
-	has, _ := columnExists("ai_settings", "user_id")
-	if has {
-		return nil
-	}
-	_, err := DB.Exec(`ALTER TABLE ai_settings RENAME TO ai_settings_old`)
-	if err != nil {
-		return err
-	}
-	_, err = DB.Exec(`CREATE TABLE ai_settings (
-		user_id INTEGER NOT NULL DEFAULT 0,
-		cfg TEXT NOT NULL DEFAULT '{}',
-		PRIMARY KEY (user_id)
-	)`)
-	if err != nil {
-		return err
-	}
-	_, err = DB.Exec(`INSERT INTO ai_settings(user_id,cfg) SELECT 0, cfg FROM ai_settings_old`)
-	if err != nil {
-		return err
-	}
-	_, _ = DB.Exec(`DROP TABLE ai_settings_old`)
-	return nil
-}
-
-func columnExists(table, col string) (bool, error) {
-	rows, err := DB.Query("PRAGMA table_info(" + table + ")")
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt interface{}
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err == nil && name == col {
-			return true, nil
-		}
-	}
-	return false, rows.Err()
 }
 
 // ---- users CRUD ----

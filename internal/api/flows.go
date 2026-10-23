@@ -29,13 +29,22 @@ func updateFlow(c *gin.Context) {
 	switch kind {
 	case "cash":
 		var b struct {
-			CashID int64   `json:"cash_id"`
-			Amount float64 `json:"amount"`
-			Note   string  `json:"note"`
+			CashID   int64   `json:"cash_id"`
+			Amount   float64 `json:"amount"`
+			Note     string  `json:"note"`
+			Category string  `json:"category"` // 收支语义分类（空=保持原分类）
 		}
 		if err := c.ShouldBindJSON(&b); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式错误"})
 			return
+		}
+		if b.Category != "" {
+			if norm, err := resolveFlowCategory(c, b.Category, b.Amount); err == nil {
+				b.Category = norm
+			} else {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
 		}
 		old, err := db.GetCashFlow(id)
 		if err != nil {
@@ -59,7 +68,7 @@ func updateFlow(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "金额不能为 0"})
 			return
 		}
-		f, err := db.UpdateCashFlowRecord(id, b.CashID, amount, b.Note)
+		f, err := db.UpdateCashFlowRecord(id, b.CashID, amount, b.Note, b.Category)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -280,7 +289,7 @@ func rollbackFlow(c *gin.Context) {
 			refLabel = "流水#" + strconv.FormatInt(f.ID, 10)
 		}
 		detail := "回退：「" + refLabel + "」"
-		if e := db.AddCashAmount(f.CashID, -f.Amount, "rollback", "rollback", f.ID, refLabel, detail); e != nil {
+		if e := db.AddCashAmountCat(f.CashID, -f.Amount, "rollback", "rollback", f.ID, refLabel, detail, f.Category); e != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
 			return
 		}

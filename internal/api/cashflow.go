@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -58,6 +59,12 @@ func createCashflowPlan(c *gin.Context) {
 	if p.Type != "income" && p.Type != "expense" {
 		p.Type = "income"
 	}
+	cat, err := resolvePlanCategory(c, p.Category, p.Type)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	p.Category = cat
 	// 归一化发生模式与负债方式（模式已简化为 每月 recurring_fixed / 一次性 one_time；
 	// 历史 recurring_variable 并入「每月」，保存时统一收敛为 recurring_fixed）
 	switch p.Pattern {
@@ -132,6 +139,12 @@ func updateCashflowPlan(c *gin.Context) {
 	if p.Type != "income" && p.Type != "expense" {
 		p.Type = "income"
 	}
+	cat, err := resolvePlanCategory(c, p.Category, p.Type)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	p.Category = cat
 	switch p.Pattern {
 	case "one_time":
 	default:
@@ -311,6 +324,52 @@ func uncompleteCashflowPlan(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// resolvePlanCategory 校验收支计划的语义分类：空=按方向兜底（income→other_in / expense→other_out）；
+// 方向必须与计划类型一致（收入计划只能选收入类、支出计划只能选支出类）。
+func resolvePlanCategory(c *gin.Context, raw, planType string) (string, error) {
+	cat := strings.TrimSpace(raw)
+	if cat == "" {
+		if planType == "expense" {
+			return db.CatOtherOut, nil
+		}
+		return db.CatOtherIn, nil
+	}
+	wantDir := "income"
+	if planType == "expense" {
+		wantDir = "expense"
+	}
+	if db.IsKnownFinCat(cat) {
+		if db.FinCatDir(cat) != wantDir {
+			return "", fmt.Errorf("收支分类与计划方向不一致")
+		}
+		return cat, nil
+	}
+	defs, err := loadFlowCategories(currentUserID(c))
+	if err != nil {
+		return "", err
+	}
+	for _, d := range defs {
+		if d.Key == cat {
+			if d.Dir != wantDir {
+				return "", fmt.Errorf("收支分类与计划方向不一致")
+			}
+			return cat, nil
+		}
+	}
+	return "", fmt.Errorf("未知的收支分类：%s", cat)
+}
+
+// planFlowCategory 计划完成入账时使用的语义分类：计划自带优先，空则按方向兜底。
+func planFlowCategory(p *db.CashflowPlan, dir string) string {
+	if strings.TrimSpace(p.Category) != "" {
+		return p.Category
+	}
+	if dir == "expense" {
+		return db.CatOtherOut
+	}
+	return db.CatOtherIn
+}
+
 // recordPlanTransaction 完成计划时记一笔真实出入账，返回落账流水的类型与 id（供撤销时反向记账）。
 // cashAccountID 为非 0 时覆盖计划默认的入账/还款账户（完成弹窗里让用户即时选择还款来源）。
 func recordPlanTransaction(uid int64, p *db.CashflowPlan, actual float64, cashAccountID int64) (refType string, refID int64, err error) {
@@ -324,7 +383,7 @@ func recordPlanTransaction(uid int64, p *db.CashflowPlan, actual float64, cashAc
 			return "", 0, e
 		}
 		detail := "待入账「" + p.Title + "」入账"
-		if e := db.AddCashAmount(acc.ID, actual, "cf_income", "cashflow_plan", p.ID, p.Title, detail); e != nil {
+		if e := db.AddCashAmountCat(acc.ID, actual, "cf_income", "cashflow_plan", p.ID, p.Title, detail, planFlowCategory(p, "income")); e != nil {
 			return "", 0, e
 		}
 		if f, e2 := db.GetLatestCashFlowByRef("cashflow_plan", p.ID); e2 == nil && f != nil {
@@ -394,8 +453,8 @@ func recordPlanTransaction(uid int64, p *db.CashflowPlan, actual float64, cashAc
 		if e3 != nil {
 			return "", 0, e3
 		}
-		if e3 := db.AddCashAmount(acc.ID, -actual, "cf_repay", "cashflow_plan", p.ID, p.Title,
-			"待还款「"+p.Title+"」还款扣款（还款至"+l.Name+"）"); e3 != nil {
+		if e3 := db.AddCashAmountCat(acc.ID, -actual, "cf_repay", "cashflow_plan", p.ID, p.Title,
+			"待还款「"+p.Title+"」还款扣款（还款至"+l.Name+"）", planFlowCategory(p, "expense")); e3 != nil {
 			return "", 0, e3
 		}
 		// 记住负债 id；撤销时据此还原债务余额，并按 cashflow_plan 反查流水冲回子账户扣款
@@ -407,7 +466,7 @@ func recordPlanTransaction(uid int64, p *db.CashflowPlan, actual float64, cashAc
 		return "", 0, e
 	}
 	detail := "待还款「" + p.Title + "」扣款"
-	if e := db.AddCashAmount(acc.ID, -actual, "cf_repay", "cashflow_plan", p.ID, p.Title, detail); e != nil {
+	if e := db.AddCashAmountCat(acc.ID, -actual, "cf_repay", "cashflow_plan", p.ID, p.Title, detail, planFlowCategory(p, "expense")); e != nil {
 		return "", 0, e
 	}
 	if f, e2 := db.GetLatestCashFlowByRef("cashflow_plan", p.ID); e2 == nil && f != nil {
@@ -480,10 +539,10 @@ func reversePlanTransaction(uid int64, done *db.CashflowDone, p *db.CashflowPlan
 		if e != nil || acc == nil {
 			return e
 		}
-		return db.AddCashAmount(acc.ID, -f.Amount, "cf_reverse", "cashflow_plan", p.ID, p.Title,
-			"撤销待还款「"+p.Title+"」还款扣款")
+		return db.AddCashAmountCat(acc.ID, -f.Amount, "cf_reverse", "cashflow_plan", p.ID, p.Title,
+			"撤销待还款「"+p.Title+"」还款扣款", f.Category)
 	}
-	// cash：反向记账到原账户
+	// cash：反向记账到原账户（沿用原流水分类，保证统计口径冲正抵消）
 	f, e := db.GetCashFlow(done.RefID)
 	if e != nil {
 		return e
@@ -496,7 +555,7 @@ func reversePlanTransaction(uid int64, done *db.CashflowDone, p *db.CashflowPlan
 		return e
 	}
 	detail := "撤销「" + p.Title + "」"
-	return db.AddCashAmount(acc.ID, -f.Amount, "cf_reverse", "cashflow_plan", p.ID, p.Title, detail)
+	return db.AddCashAmountCat(acc.ID, -f.Amount, "cf_reverse", "cashflow_plan", p.ID, p.Title, detail, f.Category)
 }
 
 var errLiabilityNotFound = errString("关联负债不存在")

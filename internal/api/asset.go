@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -143,44 +144,44 @@ func assetOverview(c *gin.Context) {
 		firstDate, _, _ := db.GetWealthFirst(w.ID)
 		wDays := db.CalcHoldingDays(firstDate)
 		// 累计收益：手动编辑值优先（CumPnl 非 0），否则按每日快照自动累计。
-			cum := round2(w.CumPnl)
-			if cum == 0 {
-				cum = round2(wealthCumPnl(w.ID))
+		cum := round2(w.CumPnl)
+		if cum == 0 {
+			cum = round2(wealthCumPnl(w.ID))
+		}
+		// 累计收益率 = 累计收益 ÷ （当前金额 - 累计收益）× 100（近似：累计赚/亏 ÷ 本金）
+		cumReturnRate := math.NaN()
+		if amt > 0.005 {
+			costBasis := amt - cum
+			if costBasis > 0.005 {
+				cumReturnRate = math.Round(cum/costBasis*10000) / 100
 			}
-			// 累计收益率 = 累计收益 ÷ （当前金额 - 累计收益）× 100（近似：累计赚/亏 ÷ 本金）
-			cumReturnRate := math.NaN()
-			if amt > 0.005 {
-				costBasis := amt - cum
-				if costBasis > 0.005 {
-					cumReturnRate = math.Round(cum/costBasis*10000) / 100
-				}
-			}
-			var cumRateVal interface{} = nil
-			if !math.IsNaN(cumReturnRate) {
-				cumRateVal = cumReturnRate
-			}
-			wItems = append(wItems, gin.H{
-				"id":              w.ID,
-				"name":            w.Name,
-				"code":            w.Code,
-				"currency":        w.Currency,
-				"note":            w.Note,
-				"source_id":       w.SourceID,
-				"source_name":     srcName[w.SourceID],
-				"amount":          amt,
-				"today_pnl":       todayPnl,
-				"cum_pnl":         cum,
-				"snap_date":       latestDate,
-				"snap_count":      cnt,
-				"holding_days":    wDays,
-				"cum_return_rate": cumRateVal,
-				"archived":        w.Archived,
-				"cashflow_today":  round2(todayCf),
-				"prev_amount":     round2(prevAmt),
-				"nav":             round4(w.Nav),
-				"nav_updated_at":  w.NavUpdatedAt,
-				"shares":          round4(w.Shares),
-			})
+		}
+		var cumRateVal interface{} = nil
+		if !math.IsNaN(cumReturnRate) {
+			cumRateVal = cumReturnRate
+		}
+		wItems = append(wItems, gin.H{
+			"id":              w.ID,
+			"name":            w.Name,
+			"code":            w.Code,
+			"currency":        w.Currency,
+			"note":            w.Note,
+			"source_id":       w.SourceID,
+			"source_name":     srcName[w.SourceID],
+			"amount":          amt,
+			"today_pnl":       todayPnl,
+			"cum_pnl":         cum,
+			"snap_date":       latestDate,
+			"snap_count":      cnt,
+			"holding_days":    wDays,
+			"cum_return_rate": cumRateVal,
+			"archived":        w.Archived,
+			"cashflow_today":  round2(todayCf),
+			"prev_amount":     round2(prevAmt),
+			"nav":             round4(w.Nav),
+			"nav_updated_at":  w.NavUpdatedAt,
+			"shares":          round4(w.Shares),
+		})
 	}
 
 	// 3.5) 现金
@@ -254,12 +255,12 @@ func assetOverview(c *gin.Context) {
 			"total": round2(lTotal),
 			"items": lItems,
 		},
-		"net_asset": netAsset,
-		"currency_assets": curAssets,
+		"net_asset":          netAsset,
+		"currency_assets":    curAssets,
 		"region_assets":      regAssets,
 		"region_liabilities": regLiab,
-		"rate":             cnyRate,
-		"day":              today,
+		"rate":               cnyRate,
+		"day":                today,
 	})
 }
 
@@ -558,6 +559,75 @@ func enableWealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// clearWealth 清仓一笔理财：剩余持仓全额赎回入账现金账户，并标记「已清仓停用」
+// （archived=1：保留产品与历史收益，归入已平仓视图，可重新启用或永久删除）。
+// 金额已为 0 时仅停用。快照/现金/审计与「更新理财持仓」同一套机制：
+// 当日快照金额清零、净存入记全额（本金变动不计当日盈亏，口径同 computeWealthPnl）。
+func clearWealth(c *gin.Context) {
+	uid := currentUserID(c)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	p, err := db.GetWealthProduct(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if p == nil || p.UserID != uid {
+		c.JSON(http.StatusNotFound, gin.H{"error": "理财产品不存在"})
+		return
+	}
+	if p.Archived {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "「" + p.Name + "」已清仓停用"})
+		return
+	}
+	today := time.Now().Format("2006-01-02")
+	now := time.Now().Format("2006-01-02 15:04:05")
+	// 剩余持仓 > 0：当日快照清零并全额赎回（cfDelta = 新净存入 − 旧净存入 = −剩余金额）
+	_, latestAmt, _, _ := db.GetWealthLatest(id)
+	latestAmt = round2(latestAmt)
+	if latestAmt > 0.005 {
+		oldAmt, oldCf, oldDiv, existed, _ := db.GetWealthSnapshot(id, today)
+		newCf := math.Round((oldCf-latestAmt)*100) / 100
+		// 落账账户：缺省回落同来源、同币种余额最大的子账户（解析失败直接拒绝，避免半程状态）
+		acc, e := resolveCashAccount(uid, 0, p.SourceID, p.Currency)
+		if e != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
+			return
+		}
+		if e := db.UpsertWealthSnapshot(id, today, 0, newCf, oldDiv); e != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
+			return
+		}
+		cfDelta := math.Round((newCf-oldCf)*100) / 100
+		if e := applyWealthCash(uid, id, today, cfDelta, acc.ID); e != nil {
+			// 回滚快照，保证「快照 + 现金」原子生效（审计未写，无残留）
+			if existed {
+				_ = db.UpsertWealthSnapshot(id, today, oldAmt, oldCf, oldDiv)
+			} else {
+				_ = db.DeleteWealthSnapshot(id, today)
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
+			return
+		}
+		if e := db.InsertWealthAudit(db.WealthAudit{
+			WealthID: id, Date: today, Action: "upsert", Field: "row",
+			OldAmount: oldAmt, OldCash: oldCf, OldDividend: oldDiv,
+			NewAmount: 0, NewCash: newCf, NewDividend: oldDiv,
+			OldExists: existed, CashAccountID: acc.ID, UserID: uid, CreatedAt: now,
+		}); e != nil {
+			log.Printf("[wealth-audit] 写入审计失败(wealth=%d date=%s): %v", id, today, e)
+		}
+	}
+	if err := db.SetWealthArchived(id, true); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "redeemed": latestAmt})
+}
+
 // ---- 现金 CRUD ----
 
 func listCash(c *gin.Context) {
@@ -695,6 +765,282 @@ func listFlows(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"flows": out, "years": years})
 }
 
+// ---- 财务：被动收入 / 收支汇总 ----
+
+// finScope 是一个统计周期（月/年）的收支汇总结果。
+type finScope struct {
+	Income    float64     `json:"income"`     // 收入合计（含落袋收益）
+	Expense   float64     `json:"expense"`    // 支出合计
+	Net       float64     `json:"net"`        // 结余 = 收入 − 支出
+	Breakdown []finCatRow `json:"breakdown"`  // 按语义分类拆分（收入为正、支出为绝对值）
+	InvestIn  float64     `json:"invest_in"`  // 投资活动流入（赎回/到期回款）
+	InvestOut float64     `json:"invest_out"` // 投资活动流出（存入/买入/存款）
+	Transfer  float64     `json:"transfer"`   // 内部划转净额
+	Financing float64     `json:"financing"`  // 融资借贷净额（借入−还款）
+}
+
+func containsStr(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+type finCatRow struct {
+	Category string  `json:"category"`
+	Type     string  `json:"type"` // "income" | "expense"
+	Amount   float64 `json:"amount"`
+}
+
+// financeSummary 聚合「财务」页所需的被动收入、月度/年度收支汇总与覆盖月数。
+// 口径（2026-10-22 分类重构）：
+//   - 收入 = 工资/经营/分红/利息/落袋收益/其他收入；
+//   - 支出 = 日常消费/居住/资本开支/负债偿还/税费/保险/教育医疗/投资费用/其他支出；
+//   - 投资活动（加仓/减仓/定投/理财申赎/存款本息本金）与内部划转（转账）不计入收支，单独列小计；
+//   - 被动收入 = 投资分红 + 投资利息（含存款利息）+ 已落袋投资收益（减仓实现 + 手动平仓）+ 理财派息。
+func financeSummary(c *gin.Context) {
+	uid := currentUserID(c)
+	cnyRate, hkdRate, degraded := market.GetFXRates()
+	toCNY := func(amt float64, cur string) float64 { return fxToCNY(amt, cur, cnyRate, hkdRate) }
+	now := time.Now()
+	curYear := now.Format("2006")
+	// 支持 ?year=YYYY 查询指定年度（财务页年度选择器）；非法值回落当前年。
+	year := curYear
+	if y := strings.TrimSpace(c.Query("year")); len(y) == 4 && y >= "2000" && y <= "2999" {
+		year = y
+	}
+	// 「本月」口径只在所选年度为当年时有意义；往年留空，月度 scope 保持零值。
+	ym := ""
+	if year == curYear {
+		ym = now.Format("2006-01")
+	}
+	yearStart, yearEnd := year+"-01-01", year+"-12-31"
+	years, _ := db.ListFlowYears(uid)
+	if len(years) == 0 {
+		years = []string{curYear}
+	} else if !containsStr(years, curYear) {
+		years = append([]string{curYear}, years...)
+	}
+	flows, err := db.ListFlows(uid, yearStart, yearEnd)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// 已落袋收益（减仓 + 手动平仓）与理财派息：按月份聚合，折 CNY 后计入收入/被动收入
+	gainByMonth := map[string]float64{}
+	wealthDivByMonth := map[string]float64{}
+	var gainYear, wealthDivYear float64
+	if rows, e := db.ListGainRows(uid, yearStart, yearEnd); e == nil {
+		for _, r := range rows {
+			cny := toCNY(r.Amount, r.Currency)
+			gainByMonth[r.YM] += cny
+			gainYear += cny
+		}
+	}
+	if rows, e := db.ListWealthDividendRows(uid, yearStart, yearEnd); e == nil {
+		for _, r := range rows {
+			cny := toCNY(r.Amount, r.Currency)
+			wealthDivByMonth[r.YM] += cny
+			wealthDivYear += cny
+		}
+	}
+
+	month := newFinScope()
+	yearScope := newFinScope()
+	// 自定义分类的方向不在内置表内，按用户设置解析；设置缺失时按金额方向兜底
+	customDir := map[string]string{}
+	if defs, e := loadFlowCategories(uid); e == nil {
+		for _, d := range defs {
+			customDir[d.Key] = d.Dir
+		}
+	}
+	var divYear, intYear float64 // 被动收入：分红 / 利息（现金流部分）
+	// 兜底去重：同一笔还款可能产生两条流水（现金 debt outflow + 负债 repay），
+	// 同日同金额同时存在时只计入现金那条（expense 口径一致），剔除负债 repay 以避免支出翻倍。
+	flows = dedupRepayFlows(flows)
+	for _, f := range flows {
+		cny := toCNY(f.Amount, f.Currency)
+		// 符号归一：现金流水 amount 自带方向（入账正/出账负）；负债流水 amount 恒为正，
+		// 语义由 type 决定（loan=融资流入 / repay=偿还流出）。
+		signed := cny
+		if f.Kind == "liability" {
+			if f.Type == "repay" {
+				signed = -math.Abs(cny)
+			} else {
+				signed = math.Abs(cny)
+			}
+		}
+		cat := f.Category
+		if cat == "" {
+			cat = db.AutoCategory(f.Type, f.Amount, f.Note)
+		}
+		dir := db.FinCatDir(cat)
+		if dir == "neutral" {
+			// 内置 neutral（投资/划转/融资）保持原样；自定义分类按用户设置的方向归收支
+			if d, ok := customDir[cat]; ok {
+				dir = d
+			} else if !db.IsKnownFinCat(cat) && signed >= 0 {
+				dir = "income"
+			} else if !db.IsKnownFinCat(cat) {
+				dir = "expense"
+			}
+		}
+		if ym != "" && strings.HasPrefix(f.Date, ym) {
+			addFinFlow(month, cat, dir, signed)
+		}
+		addFinFlow(yearScope, cat, dir, signed)
+		if dir == "income" && cat == db.CatInvestDiv {
+			divYear += signed
+		}
+		if dir == "income" && cat == db.CatInvestInt {
+			intYear += signed
+		}
+	}
+	// 落袋收益计入收入（月/年），不经过现金流
+	month.addGain(gainByMonth[ym])
+	yearScope.addGain(gainYear)
+	// 理财派息计入被动收入（不进现金流收支，避免与快照净存入重复）
+	month.breakdownAdd(db.CatInvestDiv, "income", wealthDivByMonth[ym])
+	yearScope.breakdownAdd(db.CatInvestDiv, "income", wealthDivYear)
+
+	// 被动收入（年度）：分红 + 利息 + 落袋收益 + 理财派息
+	passiveYear := divYear + intYear + gainYear + wealthDivYear
+	// 覆盖月数基准：优先当年本月支出年化；本月无支出或所选为往年时，用该年度月均支出。
+	var coverage, monthsCovered float64
+	base := month.Expense
+	if base <= 0 {
+		base = yearScope.Expense / 12
+	}
+	if base > 0 {
+		coverage = passiveYear / (base * 12)
+		monthsCovered = coverage * 12
+	}
+	// 收支平衡：结余 / 收入（收入为 0 时不做除法，按 0 处理）。
+	// 注意 Net 只在 out() 里推导，此处须自行用 Income-Expense。
+	saveRate := 0.0
+	if yearScope.Income > 0 {
+		saveRate = (yearScope.Income - yearScope.Expense) / yearScope.Income
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"selected_year":       year,
+		"available_years":     years,
+		"save_rate":           round2(saveRate),
+		"passive_income_year": round2(passiveYear),
+		"passive_breakdown": []gin.H{
+			{"label": "投资分红", "amount": round2(divYear)},
+			{"label": "投资利息", "amount": round2(intYear)},
+			{"label": "落袋收益", "amount": round2(gainYear)},
+			{"label": "理财派息", "amount": round2(wealthDivYear)},
+		},
+		"month":          month.out(),
+		"year":           yearScope.out(),
+		"coverage":       round2(coverage),
+		"months_covered": round2(monthsCovered),
+		"rate_degraded":  degraded,
+	})
+}
+
+func newFinScope() *finScope { return &finScope{Breakdown: []finCatRow{}} }
+
+// addFinFlow 把一条现金流按语义分类归入统计（neutral 类只累计投资/划转/融资小计，不进收支）。
+// signed 为带符号金额：收入类为正、支出类为负（冲正流水天然抵消）。
+func addFinFlow(s *finScope, cat, dir string, signed float64) {
+	switch dir {
+	case "income":
+		s.Income += signed
+		s.breakdownAdd(cat, "income", signed)
+	case "expense":
+		s.Expense += -signed
+		s.breakdownAdd(cat, "expense", -signed)
+	default:
+		switch cat {
+		case db.CatInvest:
+			if signed >= 0 {
+				s.InvestIn += signed
+			} else {
+				s.InvestOut += -signed
+			}
+		case db.CatTransfer:
+			s.Transfer += signed
+		case db.CatFinancing:
+			s.Financing += signed
+		}
+	}
+}
+
+// addGain 计入一笔非现金流的落袋收益（收入）。
+func (s *finScope) addGain(amount float64) {
+	if amount == 0 {
+		return
+	}
+	s.Income += amount
+	s.breakdownAdd(db.CatGain, "income", amount)
+}
+
+func (s *finScope) breakdownAdd(cat, dir string, amount float64) {
+	if amount == 0 {
+		return
+	}
+	for i := range s.Breakdown {
+		if s.Breakdown[i].Category == cat && s.Breakdown[i].Type == dir {
+			s.Breakdown[i].Amount += amount
+			return
+		}
+	}
+	s.Breakdown = append(s.Breakdown, finCatRow{Category: cat, Type: dir, Amount: amount})
+}
+
+// dedupRepayFlows 剔除与现金还款流水重复的负债 repay 流水（同日同额），
+// 避免「分两步操作（记支出 + 改负债）」或「原子还款 endpoint 同时写双流水」导致支出翻倍。
+// 只剔除 kind=liability & type=repay & category=CatDebt 的记录，保留其他负债流水（loan 等）。
+func dedupRepayFlows(flows []db.AggFlow) []db.AggFlow {
+	// 先收集所有现金 debt outflow：key = date|currency|abs(amount)
+	cashKeys := make(map[string]bool)
+	for _, f := range flows {
+		if f.Kind == "cash" && f.Category == db.CatDebt && f.Amount < 0 {
+			k := f.Date + "|" + f.Currency + "|" + fmt.Sprintf("%.2f", math.Abs(f.Amount))
+			cashKeys[k] = true
+		}
+	}
+	if len(cashKeys) == 0 {
+		return flows
+	}
+	out := make([]db.AggFlow, 0, len(flows))
+	for _, f := range flows {
+		if f.Kind == "liability" && f.Type == "repay" && f.Category == db.CatDebt {
+			k := f.Date + "|" + f.Currency + "|" + fmt.Sprintf("%.2f", math.Abs(f.Amount))
+			if cashKeys[k] {
+				continue // 同日同额已有现金 debt 出账，跳过这条 repay 流水，避免 double count
+			}
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+func (s *finScope) out() finScope {
+	cp := *s
+	cp.Net = round2(cp.Income - cp.Expense)
+	cp.Income = round2(cp.Income)
+	cp.Expense = round2(cp.Expense)
+	cp.InvestIn = round2(cp.InvestIn)
+	cp.InvestOut = round2(cp.InvestOut)
+	cp.Transfer = round2(cp.Transfer)
+	cp.Financing = round2(cp.Financing)
+	sort.SliceStable(cp.Breakdown, func(i, j int) bool {
+		if cp.Breakdown[i].Type != cp.Breakdown[j].Type {
+			return cp.Breakdown[i].Type == "income"
+		}
+		return cp.Breakdown[i].Amount > cp.Breakdown[j].Amount
+	})
+	for i := range cp.Breakdown {
+		cp.Breakdown[i].Amount = round2(cp.Breakdown[i].Amount)
+	}
+	return cp
+}
+
 func deleteCash(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -774,9 +1120,10 @@ func transferCash(c *gin.Context) {
 // delta > 0 = 存入现金，delta < 0 = 取出现金；写 manual 流水（资金变动历史可见）。
 func adjustCash(c *gin.Context) {
 	var b struct {
-		CashID int64   `json:"cash_id"`
-		Delta  float64 `json:"delta"`
-		Note   string  `json:"note"`
+		CashID   int64   `json:"cash_id"`
+		Delta    float64 `json:"delta"`
+		Note     string  `json:"note"`
+		Category string  `json:"category"` // 收支语义分类（空=按类型自动推导）
 	}
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
@@ -809,11 +1156,125 @@ func adjustCash(c *gin.Context) {
 			note = "手工取出"
 		}
 	}
-	if err := db.AddCashAmount(acc.ID, delta, "manual", "manual", acc.ID, acc.Name, note); err != nil {
+	category, err := resolveFlowCategory(c, b.Category, delta)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := db.AddCashAmountCat(acc.ID, delta, "manual", "manual", acc.ID, acc.Name, note, category); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// repayLiability 原子完成「子账户扣款 → 负债还款」：
+//  1. 从 cash_id 扣款 amount（负数），写一条 cash_flow，type=repay_liability，category=CatDebt；
+//  2. liabilities 余额减记 amount，写一条 liability_flow type=repay；
+//     任一步失败时回滚前一步，保证「现金+负债」同时生效。
+//
+// 用原子端点替代用户分两步（记支出 + 改负债）操作，避免支出 double count。
+func repayLiability(c *gin.Context) {
+	var b struct {
+		CashID      int64   `json:"cash_id"`
+		LiabilityID int64   `json:"liability_id"`
+		Amount      float64 `json:"amount"`
+		Note        string  `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if b.CashID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择子账户"})
+		return
+	}
+	if b.LiabilityID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要还款的负债"})
+		return
+	}
+	amt := math.Round(b.Amount*100) / 100
+	if amt <= 0.005 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "还款金额必须大于 0"})
+		return
+	}
+	uid := currentUserID(c)
+	cash, err := db.GetCash(b.CashID)
+	if err != nil || cash == nil || cash.UserID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "子账户不存在或无权访问"})
+		return
+	}
+	liab, err := db.GetLiability(b.LiabilityID)
+	if err != nil || liab == nil || liab.UserID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "负债不存在或无权访问"})
+		return
+	}
+	if cash.Amount+(-amt) < -0.004 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("还款金额超过子账户余额（当前余额 %.2f）", cash.Amount)})
+		return
+	}
+	note := strings.TrimSpace(b.Note)
+	if note == "" {
+		note = "还款至 " + liab.Name
+	}
+	// 1) 现金扣款（category=CatDebt：负债偿还 → 计入支出）
+	if err := db.AddCashAmountCat(cash.ID, -amt, "repay_liability", "liability", liab.ID, liab.Name, note, db.CatDebt); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// 2) 负债减记（余额最低为 0，避免负数）
+	newBal := math.Round((liab.Amount-amt)*100) / 100
+	if newBal < 0 {
+		newBal = 0
+	}
+	liab.Amount = newBal
+	if err := db.UpdateLiability(liab); err != nil {
+		// 回滚现金
+		_ = db.AddCashAmount(cash.ID, amt, "repay_rollback", "liability", liab.ID, liab.Name, "还款失败回滚")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// 3) 写负债还款流水（listFlows 会统一带 CatDebt，与现金流水的 CatDebt 做兜底去重）
+	if _, err := db.InsertLiabilityFlow(&db.LiabilityFlow{
+		UserID: uid, LiabilityID: liab.ID, Type: "repay",
+		Amount: amt, Balance: newBal, Note: note,
+	}); err != nil {
+		// 回滚现金 + 回滚负债余额
+		_ = db.AddCashAmount(cash.ID, amt, "repay_rollback", "liability", liab.ID, liab.Name, "还款流水失败回滚")
+		old := *liab
+		old.Amount = math.Round((newBal+amt)*100) / 100
+		if old.Amount != liab.Amount {
+			_ = db.UpdateLiability(&old)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "new_cash": round2(newBal), "liability": liab.Name})
+}
+
+// resolveFlowCategory 校验并归一化前端提交的收支分类：空=按类型/方向自动推导；
+// 内置 key 或用户自定义分类（settings flow_categories）均放行，其余拒绝。
+func resolveFlowCategory(c *gin.Context, raw string, delta float64) (string, error) {
+	cat := strings.TrimSpace(raw)
+	if cat == "" {
+		if delta >= 0 {
+			return db.CatOtherIn, nil
+		}
+		return db.CatOtherOut, nil
+	}
+	if db.IsKnownFinCat(cat) {
+		return cat, nil
+	}
+	custom, err := loadFlowCategoryKeys(currentUserID(c))
+	if err != nil {
+		return "", err
+	}
+	for _, k := range custom {
+		if k == cat {
+			return cat, nil
+		}
+	}
+	return "", fmt.Errorf("未知的收支分类：%s", cat)
 }
 
 // assetWealthSnapshotsPost upserts today's holding amounts for many products at once.
@@ -875,14 +1336,16 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 		oldAmt, oldCf, oldDiv, existed, _ := db.GetWealthSnapshot(it.WealthID, b.Date)
 		// 净存入正负均合法：正数=存入（子账户扣款），负数=取出（回款入账，2026-10-18 减仓弹框删除后
 		// 由「更新理财持仓」的负净存入承担；当日盈亏按 computeWealthPnl 口径天然剔除本金变动）。
-		// phantom 盈亏拦截：当日净存入≠0 但持仓金额与前一日完全相同，会产生错误盈亏
-		if math.Abs(it.Cashflow) > 1e-9 {
+		// phantom 盈亏拦截：仅在「今日首次录入快照（existed=false）」时生效。
+		// 今日已存过快照后再调 amount 是合法操作（用户修正持仓金额），不应因 cashflow 沿用旧值而拦截。
+		// 首次录入时 cashflow≠0 但 amount==prevAmt 才是真 Phantom（把净存入算成了当日盈亏）。
+		if !existed && math.Abs(it.Cashflow) > 1e-9 {
 			_, prevAmt, prevOk, pe := db.GetWealthPrevSnapshot(it.WealthID, b.Date)
 			if pe == nil && prevOk {
-			if math.Abs(prevAmt-it.Amount) < 0.005 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "产品 " + strconv.FormatInt(it.WealthID, 10) + " 在 " + b.Date + " 的净存入不为 0，但持仓金额与前一日相同，将产生错误盈亏。无资金变动请把净存入填 0。"})
-				return
-			}
+				if math.Abs(prevAmt-it.Amount) < 0.005 {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "产品 " + strconv.FormatInt(it.WealthID, 10) + " 在 " + b.Date + " 的净存入不为 0，但持仓金额与前一日相同，将产生错误盈亏。无资金变动请把净存入填 0。"})
+					return
+				}
 			}
 		}
 		// 写审计：记录改前/改后
@@ -893,7 +1356,7 @@ func assetWealthSnapshotsPost(c *gin.Context) {
 		// 现金落账前先解析账户：审计需记录实际落账子账户（撤销时优先冲正回原账户）。
 		// 仅在确有资金变动（cfDelta≠0）时解析；解析失败直接拒绝，避免快照已改而现金未动的半程状态。
 		cashAccID := int64(0)
-		cfDelta := math.Round((it.Cashflow - oldCf) * 100) / 100
+		cfDelta := math.Round((it.Cashflow-oldCf)*100) / 100
 		if math.Abs(cfDelta) >= 0.005 {
 			acc, e := resolveCashAccount(uid, it.CashAccountID, p.SourceID, p.Currency)
 			if e != nil {
