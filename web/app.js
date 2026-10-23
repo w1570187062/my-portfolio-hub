@@ -3203,13 +3203,13 @@ function drawCalMonth() {
         const avgBase = monthBaseDays ? monthBaseSum / monthBaseDays : 0;
         const rate = avgBase > 0 ? (monthPnl / avgBase) * 100 : 0;
         const rZero = Math.abs(rate) < 1e-9;
-        msCls = rate > 0 ? 'up' : rate < 0 ? 'down' : 'flat';
+        msCls = clsPnl(rate);
         // 零值与日格口径统一：只显示「—」，不出现「—+0.00%」这种标记+数值并存的怪显示
         msVal = rZero ? '—' : (rate > 0 ? '+' : '') + rate.toFixed(2) + '%';
         mark = rZero ? '' : (rate > 0 ? '▲' : '▼');
       } else {
         const mZero = Math.abs(monthPnl) < 1e-9;
-        msCls = monthPnl > 0 ? 'up' : monthPnl < 0 ? 'down' : 'flat';
+        msCls = clsPnl(monthPnl);
         msVal = mZero ? '—' : '¥' + (monthPnl > 0 ? '+' : '') + fmt(monthPnl);
         mark = mZero ? '' : (monthPnl > 0 ? '▲' : '▼');
       }
@@ -3245,23 +3245,23 @@ function drawCalMonth() {
         const v = calActiveVal(rec);
         // 零盈亏与无快照统一显示「—」（底色区分：lg-zero=有记录但平盘，lg-none=无记录）
         const isZero = !!rec && Math.abs(v) < 1e-9;
-        let color, emoji = '';
+        let color, pnlTxt = '', showVal = false;
         if (!rec) color = 'lg-none';
-        else if (isZero) { color = 'lg-zero'; }
+        else if (isZero) { color = 'lg-zero'; pnlTxt = '—'; showVal = true; }
         else {
           const t = Math.min(1, Math.abs(v) / cellMax);
           const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
           color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
-          // 情绪脸方案：盈/亏各 4 档，从微笑😊到狂喜😍、从皱眉🙁到惊恐😱，风格统一且直觉
-          emoji = v > 0 ? ['😊', '😄', '😁', '😍'][lvl - 1] : ['🙁', '😟', '😣', '😱'][lvl - 1];
+          pnlTxt = calActiveFmt(v);
+          showVal = true;
         }
         const isToday = cur.getTime() === today.getTime();
-        const pnlTxt = (!rec || isZero) ? '—' : calActiveFmt(v);
         const unit = calMetric === 'rate' ? '收益率' : '盈亏';
         const title = ds + (rec ? (': 当日' + unit + ' ' + calActiveFmt(v)) : '：无快照数据');
         const dayNum = cur.getDate();
-        const valHtml = '<span class="cal-val">' + pnlTxt + '</span>';
-        cells += '<div class="cal-cell ' + color + ' has-amt' + (isToday ? ' cal-today' : '') + '" data-date="' + ds + '" title="' + title + '"><span class="cal-day">' + dayNum + '</span><span class="cal-emoji">' + emoji + '</span>' + valHtml + '</div>';
+        // 日期居中显示；盈亏金额贴底（仅在有记录的日期显示，未更新的只显示日期）
+        const valHtml = showVal ? '<span class="cal-val">' + pnlTxt + '</span>' : '';
+        cells += '<div class="cal-cell ' + color + (isToday ? ' cal-today' : '') + '" data-date="' + ds + '" title="' + title + '"><span class="cal-day">' + dayNum + '</span>' + valHtml + '</div>';
       }
       cur.setDate(cur.getDate() + 1);
     }
@@ -3302,21 +3302,19 @@ function drawCalYear() {
   for (let m = 1; m <= 12; m++) {
     const a = monthAgg[m - 1];
     const v = calMetric === 'rate' ? (a.avgBase > 0 ? a.pnl / a.avgBase * 100 : 0) : a.pnl;
-    let color, txt;
+    let color;
     const isZero = a.days > 0 && Math.abs(v) < 1e-9;
-    if (a.days === 0) { color = 'lg-none'; txt = '—'; }
-    else if (isZero) { color = 'lg-zero'; txt = ''; }
+    if (a.days === 0) color = 'lg-none';
+    else if (isZero) color = 'lg-zero';
     else {
       const t = Math.min(1, Math.abs(v) / mx);
       const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
       color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
-      txt = v > 0 ? ['😊', '😄', '😁', '😍'][lvl - 1] : ['🙁', '😟', '😣', '😱'][lvl - 1];
     }
     // 与日格口径统一：无记录 / 零盈亏都显示「—」
     const valTxt = (a.days === 0 || isZero) ? '—' : calActiveFmt(v);
-    cells += `<div class="cal-cell cal-year-cell ${color} has-amt" data-month="${m}">
+    cells += `<div class="cal-cell cal-year-cell ${color}" data-month="${m}">
       <span class="cal-day">${m}月</span>
-      <span class="cal-emoji">${txt}</span>
       <span class="cal-val">${valTxt}</span>
     </div>`;
   }
@@ -3376,7 +3374,7 @@ function openCalDay(date) {
         syms.map((s) => {
           // 优先用快照时折算的 CNY 值；旧快照无该字段则用当前汇率回退折算
           const cny = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl);
-          return '<tr><td>' + s.symbol + '</td><td>' + (s.name || '') + '</td><td>' + (s.currency || '') + '</td><td class="num ' + cls(cny) + '">' + fmtPnl(cny) + '</td></tr>';
+          return '<tr><td>' + s.symbol + '</td><td>' + (s.name || '') + '</td><td>' + (s.currency || '') + '</td><td class="num ' + clsPnl(cny) + '">' + fmtPnl(cny) + '</td></tr>';
         }).join('') +
         '</tbody></table>';
       syms.forEach((s) => { const c = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl); equityCNY += c; });
@@ -3385,7 +3383,7 @@ function openCalDay(date) {
     const wts = det.by_wealth || [];
     if (wts.length) {
       wRows = '<table class="cal-detail-tbl" class="u-mt-2"><thead><tr><th>理财</th><th>币种</th><th class="num">当日盈亏 (CNY)</th></tr></thead><tbody>' +
-        wts.map((w) => '<tr><td>' + (w.name || '') + '</td><td>' + (w.currency || '') + '</td><td class="num ' + cls(w.pnl_cny) + '">' + fmtPnl(w.pnl_cny) + '</td></tr>').join('') +
+        wts.map((w) => '<tr><td>' + (w.name || '') + '</td><td>' + (w.currency || '') + '</td><td class="num ' + clsPnl(w.pnl_cny) + '">' + fmtPnl(w.pnl_cny) + '</td></tr>').join('') +
         '</tbody></table>';
       wts.forEach((w) => { wealthCNY += (typeof w.pnl_cny === 'number') ? w.pnl_cny : 0; });
     }
@@ -3393,10 +3391,10 @@ function openCalDay(date) {
   const dayRate = (rec.base_cny && rec.base_cny > 0) ? (rec.total_cny / rec.base_cny * 100) : null;
   $('#calModalBody').innerHTML = `
     <div id="calSumRow" class="u-row u-wrap u-gap-6 u-mb-3">
-      <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${cls(v)}">${fmtPnl(v)}</div></div>
-      <div><div class="cal-sub">当日收益率</div><div class="value ${dayRate == null ? '' : cls(dayRate)}">${dayRate == null ? '—' : (dayRate >= 0 ? '+' : '') + dayRate.toFixed(2) + '%'}</div></div>
-      <div><div class="cal-sub">权益盈亏 (CNY)</div><div class="value ${cls(equityCNY)}">${fmtPnl(equityCNY)}</div></div>
-      <div><div class="cal-sub">理财盈亏 (CNY)</div><div class="value ${cls(wealthCNY)}">${fmtPnl(wealthCNY)}</div></div>
+      <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${clsPnl(v)}">${fmtPnl(v)}</div></div>
+      <div><div class="cal-sub">当日收益率</div><div class="value ${dayRate == null ? '' : clsPnl(dayRate)}">${dayRate == null ? '—' : (dayRate >= 0 ? '+' : '') + dayRate.toFixed(2) + '%'}</div></div>
+      <div><div class="cal-sub">权益盈亏 (CNY)</div><div class="value ${clsPnl(equityCNY)}">${fmtPnl(equityCNY)}</div></div>
+      <div><div class="cal-sub">理财盈亏 (CNY)</div><div class="value ${clsPnl(wealthCNY)}">${fmtPnl(wealthCNY)}</div></div>
       ${CAL_NAV_HTML}
     </div>${rows}${wRows}`;
   $('#calModal').hidden = false;

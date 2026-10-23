@@ -2410,7 +2410,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .cal-view-toggle { flex: 0 0 auto; }
 .cal-year-cell { aspect-ratio: auto; min-height: 72px; padding: var(--sp-2) var(--sp-1); } /* 年视图方格不撑成正方形，更紧凑 */
 .cal-year-cell .cal-day { font-weight: 600; }
-.cal-year-cell .cal-emoji { font-size: var(--fs-lg); }
 .cal-weekdays.is-hidden { display: none; } /* 年视图隐藏星期表头 */
 
 /* 原生 <input type="date"> 右侧日历图标依赖 color-scheme 才能随主题反色，
@@ -2440,8 +2439,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   border-radius: var(--r-xs);
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: var(--sp-2) var(--sp-2);
+  align-items: center;
+  padding: var(--sp-2);
   box-sizing: border-box;
   overflow: hidden;
   background: rgba(255, 255, 255, .03);
@@ -2452,50 +2451,52 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   outline-offset: -2px;
   box-shadow: 0 0 12px var(--primary-glow);
 }
-.cal-day { font-size: var(--fs-2xl); line-height: 1; color: rgba(255, 255, 255, .85); }
-.cal-emoji {
+/* 日期居中：占据上方可伸缩区域并垂直居中；盈亏金额贴底（见下方 .cal-val） */
+.cal-day {
   flex: 1 1 auto;
-  min-height: 0;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: var(--fs-2xl);
   line-height: 1;
-  pointer-events: none;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35));
-  /* 默认隐藏，hover 才显示（且字号固定，不随盈亏幅度缩放） */
-  opacity: 0;
-  max-height: 0;
-  overflow: hidden;
-  transition: opacity .15s cubic-bezier(.32,.72,0,1), max-height .15s cubic-bezier(.32,.72,0,1);
+  color: rgba(255, 255, 255, .85);
 }
-/* 盈亏日历：金额常驻居中，日期与 emoji 仅在 hover 时淡入 */
-.cal-cell.has-amt .cal-day {
-  opacity: 0;
-  max-height: 0;
-  overflow: hidden;
-  transition: opacity .15s cubic-bezier(.32,.72,0,1), max-height .15s cubic-bezier(.32,.72,0,1);
+/* 盈亏金额：贴底、字号尽量小、等宽对齐 */
+.cal-val {
+  flex: 0 0 auto;
+  width: 100%;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
 }
-.cal-cell.has-amt:hover { justify-content: space-between; }
-.cal-cell.has-amt:hover .cal-day,
-.cal-cell.has-amt:hover .cal-emoji { opacity: 1; max-height: 60px; }
-/* 移动端：格子窄，缩小居中金额/日期/emoji，并放宽日历宽度避免拥挤
-   横屏(landscape)时 高度约 402px，用 max-height 也触发，保证横屏套用同套样式 */
+/* 移动端：弹框全屏 + 格子放大；金额字号极小、日期缩小腾出底部金额空间
+   横屏(landscape)时高度约 402px，用 max-height 也触发，保证横屏套用同套样式 */
 @media (max-width: 640px), (orientation: landscape) and (max-height: 640px) {
-
-  .cal-cell { padding: var(--sp-1) var(--sp-1); }
-  /* .cal-cell .cal-val 提高优先级：基础 .cal-val 规则在媒体查询之后定义（16.5px），同级会被覆盖 */
-  .cal-cell .cal-val { font-size: var(--fs-xs); }
-  .cal-day { font-size: var(--fs-md); }
-  .cal-emoji { font-size: var(--fs-lg); }
+  #pnlModal { padding: 0; align-items: stretch; }
+  /* fixed+inset:0 免疫内联 style 与各处 max-width 限制，保证真全屏；
+     margin 必须清零——移动端 .modal-card { margin: 0 var(--sp-3) } 会把 inset 求解出的宽度缩掉 24px */
+  #pnlModal .modal-card {
+    position: fixed; inset: 0; margin: 0;
+    width: auto !important; max-width: none !important;
+    height: auto !important; max-height: none !important;
+    border-radius: 0; border: none;
+  }
+  #pnlModal .modal-card > .m-body { max-height: none; }
+  .cal-grid { gap: var(--sp-1); }
+  .cal-cell { padding: var(--sp-1); }
+  .cal-cell .cal-val { font-size: 9px; }
+  .cal-day { font-size: var(--fs-xl); }
   .cal-head h2 { font-size: var(--fs-base); }
   .cal-title { font-size: var(--fs-md); min-width: 84px; }
   .cal-weekdays span { font-size: var(--fs-xs); }
-
-  /* 手机无 hover：强制只显示居中金额，点按/长按也不淡出日期与 emoji */
-  .cal-cell.has-amt:hover { justify-content: center; }
-  .cal-cell.has-amt:hover .cal-day,
-  .cal-cell.has-amt:hover .cal-emoji { opacity: 0; max-height: 0; }
 }
 
 /* 盈亏曲线：柱子 hover 热区（持仓历史弹框共用） */
@@ -2525,17 +2526,6 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .trend-tip .t-sep { height: 1px; background: var(--border); margin: 4px 0 4px; }
 .trend-tip .t-row.t-head > span:first-child { color: var(--text); font-weight: 600; }
 .trend-tip .t-row.t-head > span:last-child { color: var(--text-faint); font-size: var(--fs-xs); }
-.cal-val {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  line-height: 1.1;
-  align-self: stretch;
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
-  word-break: break-word;
-  text-align: center;
-  font-family: var(--font-mono);
-}
 .cal-cell.lg-none .cal-day, .cal-cell.lg-zero .cal-day, .cal-cell.cal-future .cal-day { color: var(--text-faint); }
 .cal-cell.lg-none .cal-val, .cal-cell.lg-zero .cal-val, .cal-cell.cal-future .cal-val { color: var(--text-faint); text-shadow: none; }
 .cal-cell[data-date] { cursor: pointer; }
