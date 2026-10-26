@@ -628,6 +628,97 @@ func clearWealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "redeemed": latestAmt})
 }
 
+// reduceWealth：部分减仓（赎回）——按指定金额赎回并入账到指定现金账户，产品保留并继续每日录入；
+// 金额等于剩余持仓时等同清仓（清零并归档）。复用 clearWealth 同一套快照/现金/审计原子逻辑。
+func reduceWealth(c *gin.Context) {
+	uid := currentUserID(c)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	p, err := db.GetWealthProduct(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if p == nil || p.UserID != uid {
+		c.JSON(http.StatusNotFound, gin.H{"error": "理财产品不存在"})
+		return
+	}
+	if p.Archived {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "「" + p.Name + "」已清仓停用"})
+		return
+	}
+	var req struct {
+		Amount        float64 `json:"amount"`
+		CashAccountID int64   `json:"cash_account_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	_, latestAmt, _, _ := db.GetWealthLatest(id)
+	latestAmt = round2(latestAmt)
+	if latestAmt <= 0.005 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该理财当前无持仓，无法减仓"})
+		return
+	}
+	amount := round2(req.Amount)
+	if amount <= 0.005 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "减仓金额必须大于 0"})
+		return
+	}
+	if amount > latestAmt+0.005 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "减仓金额不能超过剩余持仓"})
+		return
+	}
+	full := amount >= latestAmt-0.005
+	// 落账账户：必须与理财同来源、同币种（跨来源/跨币种拒绝），缺省回落同来源同币种余额最大子账户
+	acc, e := resolveCashAccount(uid, req.CashAccountID, p.SourceID, p.Currency)
+	if e != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
+		return
+	}
+	today := time.Now().Format("2006-01-02")
+	now := time.Now().Format("2006-01-02 15:04:05")
+	oldAmt, oldCf, oldDiv, existed, _ := db.GetWealthSnapshot(id, today)
+	newAmt := 0.0
+	if !full {
+		newAmt = round2(latestAmt - amount)
+	}
+	newCf := round2(oldCf - amount)
+	cfDelta := round2(newCf - oldCf)
+	if e := db.UpsertWealthSnapshot(id, today, newAmt, newCf, oldDiv); e != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
+		return
+	}
+	if e := applyWealthCash(uid, id, today, cfDelta, acc.ID); e != nil {
+		if existed {
+			_ = db.UpsertWealthSnapshot(id, today, oldAmt, oldCf, oldDiv)
+		} else {
+			_ = db.DeleteWealthSnapshot(id, today)
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": e.Error()})
+		return
+	}
+	if e := db.InsertWealthAudit(db.WealthAudit{
+		WealthID: id, Date: today, Action: "upsert", Field: "row",
+		OldAmount: oldAmt, OldCash: oldCf, OldDividend: oldDiv,
+		NewAmount: newAmt, NewCash: newCf, NewDividend: oldDiv,
+		OldExists: existed, CashAccountID: acc.ID, UserID: uid, CreatedAt: now,
+	}); e != nil {
+		log.Printf("[wealth-audit] 写入审计失败(wealth=%d date=%s): %v", id, today, e)
+	}
+	if full {
+		if e := db.SetWealthArchived(id, true); e != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "reduced": amount, "full": full})
+}
+
 // ---- 现金 CRUD ----
 
 func listCash(c *gin.Context) {
@@ -849,6 +940,11 @@ func financeSummary(c *gin.Context) {
 
 	month := newFinScope()
 	yearScope := newFinScope()
+	// 12 个月度归集（热力图：月度收支柱 + 当月子项 treemap 用），下标 = 月份−1。
+	monthScopes := make([]*finScope, 12)
+	for i := range monthScopes {
+		monthScopes[i] = newFinScope()
+	}
 	// 自定义分类的方向不在内置表内，按用户设置解析；设置缺失时按金额方向兜底
 	customDir := map[string]string{}
 	if defs, e := loadFlowCategories(uid); e == nil {
@@ -891,6 +987,15 @@ func financeSummary(c *gin.Context) {
 			addFinFlow(month, cat, dir, signed)
 		}
 		addFinFlow(yearScope, cat, dir, signed)
+		// 按月归集（仅同年度内的 12 个月）：用于热力图月度柱与当月子项 treemap
+		if len(f.Date) >= 7 {
+			ymFull := f.Date[:7]
+			if ymFull >= year+"-01" && ymFull <= year+"-12" {
+				if mm, e := strconv.Atoi(ymFull[5:7]); e == nil && mm >= 1 && mm <= 12 {
+					addFinFlow(monthScopes[mm-1], cat, dir, signed)
+				}
+			}
+		}
 		if dir == "income" && cat == db.CatInvestDiv {
 			divYear += signed
 		}
@@ -904,6 +1009,13 @@ func financeSummary(c *gin.Context) {
 	// 理财派息计入被动收入（不进现金流收支，避免与快照净存入重复）
 	month.breakdownAdd(db.CatInvestDiv, "income", wealthDivByMonth[ym])
 	yearScope.breakdownAdd(db.CatInvestDiv, "income", wealthDivYear)
+	// 各月同样计入落袋收益与理财派息（热力图月度口径与年/月一致）
+	for i := 0; i < 12; i++ {
+		mi := fmt.Sprintf("%02d", i+1)
+		ymFull := year + "-" + mi
+		monthScopes[i].addGain(gainByMonth[ymFull])
+		monthScopes[i].breakdownAdd(db.CatInvestDiv, "income", wealthDivByMonth[ymFull])
+	}
 
 	// 被动收入（年度）：分红 + 利息 + 落袋收益 + 理财派息
 	passiveYear := divYear + intYear + gainYear + wealthDivYear
@@ -923,6 +1035,21 @@ func financeSummary(c *gin.Context) {
 	if yearScope.Income > 0 {
 		saveRate = (yearScope.Income - yearScope.Expense) / yearScope.Income
 	}
+	// 月度明细（热力图 + 月度分类详情用）：12 个月各自的收入/支出/结余与分类子项（收入为正、支出为绝对值）。
+	monthsOut := make([]gin.H, 0, 12)
+	for i := 0; i < 12; i++ {
+		mi := fmt.Sprintf("%02d", i+1)
+		ymFull := year + "-" + mi
+		ms := monthScopes[i].out()
+		monthsOut = append(monthsOut, gin.H{
+			"ym":      ymFull,
+			"month":   i + 1,
+			"income":  ms.Income,
+			"expense": ms.Expense,
+			"net":     ms.Net,
+			"items":   ms.Breakdown, // []finCatRow{category,type,amount}
+		})
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"selected_year":       year,
 		"available_years":     years,
@@ -936,6 +1063,7 @@ func financeSummary(c *gin.Context) {
 		},
 		"month":          month.out(),
 		"year":           yearScope.out(),
+		"months":         monthsOut,
 		"coverage":       round2(coverage),
 		"months_covered": round2(monthsCovered),
 		"rate_degraded":  degraded,

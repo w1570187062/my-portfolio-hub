@@ -221,6 +221,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.DELETE("/asset/wealth/:id", deleteWealth)
 		g.POST("/asset/wealth/:id/enable", enableWealth)
 		g.POST("/asset/wealth/:id/clear", clearWealth)
+		g.POST("/asset/wealth/:id/reduce", reduceWealth)
 		g.POST("/asset/wealth/:id/nav", updateWealthNav)
 		g.POST("/asset/wealth/nav/refresh", refreshWealthNavBatch)
 		g.POST("/asset/wealth/snapshots", assetWealthSnapshotsPost)
@@ -2047,6 +2048,18 @@ func holdingPnlHistory(c *gin.Context) {
 			divs[t.CreatedAt[:10]] = t.Price
 		}
 	}
+	// 累计每股分红总和。现金分红入账时成本价已按每股分红下调（除息摊薄，db.AdjustDividend），
+	// 持仓列表盈亏 = (现价 − 摊薄后成本) × 份额，分红已计一次。若算历史累计盈亏时再把 cumDiv
+	// 加回净值，分红会被计两次（2026-10-23 复现：007172 分红 211.01，历史总盈亏 343.51
+	// vs 持仓列表 132.50；WMT/PEP 差额同样精确等于各自分红总额）。
+	// 正确口径：把历史成本基准还原为「当前成本 + 当日之后才发生的每股分红」——
+	//   分红前各点 = (收盘 − 原成本) × 份额（尚未收到分红，不计入）
+	//   分红后各点 = (收盘 − 摊薄后成本) × 份额（与持仓列表盈亏逐分对齐）
+	// 这样除息日累计盈亏连续（不假跌也不假涨），且逐日盈亏求和恰等于期末累计盈亏。
+	var cumDivTotal float64
+	for _, per := range divs {
+		cumDivTotal += per
+	}
 	var rows []Row
 	var cumDiv float64
 	var prevAdj float64
@@ -2068,12 +2081,13 @@ func holdingPnlHistory(c *gin.Context) {
 		}
 		adj := p.Close + cumDiv
 		mv := p.Close * qty * fx
-		// 累计盈亏用复权净值口径：把累计现金分红加回净值，反映「含分红的真实总收益」。
-		// 否则分红日净值除息跳降会让累计盈亏凭空少一块分红、显示为负的虚假亏损。
-		totalPnl := (adj - cost) * qty * fx
+		// 历史成本基准：当前成本 + 尚未生效的每股分红（分红当日成本已摊薄，不再加回）。
+		// 现金分红收益通过成本下调计入一次，与持仓列表 pnl = (现价−成本)×份额 完全同口径。
+		costAt := cost + (cumDivTotal - cumDiv)
+		totalPnl := (p.Close - costAt) * qty * fx
 		var totalPct, dayPnl, dayPct float64
-		if cost > 0 {
-			totalPct = totalPnl / (cost * qty * fx) * 100
+		if costAt > 0 {
+			totalPct = totalPnl / (costAt * qty * fx) * 100
 		}
 		n++
 		if n > 1 {
@@ -2092,8 +2106,8 @@ func holdingPnlHistory(c *gin.Context) {
 		// 清仓日当天的累计盈亏用已实现口径（卖出价落袋），而不是收盘价浮盈，避免与交易记录对不上
 		if closed && closedDate != "" && p.Date == closedDate && realizedSum != 0 {
 			totalPnl = realizedSum
-			if cost*qty*fx > 0 {
-				totalPct = totalPnl / (cost * qty * fx) * 100
+			if costAt*qty*fx > 0 {
+				totalPct = totalPnl / (costAt * qty * fx) * 100
 			}
 		}
 		rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})
