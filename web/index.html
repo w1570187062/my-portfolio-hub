@@ -50,28 +50,31 @@
       <div class="networth-hero tier-1" id="homeHero">
         <div class="nw-main">
           <div class="nw-left">
-            <div class="nw-info">
-              <div class="nw-brand">
-                <svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg2)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>
-                <div>
-                  <div style="font-weight:700;font-size:15px;">持仓侠 <span style="color:var(--muted);font-weight:400;font-size:12px;">Portfolio Tracker</span></div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:2px;letter-spacing:.5px;">一站式管理 · 持仓 · 理财 · 现金 · 负债</div>
-                </div>
+            <div class="nw-brand">
+              <svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg2)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>
+              <div>
+                <div style="font-weight:700;font-size:15px;">持仓侠 <span style="color:var(--muted);font-weight:400;font-size:12px;">Portfolio Tracker</span></div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;letter-spacing:.5px;">一站式管理 · 持仓 · 理财 · 现金 · 负债</div>
               </div>
-              <div class="nw-networth-col">
-                <div class="nw-networth">
-                  <div class="networth-label">净资产 NET WORTH</div>
-                  <div class="networth-value" id="homeNetWorth">—</div>
-                </div>
-                <div class="hero-changes" id="homeNetChanges"></div>
-              </div>
+            </div>
+            <!-- 净资产主数字：density-hero（全站视觉锚点），今日/本月变动挂在 kpi-sub -->
+            <div class="kpi-card density-hero">
+              <div class="kpi-eyebrow">净资产 NET WORTH</div>
+              <div class="kpi-main"><div class="kpi-value" id="homeNetWorth">—</div></div>
+              <div class="kpi-sub hero-changes" id="homeNetChanges"></div>
             </div>
             <div class="nw-asset-row" id="homeAssetBreakdown"></div>
           </div>
           <div class="nw-right">
             <div class="nw-spark">
+              <!-- 头部固定两行、各自两端对齐（① 标题 … 涨跌幅　② 区间切换 … 图例）。
+                   涨跌幅原本是 head 的第三个独立 flex 项，单行 wrap 时会被挤到下一行贴着左边、中间空一片，
+                   故收进左组与标题同一行；控件组单独一行。详见 style.css .rate-spark-head 注释。 -->
               <div class="rate-spark-head">
-                <span class="rate-spark-label">权益收益曲线</span>
+                <div class="rate-spark-left">
+                  <span class="rate-spark-label">权益收益曲线</span>
+                  <span id="homeRateSparkTrend" class="hero-mini-trend flat">—</span>
+                </div>
                 <div class="rate-spark-right">
                   <div class="range-tabs" id="homeRangeTabs">
                     <button class="range-tab" data-range="7" type="button">近7天</button>
@@ -83,7 +86,6 @@
                     <span class="legend-item"><span class="lg-swatch lg-dash"></span>持仓成本</span>
                   </span>
                 </div>
-                <span id="homeRateSparkTrend" class="hero-mini-trend flat">—</span>
               </div>
               <div id="homeRateSpark" class="rate-spark-box"></div>
             </div>
@@ -106,25 +108,33 @@
   </div>
 
   <div id="holdingsView">
-  <!-- 投资页 Hero：KPI 居中卡（持仓市值 / 当日盈亏 / 本月盈亏 / 持仓收益率） -->
-  <section class="networth-hero invest-hero tier-1" id="investHero">
-    <div class="nw-center-label">持仓总市值 · 当日盈亏 · 本月盈亏</div>
-    <div class="invest-kpis">
-      <div class="invest-kpi">
+  <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 3 卫星（当日 / 本月 / 收益率），统一 .kpi-card -->
+  <section class="invest-hero" id="investHero">
+    <div class="kpi-head"><span class="kpi-head-label">持仓市值 · 盈亏 · 收益率</span></div>
+    <div class="kpi-row cols-anchor">
+      <div class="kpi-card density-standard anchor">
+        <div class="kpi-icon kpi-ico-equity"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="10" width="7" height="11" rx="1"/></svg></div>
         <div class="kpi-label">持仓市值</div>
-        <div class="kpi-value" id="investMv">—</div>
+        <div class="kpi-main"><div class="kpi-value" id="investMv">—</div></div>
+        <div class="kpi-sub" id="investMvSub">—</div>
       </div>
-      <div class="invest-kpi">
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
         <div class="kpi-label">当日盈亏</div>
-        <div class="kpi-value" id="investDayPnl">—</div>
+        <div class="kpi-main"><div class="kpi-value" id="investDayPnl">—</div></div>
+        <div class="kpi-sub" id="investDayPct">—</div>
       </div>
-      <div class="invest-kpi">
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-down"><svg viewBox="0 0 24 24"><path d="M3 7l6 6 4-4 8 8"/><path d="M14 17h7v-7"/></svg></div>
         <div class="kpi-label">本月盈亏</div>
-        <div class="kpi-value" id="investMonthPnl">—</div>
+        <div class="kpi-main"><div class="kpi-value" id="investMonthPnl">—</div></div>
+        <div class="kpi-sub" id="investMonthPct">—</div>
       </div>
-      <div class="invest-kpi">
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-pct"><svg viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg></div>
         <div class="kpi-label">持仓收益率</div>
-        <div class="kpi-value" id="investPct">—</div>
+        <div class="kpi-main"><div class="kpi-value" id="investPct">—</div></div>
+        <div class="kpi-sub">累计成本口径</div>
       </div>
     </div>
   </section>
@@ -182,23 +192,23 @@
 
   </div>
 
-  <!-- ===== 财务（2026-10-23 重设计）：顶部标题+年份切换 / 4 KPI 卡 / 年度收支热力图 / 月度分类详情 ===== -->
+  <!-- ===== 财务（2026-10-26 卡片改造）：KPI 标题行（含年份切换）/ 4 KPI 卡 / 年度收支热力图 / 月度分类详情 ===== -->
   <div id="financeView" hidden>
-    <!-- 顶部：标题（左）+ 年份左右切换（右） -->
-    <div class="fin-page-header">
-      <div class="fin-page-title">
-        <h2 class="fin-page-h">财务 · 收支分析</h2>
-        <div class="fin-page-sub">FINANCIAL OVERVIEW · 年度收支热力 × 分类统计</div>
+    <!-- 卡片区（标题行 + 4 KPI 卡打成一段，避免 flex 容器 gap 再叠加一次行距） -->
+    <div class="kpi-section">
+      <!-- 标题行：左眉标 + 右年份切换（年度作用于整页：KPI / 热力图 / 月度明细，故与卡片同区而非塞进热力图卡） -->
+      <div class="kpi-head">
+        <span class="kpi-head-label">年度收支 · 总览</span>
+        <div class="year-switcher" id="finYearSwitcher">
+          <button class="year-nav-btn" id="finYearPrev" type="button" aria-label="上一年">‹</button>
+          <span class="year-label" id="finYearLabel">—</span>
+          <button class="year-nav-btn" id="finYearNext" type="button" aria-label="下一年">›</button>
+        </div>
       </div>
-      <div class="year-switcher" id="finYearSwitcher">
-        <button class="year-nav-btn" id="finYearPrev" type="button" aria-label="上一年">‹</button>
-        <span class="year-label" id="finYearLabel">—</span>
-        <button class="year-nav-btn" id="finYearNext" type="button" aria-label="下一年">›</button>
-      </div>
-    </div>
 
-    <!-- 4 个 KPI 小卡片（年度总收入 / 总支出 / 净结余 / 储蓄率） -->
-    <div class="fin-kpi-grid" id="finKpiGrid"></div>
+      <!-- 4 个 KPI 小卡片（年度总收入 / 总支出 / 净结余 / 储蓄率），由 renderFinKpis 输出统一 .kpi-card -->
+      <div class="kpi-row cols-flat" id="finKpiGrid"></div>
+    </div>
 
     <!-- 年度收支分析卡：内部上下排列（上=月度收支柱 / 下=子项金额热力图），下半部分=当月分类明细 -->
     <section class="card fin-heatmap-card" id="finHeatmap" hidden>

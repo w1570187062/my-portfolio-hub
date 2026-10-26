@@ -444,7 +444,21 @@ const EMPTY_ICONS = {
   inbox: '<svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 66h13l5 9h40l5-9h13"/><path d="M30 38h60l9 24v18a5 5 0 0 1-5 5H26a5 5 0 0 1-5-5V62l9-24Z"/><path d="M44 38V30a16 16 0 0 1 32 0v8"/></svg>',
   searchX: '<svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="50" cy="50" r="24"/><path d="M68 68l22 22"/><path d="M42 42l16 16M58 42l-16 16"/></svg>',
   alert: '<svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M60 32L96 96H24L60 32Z"/><path d="M60 54v22"/><path d="M60 86v3"/></svg>',
+  wallet: '<svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="22" y="38" width="76" height="50" rx="8"/><path d="M22 54h76"/><circle cx="80" cy="63" r="6"/><path d="M98 46v34a6 6 0 0 1-6 6H28a6 6 0 0 1-6-6V44a6 6 0 0 1 6-6h54"/></svg>',
+  bank: '<svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 46h80"/><path d="M28 46V34h64v12"/><path d="M38 46v26M60 46v26M82 46v26"/><path d="M18 82h84"/></svg>',
+  plan: '<svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="26" y="34" width="68" height="60" rx="8"/><path d="M26 52h68"/><path d="M44 26v12M76 26v12"/><path d="M48 66l8 8 16-18"/></svg>',
+  deposit: '<svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="24" y="44" width="72" height="44" rx="6"/><path d="M24 60h72"/><circle cx="60" cy="60" r="9"/><path d="M42 34V26a6 6 0 0 1 6-6h24a6 6 0 0 1 6 6v8"/></svg>',
 };
+
+// 统一空状态模板：icon（EMPTY_ICONS）+ 标题 + 描述 + 主按钮，与持仓页 #holdingsEmpty 同款样式（.empty-state）。
+function emptyStateHTML({ icon, title, desc, btnLabel, btnAttrs }) {
+  return '<div class="empty-state">'
+    + '<div class="empty-icon" aria-hidden="true">' + icon + '</div>'
+    + '<h3 class="empty-title">' + title + '</h3>'
+    + '<p class="empty-desc">' + desc + '</p>'
+    + '<button class="btn primary" type="button"' + (btnAttrs ? ' ' + btnAttrs : '') + '>' + btnLabel + '</button>'
+    + '</div>';
+}
 
 function renderFiltered() {
   const hs = filteredHoldings();
@@ -1216,16 +1230,23 @@ function renderSummary(hs) {
   // 投资页 Hero（KPI 居中卡）：持仓市值 / 当日盈亏 / 本月盈亏 / 持仓收益率
   const invMv = document.getElementById('investMv');
   if (invMv) invMv.textContent = '¥' + fmt(totalCNY);
+  // 锚点卡副标：只数 + 成本（不重复卡片 4 的收益率）
+  const invMvSub = document.getElementById('investMvSub');
+  if (invMvSub) invMvSub.innerHTML = `持仓 <span class="hl">${hs.length}</span> 只 · 成本 <span class="hl">¥${fmt(totalCostCNY)}</span>`;
   // 当日盈亏口径与首页「今日」一致：持仓当日盈亏 + 今日已实现（清仓/减仓）盈亏，均折 CNY
   const invDay = document.getElementById('investDayPnl');
   if (invDay) {
     invDay.textContent = (dayPnlCNY > 0 ? '+' : '') + '¥' + fmt(Math.abs(dayPnlCNY));
     invDay.className = 'kpi-value ' + dpCls;
+    const sub = document.getElementById('investDayPct');
+    if (sub) { sub.textContent = pct(dayPnlCNY / Math.max(totalCNY - dayPnlCNY, 1) * 100); sub.className = 'kpi-sub ' + dpCls; }
   }
   const invMonth = document.getElementById('investMonthPnl');
   if (invMonth) {
     invMonth.textContent = (monthPnlCNY > 0 ? '+' : '') + '¥' + fmt(Math.abs(monthPnlCNY));
     invMonth.className = 'kpi-value ' + mpCls;
+    const sub = document.getElementById('investMonthPct');
+    if (sub) { sub.textContent = pct(monthPnlCNY / Math.max(totalCNY - monthPnlCNY, 1) * 100); sub.className = 'kpi-sub ' + mpCls; }
   }
   const invPct = document.getElementById('investPct');
   if (invPct) {
@@ -1644,7 +1665,8 @@ function sparkline(data, opts) {
 function sparkCell(sym, pnl) {
   const arr = (sparkCache[sym] || []).slice(-20);
   if (!arr || arr.length < 2) return '<span class="spark-empty">—</span>';
-  const color = arr[arr.length - 1] > arr[0] ? 'var(--up)' : 'var(--down)';
+  const dir = clsPnl(arr[arr.length - 1] - arr[0]);
+  const color = dir === 'down' ? 'var(--down)' : dir === 'up' ? 'var(--up)' : 'var(--text-muted)';
   return sparkline(arr, { w: 110, h: 26, stroke: color, fill: color });
 }
 
@@ -3051,21 +3073,15 @@ async function renderHomeDashboard() {
   const bd = $('#homeAssetBreakdown');
   if (bd) {
     const rows = [
-      { label: '持仓', val: eqMV, color: '#4a9eff' },
-      { label: '理财', val: wTotal, color: '#a78bfa' },
-      { label: '现金', val: cTotal, color: '#00d084' },
-      { label: '负债', val: lTotal, color: '#ff4d4f', neg: true },
+      { label: '持仓', val: eqMV, color: 'var(--home-eq)' },
+      { label: '理财', val: wTotal, color: 'var(--home-wealth)' },
+      { label: '现金', val: cTotal, color: 'var(--home-cash)' },
+      { label: '负债', val: lTotal, color: 'var(--home-debt)', neg: true },
     ];
-    const max = Math.max(eqMV, wTotal, cTotal, lTotal, 1);
+    // 资产分布 → 芯片行（原型 hero-asset-chip）：一枚一个口径，金额右对齐读数
     bd.innerHTML = rows.map((r) => {
-      const pctW = (Math.min(r.val, max) / max * 100).toFixed(1);
-      const valCls = r.neg ? 'down' : '';
       const valTxt = (r.neg ? '−' : '') + yuanOfW(r.val);
-      return `<div class="home-asset-item">
-        <div class="label"><span class="dot" style="--dot-c:${r.color}"></span>${r.label}</div>
-        <div class="val ${valCls}">${valTxt}</div>
-        <div class="home-asset-bar"><span style="--bar-w:${pctW}%;--bar-c:${r.color}"></span></div>
-      </div>`;
+      return `<span class="nw-chip"><span class="d" style="--dot-c:${r.color}"></span>${r.label} <b${r.neg ? ' class="down"' : ''}>${valTxt}</b></span>`;
     }).join('');
   }
 
@@ -3199,10 +3215,10 @@ async function renderFinanceView() {
       finHmMonth = curIdx >= 0 ? curIdx : 11;
       if (heatmap) { heatmap.hidden = false; renderFinHeatmap(); }
     } else if (kpiGrid) {
-      kpiGrid.innerHTML = '<div class="fin-kpi-card err">加载失败</div>';
+      kpiGrid.innerHTML = '<div class="kpi-card kpi-card-err">加载失败</div>';
     }
   } catch (_) {
-    if (kpiGrid) kpiGrid.innerHTML = '<div class="fin-kpi-card err">加载失败</div>';
+    if (kpiGrid) kpiGrid.innerHTML = '<div class="kpi-card kpi-card-err">加载失败</div>';
   }
 }
 
@@ -3217,29 +3233,29 @@ function renderFinKpis(d) {
   const netCls = net >= 0 ? '' : ' is-neg';
   const netSign = net >= 0 ? '+' : '−';
   grid.innerHTML = `
-    <div class="fin-kpi-card kpi-income">
-      <div class="fin-kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></div>
-      <div class="fin-kpi-label">年度总收入</div>
-      <div class="fin-kpi-value">${moneyCurW(inc, 'cny')}</div>
-      <div class="fin-kpi-sub">月均 <span class="hl">${moneyCurW(inc / 12, 'cny')}</span></div>
+    <div class="kpi-card density-standard kpi-income">
+      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></div>
+      <div class="kpi-label">年度总收入</div>
+      <div class="kpi-main"><div class="kpi-value">${moneyCurW(inc, 'cny')}</div></div>
+      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(inc / 12, 'cny')}</span></div>
     </div>
-    <div class="fin-kpi-card kpi-expense">
-      <div class="fin-kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></div>
-      <div class="fin-kpi-label">年度总支出</div>
-      <div class="fin-kpi-value">${moneyCurW(exp, 'cny')}</div>
-      <div class="fin-kpi-sub">月均 <span class="hl">${moneyCurW(exp / 12, 'cny')}</span></div>
+    <div class="kpi-card density-standard kpi-expense">
+      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></div>
+      <div class="kpi-label">年度总支出</div>
+      <div class="kpi-main"><div class="kpi-value">${moneyCurW(exp, 'cny')}</div></div>
+      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(exp / 12, 'cny')}</span></div>
     </div>
-    <div class="fin-kpi-card kpi-surplus">
-      <div class="fin-kpi-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div>
-      <div class="fin-kpi-label">年度净结余</div>
-      <div class="fin-kpi-value${netCls}">${netSign}${moneyCurW(Math.abs(net), 'cny')}</div>
-      <div class="fin-kpi-sub">已覆盖 <span class="hl">${months.toFixed(1)} / 12</span> 月支出</div>
+    <div class="kpi-card density-standard kpi-surplus">
+      <div class="kpi-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div>
+      <div class="kpi-label">年度净结余</div>
+      <div class="kpi-main"><div class="kpi-value${netCls}">${netSign}${moneyCurW(Math.abs(net), 'cny')}</div></div>
+      <div class="kpi-sub">已覆盖 <span class="hl">${months.toFixed(1)} / 12</span> 月支出</div>
     </div>
-    <div class="fin-kpi-card kpi-rate">
-      <div class="fin-kpi-icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
-      <div class="fin-kpi-label">储蓄率</div>
-      <div class="fin-kpi-value">${rate}%</div>
-      <div class="fin-kpi-sub">收入留存比例</div>
+    <div class="kpi-card density-standard kpi-rate">
+      <div class="kpi-icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+      <div class="kpi-label">储蓄率</div>
+      <div class="kpi-main"><div class="kpi-value">${rate}%</div></div>
+      <div class="kpi-sub">收入留存比例</div>
     </div>`;
 }
 
@@ -5547,7 +5563,7 @@ function accountLogo(name, type) {
   }
   // 未命中内置列表 → 取账户名首字作 monogram（中性色），保证所有账户都有图标卡片，不再回退抽象类型图标
   const ch = String(name || '').trim().charAt(0);
-  if (ch) return `<span class="src-ico src-logo" style="--logo-c:#7c8aa5" title="${esc(name)}">${ch}</span>`;
+  if (ch) return `<span class="src-ico src-logo" style="--logo-c:var(--cat-other-c)" title="${esc(name)}">${ch}</span>`;
   return `<span class="src-ico">${srcTypeIcon(type)}</span>`;
 }
 document.querySelectorAll('.eye-toggle').forEach(b => { if (!b.innerHTML.trim()) b.innerHTML = EYE_OPEN; });
@@ -5863,43 +5879,46 @@ function renderAssetTab() {
     <div class="cmp-row"><div class="cmp-name cmp-name-liab">负债</div><div class="cmp-bars"><div class="cmp-bar cmp-bar-liab" style="--w:${(lTotal / triMax * 100).toFixed(1)}%"></div></div><div class="cmp-val">${yuanOfW(lTotal)}</div></div>
     <div class="cmp-row"><div class="cmp-name cmp-name-net">净资产</div><div class="cmp-bars"><div class="cmp-bar cmp-bar-net ${net < 0 ? 'neg' : ''}" style="--w:${(Math.abs(net) / triMax * 100).toFixed(1)}%"></div></div><div class="cmp-val ${clsPnl(net)}">${yuanOfW(net)}</div></div>`;
 
+  // === 4 张独立小卡（原型场景 D 的扁平版）：构成 / 区域 / 币种 / 净值结构 ===
+  // 主数字各自取该维度最关心的一项：总资产 / 海外占比 / 外币占比 / 净资产。
+  // 占比一律走 pctOf（不带正负号）——pct() 是给涨跌用的，会给正数加 "+"。
+  const hkA = Number(regA.hk || 0), usA = Number(regA.us || 0), cnA = Number(regA.cn || 0);
+  const cnyA = Number(curA.cny || 0);
+
   body.innerHTML = `
-    <div class="card asset-ov">
-      <div class="asset-ov-head">
-        <h3 class="asset-ov-title">资产概览</h3>
+    <div class="kpi-head">
+      <span class="kpi-head-label">资产概览</span>
+      <span class="kpi-head-hint">全部折算 CNY</span>
+    </div>
+    <div class="kpi-row cols-flat asset-kpi-row">
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-fund"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 3v9h9"/></svg></div>
+        <div class="kpi-label">资产构成</div>
+        <div class="kpi-main"><div class="kpi-value">${yuanOfW(totalA)}</div></div>
+        <div class="kpi-sub">持仓 · 理财 · 现金 三类合计</div>
+        <div class="kpi-extra asset-cmp-body asset-cmp-donut">${donutHtml}<div class="asset-ov-legend">${donutLegend}</div></div>
       </div>
-      <div class="asset-cmp-grid">
-        <div class="asset-cmp-cell">
-          <div class="asset-cmp-hd">资产构成</div>
-          <div class="asset-cmp-content">
-            <div class="asset-cmp-body asset-cmp-donut">
-              ${donutHtml}
-              <div class="asset-ov-legend">${donutLegend}</div>
-            </div>
-          </div>
-        </div>
-        <div class="asset-cmp-cell">
-          <div class="asset-cmp-hd">资产区域</div>
-          <div class="asset-cmp-content">
-            <div class="asset-cmp-body">${regionBars}</div>
-            <div class="asset-cmp-legend-2">
-              <span><i class="lg-sq lg-asset"></i>资产</span>
-              <span><i class="lg-sq lg-liab"></i>负债</span>
-            </div>
-          </div>
-        </div>
-        <div class="asset-cmp-cell">
-          <div class="asset-cmp-hd">资产币种</div>
-          <div class="asset-cmp-content">
-            <div class="asset-cmp-body">${curBars}</div>
-          </div>
-        </div>
-        <div class="asset-cmp-cell">
-          <div class="asset-cmp-hd">净值结构</div>
-          <div class="asset-cmp-content">
-            <div class="asset-cmp-body">${triHtml}</div>
-          </div>
-        </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-cash"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg></div>
+        <div class="kpi-label">资产区域</div>
+        <div class="kpi-main"><div class="kpi-value">${pctOf(hkA + usA, totalA)}</div></div>
+        <div class="kpi-sub">海外占比 · 内地 <span class="hl">${pctOf(cnA, totalA)}</span></div>
+        <div class="kpi-extra asset-cmp-body">${regionBars}</div>
+        <div class="asset-cmp-legend-2"><span><i class="lg-sq lg-asset"></i>资产</span><span><i class="lg-sq lg-liab"></i>负债</span></div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-pct"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9h6M9 13h6M12 9.5V17"/></svg></div>
+        <div class="kpi-label">资产币种</div>
+        <div class="kpi-main"><div class="kpi-value">${pctOf(totalA - cnyA, totalA)}</div></div>
+        <div class="kpi-sub">外币占比 · 人民币 <span class="hl">${pctOf(cnyA, totalA)}</span></div>
+        <div class="kpi-extra asset-cmp-body">${curBars}</div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-equity"><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M7 21V11M12 21V4M17 21v-7"/></svg></div>
+        <div class="kpi-label">净值结构</div>
+        <div class="kpi-main"><div class="kpi-value ${net < 0 ? 'down' : ''}">${yuanOfW(net)}</div></div>
+        <div class="kpi-sub">负债 <span class="hl">${yuanOfW(lTotal)}</span> · 负债率 <span class="hl">${pctOf(lTotal, totalA)}</span></div>
+        <div class="kpi-extra asset-cmp-body">${triHtml}</div>
       </div>
     </div>
     <div class="sub-tabs asset-subtabs" id="assetSubTabs">
@@ -6132,7 +6151,7 @@ function renderSources(body) {
   let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="balanceSyncBtn" type="button" title="一键更新余额" aria-label="一键更新余额">${actIcon('refresh')}</button><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div></div>`;
   // 一张卡承载账户主表；横向滚动由 .as-main 接管。指标条摘要头已迁出为独立「资产摘要」卡。
   html += `<div class="as-card tier-1"><div class="as-main">`;
-  if (!list.length) html += `<div class="empty-state"><p>还没有账户，先添加一个银行、证券或软件吧。</p><button class="btn" data-empty-add="source" type="button">＋ 添加账户</button></div>`;
+  if (!list.length) html += emptyStateHTML({ icon: EMPTY_ICONS.bank, title: '还没有账户', desc: '先添加一个银行、证券或软件，开始记录你的资产。', btnLabel: '＋ 添加账户', btnAttrs: 'data-empty-add="source"' });
   else {
     // 按账户归属地域（cn/hk/us）分组：地域是账户的属性，不做持仓级拆分。
     // 组内按关联资金从大到小，金额右对齐在同一 x 轴上才可比大小。
@@ -6273,7 +6292,7 @@ function renderWealth(body) {
   // 「批量刷新净值」按钮及前端逻辑已删（2026-10-19）：自动/批量刷新净值尚未支持，后端接口保留。
   // 计数（理财（N））已上提到切换条右侧 #tblDesc，此处不再单独渲染头，避免与切换条分两行。
   let html = '';
-  if (!w.length) html += `<div class="empty-state"><button class="btn" data-empty-add="wealth" type="button">＋ 添加第一笔理财</button></div>`;
+  if (!w.length) html += emptyStateHTML({ icon: EMPTY_ICONS.wallet, title: '还没有理财', desc: '添加第一笔理财，每日净值自动录入并计入资产全景。', btnLabel: '＋ 添加第一笔理财', btnAttrs: 'data-empty-add="wealth"' });
   else html += renderWealthTable(w);
   body.innerHTML = html;
   body.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
@@ -8868,7 +8887,7 @@ function renderCfBars(plans, listEl) {
   if (!plans || !plans.length) {
     // 空态：与全局 emptyAddBtn 同款 .btn 样式的「添加收支计划」按钮，点击弹出新建弹框
     // （复用 openCashflowModal(null)，与账户区标题行「添加收支」按钮一致）；删除旧的小号「＋ 添加」链接
-    return `<div class="cf-empty"><button class="btn" id="cfQuickAdd" type="button">＋ 添加收支计划</button></div>`;
+    return emptyStateHTML({ icon: EMPTY_ICONS.plan, title: '还没有收支计划', desc: '新建一笔月度收支计划，自动追踪预算执行与结余。', btnLabel: '＋ 添加收支计划', btnAttrs: 'id="cfQuickAdd"' });
   }
   // 提取日数字 + 排序
   const bars = plans.map((p) => {
@@ -8956,7 +8975,7 @@ function renderCfBars(plans, listEl) {
 // 行点击 = 柱子点击，走同一个确认框（cfOpenPlanConfirm）。空态复用「＋ 添加收支计划」按钮。
 function renderCfTable(plans) {
   if (!plans || !plans.length) {
-    return `<div class="cf-empty"><button class="btn" id="cfQuickAdd" type="button">＋ 添加收支计划</button></div>`;
+    return emptyStateHTML({ icon: EMPTY_ICONS.plan, title: '还没有收支计划', desc: '新建一笔月度收支计划，自动追踪预算执行与结余。', btnLabel: '＋ 添加收支计划', btnAttrs: 'id="cfQuickAdd"' });
   }
   const rows = plans.map((p) => {
     const done = !!cashflowDone[p.id];
@@ -9445,12 +9464,13 @@ function renderDeposits(box) {
   const list = depositsCache || [];
   const head = `<div class="asset-section-head"><h3>存款（${list.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="depAddBtn" type="button" title="新增存款" aria-label="新增存款">${actIcon('plus')}</button></div></div>`;
   if (!list.length) {
-    box.innerHTML = head + `<div class="empty-state dep-empty">
-      <div class="empty-icon" aria-hidden="true"><svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="24" y="44" width="72" height="44" rx="6"/><path d="M24 60h72"/><circle cx="60" cy="60" r="9"/><path d="M42 34V26a6 6 0 0 1 6-6h24a6 6 0 0 1 6 6v8"/></svg></div>
-      <h3 class="empty-title">还没有存款</h3>
-      <p class="empty-desc">添加第一笔定期存款 / 大额存单，到期确认后利息自动计入被动收入。</p>
-      <button class="btn primary" type="button" data-empty-add="deposit">＋ 添加第一笔存款</button>
-    </div>`;
+    box.innerHTML = head + emptyStateHTML({
+      icon: EMPTY_ICONS.deposit,
+      title: '还没有存款',
+      desc: '添加第一笔定期存款 / 大额存单，到期确认后利息自动计入被动收入。',
+      btnLabel: '＋ 添加第一笔存款',
+      btnAttrs: 'data-empty-add="deposit"',
+    });
     const add = box.querySelector('#depAddBtn');
     if (add) add.onclick = () => openDepositModal(null);
     const ea = box.querySelector('[data-empty-add="deposit"]');
