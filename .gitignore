@@ -1,60 +1,94 @@
-# 运行时数据与备份（不入库）
+# ============================================================
+# 持仓侠 · Git 忽略规则
+# 原则：入库只保留「源码 / 文档 / 可复现构建所需的配置与资源」。
+#       运行时数据、构建产物、依赖、本机配置、一次性原型稿一律不入库。
+# ============================================================
+
+# ── 运行时数据与备份 ─────────────────────────────────────────
 data/
 data_test/
 .bak/
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.log
 
-# 部署产物（commit|构建时间，由构建时自动生成，不入库）
+# ── 部署产物（commit|构建时间，由构建时自动生成）─────────────
 VERSION
-
-# 根目录遗留的旧前端（不参与构建，以 web/ 下版本为准，后者被 //go:embed web 嵌入）
-/app.js
-/index.html
-
-# 本地部署流程说明（仅本地参考，不入库）
-DEPLOY.md
-
-# 本地临时核验目录
-.verify/
-
-# WorkBuddy 工作目录（记忆/配置，不入库）
-.workbuddy/
-/.trae
-
-# 设计系统文档（仅本地参考，不入库）
-DESIGN_SYSTEM.md
-
-# 本地临时脚本与生成产物（payload 生成器、剪贴板工具等，不入库）
-/scripts/
-
-# 本地部署流程说明（仅本地参考，不入库）
-docs/deploy.md
-
-# 前端构建产物（由 web/build.mjs 生成，供 //go:embed web/dist 使用）
-web/dist/
-node_modules/
-
-# 部署临时目录与产物（本地部署脚本生成，不入库）
 .deploy_tmp/
 portfolio.tar.gz
 
-# 归档文件（AI 总结快照等临时归档，不入库）
-archive/
+# ── 构建产物与依赖 ──────────────────────────────────────────
+# 前端构建产物（由 web/build.mjs 生成，供 //go:embed web/dist 使用）
+web/dist/
+/dist/
+node_modules/
+/portfolio.exe
+/bsk_portfolio.exe
 
-# 原型设计稿（仅本地参考，不入库）
+# ── 根目录遗留的旧前端 ──────────────────────────────────────
+# 不参与构建，以 web/ 下版本为准（后者被 //go:embed web 嵌入）
+/app.js
+/index.html
+
+# ── 本机专用配置与密钥 ──────────────────────────────────────
+# 环境变量文件（.env.example 允许入库作为模板）
+.env
+.env.*
+!.env.example
+
+# ── 本地流程说明 / 设计文档（仅本机参考）────────────────────
+DEPLOY.md
+docs/deploy.md
+DESIGN_SYSTEM.md
+/docs/design-system-audit.md
+
+# ── WorkBuddy / trae 工作目录（记忆、会话、分享包）──────────
+.workbuddy/
+/.trae
+.trae-html-share-packages/
+
+# ── 本地脚本与临时校验 ──────────────────────────────────────
+# 除 README 截图脚本外，scripts/ 下均为本机部署/调试脚本，不入库
+/scripts/*
+!/scripts/screenshot.mjs
+.verify/
+.screenshots/
+/shots/
+
+# ── 原型设计稿（一次性 HTML 预览，仅本地参考）───────────────
 tab-redesign-prototype/
+hero-prototype.html
+docs/*-proposal.html
 
-
-# bsk 本地预览验证的临时产物（沙箱 DB / 截图 / 临时二进制）
+# ── 归档与 bsk 本地预览验证产物（沙箱 DB / 截图 / 临时二进制）─
+archive/
 .bsk_data/
 .bsk_shots/
 .bsk_portfolio.exe
 .bsk_sid
 
-# 本地构建产物与验证截图（不入库）
-/portfolio.exe
-/bsk_portfolio.exe
-/shots/
-hero-prototype.html
+# ── Python（client/ 采集客户端，兜底 client/.gitignore）──────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# ── 通用临时文件 / 编辑器与 OS 噪音 ─────────────────────────
+*.tmp
+*.bak
+*.orig
+*.rej
+*.pid
+*.stackdump
+*.swp
+*.swo
+*~
+.cache/
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
+.DS_Store
