@@ -1,9 +1,11 @@
 # 持仓侠 UI 设计规范
 
-> **v3.4 · 2026-10-21 · 设计规范（已定案）**
+> **v3.6 · 2026-10-26 · 设计规范（已定案）**
 > 落地文件：`web/style.css`（**唯一样式真源**）、`web/index.html`（零样式）、`web/app.js`（仅主题变量注入）
 > 变更摘要：v3.2 → v3.3 — **合并根目录 design.md：页面骨架与标题层级、纵向节奏规约（分组卡 12/24、弹框行距 12/主分组断点 20/水平 28）、弹框宽度档以代码实测修正**
 > 变更摘要：v3.3 → v3.4 — **体验质感升级：卡片三级视觉层级、弹框入场动效升级、表格微交互增强、按钮物理反馈强化、空态/加载态治理、留白微纹理、亮暗主题背景微调**
+> 变更摘要：v3.4 → v3.5 — **设计系统统一性审计整改（docs/design-system-audit.md）：清理冗余 padding、统一 KPI 区块间距与眉标字距、分组头字重对齐 L3、年份切换器降权；并勘误 Hero 覆盖范围（维持仅持仓/首页可见）、登记 KPI 统一组件与断点收敛为专项**
+> 变更摘要：v3.5 → v3.6 — **KPI 统一组件落地（`.kpi-card` + 三档密度 + `.anchor` + 两种 row 模板）：首页 Hero / 投资 / 资产 / 财务四页卡片同源；资产页改 4 张独立小卡；财务页删标题层、年份切换并入 `.kpi-head`；响应式断点 12 → 3 档收敛（640 / 880 / 1340）**
 
 ---
 
@@ -25,6 +27,28 @@
 | 保留特色（不碰） | 涨跌红绿语义色、资产分类 6 色、Hero 卡微弱渐变、表格行 hover 高亮、导航栏毛玻璃——这些是金融场景必需的语义表达或品牌记忆点 |
 
 **与 v3.3 的关系**：完全兼容增量升级——所有 token、组件类名保留，仅追加 tier 变量、升级现有组件的 hover/active/动效参数。
+
+---
+
+## 0.2 本轮（v3.5）定案（设计系统统一性审计整改）
+
+> 依据 `docs/design-system-audit.md`（2026-10-26）的 11 项发现，本轮对设计系统做一致性收口。范围限定在「组件体系统一、布局结构、信息架构、视觉层级」；代码层 token 违规不在本轮。整改分三档：**已落地（代码已改）**、**已登记（spec 定案，待专项重构）**、**已驳回（审计建议与既有约束冲突，维持原状）**。
+
+| 议题 | 结论 | 档位 |
+|---|---|---|
+| KPI 三套体系分裂 | 定案统一 `.kpi-card` 组件（density 三档 + 数字字号档 + 标签字距 .5px）；hero/invest/fin 三处渐进迁移，**不强制一次性重构**（hero 为 Tier-1 主视觉，风险高） | 已登记（目标架构） |
+| Hero Banner 覆盖范围 | **维持「仅持仓/首页可见」的既有约束**（memory 后加约束优先于审计的"全局可见"建议）；spec §3.12 原文与实现不符，已勘误标注 | 已驳回（维持现状 + 勘误） |
+| 页面容器 padding 冗余 | 删除 style.css 早期逐页声明（1593/1595），统一块（5830）独存 | 已落地 |
+| 内容密度/留白节奏 | `.invest-kpis` gap sp-8→sp-4、margin-top 4px→sp-1；`.invest-kpi` 内部 gap 6px→sp-1；`.fin-kpi-grid` gap sp-3→sp-4（统一到 16px 区块 / 4px 内部） | 已落地 |
+| 子 Tab 两套并存 | `.sub-tabs` 下划线为 within-page 子视图标准（资产/投资已用）；首页 `#viewToggle` 分段控件保留为**顶层主导航**（语义层级不同，承载计数徽标），二者计数徽标样式已对齐 | 已登记（保留分层，不强制统一） |
+| 标题层级/字距 | `.nw-center-label` 字距 2px→.5px；持仓分组头 `.hat-title` 字重 600→700、字号 →`--fs-lg` 对齐 L3 | 已落地 |
+| 空状态未落地 | `.empty-state` 组件已建并在 ≈6 处使用；剩余 ≈20 处 ad-hoc 文本空态列入**迁移 backlog**（不阻塞） | 已登记（部分落地 + backlog） |
+| 表头背景 3 源 | `--th-bg` / `--th-bg-sticky` / `--th-bg-light` 三档语义变量已存在并接线（694/741/1814 行）；审计描述的"硬编码 #e9ecef"已修复为 `--th-bg-light` | 已落地（审计时版本滞后） |
+| Hero 三栏垂直对齐 | 现行 v3.5 三栏 `align-items: stretch` + 中栏 spark-wrap 吃满剩余高度，**72px 固定已废除**，右栏与中栏等高；审计 §8 建议被现行架构覆盖 | 已落地（架构已演进） |
+| 年份切换器视觉权重 | `.year-nav-btn` 28→24px(`--h-1`)，描边不变；`.year-label` 字重 600→500、字号 →`--fs-sm` | 已落地 |
+| 响应式断点 12 个 | **已落地 v3.6**：12 → 3 档收敛（640 / 880 / 1340，另 641、881 为相邻档 min-width 补位），白名单同步 `web/check-ui.mjs` 第 11 项 | 已落地 |
+
+**本轮不破坏任何既有 token、组件类名、lint 白名单；仅修正间距/字号/字距/尺寸档位与冗余声明。**
 
 ---
 
@@ -318,6 +342,8 @@
 
 **位置**：`<header>` 之后、`#holdingsView` 之前，所有 view 外层，全局可见（不跟随 `hidden` 切换）。
 
+> **⚠ 勘误（2026-10-26）**：上述「全局可见」与当前实现不符。项目 memory 后加硬约束——「Hero banner 仅在持仓/首页展示，其他页面隐藏」。**以 memory 约束为准**，Hero 当前仅在 `#homeView` / `#holdingsView` 可见；spec 原文待修订为「首页/持仓页可见，其他页隐藏」。审计 §二 的「全局可见两档 density」建议已驳回（见 §8.3）。
+
 **结构**：左（品牌文案 + 状态 badge） + 右（mini sparkline + 趋势百分比）双栏网格，窄屏改上下堆叠。
 
 **尺寸约束**（全落 4px 网格）：
@@ -366,15 +392,16 @@ renderRateSpark() 内同时渲染 rateSpark（近20日小尺寸）和 heroSpark�
 
 **核准断点集（白名单，`check-ui.mjs` 第 11 项强制）**：
 
-`{ 380, 520, 640, 680, 768, 769, 880, 881, 1024, 1100, 1339, 1340 }`
+`{ 640, 641, 880, 881, 1340 }` — 实质只有 **3 档**，641 / 881 是相邻档的 `min-width` 补位值（不与 `max-width` 重叠），不是独立断点。
+
+> **审计 §十一 已落地（2026-10-26，v3.6）**：12 → 3 档收敛完成，白名单同步收窄。原 380 / 520 / 640 / 680 并入 640；768 / 769 并入 640 / 641（移动端底部 tab 栏只在手机档出现）；1024 / 1100 / 1339 并入 1340。
 
 | 断点 | 语义 |
 |---|---|
-| 1340 / 881–1339 / 880 | 持仓子表三档：≥1340 全列铺开；881–1339 隐藏 sparkline 列；≤880 再隐藏当日% / 盈亏% / 持仓天数 |
-| 1100 / 640 | 资产页数字卡：≤1100 三列、≤640 两列 |
-| 880 | Hero / pano / 资产构成卡塌栏点（统一，避免节奏断裂） |
-| 768 / 769 | 移动端底部 tab 栏切换（与 ≤880 的 hero 塌栏分属两套逻辑，刻意保留） |
-| 680 / 520 / 380 | 次级窄屏微调（按钮、字号、间距） |
+| ≥1341 | 宽屏桌面：全部铺开，`#app` 内五视图 `max-width:none` |
+| 881–1340 | 标准桌面 / 平板横屏：持仓子表隐藏「趋势」列；资产页卡片 4 列照常，`modal-card` 收窄到 94vw |
+| 641–880 | 平板窄 / 手机横屏：Hero / pano 塌栏、持仓子表再隐藏次要列、`.kpi-row` 2 列（锚点卡跨整行）、财务热力图竖排 |
+| ≤640 | 手机：移动端底部 tab 栏 + `.list-bar` 取消吸顶、`.kpi-row` 单列、热力图/表格单列、表单 2 列 |
 
 **各设备关键行为**：
 
@@ -538,7 +565,7 @@ CSS 侧消费：
 | 控件高度档位 | 4 档（24/28/32/36） | **4 档** ✅ | 人工核对 |
 | 彩色辉光（`box-shadow` 引用 `--primary-glow`） | 仅允许「焦点环 / 瞬时高亮」 | **1 处**（日历「今天」高亮）✅ | `npm run lint:ui` |
 | `app.js` 内联**具体**样式声明 | 0 | **0** ✅（余 28 处 `style` 全部是 `--x: v` 自定义属性注入） | `npm run lint:ui` |
-| 响应式断点白名单 | 断点 ∈ {380,520,640,680,768,769,880,881,1024,1100,1339,1340} | **全部命中** ✅（见 §3.13） | `npm run lint:ui`（第 11 项） |
+| 响应式断点白名单 | 断点 ∈ {640,641,880,881,1340}（3 档 + 2 补位） | **全部命中** ✅（实测 640/641/880/881/1340，见 §3.13） | `npm run lint:ui`（第 11 项） |
 | 死 class 启发式 | CSS 定义类应被引用（告警不阻断） | **0 报错**（疑似未引用仅提示） | `npm run lint:ui`（第 12 项） |
 | `style.css` 总行数 | — | **6409**（随迭代浮动，非硬门槛；v3.2 新增断点策略与资产构成卡布局） | — |
 | `dist/style.css`（min） | — | **≈190 KB（194.5 KB）**（随迭代浮动，非硬门槛） | `npm run build` |
@@ -581,6 +608,8 @@ tbl-meta-bar   ← 左：tbl-desc「持仓（N）」；右：分段切换（.vie
 | L2 弹框标题 | `.modal-card > h2` | `--fs-xl` / 700 | padding `24 28 12` |
 | L3 分组标题 | `.settings-group-title` / `.asset-section-head h3` | `--fs-lg` / 700 | |
 | L4 行描述 | `.tbl-desc` / `.settings-group-desc` | `--fs-sm` / 400 / muted | |
+
+> **2026-10-26 对齐**：持仓分组头 `.holdings-group .collapse-hat .hat-title` 已统一为 `--fs-lg` / 700（此前 600 / `--fs-base`，低于 L3）。所有眉标字距统一 `.5px`（消除 `.nw-center-label` 的 2px 例外，见 §8.1）。
 
 ### 6.3 纵向节奏（核心规约）
 
@@ -773,6 +802,49 @@ body[data-density="compact"] .holdings-subtable { --row-h: 32px; }
 | `--bg-card-solid`（暗色） | `#141a24` | `#161c26` | 与 `--bg-card`（半透明合成后）的明度差更均匀 |
 
 **影响面**：仅 `:root` 和 `[data-theme="light"]` 两处 token 定义行，不涉及组件选择器。
+
+---
+
+## 7.8 统一 KPI 组件（v3.6 已落地，审计 §一）
+
+> 原型：`tab-redesign-prototype/kpi-card-prototype.html`。四页（首页 Hero / 投资 / 资产 / 财务）与盈亏日历弹框共用同一套壳，差异只体现在**外层 row 模板**与**卡内可选可视化块**。
+
+- **基类 `.kpi-card`**：`padding:--sp-4` / `gap:--sp-1` / `--bg-card` + 1px `--border` + `--r`；内部语义层级固定 `kpi-eyebrow → kpi-label → kpi-main(.kpi-value) → kpi-sub → kpi-extra`，用 `order` 保证 DOM 顺序可变。
+- **角标 `.kpi-icon`**：绝对定位右上 32×32；语义配色统一由 `.kpi-ico-{equity|fund|cash|debt|up|down|pct}` 提供，页面不再各写一套 icon 色。
+- **三档密度**：`.density-hero`（首页净资产，44px / 渐变眉标线）· `.density-standard`（默认，28px；≤640 降 `--fs-xl`）· `.density-mini`（弹框纯文字流，20px）。数字字号只用 `--fs-xl / --fs-2xl` 档与既有 44px Hero 大字。
+- **加重变体 `.anchor`**：投资页锚点卡，`padding:--sp-5` + 40px 角标 + 32px 数字。
+- **行模板 `.kpi-row`**：`.cols-flat`（4 等宽：财务 / 资产）· `.cols-anchor`（1.6+1+1+1：投资）。≤880 → 2 列（锚点卡跨整行）；≤640 → 单列。
+- **标题行 `.kpi-head`**：眉标在左 + 控件在右（年份切换），`min-height:--h-2` + `margin-bottom:--sp-3`；三页共用 → 卡片上方留白只有一处口径。
+- **已废弃**：`.invest-kpis/.invest-kpi`、`.fin-kpi-card/.fin-kpi-icon/.fin-kpi-label/.fin-kpi-value/.fin-kpi-sub`、`.nw-info/.nw-networth/.networth-label/.networth-value`、`.asset-cmp-grid/.asset-cmp-cell/.asset-cmp-hd`、`.fin-page-title/.fin-page-h/.fin-page-sub`。
+
+## 8. 设计系统审计整改详解（2026-10-26）
+
+> 本节是 §0.2 的落地明细与变更留痕；完整 11 项发现与优先级见 `docs/design-system-audit.md`。
+
+### 8.1 已落地（代码已改，style.css）
+
+| 审计项 | 行 | 改动 |
+|---|---|---|
+| §三 冗余 padding | 1592-1595 | 删除 `#holdingsView` / `#assetView` 早期逐页 padding，统一块（5830）独存 |
+| §四 KPI 区块 gap/margin | 5896 | `.invest-kpis` `gap:var(--sp-8)`→`var(--sp-4)`；`margin-top:4px`→`var(--sp-1)` |
+| §四 KPI 内部 gap | 5897 | `.invest-kpi` `gap:6px`→`var(--sp-1)`（落 4px 网格 + token 化） |
+| §四 fin KPI gap | 6239 | `.fin-kpi-grid` `gap:var(--sp-3)`→`var(--sp-4)`（统一 16px 区块间距） |
+| §六 眉标字距 | 5895 | `.nw-center-label` `letter-spacing:2px`→`.5px` |
+| §六 分组头字重/字号 | 653 | `.holdings-group .collapse-hat .hat-title` `font-weight:600`→`700`、`font-size:var(--fs-base)`→`var(--fs-lg)` |
+| §十 年份切换器 | 6230 / 6236 | `.year-nav-btn` `28px`→`var(--h-1)`(24px)；`.year-label` `font-weight:600`→`500`、新增 `font-size:var(--fs-sm)` |
+
+> §九（表头 3 源）与 §八（Hero 垂直对齐）经核查代码已演进到位（语义变量已接线 / 三栏 stretch 架构已废除 72px 固定），本轮无需改动，仅登记确认。
+
+### 8.2 已登记（目标架构 / backlog，未改代码）
+
+- **§一 统一 `.kpi-card`**：**已落地 v3.6**（见 §7.8），四页 + 盈亏日历弹框全部接入，旧三套结构已删除。
+- **§五 子 Tab 分层**：`.sub-tabs` 下划线 = within-page 子视图标准（资产/投资已用）；首页 `#viewToggle` 分段控件 = 顶层主导航（承载计数徽标），语义层级不同，**保留不强制统一**；二者计数徽标样式已对齐（18px / 999px / `--bg-input`）。
+- **§七 空状态迁移**：`.empty-state` 已建（app.js:453 `emptyStateHTML`），已用于账户/理财/收支计划/资产全景等 ≈6 处；剩余 ≈20 处 ad-hoc 文本空态（`u-muted` / `empty-hint` / `empty` 等）列入**迁移 backlog**，逐页替换不阻塞。
+- **§十一 断点收敛**：**已落地 v3.6**（见 §3.13），12 → 3 档，lint 白名单同步收窄。
+
+### 8.3 已驳回（审计建议与既有约束冲突）
+
+- **§二 Hero 全局可见**：审计建议 Hero 全局可见（两档 density）。但项目 memory 明确「Hero banner 仅在持仓/首页展示」为**后加硬约束**（避免资产/财务/设置页被巨型 Hero 挤压）。**以 memory 约束为准**，spec §3.12 原文与实现不符已勘误，不改为全局可见；如需全局，先在设置页提供 density 开关并评审 UX。
 
 ---
 
