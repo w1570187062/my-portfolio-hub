@@ -106,13 +106,17 @@
   </div>
 
   <div id="holdingsView">
-  <!-- 投资页 Hero：原型 3-KPI 居中卡（持仓市值 / 本月盈亏 / 持仓收益率） -->
+  <!-- 投资页 Hero：KPI 居中卡（持仓市值 / 当日盈亏 / 本月盈亏 / 持仓收益率） -->
   <section class="networth-hero invest-hero tier-1" id="investHero">
-    <div class="nw-center-label">持仓总市值 · 本月盈亏</div>
+    <div class="nw-center-label">持仓总市值 · 当日盈亏 · 本月盈亏</div>
     <div class="invest-kpis">
       <div class="invest-kpi">
         <div class="kpi-label">持仓市值</div>
         <div class="kpi-value" id="investMv">—</div>
+      </div>
+      <div class="invest-kpi">
+        <div class="kpi-label">当日盈亏</div>
+        <div class="kpi-value" id="investDayPnl">—</div>
       </div>
       <div class="invest-kpi">
         <div class="kpi-label">本月盈亏</div>
@@ -130,7 +134,7 @@
     <button class="sub-tab active" data-view="holdings" type="button">持仓<span class="sub-tab-count" data-count="holdings"></span></button>
     <button class="sub-tab" data-view="wealth" type="button">理财<span class="sub-tab-count" data-count="wealth"></span></button>
     <button class="sub-tab" data-view="deposits" type="button">存款<span class="sub-tab-count" data-count="deposits"></span></button>
-    <button class="sub-tab" data-view="closed" type="button">已平仓<span class="sub-tab-count" data-count="closed"></span></button>
+    <button class="sub-tab" data-view="closed" type="button">平仓<span class="sub-tab-count" data-count="closed"></span></button>
   </div>
 
   <!-- 投资页表头工具条：复用原型 holding-toolbar（筛选 chips + 排序下拉）；持仓/理财切换时由 renderInvestToolbar 重渲染 -->
@@ -178,15 +182,69 @@
 
   </div>
 
-  <!-- ===== 财务（2026-10-20 tab 重构）：被动收入 Hero + 月度/年度收支概览 + 收支计划 ===== -->
+  <!-- ===== 财务（2026-10-23 重设计）：顶部标题+年份切换 / 4 KPI 卡 / 年度收支热力图 / 月度分类详情 ===== -->
   <div id="financeView" hidden>
-    <!-- 一张合并卡（2026-10-23 一、二卡合并）：hero 收支行（上）+ 分隔线 + 本月/年度概览（下），由 JS 整体渲染 -->
-    <section class="passive-hero tier-1 fin-hero-merged" id="finPassiveHero"></section>
-    <div class="fin-plans-head">
-      <div class="section-title">收支计划</div>
-      <button class="plan-add-btn plan-add-btn-inline" id="finPlanAddBtn" type="button"><span style="font-size:18px;">+</span> 新增</button>
+    <!-- 顶部：标题（左）+ 年份左右切换（右） -->
+    <div class="fin-page-header">
+      <div class="fin-page-title">
+        <h2 class="fin-page-h">财务 · 收支分析</h2>
+        <div class="fin-page-sub">FINANCIAL OVERVIEW · 年度收支热力 × 分类统计</div>
+      </div>
+      <div class="year-switcher" id="finYearSwitcher">
+        <button class="year-nav-btn" id="finYearPrev" type="button" aria-label="上一年">‹</button>
+        <span class="year-label" id="finYearLabel">—</span>
+        <button class="year-nav-btn" id="finYearNext" type="button" aria-label="下一年">›</button>
+      </div>
     </div>
-    <div class="plan-list" id="finPlanList"></div>
+
+    <!-- 4 个 KPI 小卡片（年度总收入 / 总支出 / 净结余 / 储蓄率） -->
+    <div class="fin-kpi-grid" id="finKpiGrid"></div>
+
+    <!-- 年度收支分析卡：内部上下排列（上=月度收支柱 / 下=子项金额热力图），下半部分=当月分类明细 -->
+    <section class="card fin-heatmap-card" id="finHeatmap" hidden>
+      <div class="heatmap-layout">
+        <div class="heatmap-left">
+          <div class="heatmap-subtitle">
+            <span class="heatmap-sub-title">月度收支合计</span>
+            <span class="heatmap-sub-legend">
+              <span><span class="dot dot-inc"></span>收入</span>
+              <span><span class="dot dot-exp"></span>支出</span>
+            </span>
+          </div>
+          <div class="bar-chart-wrap">
+            <div class="bar-chart-inner">
+              <svg id="yearBarChart" class="bar-chart-svg" viewBox="0 0 320 200"></svg>
+              <div class="bar-chart-xlabels" id="yearBarLabels"></div>
+            </div>
+          </div>
+        </div>
+        <div class="heatmap-right">
+          <div class="heatmap-right-header">
+            <span class="heatmap-sub-title"><span id="hmCurMonth">—</span> 收支子项构成</span>
+            <div class="heatmap-legend-mini">
+              <span><span class="dot dot-inc"></span>收入</span>
+              <span><span class="dot dot-exp"></span>支出</span>
+            </div>
+          </div>
+          <div class="hm-chips" id="hmChips"></div>
+          <div class="hm-treemap" id="catTreemap"></div>
+        </div>
+      </div>
+      <!-- 下半部分：当月收支分类明细（由原「月度收支分类详情」卡合并而来，跟随热力图选月；默认展开） -->
+      <div class="fin-cat-block" id="finCatBlock">
+        <button class="fin-cat-head" type="button" aria-expanded="true">
+          <span class="heatmap-sub-title"><span id="catBlockMonth">—</span> 收支分类明细</span>
+          <span class="fin-cat-head-right">
+            <span class="heatmap-sub-legend">
+              <span><span class="dot dot-inc"></span>收入</span>
+              <span><span class="dot dot-exp"></span>支出</span>
+            </span>
+            <span class="fin-cat-chevron" aria-hidden="true">▾</span>
+          </span>
+        </button>
+        <div id="finCategoryGroups"></div>
+      </div>
+    </section>
   </div>
 
   <div id="assetView" hidden>
@@ -704,6 +762,7 @@
         </label>
         <div id="cfErr" class="err"></div>
         <div class="modal-actions">
+          <span class="cf-done-slot" id="cfDoneBtnSlot"></span>
           <button class="btn primary" type="submit">保存</button>
         </div>
       </form>
@@ -1016,9 +1075,27 @@
         <input type="hidden" id="wn_id">
         <label>最新净值 <input id="wn_nav" type="number" step="0.0001" min="0.0001" placeholder="如 1.0532" required></label>
         <label>持有份额（可选） <input id="wn_shares" type="number" step="0.0001" min="0" placeholder="留空则按 最新金额÷净值 反推"></label>
-        <div class="muted-tip" id="wn_hint"></div>
         <div id="wealthNavErr" class="err"></div>
         <div class="modal-actions"><button class="btn primary" type="submit">保存并更新金额</button></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 理财「赎回」弹框：部分赎回或全额清仓；操作行内含永久删除按钮（替代原操作列删除按钮） -->
+  <div id="wealthReduceModal" class="modal" hidden>
+    <div class="modal-card">
+      <h2 id="wrTitle" data-icon="exit">赎回</h2>
+      <form id="wealthReduceForm">
+        <label>赎回金额 <input id="wr_amount" type="number" step="0.01" min="0" placeholder="默认等于剩余持仓（即清仓）"></label>
+        <label>赎回金额入账账户
+          <select id="wr_cash_id"></select>
+        </label>
+        <div id="wrErr" class="err"></div>
+        <div class="modal-actions">
+          <button class="btn danger" type="button" id="wrDelete">永久删除</button>
+          <button class="btn primary" type="submit" id="wrConfirm">赎回</button>
+          <button class="btn" type="button" id="wrCancel">取消</button>
+        </div>
       </form>
     </div>
   </div>
