@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * portfolio README 截图脚本 —— Playwright 版
+ * portfolio README 截图脚本 —— Playwright 版（一键截图）
  *
- * 替代 bash + bsk 的 shot-readme.sh：
- *   - 不依赖外部 daemon，playwright 自启动 Edge
- *   - 智能等待 (waitForSelector / networkidle) 替代固定 sleep
- *   - modal.screenshot() 精确截弹框，不再需要 isolate_modal hack
- *   - 配置驱动，每张图独立定义
+ * 设计要点：
+ *   - 不依赖外部 daemon，playwright 自启 Edge(msedge channel)。
+ *   - 每个 shot 用独立 browser context + addInitScript 注入 localStorage，
+ *     彻底隔离跨 shot 的视图状态（尤其持仓/理财子 tab 记忆），避免白屏/串台。
+ *   - 路由用 SPA 真实 hash：#/home #/invest #/asset #/finance #/settings。
+ *   - 弹框统一调用全局函数（openPnlModal / openSnapModal / openAnalysis /
+ *     openCashflowModal），不再依赖动态生成的按钮 id。
  *
  * 用法：
- *   node scripts/screenshot.mjs                # 默认全部
- *   node scripts/screenshot.mjs home-light      # 只跑指定名称
+ *   node scripts/screenshot.mjs                # 全部
+ *   node scripts/screenshot.mjs home finance    # 只跑指定名称（空格分隔）
  *   SHOT_URL=http://localhost:8080 node scripts/screenshot.mjs
- *
- * 依赖：npm i -D playwright && npx playwright install msedge
  */
 import { chromium } from 'playwright';
 import { mkdirSync, statSync } from 'node:fs';
@@ -23,232 +23,175 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const OUT_DIR = resolve(ROOT, 'docs/screenshots');
-const TARGET = process.env.SHOT_URL || 'http://192.168.31.254:9989';
-const VIEWPORT = { width: 1500, height: 900 };
-const TIMEOUT = 20_000;
+const TARGET = (process.env.SHOT_URL || 'http://192.168.31.254:9989').replace(/\/$/, '');
+const VIEWPORT = { width: 1500, height: 960 };
+const TIMEOUT = 25_000;
 
 mkdirSync(OUT_DIR, { recursive: true });
 
-// ---------- 工具 ----------
-async function applyTheme(page, theme, accent) {
-  await page.evaluate(
-    ({ theme, accent }) => {
-      localStorage.setItem('pf_theme', theme);
-      localStorage.setItem('pf_accent', accent);
-      localStorage.setItem('pf_user', '1');
-      document.documentElement.dataset.theme = theme;
-      if (typeof applyTheme === 'function') applyTheme(theme);
-      if (typeof applyAccent === 'function') applyAccent(accent);
+// 视图是否可见 + 内部是否渲染出内容（以可见 + innerText 长度判断，跨视图通用）
+// 注意：page.waitForFunction(fn, arg) 的 arg 是「单个参数」，不会展开，
+//      必须在函数体内解构，否则形参会拿到整个对象导致判定恒为 false。
+async function viewReady(page, viewId, minLen = 40, extra = '') {
+  // 兼容旧签名 (viewId, extraSelector)：字符串型第三参按 extra 处理，避免静默失效
+  if (typeof minLen === 'string') { extra = minLen; minLen = 40; }
+  const min = Number(minLen) || 40;
+  await page.locator(`#${viewId}`).waitFor({ state: 'visible', timeout: TIMEOUT });
+  await page.waitForFunction(
+    ({ vid, ex, min }) => {
+      const v = document.getElementById(vid);
+      if (!v || v.hidden) return false;
+      if (ex && !document.querySelector(ex)) return false;
+      return v.innerText.trim().length > min;
     },
-    { theme, accent }
+    { vid: viewId, ex: extra, min },
+    { timeout: TIMEOUT }
   );
 }
 
-// ---------- 截图配置 ----------
-// open:  JS 字符串(在 page.evaluate 中运行) 或 async (page)=>{...}
-// ready: CSS selector，出现且可见后才算渲染完成
-// modal: 如果提供，则只截该元素(弹框)而不是整页
 const SHOTS = [
-  // ===== 整页类 =====
+  // ===== 整页：五大视图 =====
   {
-    name: 'home-light', route: '#/holdings', theme: 'light', accent: 'gold',
-    ready: '.holdings-subtable tbody tr',
+    name: 'home', route: '#/home', theme: 'light', accent: 'gold',
+    waitFor: (p) => viewReady(p, 'homeView', 40, '#homeHero'),
   },
   {
-    name: 'home-dark', route: '#/holdings', theme: 'dark', accent: 'gold',
-    ready: '.holdings-subtable tbody tr',
+    name: 'invest', route: '#/invest', theme: 'light', accent: 'gold',
+    waitFor: (p) => viewReady(p, 'holdingsView', 40, '.holdings-subtable tbody tr'),
   },
   {
     name: 'asset', route: '#/asset', theme: 'light', accent: 'gold',
-    ready: '#assetTabBody',
-    waitFor: async (page) => {
-      await page.locator('#assetView').waitFor({ state: 'visible', timeout: TIMEOUT });
-      await page.locator('#assetTabBody').waitFor({ state: 'visible', timeout: TIMEOUT });
-      // 等待至少一组 tab body children 渲染
-      await page.waitForFunction(
-        () => document.querySelector('#assetTabBody')?.children.length > 0,
-        { timeout: TIMEOUT }
-      );
-    },
+    waitFor: (p) => viewReady(p, 'assetView', 40, '#assetTabBody .as-card'),
   },
   {
-    name: 'rebalance', route: '#/tools', theme: 'light', accent: 'gold',
-    waitFor: async (page) => {
-      // 先切到再平衡 tab
-      const tab = page.locator('.ana-tab-btn[data-tab="rebal"]');
-      if (await tab.count()) {
-        await tab.click();
-      } else {
-        // 兼容文本按钮形态
-        await page.getByRole('button', { name: /再平衡|rebal/i }).click().catch(() => {});
-      }
-      await page.locator('#tlPanelRebal').waitFor({ state: 'visible', timeout: TIMEOUT });
-      await page.waitForFunction(
-        () => document.querySelector('#tlPanelRebal')?.children.length > 0,
-        { timeout: TIMEOUT }
-      );
-    },
+    name: 'finance', route: '#/finance', theme: 'light', accent: 'gold',
+    waitFor: (p) => viewReady(p, 'financeView', 40, '#finKpiGrid'),
+  },
+  {
+    name: 'settings', route: '#/settings', theme: 'light', accent: 'gold',
+    waitFor: (p) => viewReady(p, 'settingsView', 40, '#userSheet'),
   },
 
-  // ===== 弹框类 =====
+  // ===== 弹框类（全局函数直接打开，不点动态按钮）=====
   {
-    name: 'calendar-pnl', route: '#/holdings', theme: 'light', accent: 'gold',
+    name: 'calendar-pnl', route: '#/invest', theme: 'light', accent: 'gold',
     modal: '#pnlModal',
-    open: () => document.getElementById('pnlCalBtn')?.click(),
-    waitFor: async (page) => {
-      await page.locator('#calGrid .cal-cell').first().waitFor({ state: 'visible', timeout: TIMEOUT });
-    },
+    open: () => openPnlModal(),
+    waitFor: (p) => p.locator('#calGrid .cal-cell').first().waitFor({ state: 'visible', timeout: TIMEOUT }),
   },
   {
-    name: 'analysis', route: '#/holdings', theme: 'light', accent: 'gold',
+    name: 'analysis', route: '#/invest', theme: 'light', accent: 'gold',
     modal: '#analysisModal',
-    open: async (page) => {
-      // 取第一个非清仓行的 data-ana 值，直接调 openAnalysis(id)
-      await page.evaluate(() => {
-        const row = [...document.querySelectorAll('tr')].find(
-          (r) => !r.classList.contains('holding-archived') && r.querySelector('[data-ana]')
-        );
-        if (!row) { document.title = 'NO_ROW'; return; }
-        const id = row.querySelector('[data-ana]').getAttribute('data-ana');
-        if (typeof openAnalysis === 'function') openAnalysis(id);
-        else document.title = 'NO_FN';
-      });
-    },
-    waitFor: async (page) => {
-      await page.locator('#analysisModal').waitFor({ state: 'visible', timeout: TIMEOUT });
-      await page.waitForFunction(
-        () => {
-          const m = document.getElementById('analysisModal');
-          if (!m || m.hidden) return false;
-          const body = document.getElementById('analysisBody');
-          return !!(body && body.innerText.trim().length > 10);
-        },
-        { timeout: TIMEOUT }
+    waitFor: async (p) => {
+      await viewReady(p, 'holdingsView', 40, '.holdings-subtable tbody tr');
+      // 逐个尝试持仓，直到找到真正支持技术分析的标的
+      // （未关联股票代码的基金会返回 .analysis-err，需跳过）
+      const ids = await p.evaluate(() =>
+        [...document.querySelectorAll('#holdingsView tr')]
+          .map((r) => r.querySelector('[data-ana]'))
+          .filter(Boolean)
+          .map((el) => el.getAttribute('data-ana'))
+          .filter(Boolean)
       );
-    },
-  },
-  {
-    name: 'wealth-update', route: '#/holdings', theme: 'light', accent: 'gold',
-    modal: '#snapModal',
-    open: () => document.getElementById('wealthSnapBtn')?.click(),
-    waitFor: async (page) => {
-      await page.locator('#snapModal').waitFor({ state: 'visible', timeout: TIMEOUT });
-      await page.waitForFunction(
+      await p.evaluate(async (list) => {
+        for (const id of list) {
+          openAnalysis(id);
+          for (let t = 0; t < 80; t++) {
+            await new Promise((r) => setTimeout(r, 100));
+            const b = document.getElementById('analysisBody');
+            if (!b) continue;
+            if (b.querySelector('.analysis-err')) break;        // 不支持 → 换下一个
+            if (b.querySelector('.analysis-loading')) continue;   // 仍在加载
+            if (b.children.length > 0) return;                   // 渲染成功
+          }
+        }
+      }, ids);
+      await p.locator('#analysisModal').waitFor({ state: 'visible', timeout: TIMEOUT });
+      await p.waitForFunction(
         () => {
-          const m = document.getElementById('snapModal');
-          if (!m || m.hidden) return false;
-          const b = document.getElementById('snapBody');
-          return !!(b && (b.querySelector('.snap-row') || b.innerText.trim().length > 20));
-        },
-        { timeout: TIMEOUT }
-      );
-    },
-  },
-  {
-    name: 'buy-plan', route: '#/holdings', theme: 'light', accent: 'gold',
-    modal: '#guideModal',
-    open: () => document.getElementById('guideBtn')?.click(),
-    waitFor: async (page) => {
-      await page.locator('#guideModal').waitFor({ state: 'visible', timeout: TIMEOUT });
-      await page.waitForFunction(
-        () => {
-          const m = document.getElementById('guideModal');
-          if (!m || m.hidden) return false;
-          const b = document.getElementById('guidePlanBody');
+          const b = document.getElementById('analysisBody');
           if (!b) return false;
-          return !!(b.querySelector('.bp-card') || b.querySelector('.guide-empty'));
+          if (b.querySelector('.analysis-err') || b.querySelector('.analysis-loading')) return false;
+          return b.children.length > 0 && b.innerText.trim().length > 10;
         },
         { timeout: TIMEOUT }
       );
     },
   },
-  // 收支计划编辑：资产页 → 收支 tab → 编辑按钮
+  // ===== AI 助手（全屏视口截图）=====
   {
-    name: 'cashflow-plan', route: '#/asset', theme: 'light', accent: 'gold',
-    modal: '#cashflowModal',
-    waitFor: async (page) => {
-      await page.locator('#assetView').waitFor({ state: 'visible', timeout: TIMEOUT });
-      await page.locator('#assetTabBody').waitFor({ state: 'visible', timeout: TIMEOUT });
-      // 点「收支」tab
-      const tab = page.locator('.ana-tab-btn[data-tab="cash"]');
-      if (await tab.count()) {
-        await tab.click();
-      } else {
-        await page.getByRole('button', { name: /^收支$/ }).click().catch(() => {});
+    name: 'ai-assistant', route: '#/invest', theme: 'light', accent: 'gold',
+    waitFor: async (p) => {
+      await viewReady(p, 'holdingsView', 40, '.holdings-subtable tbody tr');
+      // 打开 AI 悬浮面板（用 aiChatOpen 而非点击 fab：fab 是 toggle，可能把已开的面板关掉）
+      await p.evaluate(() => {
+        if (typeof aiChatOpen === 'function') aiChatOpen();
+        else { const f = document.getElementById('aiFab'); if (f) f.click(); }
+      });
+      await p.locator('#aiChatPanel').waitFor({ state: 'visible', timeout: TIMEOUT });
+      // 选中已有会话，让主区域有真实对话内容（而不是空白）
+      const item = p.locator('#aiChatList .acp-item').first();
+      await item.waitFor({ state: 'visible', timeout: TIMEOUT }).catch(() => {});
+      if (await item.count()) {
+        await item.click();
+        await p.waitForFunction(
+          () => {
+            const m = document.getElementById('aiChatMsgs');
+            return !!(m && m.innerText.trim().length > 20);
+          },
+          { timeout: TIMEOUT }
+        ).catch(() => {});
       }
-      // 等编辑按钮出现（多条记录，取第一个）
-      await page.locator('button[data-act="cf-edit2"]').first().waitFor({ state: 'visible', timeout: TIMEOUT });
-      await page.locator('button[data-act="cf-edit2"]').first().click();
-      await page.locator('#cashflowModal').waitFor({ state: 'visible', timeout: TIMEOUT });
-      await page.waitForFunction(
-        () => {
-          const m = document.getElementById('cashflowModal');
-          if (!m || m.hidden) return false;
-          const c = m.querySelector('.modal-card');
-          return !!(c && c.offsetHeight > 0 && c.innerText.trim().length > 3);
-        },
-        { timeout: TIMEOUT }
-      );
-    },
-  },
-
-  // ===== AI 助手：全屏视口截图 =====
-  {
-    name: 'ai-assistant', route: '#/holdings', theme: 'light', accent: 'gold',
-    waitFor: async (page) => {
-      await page.locator('#holdingsView').waitFor({ state: 'visible', timeout: TIMEOUT });
-      // 点 AI 悬浮按钮
-      await page.locator('.ai-fab').click();
-      await page.locator('#aiChatPanel').waitFor({ state: 'visible', timeout: TIMEOUT });
-      // 模拟全屏：直接改样式让 panel 覆盖整个视口
-      await page.evaluate(() => {
-        const p = document.getElementById('aiChatPanel');
-        if (!p) return;
-        Object.assign(p.style, {
+      // 模拟全屏：让 panel 覆盖整个视口
+      await p.evaluate(() => {
+        const panel = document.getElementById('aiChatPanel');
+        if (!panel) return;
+        Object.assign(panel.style, {
           position: 'fixed', top: '0', left: '0', right: '0', bottom: '0',
           width: '100%', height: '100%', maxWidth: 'none', maxHeight: 'none',
           margin: '0', borderRadius: '0', zIndex: '2147483647', boxShadow: 'none',
         });
       });
     },
-    fullPage: false, // AI 全屏用视口尺寸即可
+    fullPage: false,
   },
 ];
 
 // ---------- 单张截图执行 ----------
-async function runShot(browserContext, shot) {
-  const page = await browserContext.newPage();
+async function runShot(browser, shot) {
+  // 每个 shot 独立 context：彻底隔离 localStorage（避免子 tab 记忆串台导致白屏）
+  const context = await browser.newContext({
+    viewport: VIEWPORT,
+    deviceScaleFactor: 1,
+    ignoreHTTPSErrors: true,
+  });
+  await context.addInitScript(
+    ({ theme, accent }) => {
+      localStorage.setItem('pf_user', '1');
+      localStorage.setItem('pf_theme', theme);
+      localStorage.setItem('pf_accent', accent);
+      localStorage.removeItem('pf_home_section'); // 重置为默认「持仓」
+    },
+    { theme: shot.theme, accent: shot.accent }
+  );
+
+  const page = await context.newPage();
   try {
     console.log(`=> ${shot.name}  (${shot.route}, ${shot.theme}/${shot.accent})`);
-    await page.goto(`${TARGET}/${shot.route}`, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+    await page.goto(`${TARGET}/${shot.route}`, { waitUntil: 'networkidle', timeout: TIMEOUT });
 
-    // 应用主题 + 重载（确保初始化脚本读到 localStorage）
-    await applyTheme(page, shot.theme, shot.accent);
-    await page.reload({ waitUntil: 'networkidle', timeout: TIMEOUT });
-
-    // open hook
+    // open hook（弹框类）：在 page.evaluate 中运行全局函数
     if (shot.open) {
-      if (typeof shot.open === 'function' && shot.open.constructor.name === 'AsyncFunction') {
-        await shot.open(page);
-      } else if (typeof shot.open === 'function') {
-        // 普通函数：可能是 JS 字符串形式
-        await page.evaluate(shot.open);
-      } else {
-        await page.evaluate(shot.open);
-      }
+      await page.evaluate(shot.open);
     }
 
-    // waitFor hook
+    // 等待渲染完成
     if (shot.waitFor) {
-      if (typeof shot.waitFor === 'function') {
-        await shot.waitFor(page);
-      }
-    } else if (shot.ready) {
-      await page.locator(shot.ready).first().waitFor({ state: 'visible', timeout: TIMEOUT });
+      await shot.waitFor(page);
     }
 
-    // 额外给一个渲染缓冲，让 CSS 动画/过渡稳定
-    await page.waitForTimeout(300);
+    // 渲染缓冲：让 CSS 过渡 / 图表绘制稳定
+    await page.waitForTimeout(450);
 
     const path = resolve(OUT_DIR, `${shot.name}.png`);
     if (shot.modal) {
@@ -263,15 +206,18 @@ async function runShot(browserContext, shot) {
     console.log(`   已保存 ${path} (${bytes} bytes)`);
   } finally {
     await page.close();
+    await context.close();
   }
 }
 
 // ---------- 主流程 ----------
 async function main() {
-  const filter = process.argv[2];
-  const list = filter ? SHOTS.filter((s) => s.name === filter) : SHOTS;
+  const filters = process.argv.slice(2);
+  const list = filters.length
+    ? SHOTS.filter((s) => filters.includes(s.name))
+    : SHOTS;
   if (list.length === 0) {
-    console.error(filter ? `未找到名为 "${filter}" 的截图配置` : '无截图配置');
+    console.error('未匹配到任何截图配置：' + filters.join(', '));
     process.exit(1);
   }
 
@@ -281,26 +227,20 @@ async function main() {
     args: ['--ignore-certificate-errors', '--no-sandbox', '--disable-gpu'],
   });
 
-  const context = await browser.newContext({
-    viewport: VIEWPORT,
-    deviceScaleFactor: 1,
-    ignoreHTTPSErrors: true,
-  });
-
   const failed = [];
   for (const shot of list) {
     try {
-      await runShot(context, shot);
+      await runShot(browser, shot);
     } catch (err) {
       console.error(`   ✗ ${shot.name} 失败: ${err.message}`);
       failed.push({ name: shot.name, err });
     }
   }
 
-  await context.close();
   await browser.close();
 
   console.log(`\n完成。输出目录：${OUT_DIR}`);
+  console.log(`成功 ${list.length - failed.length}/${list.length}`);
   if (failed.length > 0) {
     console.error(`\n失败 ${failed.length} 张:`);
     failed.forEach((f) => console.error(`  - ${f.name}: ${f.err.message}`));
