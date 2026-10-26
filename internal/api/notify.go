@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/smtp"
 	"net/url"
@@ -357,6 +358,19 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool
 					}
 					scoped = append(scoped, s)
 					sCNY += s.PnlCNY
+					// 「有数据」必须以真实盈亏变动为准，而非「存在持仓行」。
+					// 周末/休市期美股快照往往全为 0（staleQuote 命中、无新交易日），
+					// 若只要有行就推送，会发出"为0的净值更新"；故仅当该范围内存在
+					// 非零当日盈亏（含减仓落袋的「·已实现」）时才算有效数据，否则跳过推送。
+					if strings.HasSuffix(s.Name, "·已实现") {
+						if s.PnlCNY != 0 || s.Pnl != 0 {
+							hasData = true
+						}
+						continue
+					}
+					if math.Abs(s.PnlCNY) > 1e-6 || math.Abs(s.Pnl) > 1e-6 {
+						hasData = true
+					}
 				}
 				sb.WriteString(fmt.Sprintf("- **当日总盈亏（%s）**：¥%s\n", label, moneyFmt(sCNY)))
 				if len(scoped) > 0 {
@@ -388,7 +402,6 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool
 				}
 				sb.WriteString(fmt.Sprintf("- %s %s：现价%s 涨跌%s 当日%s%s\n",
 					s.Symbol, s.Name, priceStr, chgStr, curSymbol(s.Currency), moneyFmtPrec(amt, dec)))
-				hasData = true
 				n++
 			}
 				} else {
