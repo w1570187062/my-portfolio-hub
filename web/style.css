@@ -740,10 +740,8 @@ w {
 @media (min-width: 881px) and (max-width: 1340px) {
   .holdings-group .holdings-subtable :is(th, td):nth-child(2) { display: none; }
   .holdings-group .holdings-subtable { min-width: var(--tbl-hold-min-mid); }  /* 984 + 400 */
-  /* 中档桌面取消 ≥1341 的 72px 大内距（否则左列 max-content 膨胀过度挤压权益曲线）；
-     两级类提特异性：本块源码顺序在 ≥881 块之前，同特异性会被反超
-     方案 A：与 ≥1341px 统一 40px，不再分档 */
-  .networth-hero .nw-left { padding: 0 40px; }
+  /* 中档桌面：左列内距已取消（2026-10-27 内容居中后不再需要 40px 侧内距，
+     否则 4:6 下 40% 栏的有效宽度会被压掉 80px） */
 }
 /* 手机/平板竖屏 ≤880：隐藏次要列（趋势 / 涨跌幅 / 仓位 / 持仓天数），保留 名称·代码·现价·成本价·市值·今日·盈亏·操作 */
 @media (max-width: 880px) {
@@ -1216,6 +1214,15 @@ h2 > svg { color: var(--primary); }
   color: var(--primary);
   border: 1px solid rgba(var(--tint), .45);
 }
+/* 仅快照流水标签：弱化的中性描边，与真实出入账区分 */
+.flow-tag.snap {
+  margin-left: var(--sp-1);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-2);
+}
+/* 流水表中「仅快照」行：轻微底色提示不计入真实余额 */
+tr.snap-flow > td { background: var(--bg-soft); }
 
 /* ===== 弹窗按钮 ===== */
 .modal-actions {
@@ -2303,6 +2310,24 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   padding: 0;
   accent-color: var(--primary);
 }
+/* 流水弹框「仅快照」勾选：与 .c-default-row 同款原生复选框风格 */
+.snap-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+.snap-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+}
 /* 只读输入框（如新增负债时锁定的所属账户）：弱化提示不可编辑 */
 .modal-card input[readonly] {
   cursor: default;
@@ -2693,14 +2718,30 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 
 .cal-sub { font-size: var(--fs-sm); color: var(--text-muted); }
 .cal-detail-tbl { width: 100%; border-collapse: collapse; margin-top: var(--sp-1); }
+/* 明细表窄屏会被长名称顶出弹框 → 外层横滚兜底 */
+.cal-detail-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .cal-detail-tbl th, .cal-detail-tbl td {
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid rgba(255, 255, 255, .05);
   font-size: var(--fs-md);
   text-align: left;
+  /* 全局裸 th,td 是 nowrap（见表格基础样式）→ 名称会被撑出单元格压住盈亏列，这里显式放行换行 */
+  white-space: normal;
 }
 .cal-detail-tbl th { background: rgba(255, 255, 255, .03); color: var(--text-muted); }
-.cal-detail-tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+.cal-detail-tbl .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* 代码列：币种符号（¥/$/HK$）以弱化色挂在代码前，替代已删除的「币种」列 */
+.cal-detail-tbl td.cal-code { font-family: var(--font-mono); font-size: var(--fs-sm); white-space: nowrap; }
+.cal-detail-tbl .cal-cur { color: var(--text-faint); margin-right: 2px; }
+/* 窄屏：固定布局 + 列宽，名称在列内换行，盈亏列不再被挤出可视区 */
+@media (max-width: 640px) {
+  .cal-detail-tbl { table-layout: fixed; }
+  .cal-detail-tbl th, .cal-detail-tbl td { padding: var(--sp-2); }
+  .cal-detail-tbl :is(th, td):nth-child(1) { width: 30%; }
+  .cal-detail-tbl :is(th, td):nth-child(3) { width: 27%; }
+  .cal-detail-tbl td.cal-code { font-size: var(--fs-xs); }
+  .cal-detail-tbl td:nth-child(2) { overflow-wrap: anywhere; }
+}
 
 /* ===== AI 设置弹窗 ===== */
 .ai-key-row, .ai-tpl-row { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-1); }
@@ -3219,9 +3260,10 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .closed-table-card:last-child { margin-bottom: 0; }
 .closed-table-card .cs-section-head { padding: var(--sp-3) var(--sp-5); font-size: var(--fs-md); font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--sub-divider); display: flex; align-items: center; gap: var(--sp-2); }
 
-/* 已平仓表格：自包含 4 列固定布局，不依赖 .holdings-group / .wealth-group 父容器。
-   min-width = 752 固定列 + 300 名称保底：容器不足时 .closed-table-scroll 横向滚动，名称不被压成省略号 */
-.closed-table { table-layout: fixed; width: 100%; min-width: 1052px; border-collapse: collapse; }
+/* 已平仓表格：自包含固定布局，不依赖 .holdings-group / .wealth-group 父容器。
+   min-width = 912 固定列 + 260 名称保底：容器不足时 .closed-table-scroll 横向滚动，名称不被压成省略号。
+   盈亏金额 / 盈亏% / 年化% 三列是数字主力（含 ¥ 符号、千分位、+/- 号），列宽给足，避免被 ellipsis 截断 */
+.closed-table { table-layout: fixed; width: 100%; min-width: 1172px; border-collapse: collapse; }
 .closed-table th { font-size: var(--fs-xs); font-weight: 600; color: var(--text-faint); padding: var(--sp-2) var(--sp-3); text-align: left; border-bottom: 1px solid var(--sub-divider); }
 .closed-table td { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-md); border-bottom: 1px solid var(--sub-divider); font-family: var(--font-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .closed-table tbody tr:last-child td { border-bottom: none; }
@@ -3232,16 +3274,17 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .closed-table th.ct-right, .closed-table td.ct-right { text-align: right; }
 .closed-table td.ct-faint { color: var(--text-muted); }
 
-/* 9 列布局：名称 auto / 类型 80 / 盈亏金额 104 / 盈亏% 80 / 年化% 80 / 来源 120 / 清仓 104 / 天数 64 / 操作 120 */
+/* 10 列布局：名称 auto / 代码 96 / 类型 76 / 盈亏金额 132 / 盈亏% 100 / 年化% 100 / 来源 120 / 清仓 104 / 天数 64 / 操作 120 */
 .closed-table th:nth-child(1), .closed-table td.ct-name { width: auto; }
-.closed-table th:nth-child(2), .closed-table td.ct-type-col { width: 80px; }
-.closed-table th:nth-child(3), .closed-table td:nth-child(3) { width: 104px; text-align: right; font-family: var(--font-mono); }
-.closed-table th:nth-child(4), .closed-table td:nth-child(4) { width: 80px; text-align: right; font-family: var(--font-mono); }
-.closed-table th:nth-child(5), .closed-table td:nth-child(5) { width: 80px; text-align: right; font-family: var(--font-mono); }
-.closed-table th:nth-child(6), .closed-table td:nth-child(6) { width: 120px; }
-.closed-table th:nth-child(7), .closed-table td:nth-child(7) { width: 104px; text-align: right; font-family: var(--font-mono); }
-.closed-table th:nth-child(8), .closed-table td:nth-child(8) { width: 64px; text-align: right; font-family: var(--font-mono); }
-.closed-table th:nth-child(9), .closed-table td:nth-child(9) { width: 120px; position: sticky; right: 0; background: var(--card-bg-sticky); z-index: 3; } /* 操作列：吸右常驻，不透明底盖住滚动内容 */
+.closed-table th:nth-child(2), .closed-table td.ct-code-col { width: 96px; }
+.closed-table th:nth-child(3), .closed-table td.ct-type-col { width: 76px; }
+.closed-table th:nth-child(4), .closed-table td:nth-child(4) { width: 132px; text-align: right; font-family: var(--font-mono); }
+.closed-table th:nth-child(5), .closed-table td:nth-child(5) { width: 100px; text-align: right; font-family: var(--font-mono); }
+.closed-table th:nth-child(6), .closed-table td:nth-child(6) { width: 100px; text-align: right; font-family: var(--font-mono); }
+.closed-table th:nth-child(7), .closed-table td:nth-child(7) { width: 120px; }
+.closed-table th:nth-child(8), .closed-table td:nth-child(8) { width: 104px; text-align: right; font-family: var(--font-mono); }
+.closed-table th:nth-child(9), .closed-table td:nth-child(9) { width: 64px; text-align: right; font-family: var(--font-mono); }
+.closed-table th:nth-child(10), .closed-table td:nth-child(10) { width: 120px; position: sticky; right: 0; background: var(--card-bg-sticky); z-index: 3; } /* 操作列：吸右常驻，不透明底盖住滚动内容 */
 
 /* 来源（账户名）/ 操作列：操作列不被裁剪、按钮常显 */
 .closed-table td.ct-src { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3251,7 +3294,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .closed-table .ct-flag-hold { background: rgba(var(--tint), .14); color: rgb(var(--tint)); }
 .closed-table-card .cs-section-head .cs-head-sub { margin-left: auto; font-weight: 400; font-size: var(--fs-sm); color: var(--text-muted); }
 
-/* 类型列（持仓 / 理财 / 补录）：统一中性底 + 6px 语义色圆点。
+/* 类型列（股票 / 基金 / 理财）：统一中性底 + 6px 语义色圆点。
    原先三种高饱和大色块并排（主题金 / 亮天蓝 / 灰）在密集表格里噪声过大、看着晃眼；
    改为「颜色只做点睛、文字一律中性」，类型差异仍可一眼分辨但不再抢主体数字。 */
 .closed-table td.ct-type-col { font-size: var(--fs-sm); }
@@ -3263,9 +3306,10 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   background: var(--bg-input); border: 1px solid var(--sub-divider);
 }
 .ct-type::before { content: ""; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); }
-.ct-type-hold::before { background: rgb(var(--tint)); }
-.ct-type-wealth::before { background: rgb(var(--cat-fund)); }
-.ct-type-manual::before { background: var(--text-faint); }
+/* 圆点色 = 分类色体系（股票橙 / 基金靛 / 理财蓝绿），与资产页构成图一致 */
+.ct-type-stock::before { background: rgb(var(--cat-equity)); }
+.ct-type-fund::before { background: rgb(var(--cat-fund)); }
+.ct-type-wealth::before { background: rgb(var(--cat-wealth)); }
 
 /* 类型列表头 = 筛选入口：点击弹出下拉勾选（弹层复用 .src-pop）；生效/展开时表头与漏斗图标着色 */
 .closed-table th.ct-type-col { cursor: pointer; user-select: none; white-space: nowrap; transition: color .15s var(--e); }
@@ -3282,6 +3326,17 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 /* 已平仓页：表格在窄屏横向滚动（body 为 overflow-x:clip，须自带滚动容器） */
 .closed-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .closed-table-scroll .closed-table { width: 100%; }
+
+/* 已平仓记录弹框（#closedRecordModal）：.f-row 的两列栅格规则挂在 #modal 作用域下，
+   本弹框是独立 id 拿不到，需单独声明 —— 否则每个字段各占一整行，弹框被拉高一倍。 */
+#closedRecordModal .f-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+#closedRecordModal .f-row > label { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-muted); min-width: 0; }
+#closedRecordModal .f-row > label input,
+#closedRecordModal .f-row > label select { width: 100%; min-width: 0; margin-top: var(--sp-1); }
+#closedRecordModal .f-row > label input[type="date"] { min-width: 0; }
+/* 自定义账户名一行：直接子 label（不在 .f-row 里）会吃到 .modal-card label 的 fs-md，
+   与栅格内其他字段的 fs-sm 不一致，单独压回 fs-sm。 */
+#closedRecordModal #crSourceCustomRow { font-size: var(--fs-sm); }
 
 /* 已平仓页工具条：左标题 + 最右「新增平仓记录」按钮 */
 /* flex:1 —— 外层 .holding-toolbar 是 space-between 的 flex 容器，子项若不撑满，
@@ -3306,7 +3361,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 
 .closed-table .ct-name { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
 .closed-table .ct-name .name-clickable { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.closed-table .ct-code { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-muted); }
+/* 代码列：等宽字体、弱化色，空值显示「—」 */
+.closed-table td.ct-code-col { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-muted); }
 .closed-table .ct-badge { font-size: var(--fs-xs); padding: 1px 6px; border-radius: 999px; background: var(--bg-input); color: var(--text-muted); flex-shrink: 0; }
 /* 历史盈亏弹框：已清仓提示（标题下方一行小字，说明曲线为何提前结束）
    左边距 = h2::before 图标 16px + margin-right，与标题文字起始位置对齐 */
@@ -4220,7 +4276,49 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
 .ac-pick-row.on { background: rgba(var(--tint), .14); color: var(--tint); }
 .ac-pick-row.on .ac-pick-bal { color: var(--tint); }
 .ac-pick-bal { color: var(--text-muted); font-size: var(--fs-sm); }
+/* 添加流水弹框：子账户下拉里的负债账户（与现金账户合并，前缀 l:），用警告色左条 + 余额标注「负债」区分 */
+.ac-pick-row.liab { border-left: 3px solid var(--warning); }
+.ac-pick-row.liab .ac-pick-bal { color: var(--warning); }
 .ac-picker-empty { padding: var(--sp-2) var(--sp-3); color: var(--text-muted); font-size: var(--fs-sm); }
+/* ---------- 账户下拉：顶部搜索过滤框（所有 picker 共用，2026-10-27） ----------
+   面板 padding 是 --sp-1，搜索条用等量负 margin 撑满面板宽度，再 sticky 吸顶，
+   这样面板 max-height:400px 内滚动时搜索框始终可见。
+   .ac-picker-panel 前缀是为了压过 `.modal-card input`（描线 + padding + width:100%），
+   否则弹框内的输入框样式会盖到搜索框上。 */
+.ac-pick-search-wrap {
+  position: sticky;
+  top: calc(-1 * var(--sp-1));
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin: calc(-1 * var(--sp-1)) calc(-1 * var(--sp-1)) var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-card-solid);
+  border-bottom: 1px solid var(--border);
+  transition: border-color .16s var(--e);
+}
+.ac-pick-search-wrap:focus-within { border-bottom-color: var(--primary); }
+.ac-pick-search-ico { flex: 0 0 auto; color: var(--text-muted); }
+.ac-picker-panel .ac-pick-search {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-family: inherit;
+}
+.ac-picker-panel .ac-pick-search:hover { box-shadow: none; }
+.ac-picker-panel .ac-pick-search:focus { outline: none; box-shadow: none; background: transparent; }
+.ac-pick-search::placeholder { color: var(--text-muted); }
+/* 搜索过滤用的隐藏类：.ac-pick-row / .ac-pick-group 的 display 会压过 UA 的 [hidden]，故用工具类 */
+.ac-hide { display: none !important; }
 
 .adj-inline { flex: 1; display: flex; flex-direction: column; gap: var(--sp-1); margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
 .adj-inline input,
@@ -6008,6 +6106,9 @@ textarea::placeholder {
 .kpi-card .kpi-sub { order: 4; margin-top: var(--sp-1); font-size: var(--fs-xs); font-weight: 400; color: var(--text-muted); }
 .kpi-card .kpi-sub.up { color: var(--up); }
 .kpi-card .kpi-sub.down { color: var(--down); }
+/* 胜率卡：第二行「股票 / 基金」分类胜率。与上一行同字号，仅把行距收紧、
+   基色再弱一级（品类拆分是补充信息，不该盖过整体胜率）。 */
+.kpi-card .kpi-sub.kpi-sub-split { margin-top: 0; color: var(--text-faint); }
 .kpi-card .kpi-sub .hl { color: var(--text); font-weight: 600; }
 /* 附加可视化块（迷你 bar / donut / 图例）：接在副标之后 */
 .kpi-card .kpi-extra { order: 5; margin-top: var(--sp-2); min-width: 0; }
@@ -6084,18 +6185,15 @@ textarea::placeholder {
   box-shadow: var(--card-shadow), var(--card-inset-line);
 }
 .networth-hero > * { position: relative; z-index: 1; }
-/* Hero 主区：左列（信息组 ＋ 资产分布｜底部）｜权益收益曲线（右｜黄金比例 1.618:1） */
+/* Hero 主区：左列（信息组 ＋ 资产分布｜底部）｜权益收益曲线（右）
+   2026-10-27：左右宽度比改 4:6（原基线 1.618:1、桌面档固定 minmax(380px,460px)+1fr），
+   两栏内容各自在栏内居中（见下方 .nw-left / .nw-right）。 */
 #homeHero { display: flex; flex-direction: column; }
-.nw-main { display: grid; grid-template-columns: 1.618fr 1fr; align-items: stretch; gap: var(--sp-8); min-width: 0; flex: 1; }
-/* ≥881px 桌面档（方案 A）：
-   - 删掉旧 minmax(340px, max-content) 让左列贴内容 → 右列 1fr 无约束发散
-   - 改比例分栏：左列 minmax(380px, 460px) 固定锚定信息核心，右列 minmax(0, 1fr) 自由吃剩余宽度
-     （不做整体限宽，让 1920 下曲线自然舒展，左列保持 460px 上限不被撑过）
-   - 左列 padding 72→40px，减少稀疏感让大数字更饱满
-   各视口实测：1920 左460 右~1370，1366 左460 右~816，1024 左380 右~548，881 左380 右~405 */
+.nw-main { display: grid; grid-template-columns: 4fr 6fr; align-items: stretch; gap: var(--sp-8); min-width: 0; flex: 1; }
+/* ≥881px 桌面档：比例沿用 4:6（不再给左列固定 380–460px，否则比例会随视口漂移）。
+   左列 padding 一并取消 —— 内容已居中，靠 padding 留白只会压缩本就不宽的 40% 栏。 */
 @media (min-width: 881px) {
-  .nw-main { grid-template-columns: minmax(380px, 460px) minmax(0, 1fr); }
-  .nw-left { padding: 0 40px; }
+  .nw-main { grid-template-columns: 4fr 6fr; }
   /* 桌面档左列纵向节奏整体拉开一档（行距/字号/芯片同步放大，移动端维持紧凑不动）：
      .nw-left 行距 16→20，hero 卡内部行距 4→8，「本月」行 11/13px→12/16px，
      芯片 4×8px 内距/11px 字→8×12px/12px 字、圆点 6→7px（元素尺寸 ≤30px 豁免）、芯片间距 8→12px */
@@ -6109,10 +6207,26 @@ textarea::placeholder {
   .nw-left .nw-chip { padding: 8px 12px; gap: var(--sp-2); font-size: var(--fs-sm); }
   .nw-left .nw-chip .d { width: 7px; height: 7px; }
 }
+/* 881–1340：4:6 下左栏只剩 ~350–500px，芯片用紧凑档，避免 3–4 枚折成两行
+   （本块在 ≥881 块之后、同特异性靠源码顺序生效，故无需再加一级类） */
+@media (min-width: 881px) and (max-width: 1340px) {
+  .nw-left .nw-asset-row { gap: var(--sp-2); }
+  .nw-left .nw-chip { padding: var(--sp-1) var(--sp-2); gap: var(--sp-1); font-size: var(--fs-xs); }
+  .nw-left .nw-chip .d { width: 6px; height: 6px; }
+}
 /* 左列：纵向堆叠——净资产（density-hero）→ 资产分布芯片，对齐原型 hero-left
-   （品牌区 2026-10-27 已迁到 header 的 .app-brand） */
-.nw-left { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
-.nw-right { display: flex; flex-direction: column; min-width: 0; }
+   （品牌区 2026-10-27 已迁到 header 的 .app-brand）
+   2026-10-27：内容在栏内**整体居中**（横 + 纵）。子项保持整栏宽（.nw-left > *），
+   真正居中的是它们内部的内容 —— 否则 flex 网格项会缩到 fit-content，
+   .nw-asset-row 的芯片会被压成多行。 */
+.nw-left { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; justify-content: center; align-items: center; text-align: center; }
+.nw-left > * { width: 100%; }
+.nw-left .kpi-card.density-hero { align-items: center; }
+.nw-left .kpi-card.density-hero .kpi-eyebrow { justify-content: center; }
+.nw-left .hero-changes { justify-content: center; }
+.nw-left .nw-asset-row { justify-content: center; }
+/* 右列：曲线块整块在栏内垂直居中（曲线本身撑满栏宽，故水平方向无需再调） */
+.nw-right { display: flex; flex-direction: column; min-width: 0; justify-content: center; }
 .hero-changes { display: flex; flex-direction: row; flex-wrap: wrap; gap: var(--sp-4); justify-content: flex-start; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .hero-changes .hc-item { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
 .hero-changes .hc-label { font-size: var(--fs-xs); color: var(--text-muted); }
@@ -6321,7 +6435,7 @@ textarea::placeholder {
    水平 + 垂直居中；内层宽度已由栏宽决定，x 轴 12 等分与柱槽天然对齐 */
 .bar-chart-wrap { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; }
 .bar-chart-inner { width: 100%; }
-.bar-chart-svg { display: block; width: 100%; aspect-ratio: 8 / 5; }
+.bar-chart-svg { display: block; width: 100%; aspect-ratio: 9 / 5; }
 .bar-chart-xlabels { display: grid; grid-template-columns: repeat(12, 1fr); font-size: var(--fs-xs); color: var(--text-muted); text-align: center; margin-top: 6px; }
 .bar-chart-xlabels span { cursor: pointer; padding: var(--sp-1) 0; border-radius: var(--r-xs); }
 .bar-chart-xlabels span:hover { background: var(--bg-hover); color: var(--text); }
@@ -6330,6 +6444,13 @@ textarea::placeholder {
 #yearBarChart .bar-base { stroke: var(--border); stroke-width: 1; opacity: .5; }
 #yearBarChart .bar-exp { fill: var(--hm-exp); }
 #yearBarChart .bar-inc { fill: var(--hm-inc); }
+/* y 轴：网格线 + 刻度竖线 + 左侧数值标签（CNY，万制缩写）；
+   文字 fill 走 CSS 类，可随主题切换；字号用 SVG 用户单位（随 viewBox 缩放）。 */
+#yearBarChart .bar-grid { stroke: var(--border); stroke-width: 1; opacity: .28; }
+#yearBarChart .bar-axis { stroke: var(--border); stroke-width: 1; opacity: .6; }
+#yearBarChart .bar-tick { fill: var(--text-muted); font-size: 7.5px; text-anchor: end; dominant-baseline: middle; }
+#yearBarChart .bar-val { fill: var(--text-muted); font-size: 8px; text-anchor: middle; font-weight: 600; }
+#yearBarChart .bar-val.sel { fill: var(--primary); }
 
 .heatmap-right { display: flex; flex-direction: column; min-width: 0; }
 .heatmap-right-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sp-2); }
@@ -6670,41 +6791,36 @@ textarea::placeholder {
 .rb-head-actions { display: flex; align-items: center; gap: var(--sp-2); }
 .rb-updated { flex: 0 0 auto; white-space: nowrap; font-size: var(--fs-xs); color: var(--text-muted); margin-right: var(--sp-1); }
 .rb-head-actions .btn { flex: 0 0 auto; }
-/* 「配置」按钮走右上角操作区同款芯片（透明边 + primary-soft 底 + 无阴影），
-   与纯 .btn（白 6% 底 + 白 8% 边）不是一套体系；并排主 CTA 时只保留一个实心。
-   内联 svg 不吃 .btn 的 gap（再叠 margin-right 会拉出 9px 空隙），统一交给 gap 控制。 */
-.rb-head-actions .btn.rb-cfg {
-  border-color: transparent;
-  border-radius: var(--btn-radius);
-  background: var(--primary-soft);
-  color: var(--primary);
-  box-shadow: none;
-}
-.rb-head-actions .btn.rb-cfg:hover {
-  border-color: transparent;
-  background: rgba(var(--tint), .22);
-  color: var(--primary-hover);
-}
-.rb-head-actions .btn.rb-cfg > svg { flex: 0 0 auto; }
+/* rbSettingsBtn 已改为 .btn.icon-btn（纯图标，与资产页头部按钮一致），原 rb-cfg 芯片样式不再使用 */
 
-/* .card 全局是 flex row + align-items:center，本页三张卡都是「标题行 + 内容」的竖排结构，
+/* .card 全局是 flex row + align-items:center，本页两张卡都是「标题行 + 内容」的竖排结构，
    必须显式改 column + stretch，否则标题会被挤到左侧竖排、内容只占一半宽 */
-.rb-main-card, .rb-list-card, .rb-hist-card {
+.rb-main-card, .rb-hist-card {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   padding: var(--sp-4) var(--sp-5);
 }
-.rb-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: var(--sp-5); align-items: stretch; }
-.rb-col { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 .rb-sub-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-1); }
 .rb-sub-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
 .rb-sub-hint { font-size: var(--fs-xs); color: var(--text-muted); }
 
-/* —— 目标 vs 实际：每类一行「标签 + 轨道（实际条 + 目标刻度线） + 数值」 —— */
-.rb-bars { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-between; gap: var(--sp-3); }
-.rb-bar-row { min-height: 30px; display: grid; grid-template-columns: 62px minmax(0, 1fr) 96px; align-items: center; gap: var(--sp-2); }
-.rb-bar-label { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-secondary); }
+/* —— 主表：一行 = 一个判断（2026-10-27 由「左条形图 + 右明细表」两栏合并）——
+   列宽只写在 th 上：table-layout:fixed 以首行定宽，行与行才严格同宽；
+   写 td 的话（且手机要把 thead 藏掉）到处都要 !important 去压。
+   配置列吃剩余宽度，四行的条尾因此对齐。 */
+.rb-tbl-alloc { table-layout: fixed; }
+.rb-tbl-alloc th:nth-child(1) { width: 72px; }
+.rb-tbl-alloc th:nth-child(3) { width: 88px; }
+.rb-tbl-alloc th:nth-child(4) { width: 72px; }
+.rb-tbl-alloc th:nth-child(5) { width: 92px; }
+.rb-tbl-alloc th:nth-child(6) { width: 160px; }
+
+/* 配置单元格：轨道吃满剩余，数值列固定 104px —— 固定宽度是关键，
+   否则「100.0% / 15%」与「4.0% / 15%」会让条尾落在不同 x 上，看着就是没对齐。 */
+.rb-alloc-in { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+.rb-alloc-in .rb-bar-track { flex: 1 1 auto; min-width: 32px; }
+.rb-alloc-in .rb-bar-vals { flex: 0 0 auto; width: 104px; }
 /* 类别色与几何值都由 JS 以自定义属性注入（app.js 内联样式只允许 --x: v 形式），CSS 侧兜底 */
 .rb-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--rb-c, var(--text-faint)); }
 .rb-bar-track { position: relative; height: 12px; border-radius: 2px; background: var(--bg-soft); overflow: visible; }
@@ -6763,28 +6879,6 @@ textarea::placeholder {
 .rb-insight.is-warn .rb-insight-ico { color: var(--warning); }
 .rb-insight b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-/* —— 收益双条（主卡左栏底部）—— */
-.rb-ret {
-  margin-top: var(--sp-3); padding-top: var(--sp-3);
-  border-top: 1px dashed var(--border);
-  display: flex; flex-direction: column; gap: 6px;
-}
-.rb-ret-head { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--fs-xs); color: var(--text-muted); }
-.rb-ret-note { font-size: var(--fs-xs); color: var(--text-faint); }
-.rb-ret-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) 62px; align-items: center; gap: var(--sp-2); }
-.rb-ret-k { font-size: var(--fs-xs); color: var(--text-muted); }
-.rb-ret-track { position: relative; height: 8px; border-radius: 2px; background: var(--bg-soft); }
-.rb-ret-fill { width: var(--rb-rw, 0%); height: 100%; border-radius: 2px; transition: width .3s ease; }
-.rb-ret-fill.is-cur { background: rgba(var(--cat-equity), 1); }
-/* 目标条用 outline 画虚线框而不是 border：border 会吃掉 2px 高度，两根条就不等高、比不了长短 */
-.rb-ret-fill.is-tgt { background: transparent; outline: 1px dashed rgba(var(--cat-equity), .8); outline-offset: -1px; }
-.rb-ret-v { text-align: right; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-secondary); }
-.rb-ret-v b { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
-.rb-ret-gap { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5; }
-.rb-ret-gap b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
-/* 方向色只用在差额这行小字上：KPI 大数字保持中性（超额不是好坏，只表明偏离方向） */
-.rb-ret-gap .is-cons { color: rgba(var(--cat-cash), 1); }
-.rb-ret-gap .is-aggr { color: var(--warning); }
 /* 概览 caption 超期提醒 */
 .rb-updated.is-overdue { color: var(--warning); }
 
@@ -6798,21 +6892,15 @@ textarea::placeholder {
 }
 .rb-tbl tfoot td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
-/* —— 本次调整清单 —— */
-.rb-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-2); }
-.rb-act-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-3);
-  border-radius: var(--r-xs);
-  background: var(--bg-soft);
-  font-size: var(--fs-sm);
-}
-.rb-act-row input[type="checkbox"] { flex: 0 0 auto; margin: 0; accent-color: var(--primary); }
-.rb-act-row.off { opacity: .45; }
-.rb-act-row .rb-act-name { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); flex: 0 0 auto; }
-.rb-act-row .rb-act-amt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+/* —— 建议列：勾选框 + 动作 + 金额 ——
+   原「本次调整清单」独立卡片的唯一功能就是勾选，但它把表里「建议」列重列了一遍，
+   还跟主表隔着一段距离；并进表格后「看 → 选 → 记录」在同一行完成。
+   勾掉 = 这次不执行，记录时不进快照（记录按钮在右上角）。 */
+.rb-act-pick { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); cursor: pointer; }
+.rb-act-pick input[type="checkbox"] { flex: 0 0 auto; margin: 0; accent-color: var(--primary); }
+.rb-act-pick.off { opacity: .45; }
+.rb-act-pick .rb-act { flex: 0 0 auto; }
+.rb-act-pick .rb-act-amt { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
 .rb-act-empty, .rb-hist-empty { padding: var(--sp-4); text-align: center; font-size: var(--fs-sm); color: var(--text-muted); }
 
 /* —— 历史 —— */
@@ -6830,6 +6918,8 @@ textarea::placeholder {
 .rb-hist-date { color: var(--text); font-variant-numeric: tabular-nums; }
 .rb-hist-mix { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .rb-hist-mix span { font-size: var(--fs-xs); color: var(--text-muted); }
+/* 第二行：记录时勾选了哪些动作 —— 让主表里的勾选有可回看的落点 */
+.rb-hist-mix .rb-hist-acts { flex: 1 0 100%; color: var(--text-faint); }
 .rb-hist-total { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .rb-hist-ret { text-align: right; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-muted); }
 .rb-hist-ret b { color: var(--text-secondary); font-weight: 600; }
@@ -6840,6 +6930,21 @@ textarea::placeholder {
    直接给卡片补横向内边距，标题的左内边距归零避免双倍缩进 */
 .rb-set-card { width: 520px; max-width: 94vw; padding: 0 28px var(--sp-6); }
 .rb-set-card > h2 { padding-left: 0; }
+/* 滚动收口到内部容器：卡片 overflow:hidden 只负责圆角裁剪，内容超高时由本层内部滚动，
+   避免手机上模态框滚不动、反而带动底层页面滚动；overscroll-behavior:contain 阻断滚动穿透 */
+.rb-set-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--sp-1) 0;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148,163,184,.34) transparent;
+}
+.rb-set-scroll::-webkit-scrollbar { width: 8px; }
+.rb-set-scroll::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: var(--r-xs); }
 /* 预设 chips：只改权重，不改收益假设 */
 .rb-presets { display: flex; align-items: center; gap: 6px; margin: 0 0 var(--sp-3); flex-wrap: wrap; }
 .rb-chip {
@@ -6895,17 +7000,69 @@ textarea::placeholder {
 .rb-pv-s { margin-top: 1px; font-size: var(--fs-xs); color: var(--text-faint); }
 .rb-thr-hint { margin-top: var(--sp-2); }
 
-/* 断点：≤880 主卡改单列（既有白名单值，不新增） */
+/* 断点：≤880 主表改「每类一块」的竖排（既有白名单值，不新增）。
+   原因：六列固定宽（72+88+72+92+160）在 880 以下会把「配置」列压到 100px 内，
+   641px 时条形只剩 32px 的一小截，等于把主要的视觉信息废掉；再往下横滚一张带条形的表更难读。
+   改成 grid 后每类四排：类别 · 偏离 → 条 + 实际/目标 → 年化 · 收益影响 → 建议勾选。
+   表头藏掉后靠 td[data-l] 的 ::before 补标签，几个数字才不会被读成孤立的百分比。 */
 @media (max-width: 880px) {
-  .rb-grid { grid-template-columns: minmax(0, 1fr); }
-  .rb-main-card, .rb-list-card, .rb-hist-card { padding: var(--sp-3) var(--sp-4); }
+  .rb-main-card, .rb-hist-card { padding: var(--sp-3) var(--sp-4); }
   .rb-hist-row { grid-template-columns: 78px minmax(0, 1fr) 84px 76px; }
   .rb-hist-drift { display: none; }
+
+  .rb-tbl.rb-tbl-alloc, .rb-tbl.rb-tbl-alloc tbody, .rb-tbl.rb-tbl-alloc tfoot { display: block; }
+  .rb-tbl.rb-tbl-alloc thead { display: none; }
+  .rb-tbl.rb-tbl-alloc tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px var(--sp-2);
+    padding: var(--sp-3) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  /* 全局 th,td 带 height: var(--row-h)（40px）；进了 grid 之后它会变成每格 40px 的硬高度，
+     四排叠起来每类 200px。必须归零，让每类按内容排。 */
+  .rb-tbl.rb-tbl-alloc tbody td { display: block; height: auto; padding: 0; border: 0; text-align: left; }
+  /* 标签只补在纯数字列上；类别/配置/建议自带语义，加了反而啰嗦 */
+  .rb-tbl.rb-tbl-alloc tbody td[data-l]::before {
+    content: attr(data-l);
+    margin-right: var(--sp-1);
+    font-size: var(--fs-xs); color: var(--text-muted);
+  }
+  .rb-tbl.rb-tbl-alloc tbody td[data-l="类别"]::before,
+  .rb-tbl.rb-tbl-alloc tbody td[data-l="配置"]::before,
+  .rb-tbl.rb-tbl-alloc tbody td[data-l="建议"]::before { content: none; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(3) { grid-column: 2; grid-row: 1; text-align: right; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(4) { grid-column: 1; grid-row: 3; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(5) { grid-column: 2; grid-row: 3; text-align: right; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(6) { grid-column: 1 / -1; grid-row: 4; }
+  /* 条与数值同排、数值紧跟条尾，不再右对齐到固定 104px 栏 */
+  .rb-alloc-in { justify-content: flex-start; }
+  .rb-alloc-in .rb-bar-vals { width: auto; }
+  .rb-act-pick { justify-content: flex-start; }
+  /* 合计行：横排折行（一屏内放不下一行六列） */
+  .rb-tbl.rb-tbl-alloc tfoot tr {
+    display: flex; flex-wrap: wrap; gap: 4px var(--sp-3);
+    padding-top: var(--sp-3); border-top: 1px solid var(--border-strong);
+  }
+  .rb-tbl.rb-tbl-alloc tfoot td {
+    height: auto; padding: 0; border: 0; font-size: var(--fs-xs);
+    white-space: normal;
+  }
+  .rb-tbl.rb-tbl-alloc tfoot td:nth-child(3) { display: none; } /* 偏离合计是「—」，省掉 */
 }
 @media (max-width: 640px) {
-  .rb-bar-row { grid-template-columns: 54px minmax(0, 1fr) 82px; }
   /* 390px 下标题行放不下「caption + 两个按钮」，caption 信息量最低，让位给按钮 */
   .rb-updated { display: none; }
-  .rb-act-row { flex-wrap: wrap; gap: var(--sp-2); }
-  .rb-act-row .rb-act-amt { margin-left: 0; }
+  /* 卡头右侧的口径说明在手机上一挤就折两行、把标题压窄；主卡的口径下面 rb-note 已完整写过，
+     历史卡的「末列为最大偏离」在该档根本看不到那一列（被 hide），两处都直接收掉 */
+  .rb-sub-head .rb-sub-hint { display: none; }
+  /* 历史行改两排：日期 · 市值 · 收益率 一行，权重与已记录动作独占下一行。
+     否则「已记录 买入股票 ¥33,413 · 赎回理财 ¥15,959」在 130px 宽的组合列里会折成七八行。 */
+  .rb-hist-row { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 2px; }
+  .rb-hist-date { grid-column: 1; grid-row: 1; }
+  .rb-hist-total { grid-column: 2; grid-row: 1; }
+  .rb-hist-ret { grid-column: 3; grid-row: 1; }
+  .rb-hist-mix { grid-column: 1 / -1; grid-row: 2; }
 }

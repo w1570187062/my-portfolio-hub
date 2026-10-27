@@ -279,7 +279,7 @@
           </div>
           <div class="bar-chart-wrap">
             <div class="bar-chart-inner">
-              <svg id="yearBarChart" class="bar-chart-svg" viewBox="0 0 320 200"></svg>
+              <svg id="yearBarChart" class="bar-chart-svg" viewBox="0 0 360 200"></svg>
               <div class="bar-chart-xlabels" id="yearBarLabels"></div>
             </div>
           </div>
@@ -329,8 +329,8 @@
           <span class="rb-updated" id="rbUpdated"></span>
           <!-- 文案缩到 2 字：5 字会把右上角挤到跟主 CTA 抢位置；完整含义交给 title。
                样式走「操作区芯片」（.btn.rb-cfg，透明边 + primary-soft 底），与纯 .btn 的白边不是一套。 -->
-          <button class="btn rb-cfg" id="rbSettingsBtn" type="button" title="配置目标权重、收益假设与触发规则">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h9"/><path d="M17 6h3"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>配置
+          <button class="btn icon-btn" id="rbSettingsBtn" type="button" title="配置目标权重、收益假设与触发规则" aria-label="配置目标权重、收益假设与触发规则">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h9"/><path d="M17 6h3"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
           </button>
           <button class="btn primary" id="rbLogBtn" type="button" title="把当前目标权重与收益假设存成一次快照">记录</button>
         </div>
@@ -343,56 +343,33 @@
     <!-- 收益结论：一句话说清「偏保守还是偏激进、差多少钱、主因是哪类、执行后怎么变」 -->
     <div class="rb-insight" id="rbInsight" hidden></div>
 
+    <!-- 主卡：单栏一张表（2026-10-27 由左右两栏合并）
+         原来左栏画条形图、右栏画明细表，两栏其实是同一份四类数据画两遍，行节奏又不同
+         （左边 space-between 撑满、右边紧凑表格），眼睛要在两栏间来回对照，所以有割裂感。
+         现在一行 = 一个判断：类别 → 配置条（实际条 + 目标刻度 + 实际/目标数值）→ 偏离 → 年化
+         → 收益影响 → 建议（可勾选，决定「记录」时存进快照哪些动作）。 -->
     <section class="card rb-main-card">
-      <div class="rb-grid">
-        <div class="rb-col">
-          <div class="rb-sub-head">
-            <span class="rb-sub-title">目标 vs 实际</span>
-            <span class="rb-sub-hint">占组合总市值比例</span>
-          </div>
-          <div class="rb-bars" id="rbBars"></div>
-          <!-- 收益双条：同一刻度下比长短，实心=现在在哪，虚线框=应该到哪 -->
-          <div class="rb-ret">
-            <div class="rb-ret-head">
-              <span>预期年化收益</span>
-              <span class="rb-ret-note">按各类假设收益加权</span>
-            </div>
-            <div class="rb-ret-row">
-              <span class="rb-ret-k">当前</span>
-              <div class="rb-ret-track"><div class="rb-ret-fill is-cur" id="rbRetCur"></div></div>
-              <span class="rb-ret-v"><b id="rbRetCurV">—</b></span>
-            </div>
-            <div class="rb-ret-row">
-              <span class="rb-ret-k">目标</span>
-              <div class="rb-ret-track"><div class="rb-ret-fill is-tgt" id="rbRetTgt"></div></div>
-              <span class="rb-ret-v"><b id="rbRetTgtV">—</b></span>
-            </div>
-            <div class="rb-ret-gap" id="rbRetGap"></div>
-          </div>
-        </div>
-        <div class="rb-col">
-          <div class="rb-sub-head">
-            <span class="rb-sub-title">偏离、收益影响与建议</span>
-            <span class="rb-sub-hint">收益影响 = 偏离 × 该类年化</span>
-          </div>
-          <div class="rb-tbl-wrap">
-            <table class="rb-tbl">
-              <thead><tr><th>类别</th><th class="num">目标</th><th class="num">实际</th><th class="num">偏离</th><th class="num">年化</th><th class="num">收益影响</th><th class="num">建议</th></tr></thead>
-              <tbody id="rbDriftBody"></tbody>
-              <tfoot id="rbDriftFoot"></tfoot>
-            </table>
-          </div>
-          <p class="rb-note" id="rbNote"></p>
-        </div>
-      </div>
-    </section>
-
-    <section class="card rb-list-card">
       <div class="rb-sub-head">
-        <span class="rb-sub-title">本次调整清单</span>
-        <span class="rb-sub-hint" id="rbListHint"></span>
+        <span class="rb-sub-title">目标 vs 实际 · 偏离与建议</span>
+        <span class="rb-sub-hint">占比 = 占组合总市值 · 收益影响 = 偏离 × 该类年化</span>
       </div>
-      <div class="rb-actions" id="rbActions"></div>
+      <div class="rb-tbl-wrap">
+        <table class="rb-tbl rb-tbl-alloc">
+          <thead>
+            <tr>
+              <th>类别</th>
+              <th>配置 · 实际 / 目标</th>
+              <th class="num">偏离</th>
+              <th class="num">年化</th>
+              <th class="num">收益影响</th>
+              <th class="num">建议</th>
+            </tr>
+          </thead>
+          <tbody id="rbDriftBody"></tbody>
+          <tfoot id="rbDriftFoot"></tfoot>
+        </table>
+      </div>
+      <p class="rb-note" id="rbNote"></p>
     </section>
 
     <section class="card rb-hist-card">
@@ -1095,22 +1072,30 @@
         <input type="hidden" id="cr_kind">
         <div class="f-row">
           <label>名称 <input id="cr_name" placeholder="如 贵州茅台 / 某理财" required></label>
+          <label>代码 <input id="cr_code" placeholder="如 600519 / 007280"></label>
+        </div>
+        <div class="f-row">
           <label>类型
             <select id="cr_kind_sel">
-              <option value="hold">持仓</option>
+              <option value="stock">股票</option>
+              <option value="fund">基金</option>
               <option value="wealth">理财</option>
             </select>
           </label>
+          <label>账户名称 <select id="cr_source"></select></label>
+        </div>
+        <label id="crSourceCustomRow" hidden>自定义账户名 <input id="cr_source_custom" placeholder="如 线下转让 / 朋友代持"></label>
+        <div class="f-row">
+          <label>本金 <input id="cr_principal" type="number" step="0.01" placeholder="选填，用于算收益率"></label>
+          <label>盈亏金额 <input id="cr_amount" type="number" step="0.01" placeholder="正=赚，负=亏"></label>
         </div>
         <div class="f-row">
-          <label>盈亏金额 <input id="cr_amount" type="number" step="0.01" placeholder="正=赚，负=亏"></label>
+          <label>收益率 % <input id="cr_rate" type="number" step="0.01" placeholder="选填，留空按 盈亏÷本金"></label>
           <label>持仓天数 <input id="cr_days" type="number" step="1" min="0" placeholder="如 120"></label>
         </div>
         <div class="f-row">
-          <label>来源 / 账户名 <input id="cr_source" placeholder="如 招商银行"></label>
           <label>清仓时间 <input id="cr_realized_at" type="date"></label>
         </div>
-        <label>备注 <input id="cr_note" placeholder="可选"></label>
         <div id="crErr" class="err"></div>
       </form>
       <div class="modal-actions">
@@ -1317,16 +1302,11 @@
           <div class="cat-chips" id="flowCatChips" role="group" aria-label="收支分类"></div>
           <input type="hidden" id="flow_cat" value="">
         </div>
-        <!-- 还款到负债：仅 sign=out 时显示，选中后走原子还款 endpoint -->
-        <div class="sign-edit" id="flowRepayRow" hidden>
-          <label class="field-label">还款到负债（可选）</label>
-          <div class="ac-picker" id="flowRepayPicker">
-            <button type="button" class="ac-picker-btn" id="flowRepayBtn">不关联（普通支出）</button>
-            <div class="ac-picker-panel" id="flowRepayPanel" hidden></div>
-          </div>
-          <input type="hidden" id="flow_liability_id" value="0">
-        </div>
         <label>说明（可选）<input id="flow_note" placeholder="如 发工资 / 还信用卡"></label>
+        <label class="snap-check" id="flowSnapRow">
+          <input type="checkbox" id="flow_snapshot">
+          <span>仅快照（不计入账户真实出入账，仅供汇总分析）</span>
+        </label>
         <div id="flowErr" class="err"></div>
         <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
       </form>
@@ -1525,6 +1505,7 @@
   <div class="modal-card rb-set-card">
     <h2 data-icon="target">目标配置与收益假设</h2>
     <button class="card-close" type="button" id="rbSetClose" title="关闭" aria-label="关闭">✕</button>
+    <div class="rb-set-scroll">
     <p class="snap-hint">三类参数都是「假设值」，作用是把配置比例折算成预期收益，不是行情也不是预测。目标权重合计须为 100%；现金通常留 10–20% 作为再平衡弹药。</p>
 
     <div class="rb-presets" id="rbPresets">
@@ -1560,12 +1541,15 @@
       </label>
     </div>
     <p class="snap-hint rb-thr-hint">偏离超过阈值的类别才进「本次调整清单」。阈值调小会给出更多小额调仓，调大则更接近「只在大幅漂移时动手」。</p>
+    </div>
 
     <div class="modal-actions">
       <button type="button" class="btn" id="rbSetReset">恢复默认</button>
       <span class="modal-actions-spacer"></span>
       <button type="button" class="btn" id="rbSetCancel">取消</button>
-      <button type="button" class="btn primary" id="rbSetSave">保存</button>
+      <button type="button" class="btn primary" id="rbSetSave" title="保存目标与收益假设" aria-label="保存">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+      </button>
     </div>
   </div>
 </div>
