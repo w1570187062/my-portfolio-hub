@@ -1,7 +1,7 @@
 /* 持仓侠 PWA Service Worker —— 提供离线可用与「添加到主屏幕」。
    注意：Service Worker 仅在安全上下文（https 或 http://localhost）下才会注册/生效；
    通过局域网 http://<ip>:9989 访问时不会启用（前端已用 isSecureContext 判断，不会报错）。 */
-const CACHE = 'pf-cache-v1';
+const CACHE = 'pf-cache-v2';
 const PRECACHE = [
   '/manifest.webmanifest',
   '/icon-192.png',

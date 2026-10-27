@@ -2391,9 +2391,7 @@ $('#confirmOk').onclick = async () => {
 // 投资页原右侧按钮已按需求移除，对应入口改为：盈亏日历 / AI 助手在右上角操作区（act-group）。
 $('#dcaPlansClose').onclick = () => { $('#dcaPlansModal').hidden = true; };
 $('#dcaPlansNew').onclick = () => { $('#dcaPlansModal').hidden = true; openDCAModal(null); };
-// 右上角操作区按钮：盈亏日历 / AI 助手（替代原悬浮 AI + 投资页工具条入口）
-const _pnlTop = document.getElementById('pnlCalTopBtn');
-if (_pnlTop) _pnlTop.onclick = () => openPnlModal();
+// 右上角操作区按钮：AI 助手（盈亏日历 2026-10-27 已并入个人菜单，见 onAcctPopClick 的 pnl-cal）
 const _aiTop = document.getElementById('aiChatTopBtn');
 if (_aiTop) _aiTop.onclick = () => aiChatToggle();
 function openAddPick() {
@@ -4126,12 +4124,12 @@ function drawCalMonth() {
           const t = Math.min(1, Math.abs(v) / cellMax);
           const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
           color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
-          pnlTxt = calActiveFmt(v);
+          pnlTxt = calCellFmt(v);
           showVal = true;
         }
         const isToday = cur.getTime() === today.getTime();
         const unit = calMetric === 'rate' ? '收益率' : '盈亏';
-        const title = ds + (rec ? (': 当日' + unit + ' ' + calActiveFmt(v)) : '：无快照数据');
+        const title = ds + (rec ? (': ' + unit + ' ' + calActiveFmt(v)) : '：无快照数据');
         const dayNum = cur.getDate();
         // 日期居中显示；盈亏金额贴底（仅在有记录的日期显示，未更新的只显示日期）
         const valHtml = showVal ? '<span class="cal-val">' + pnlTxt + '</span>' : '';
@@ -4232,7 +4230,7 @@ function openCalDay(date) {
   const rec = calData[date];
   $('#calModalDate').textContent = date + ' 盈亏明细';
   if (!rec) {
-    $('#calModalBody').innerHTML = '<div class="u-row u-wrap u-gap-3 u-mb-2"><p class="u-muted">当日无快照数据。</p>' + CAL_NAV_HTML + '</div>';
+    $('#calModalBody').innerHTML = '<div class="u-row u-wrap u-gap-3 u-mb-2"><p class="u-muted">该日无快照数据。</p>' + CAL_NAV_HTML + '</div>';
     $('#calModal').hidden = false;
     return;
   }
@@ -4244,7 +4242,7 @@ function openCalDay(date) {
     const det = JSON.parse(rec.detail || '{}');
     const syms = det.by_symbol || [];
     if (syms.length) {
-      rows = '<table class="cal-detail-tbl"><thead><tr><th>代码</th><th>名称</th><th>币种</th><th class="num">当日盈亏 (CNY)</th></tr></thead><tbody>' +
+      rows = '<table class="cal-detail-tbl"><thead><tr><th>代码</th><th>名称</th><th>币种</th><th class="num">盈亏 (CNY)</th></tr></thead><tbody>' +
         syms.map((s) => {
           // 优先用快照时折算的 CNY 值；旧快照无该字段则用当前汇率回退折算
           const cny = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl);
@@ -4253,10 +4251,10 @@ function openCalDay(date) {
         '</tbody></table>';
       syms.forEach((s) => { const c = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl); equityCNY += c; });
     } else rows = '<p class="u-muted">无个股明细。</p>';
-    // 理财当日收益（已合并进 total_cny）
+    // 理财收益（已合并进 total_cny）
     const wts = det.by_wealth || [];
     if (wts.length) {
-      wRows = '<table class="cal-detail-tbl" class="u-mt-2"><thead><tr><th>理财</th><th>币种</th><th class="num">当日盈亏 (CNY)</th></tr></thead><tbody>' +
+      wRows = '<table class="cal-detail-tbl" class="u-mt-2"><thead><tr><th>理财</th><th>币种</th><th class="num">盈亏 (CNY)</th></tr></thead><tbody>' +
         wts.map((w) => '<tr><td>' + (w.name || '') + '</td><td>' + (w.currency || '') + '</td><td class="num ' + clsPnl(w.pnl_cny) + '">' + fmtPnl(w.pnl_cny) + '</td></tr>').join('') +
         '</tbody></table>';
       wts.forEach((w) => { wealthCNY += (typeof w.pnl_cny === 'number') ? w.pnl_cny : 0; });
@@ -4265,8 +4263,8 @@ function openCalDay(date) {
   const dayRate = (rec.base_cny && rec.base_cny > 0) ? (rec.total_cny / rec.base_cny * 100) : null;
   $('#calModalBody').innerHTML = `
     <div id="calSumRow" class="u-row u-wrap u-gap-6 u-mb-3">
-      <div><div class="cal-sub">当日盈亏 (CNY)</div><div class="value ${clsPnl(v)}">${fmtPnl(v)}</div></div>
-      <div><div class="cal-sub">当日收益率</div><div class="value ${dayRate == null ? '' : clsPnl(dayRate)}">${dayRate == null ? '—' : (dayRate >= 0 ? '+' : '') + dayRate.toFixed(2) + '%'}</div></div>
+      <div><div class="cal-sub">盈亏 (CNY)</div><div class="value ${clsPnl(v)}">${fmtPnl(v)}</div></div>
+      <div><div class="cal-sub">收益率</div><div class="value ${dayRate == null ? '' : clsPnl(dayRate)}">${dayRate == null ? '—' : (dayRate >= 0 ? '+' : '') + dayRate.toFixed(2) + '%'}</div></div>
       <div><div class="cal-sub">权益盈亏 (CNY)</div><div class="value ${clsPnl(equityCNY)}">${fmtPnl(equityCNY)}</div></div>
       <div><div class="cal-sub">理财盈亏 (CNY)</div><div class="value ${clsPnl(wealthCNY)}">${fmtPnl(wealthCNY)}</div></div>
       ${CAL_NAV_HTML}
@@ -8704,6 +8702,102 @@ function setUserText(name) {
   if (t) t.textContent = name || '默认';
 }
 
+// ===== 右上角个人菜单（2026-10-27）=====
+// 设置项从主导航迁入此处（导航回落 5 项）；面板样式对齐 PanWatch 的 AccountMenu：
+// 头像触发 + 右侧下拉 + 分组小标题 + 发丝线分隔 + 激活项右侧打勾。
+// 用户切换直接列在面板内（点即生效），新增/删除等重操作仍走原「管理用户」抽屉。
+function acctMenuEls() {
+  return {
+    menu: document.getElementById('acctMenu'),
+    pop: document.getElementById('acctPop'),
+    btn: document.getElementById('userBtn'),
+  };
+}
+function renderAcctUsers() {
+  const list = document.getElementById('acctUserList');
+  if (!list) return;
+  if (!allUsersCache.length) { list.innerHTML = '<div class="acct-empty">暂无用户</div>'; return; }
+  const curId = localStorage.getItem('pf_user');
+  list.innerHTML = allUsersCache.map((u) => {
+    const on = String(u.id) === String(curId);
+    return `<button class="acct-item acct-user${on ? ' active' : ''}" type="button" data-act="switch-user" data-id="${u.id}">`
+      + '<span class="acct-dot" aria-hidden="true"></span>'
+      + `<span class="acct-uname">${escapeHtml(u.name)}</span>`
+      + '<span class="acct-check" aria-hidden="true">✓</span></button>';
+  }).join('');
+}
+// 主题勾选态与 <html data-theme> 同步（头部快捷按钮、设置页开关、菜单三处共用一个事实源）
+function syncAcctTheme() {
+  const cur = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  document.querySelectorAll('#acctPop .acct-item[data-act="theme"]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.theme === cur);
+  });
+}
+async function openAcctMenu() {
+  const { menu, pop, btn } = acctMenuEls();
+  if (!pop) return;
+  pop.hidden = false;
+  if (btn) btn.setAttribute('aria-expanded', 'true');
+  if (menu) menu.classList.add('open');
+  renderAcctUsers();
+  syncAcctTheme();
+  if (!allUsersCache.length) { allUsersCache = await fetchUsers(); renderAcctUsers(); }
+}
+function closeAcctMenu() {
+  const { menu, pop, btn } = acctMenuEls();
+  if (pop) pop.hidden = true;
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  if (menu) menu.classList.remove('open');
+}
+function toggleAcctMenu() {
+  const { pop } = acctMenuEls();
+  if (!pop) return;
+  if (pop.hidden) openAcctMenu(); else closeAcctMenu();
+}
+// 面板交互：事件委托，重渲染用户列表后仍生效
+function onAcctPopClick(e) {
+  const item = e.target.closest('[data-act]');
+  if (!item) return;
+  const act = item.dataset.act;
+  if (act === 'switch-user') {
+    closeAcctMenu();
+    const curId = localStorage.getItem('pf_user');
+    if (String(item.dataset.id) !== String(curId)) switchUser(item.dataset.id);
+  } else if (act === 'theme') {
+    const next = item.dataset.theme === 'light' ? 'light' : 'dark';
+    localStorage.setItem('pf_theme', next);
+    applyTheme(next);
+    const sw = document.getElementById('themeSwitch');
+    if (sw) sw.checked = (next === 'dark');
+    syncAcctTheme();
+  } else if (act === 'settings') {
+    closeAcctMenu();
+    navigate('settings');
+  } else if (act === 'pnl-cal') {
+    closeAcctMenu();
+    openPnlModal();
+  } else if (act === 'manage-users') {
+    closeAcctMenu();
+    openUserSheet();
+  }
+}
+function bindAcctMenu() {
+  const { btn, pop, menu } = acctMenuEls();
+  if (btn) btn.onclick = (e) => { e.stopPropagation(); toggleAcctMenu(); };
+  if (pop) {
+    pop.onclick = onAcctPopClick;
+    // 面板内点击不冒泡到 document，否则会被「点外部关闭」立刻收起
+    pop.addEventListener('click', (e) => e.stopPropagation());
+  }
+  document.addEventListener('click', (e) => {
+    if (!menu || !pop || pop.hidden) return;
+    if (!menu.contains(e.target)) closeAcctMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAcctMenu();
+  });
+}
+
 async function fetchUsers() {
   try {
     const r = await fetch('/api/users');
@@ -8885,8 +8979,8 @@ async function onUserDeleteConfirm() {
 
 // 绑定用户切换相关 UI
 (function wireUserUI() {
-  const userBtn = document.getElementById('userBtn');
-  if (userBtn) userBtn.onclick = () => openUserSheet();
+  // 头像按钮 -> 个人菜单（内部含「管理用户」入口打开原抽屉）
+  bindAcctMenu();
   const closeBtn = document.getElementById('userSheetClose');
   if (closeBtn) closeBtn.onclick = closeUserSheet;
   const backdrop = document.getElementById('userSheetBackdrop');

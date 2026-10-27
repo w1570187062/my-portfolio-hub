@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0a0e14">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,9 +16,15 @@
 <body>
 <div id="app" hidden>
   <header>
-    <div class="brand-nav">
-      <h1 id="brandTitle" title="点击回到主页" style="cursor:pointer"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>持仓侠</h1>
-    </div>
+    <!-- 品牌归位（2026-10-27）：从 hero 卡片迁到 header 左上，与主导航同行。
+         hero 回归纯数据锚点；header 成为标准 app shell（左品牌 / 中导航 / 右操作），
+         顺带填上移动端 header 左侧原本的空位。样式全部在 style.css 的 .app-brand 段。 -->
+    <a class="app-brand" href="#/home" aria-label="持仓侠 · 返回首页">
+      <svg class="app-brand-logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient><mask id="mklg"><rect x="0" y="0" width="32" height="32" fill="#fff"/><path d="M11.00 20.20L14.20 15.60L17.30 17.90L20.42 12.65" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M21.40 11.00L21.46 15.11L17.76 12.91Z" fill="#000" stroke="#000" stroke-width="0.65" stroke-linejoin="round"/></mask></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg2)"/><path d="M16 5.4 C19.2 7.1 21.8 7.8 24 8.1 L24 15.5 C24 21 20.4 24.8 16 27 C11.6 24.8 8 21 8 15.5 L8 8.1 C10.2 7.8 12.8 7.1 16 5.4 Z" fill="#fff" mask="url(#mklg)"/></svg>
+      <span class="app-brand-text">
+        <span class="app-brand-name">持仓侠<em>Portfolio Tracker</em></span>
+      </span>
+    </a>
     <nav id="mainNav" class="main-nav">
       <button class="nav-pill" data-view="home" type="button" onclick="navigate('home')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 12 3l9 9"/><path d="M5 10v10h14V10"/></svg><span>首页</span>
@@ -86,13 +92,6 @@
       <div class="networth-hero tier-1" id="homeHero">
         <div class="nw-main">
           <div class="nw-left">
-            <div class="nw-brand">
-              <svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg2)"/><path d="M8 22 L13 16 L18 19 L24 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="10" r="2.4" fill="#fff"/></svg>
-              <div>
-                <div style="font-weight:700;font-size:15px;">持仓侠 <span style="color:var(--muted);font-weight:400;font-size:12px;">Portfolio Tracker</span></div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;letter-spacing:.5px;">一站式管理 · 持仓 · 理财 · 现金 · 负债</div>
-              </div>
-            </div>
             <!-- 净资产主数字：density-hero（全站视觉锚点），今日/本月变动挂在 kpi-sub -->
             <div class="kpi-card density-hero">
               <div class="kpi-eyebrow">净资产 NET WORTH</div>
@@ -644,7 +643,7 @@
 
   <!-- 盈亏日历弹框（原「日历 + 走势」双 Tab 已移除走势视图） -->
   <div id="pnlModal" class="modal" hidden>
-    <div class="modal-card" style="width:min(900px, 96vw); max-width:96vw;">
+    <div class="modal-card">
       <h2 id="pnlModalTitle" data-icon="calendar">盈亏日历</h2>
       <button class="card-close" type="button" id="pnlClose" title="关闭" aria-label="关闭">✕</button>
       <div class="ac-panel m-body">

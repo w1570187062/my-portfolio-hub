@@ -1019,6 +1019,81 @@ h2 > svg { color: var(--primary); }
   transform: translateY(1px);
 }
 
+/* ===== 右上角个人菜单（2026-10-27）=====
+   设置项从主导航迁入，导航回落 5 项。面板语义对齐 PanWatch AccountMenu：
+   头像触发 + 右侧下拉 + 分组小标题 + 发丝线分隔 + 激活项右侧打勾。
+   勾选列 `margin-left:auto` 固定贴右，文字长短变化不会让勾左右跳动。 */
+.acct-menu { position: relative; display: flex; align-items: center; }
+.acct-pop {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 60;
+  width: 224px;
+  /* 透明外间距桥接头像与面板：鼠标从按钮移入面板途中不会穿过空隙而触发收起 */
+  margin-top: var(--sp-1);
+  padding: var(--sp-1);
+  background: var(--bg-card-raise);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--sh-3);
+}
+/* 必须显式写：面板本身的定位 display 会盖掉 UA 的 [hidden]{display:none} */
+.acct-pop[hidden] { display: none; }
+.acct-sec {
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  letter-spacing: .02em;
+}
+.acct-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2);
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-xs);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.acct-item:hover { background: rgba(var(--tint), .12); color: var(--text); }
+.acct-item.active { background: rgba(var(--tint), .16); color: var(--primary); }
+.acct-item svg { width: 15px; height: 15px; flex: 0 0 auto; }
+.acct-check {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: var(--fs-sm);
+  color: var(--primary);
+  opacity: 0;
+}
+.acct-item.active .acct-check { opacity: 1; }
+.acct-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.acct-user.active .acct-dot { background: var(--primary); }
+.acct-uname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-sep { height: 1px; margin: var(--sp-1); background: var(--border); }
+.acct-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.acct-ver { font-variant-numeric: tabular-nums; }
+.acct-empty { padding: var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); }
+
 /* 日历弹框头部：标题 + 前后切换 */
 .cal-modal-head {
   display: flex;
@@ -1031,7 +1106,7 @@ h2 > svg { color: var(--primary); }
 }
 .cal-modal-head h2 { margin: 0; }
 
-/* 盈亏明细弹框：前一天/后一天按钮挂在顶部统计行（当日盈亏/权益/理财）末尾，右对齐。
+/* 盈亏明细弹框：前一天/后一天按钮挂在顶部统计行（今日盈亏/权益/理财）末尾，右对齐。
    openCalDay 每次渲染 innerHTML 时重建按钮（静态元素 append 会被 innerHTML 销毁，事件走 #calModal 委托）。 */
 .cal-nav-wrap {
   display: inline-flex;
@@ -1262,13 +1337,40 @@ header {
   top: 0;
   z-index: 50;
 }
-/* 左上角品牌（logo + 项目名）：所有页面（含移动端）均在 header 显示，点击回首页 */
-.brand-nav h1 {
-  display: flex; align-items: center; gap: var(--sp-2);
-  margin: 0; font-size: var(--fs-lg); font-weight: 700;
-  color: var(--text); letter-spacing: .5px; white-space: nowrap;
+/* ===== 顶部品牌（2026-10-27 从 hero 卡片迁入 header） =====
+   header 成为标准 app shell：左品牌 / 中主导航 / 右操作组；hero 回归纯数据锚点。
+   2026-10-27 二次收口：删掉「一站式管理 · 持仓 · 理财 · 现金 · 负债」副标语（原本 ≤1340 就隐藏，
+   桌面端也只剩一行装饰性营销文案），品牌回到单行 logo + 名称，header 高度随之收敛。
+   ≤880 隐英文副名；≤640 缩 logo —— 保证 641–880 档 5 个导航 pill 不被挤压。 */
+.app-brand {
+  display: flex; align-items: center; gap: var(--sp-3);
+  flex: 0 0 auto; min-width: 0;
+  text-decoration: none; color: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
-.brand-nav h1 .logo { width: 24px; height: 24px; flex: 0 0 auto; display: block; }
+.app-brand-logo {
+  width: 32px; height: 32px; flex: 0 0 auto;
+  border-radius: var(--r-sm);
+  box-shadow: 0 4px 12px rgba(var(--tint), .18);
+  transition: box-shadow .18s var(--e);
+}
+.app-brand:hover .app-brand-logo { box-shadow: 0 6px 18px rgba(var(--tint), .3); }
+.app-brand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.app-brand-name {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  font-size: var(--fs-base); font-weight: 700; line-height: 1.2;
+  color: var(--text); white-space: nowrap;
+}
+.app-brand-name em { font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--text-muted); }
+/* 桌面档才给 header 段落间距：≤880 时品牌 + 5 个 pill + 操作组已吃满整行，
+   gap 会把导航挤溢出（实测 641px 加 16px gap 后溢出 17px）。 */
+@media (min-width: 881px) { header { gap: var(--sp-4); } }
+@media (max-width: 880px) { .app-brand-name em { display: none; } }
+@media (max-width: 640px) {
+  .app-brand { gap: var(--sp-2); }
+  .app-brand-logo { width: 28px; height: 28px; }
+  .app-brand-name { font-size: var(--fs-sm); }
+}
 /* v3.1 Hero Banner：首屏视觉锚点（品牌感 + mini sparkline 预览）
    放在 header 下方、holdingsView 之前，全局可见，不跟随 view 的 hidden 切换。
    尺寸全落 4px 网格；hover/动效遵守 spec §3.2（不做 transform 位移，只升 shadow/边框色）。 */
@@ -2430,7 +2532,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 
 /* 首页顶部更新时间+汇率行（.market-bar / .mb-time / .mb-left / .hf-*）已整体下线（2026-10-09），样式随之移除 */
 
-#pnlModal .modal-card { width: min(900px, 96vw); max-width: 96vw; }
+/* 盈亏日历弹框宽度：900 → 760（2026-10-27）
+   900px 时月视图单格 115×115、整卡 774px 高，格子比内容更需要留白，比例失衡；
+   760px 下单格约 98×78，与 13/12px 的两级字号配得上，同时 5 行仍能一次看全。 */
+#pnlModal .modal-card { width: min(760px, 96vw); max-width: 96vw; }
 .cal-head { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; padding: var(--sp-2) 0 0; }
 .cal-head > * { margin: 0; }
 /* 盈亏日历：金额/收益率 切换标签（右侧 ⇄，可一直切换） */
@@ -2448,9 +2553,13 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 
 /* 盈亏日历：月/年 视图切换胶囊（复用 .view-toggle 滑块样式） */
 .cal-view-toggle { flex: 0 0 auto; }
-.cal-year-cell { aspect-ratio: auto; min-height: 72px; padding: var(--sp-2) var(--sp-1); } /* 年视图方格不撑成正方形，更紧凑 */
-.cal-year-cell .cal-day { font-weight: 600; }
+/* 年视图方格不撑成月份瓦片形状：选择器必须带 .cal-grid 前缀（0,2,0）
+   —— 否则被后面同优先级的 .cal-cell{aspect-ratio} 盖掉，12 个格子会变成大方块 */
+.cal-grid .cal-year-cell { aspect-ratio: auto; min-height: 64px; padding: var(--sp-2) var(--sp-1); gap: var(--sp-1); }
+.cal-grid .cal-year-cell .cal-day { font-weight: 600; }
 .cal-weekdays.is-hidden { display: none; } /* 年视图隐藏星期表头 */
+/* 年视图没有星期表头，网格需要自己补上顶部间距，否则 12 个月直接顶到导航行 */
+.cal-weekdays.is-hidden + .cal-grid { margin-top: var(--sp-3); }
 
 /* 原生 <input type="date"> 右侧日历图标依赖 color-scheme 才能随主题反色，
    否则暗色主题下图标为深色而看不清（收支弹框截止日期 / 添加持仓交易日期等）。 */
@@ -2468,19 +2577,25 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 }
 
 #calModal .modal-card { width: 660px; }
-.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--sp-1); margin: var(--sp-4) 0 var(--sp-1); }
+/* 星期表头与网格必须同一 gap，否则 7 列会逐列错位 */
+.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--sp-1); margin: var(--sp-3) 0 var(--sp-1); }
 .cal-weekdays span { text-align: center; font-size: var(--fs-sm); color: var(--text-muted); }
-.cal-grid { display: grid; gap: var(--sp-1); margin: 0 0 var(--sp-5); }
+.cal-grid { display: grid; gap: var(--sp-1); margin: 0 0 var(--sp-4); }
 .cal-title { font-size: var(--fs-base); font-weight: 600; min-width: 96px; text-align: center; color: var(--text); }
 .cal-nav { display: flex; align-items: center; gap: var(--sp-2); margin-left: var(--sp-2); }
-.cal-cell.cal-out { background: rgba(255, 255, 255, .02); }
+.cal-cell.cal-out { background: transparent; } /* 非本月日期不画瓦片，否则首尾两行的空格会变成一串灰块 */
 .cal-cell {
-  aspect-ratio: 1 / 1;
+  /* 2026-10-27 重做比例：原 1/1 正方形（桌面 115×115）里塞 28px 日期 + 10px 金额，
+     日期过大、金额被压成蚂蚁字，整卡高 774px。改为横向略扁的瓦片 + 13/11px 两级字号，
+     同宽下更接近支付宝盈亏日历的疏密感。 */
+  aspect-ratio: 1 / .7;
   border-radius: var(--r-xs);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--sp-2);
+  justify-content: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
   box-sizing: border-box;
   overflow: hidden;
   background: rgba(255, 255, 255, .03);
@@ -2491,31 +2606,31 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   outline-offset: -2px;
   box-shadow: 0 0 12px var(--primary-glow);
 }
-/* 日期居中：占据上方可伸缩区域并垂直居中；盈亏金额贴底（见下方 .cal-val） */
+/* 日期与金额上下居中成一组（原为日期 flex:1 撑满上区、金额贴底，格子一大两者就隔了半格） */
 .cal-day {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--fs-2xl);
-  line-height: 1;
-  color: rgba(255, 255, 255, .85);
+  font-size: var(--fs-base);
+  font-weight: 500;
+  line-height: 1.1;
+  color: rgba(255, 255, 255, .82);
 }
-/* 盈亏金额：贴底、字号尽量小、等宽对齐 */
+/* 盈亏金额：等宽数字，单行不折（原 word-break:break-word 在窄格会把 -378.85 劈成两行被裁掉） */
 .cal-val {
   flex: 0 0 auto;
   width: 100%;
   text-align: center;
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   font-weight: 600;
-  line-height: 1.15;
+  line-height: 1.1;
   color: var(--text-inverse);
   text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
-  word-break: break-word;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  padding-top: 2px;
 }
 /* 移动端：弹框全屏 + 格子放大；金额字号极小、日期缩小腾出底部金额空间
    横屏(landscape)时高度约 402px，用 max-height 也触发，保证横屏套用同套样式 */
@@ -2529,11 +2644,12 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
     height: auto !important; max-height: none !important;
     border-radius: 0; border: none;
   }
-  #pnlModal .modal-card > .m-body { max-height: none; }
-  .cal-grid { gap: var(--sp-1); }
-  .cal-cell { padding: var(--sp-1); }
-  .cal-cell .cal-val { font-size: var(--fs-2xs); }
-  .cal-day { font-size: var(--fs-xl); }
+  #pnlModal .modal-card > .m-body { max-height: none; padding-left: var(--sp-4); padding-right: var(--sp-4); }
+  /* 格子宽度只有 ~45px，靠 2px 缝 + 4px→2px 内边距把可用宽度让给金额（"-378.85" 需 ~40px） */
+  .cal-grid, .cal-weekdays { gap: 2px; }
+  .cal-cell { aspect-ratio: auto; min-height: 52px; padding: var(--sp-1) 2px; }
+  .cal-cell .cal-val { font-size: var(--fs-2xs); letter-spacing: -.02em; }
+  .cal-day { font-size: var(--fs-md); }
   .cal-head h2 { font-size: var(--fs-base); }
   .cal-title { font-size: var(--fs-md); min-width: 84px; }
   .cal-weekdays span { font-size: var(--fs-xs); }
@@ -5971,10 +6087,31 @@ textarea::placeholder {
 /* Hero 主区：左列（信息组 ＋ 资产分布｜底部）｜权益收益曲线（右｜黄金比例 1.618:1） */
 #homeHero { display: flex; flex-direction: column; }
 .nw-main { display: grid; grid-template-columns: 1.618fr 1fr; align-items: stretch; gap: var(--sp-8); min-width: 0; flex: 1; }
-/* 左列：纵向堆叠——品牌 → 净资产（density-hero）→ 资产分布芯片，对齐原型 hero-left */
+/* ≥881px 桌面档（方案 A）：
+   - 删掉旧 minmax(340px, max-content) 让左列贴内容 → 右列 1fr 无约束发散
+   - 改比例分栏：左列 minmax(380px, 460px) 固定锚定信息核心，右列 minmax(0, 1fr) 自由吃剩余宽度
+     （不做整体限宽，让 1920 下曲线自然舒展，左列保持 460px 上限不被撑过）
+   - 左列 padding 72→40px，减少稀疏感让大数字更饱满
+   各视口实测：1920 左460 右~1370，1366 左460 右~816，1024 左380 右~548，881 左380 右~405 */
+@media (min-width: 881px) {
+  .nw-main { grid-template-columns: minmax(380px, 460px) minmax(0, 1fr); }
+  .nw-left { padding: 0 40px; }
+  /* 桌面档左列纵向节奏整体拉开一档（行距/字号/芯片同步放大，移动端维持紧凑不动）：
+     .nw-left 行距 16→20，hero 卡内部行距 4→8，「本月」行 11/13px→12/16px，
+     芯片 4×8px 内距/11px 字→8×12px/12px 字、圆点 6→7px（元素尺寸 ≤30px 豁免）、芯片间距 8→12px */
+  /* 注意：.nw-left 基础规则在本 media 块之后声明（同为 0,1,0 会反超），行距用两级类提高特异性 */
+  .networth-hero .nw-left { gap: var(--sp-5); }
+  .nw-left .kpi-card.density-hero { gap: var(--sp-2); }
+  .nw-left .kpi-card.density-hero .hero-changes { margin-top: var(--sp-3); }
+  .nw-left .hero-changes .hc-label { font-size: var(--fs-sm); }
+  .nw-left .hero-changes .hc-val { font-size: var(--fs-lg); }
+  .nw-left .nw-asset-row { gap: var(--sp-3); }
+  .nw-left .nw-chip { padding: 8px 12px; gap: var(--sp-2); font-size: var(--fs-sm); }
+  .nw-left .nw-chip .d { width: 7px; height: 7px; }
+}
+/* 左列：纵向堆叠——净资产（density-hero）→ 资产分布芯片，对齐原型 hero-left
+   （品牌区 2026-10-27 已迁到 header 的 .app-brand） */
 .nw-left { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
-.nw-brand { display: flex; align-items: center; gap: var(--sp-3); flex: 0 0 auto; }
-.nw-brand .brand-logo { width: 44px; height: 44px; flex: 0 0 auto; border-radius: var(--r-sm); box-shadow: 0 6px 18px rgba(var(--tint), .18); }
 .nw-right { display: flex; flex-direction: column; min-width: 0; }
 .hero-changes { display: flex; flex-direction: row; flex-wrap: wrap; gap: var(--sp-4); justify-content: flex-start; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .hero-changes .hc-item { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
@@ -6454,7 +6591,6 @@ textarea::placeholder {
 @media (max-width: 640px) {
   #homeHero { padding: var(--sp-5); }
   .nw-main { display: flex; flex-direction: column; gap: var(--sp-5); }
-  .nw-brand { align-self: flex-start; max-width: none; }
   .passive-hero { grid-template-columns: 1fr; gap: var(--sp-5); padding: var(--sp-5); }
   /* 合并卡移动端：hero 行改纵向堆叠，发丝线负 margin 同步改 20px 对齐卡缘 */
   .fin-hero-merged { gap: var(--sp-4); }
