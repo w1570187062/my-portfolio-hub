@@ -279,6 +279,11 @@ func rollbackFlow(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "流水不存在"})
 			return
 		}
+		// 仅快照流水不计入真实出入账，回退无意义（回退会记一笔反向真实流水，反而破坏余额）
+		if f.Snapshot {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该流水为仅快照记录，不计入真实出入账，无需回退"})
+			return
+		}
 		// 幂等保护：同一笔只允许回退一次，防止重复点击导致余额反冲两次
 		if done, _ := db.HasCashRollback(uid, f.ID); done {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "该流水已回退，请勿重复操作"})

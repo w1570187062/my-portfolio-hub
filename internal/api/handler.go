@@ -248,6 +248,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/asset/cash", createCash)
 		g.POST("/asset/cash/adjust", adjustCash)
 		g.POST("/asset/cash/repay-liability", repayLiability)
+		g.POST("/asset/liability/adjust", adjustLiability)
 		g.POST("/asset/balance/sync", balanceSync)
 		g.POST("/asset/cash/transfer", transferCash)
 		g.PUT("/asset/cash/:id", updateCash)
@@ -1752,6 +1753,7 @@ func calcContribCNY(uid int64, rows []db.PnlDay) {
 // wealthPnlItem 理财单日盈亏条目（盈亏日历/走势合并展示用）。
 type wealthPnlItem struct {
 	Name     string  `json:"name"`
+	Code     string  `json:"code"` // 产品代码（与持仓明细口径一致；老快照无此字段，前端按产品名回查）
 	Currency string  `json:"currency"`
 	Pnl      float64 `json:"pnl"`
 	PnlCNY   float64 `json:"pnl_cny"`
@@ -1793,7 +1795,7 @@ func wealthDailyPnlByDate(uid int64) map[string]*wealthDayPnl {
 			pnl = round2(pnl)
 			pnlCNY = round2(pnlCNY)
 			d.totalCNY += pnlCNY
-			d.items = append(d.items, wealthPnlItem{Name: w.Name, Currency: w.Currency, Pnl: pnl, PnlCNY: pnlCNY})
+			d.items = append(d.items, wealthPnlItem{Name: w.Name, Code: w.Code, Currency: w.Currency, Pnl: pnl, PnlCNY: pnlCNY})
 			prevAmt = s.Amount
 			hasPrev = true
 		}

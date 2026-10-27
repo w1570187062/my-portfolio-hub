@@ -1329,6 +1329,7 @@ func adjustCash(c *gin.Context) {
 		Delta    float64 `json:"delta"`
 		Note     string  `json:"note"`
 		Category string  `json:"category"` // 收支语义分类（空=按类型自动推导）
+		Snapshot bool    `json:"snapshot"` // 仅快照：计入汇总分析不改动账户真实余额
 	}
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
@@ -1349,7 +1350,8 @@ func adjustCash(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "子账户不存在或无权访问"})
 		return
 	}
-	if acc.Amount+delta < -0.004 {
+	// 仅快照流水不改动真实余额，不校验余额是否充足（用于汇总分析的假设性记录）。
+	if !b.Snapshot && acc.Amount+delta < -0.004 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("取出金额超过账户余额（当前余额 %.2f）", acc.Amount)})
 		return
 	}
@@ -1366,11 +1368,76 @@ func adjustCash(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := db.AddCashAmountCat(acc.ID, delta, "manual", "manual", acc.ID, acc.Name, note, category); err != nil {
+	// 仅手动调账路径支持快照；还款到负债走原子端点（repayLiability），忽略 snapshot。
+	if err := db.AddCashAmountFromCat("", acc.ID, delta, "manual", "manual", acc.ID, acc.Name, note, category, b.Snapshot); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// adjustLiability 直接对负债账户记账（添加流水弹框合并「关联负债」后：
+// 用户在子账户下拉选中负债账户，后端按账户类型自动记 loan/repay）。
+// delta 符号与现金调账一致：>0 = 账户余额增加（借入 / 新增负债，type=loan），
+// <0 = 账户余额减少（还款，type=repay，余额最低截到 0，避免负数）。
+func adjustLiability(c *gin.Context) {
+	var b struct {
+		LiabilityID int64   `json:"liability_id"`
+		Delta        float64 `json:"delta"`
+		Note         string  `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if b.LiabilityID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择负债账户"})
+		return
+	}
+	delta := math.Round(b.Delta*100) / 100
+	if math.Abs(delta) < 0.005 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "调整金额不能为 0（借入填正数，还款填负数）"})
+		return
+	}
+	uid := currentUserID(c)
+	liab, err := db.GetLiability(b.LiabilityID)
+	if err != nil || liab == nil || liab.UserID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "负债账户不存在或无权访问"})
+		return
+	}
+	newBal := math.Round((liab.Amount+delta)*100) / 100
+	if newBal < 0 {
+		newBal = 0
+	}
+	typ := "loan"
+	if delta < 0 {
+		typ = "repay"
+	}
+	note := strings.TrimSpace(b.Note)
+	if note == "" {
+		if delta > 0 {
+			note = "借入 " + liab.Name
+		} else {
+			note = "还款至 " + liab.Name
+		}
+	}
+	liab.Amount = newBal
+	if err := db.UpdateLiability(liab); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := db.InsertLiabilityFlow(&db.LiabilityFlow{
+		UserID: uid, LiabilityID: liab.ID, Type: typ,
+		Amount: math.Abs(delta), Balance: newBal, Note: note,
+	}); err != nil {
+		// 回滚负债余额
+		old := *liab
+		old.Amount = math.Round((newBal-delta)*100) / 100
+		_ = db.UpdateLiability(&old)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "type": typ, "liability": liab.Name})
 }
 
 // repayLiability 原子完成「子账户扣款 → 负债还款」：
