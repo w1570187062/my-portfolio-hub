@@ -92,3 +92,12 @@ venv/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# 本地编译产物（go build -o pf.exe / go build 默认按模块名产出 portfolio）
+/pf.exe
+/portfolio
+/.tmp_*
+# 一次性设计原型（与 docs/*-proposal.html 同策略：留在本地，不进版本库）
+/rebalance-prototype/
+/.verify/
+/.commit-tmp/

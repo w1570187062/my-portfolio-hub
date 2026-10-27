@@ -28,7 +28,9 @@ RUN H=$(git rev-parse --short HEAD 2>/dev/null || echo "dev") && \
     go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags "-X 'portfolio/internal/api.BuildInfo=$V'" -o /out/app .
 
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata
+# 换国内镜像源，避免跨境直连 dl-cdn.alpinelinux.org 卡在 apk add（deploy 常卡点）。
+RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories && \
+    apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=build /out/app .
 ENV PORT=9989
