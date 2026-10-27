@@ -139,6 +139,27 @@
     </div>
   </section>
 
+  <!-- 平仓 KPI：**占用同一个顶部位置**（紧随 investHero），切到「平仓」时两块互换显隐。
+       不放到 #closedView 里、也不隐藏 investHero 而不补位 —— 否则下方内容整体位移，
+       切换 tab 会出现肉眼可见的跳变。结构刻意与 investHero 对齐（kpi-head + kpi-row），
+       保证两态高度一致。 -->
+  <section class="invest-hero" id="closedHero" hidden>
+    <div class="kpi-head"><span class="kpi-head-label">已平仓 · 落袋收益总览</span></div>
+    <div id="closedKpiBody"></div>
+  </section>
+
+  <!-- 理财 / 存款 KPI：同样**占用这个顶部位置**，四个 tab 共用一块区域互换显隐。
+       每个 hero 的眉标 + 4 张 .kpi-card 与 investHero 等高，切 tab 时只有内容替换、没有位移。 -->
+  <section class="invest-hero" id="wealthHero" hidden>
+    <div class="kpi-head"><span class="kpi-head-label">理财市值 · 收益 · 年化</span></div>
+    <div id="wealthKpiBody"></div>
+  </section>
+
+  <section class="invest-hero" id="depositHero" hidden>
+    <div class="kpi-head"><span class="kpi-head-label">存款本金 · 利息 · 到期</span></div>
+    <div id="depositKpiBody"></div>
+  </section>
+
   <!-- 持仓/理财切换：原型下划线样式（替代原 pill 分段控件）；必须位于内容区之前 -->
   <div class="sub-tabs" id="viewToggle">
     <button class="sub-tab active" data-view="holdings" type="button">持仓<span class="sub-tab-count" data-count="holdings"></span></button>

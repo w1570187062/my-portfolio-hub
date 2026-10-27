@@ -2,23 +2,14 @@
 
 // ===== 主题切换（日间/夜间） =====
 // 默认夜间模式；读取 localStorage 持久化偏好。
-const ICO_SUN = '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" class="u-block u-mx-auto"><circle cx="12" cy="12" r="4.4" fill="none" stroke="currentColor" stroke-width="1.9"/><g stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 2.4 V4.6"/><path d="M12 19.4 V21.6"/><path d="M2.4 12 H4.6"/><path d="M19.4 12 H21.6"/><path d="M5.2 5.2 L6.8 6.8"/><path d="M17.2 17.2 L18.8 18.8"/><path d="M5.2 18.8 L6.8 17.2"/><path d="M17.2 6.8 L18.8 5.2"/></g></svg>';
-const ICO_MOON = '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" class="u-block u-mx-auto"><path d="M21 12.79 A9 9 0 1 1 11.21 3 A7 7 0 0 0 21 12.79 Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>';
+// 2026-10-27：顶栏的日/夜快捷切换按钮已删除，入口统一收进右上角个人菜单。
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  const btn = document.getElementById('themeToggleBtn');
-  if (btn) btn.innerHTML = theme === 'light' ? ICO_SUN : ICO_MOON;
+  // 个人菜单里的「日间/夜间」勾选态与主题事实源同步（函数声明已提升，首屏调用时查不到节点也无害）
+  syncAcctTheme();
 }
 applyTheme(localStorage.getItem('pf_theme') || 'dark');
 
-// 设置页「外观主题」中的明暗开关与顶栏按钮共用同一逻辑，保持两处同步
-function toggleTheme() {
-  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-  localStorage.setItem('pf_theme', next);
-  applyTheme(next);
-  const sw = document.getElementById('themeSwitch');
-  if (sw) sw.checked = (next === 'dark');
-}
 
 // ===== 主题色（后期可调）：给 <html> 挂 data-accent，具体色值见 style.css 的预设块 =====
 // 预设主题：在 style.css 追加一对 :root[data-accent="x"] 规则并把色名加进 ACCENTS；
@@ -91,9 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
   applyTheme(localStorage.getItem('pf_theme') || 'dark');
   // v3.4 行密度：恢复上次选择（仅 compact 对 CSS 生效，standard 为默认）
   document.body.dataset.density = localStorage.getItem('pf_row_density') || 'standard';
-  const btn = document.getElementById('themeToggleBtn');
-  if (btn) btn.onclick = toggleTheme;
-  // 设置页「外观主题」的明暗开关：与顶栏按钮共用 toggleTheme 逻辑
+  // 设置页「外观主题」的明暗开关（顶栏快捷按钮已下线，主题入口在个人菜单与设置页两处）
   const themeSw = document.getElementById('themeSwitch');
   if (themeSw) {
     themeSw.checked = (document.documentElement.dataset.theme === 'dark');
@@ -197,6 +186,12 @@ const wanTitle = (n, prefix) => {
 const moneyCurW = (n, cur) => curSymbolJS(cur) + fmtWan(n == null ? 0 : n);
 // yuanOfW：万位压缩版（≥1万显示 x.xx万，其余同 yuanOf 原始值）
 const yuanOfW = (v) => { const n = Number(v) || 0; return (n < 0 ? '-¥' : '¥') + fmtWan(Math.abs(n)) };
+// 带符号货币金额（不做万位压缩）：符号一律提到货币符号之前（-¥89,000，而非 ¥-89,000），0 不带 +。
+// 用于表格里的盈亏金额列，避免负数被渲染成「¥-201」这种别扭形状。
+const signedCur = (v, cur) => {
+  const n = Number(v) || 0;
+  return (n < 0 ? '-' : n > 0 ? '+' : '') + curSymbolJS(cur) + fmt(Math.abs(n));
+};
 
 // 驾驶舱卡片标题图标：按卡片语义映射纯色主题色 icon（currentColor = --primary，自动跟随 accent）
 const PS_ICONS = {
@@ -476,6 +471,22 @@ function renderFiltered() {
   // 数量已并入分段控件徽标（原型风格），左侧描述留空避免重复
   if (desc) desc.hidden = true;
 
+  // 每个 tab 有自己的 KPI 口径（持仓看市值/今日/本月/收益率，平仓看落袋，理财看收益/年化，
+  // 存款看本金/利息/到期）。但**不能只隐藏不补位**——那样下方内容整体上移，切 tab 会有
+  // 明显跳变。改为四块 KPI 在同一位置互换（结构一致、卡片数一致、高度对齐）。
+  // 四个 tab 共用同一块顶部区域：只切换显隐，内容等高（眉标 + 4 张 .kpi-card），
+  // 因此切换时下方内容不会位移。新增 tab 只需在这里加一项。
+  const heroBySection = {
+    holdings: document.getElementById('investHero'),
+    closed: document.getElementById('closedHero'),
+    wealth: document.getElementById('wealthHero'),
+    deposits: document.getElementById('depositHero'),
+  };
+  for (const key of Object.keys(heroBySection)) {
+    const el = heroBySection[key];
+    if (el) el.hidden = (homeSection !== key);
+  }
+
   // 分段控件数量徽标：持仓 = 当前筛选后持仓数；理财 = 理财条目数；存款 = 存款条数；已平仓 = 清仓持仓数 + 清合理财数
   const wProducts = (assetData.wealth || {}).products || [];
   const wCount = wProducts.length;
@@ -590,15 +601,6 @@ function renderClosed(box, closedHoldings, closedWealth) {
   const wCount = closedWealth.length + mWealth.length;
   const totalCount = hCount + wCount;
 
-  if (totalCount === 0) {
-    box.innerHTML = `<div class="closed-empty">
-      <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="closed-empty-icon"><circle cx="60" cy="60" r="36"/><path d="M40 58l14 14 26-28"/></svg>
-      <h3 class="empty-title">暂无已平仓记录</h3>
-      <p class="empty-desc">清仓后标的会保留历史数据自动归入此视图；系统外的平仓可在首页「快捷功能 · 新增平仓」补录。</p>
-    </div>`;
-    return;
-  }
-
   // 汇总 KPI（系统 + 手动补录合并统计落袋）
   let hTotalDays = 0, hTotalRealized = 0, wTotalDays = 0, wTotalPnl = 0;
   closedHoldings.forEach((h) => { hTotalDays += ((h.closed_date && h.buy_date) ? daysBetween(h.buy_date, h.closed_date) : (h.holding_days || 0)); hTotalRealized += (Number(h.realized_pnl) || 0); });
@@ -609,15 +611,69 @@ function renderClosed(box, closedHoldings, closedWealth) {
   const wAvgDays = wCount ? Math.round(wTotalDays / wCount) : 0;
   const grandTotal = hTotalRealized + wTotalPnl;
 
-  const summary = `<div class="closed-summary card">
-    <div class="cs-item"><div class="cs-num ${clsPnl(hTotalRealized)}">${hTotalRealized >= 0 ? '+' : ''}${yuanOfW(hTotalRealized)}</div><div class="cs-lbl">持仓累计落袋</div></div>
-    <div class="cs-item"><div class="cs-num">${hCount}</div><div class="cs-lbl">已平仓 · 平均 ${hAvgDays} 天</div></div>
-    <div class="cs-divider"></div>
-    <div class="cs-item"><div class="cs-num ${clsPnl(wTotalPnl)}">${wTotalPnl >= 0 ? '+' : ''}${yuanOfW(wTotalPnl)}</div><div class="cs-lbl">理财累计落袋</div></div>
-    <div class="cs-item"><div class="cs-num">${wCount}</div><div class="cs-lbl">已清仓 · 平均 ${wAvgDays} 天</div></div>
-    <div class="cs-divider"></div>
-    <div class="cs-item"><div class="cs-num ${clsPnl(grandTotal)}">${grandTotal >= 0 ? '+' : ''}${yuanOfW(grandTotal)}</div><div class="cs-lbl">合计落袋</div></div>
+  // 逐笔明细：胜率/平均持有/统计区间共用。金额为 0 的记录不进胜率分母（补录可能只填 0）。
+  const ctRows = [
+    ...closedHoldings.map((h) => ({ amt: Number(h.realized_pnl) || 0, days: (h.closed_date && h.buy_date) ? daysBetween(h.buy_date, h.closed_date) : (h.holding_days || 0), date: h.closed_date || '' })),
+    ...mHold.map((m) => ({ amt: Number(m.amount) || 0, days: Number(m.holding_days) || 0, date: m.realized_at || '' })),
+    ...closedWealth.map((w) => ({ amt: Number(w.cum_pnl) || 0, days: Number(w.holding_days) || 0, date: w.snap_date || '' })),
+    ...mWealth.map((m) => ({ amt: Number(m.amount) || 0, days: Number(m.holding_days) || 0, date: m.realized_at || '' })),
+  ];
+  const winN = ctRows.filter((r) => r.amt > 0).length;
+  const lossN = ctRows.filter((r) => r.amt < 0).length;
+  const flatN = ctRows.length - winN - lossN;
+  const winRate = (winN + lossN) > 0 ? Math.round(winN / (winN + lossN) * 100) : null;
+  const dayList = ctRows.map((r) => r.days).filter((d) => d > 0);
+  const avgDays = dayList.length ? Math.round(dayList.reduce((a, b) => a + b, 0) / dayList.length) : 0;
+  const manN = mHold.length + mWealth.length;
+  const cMonths = ctRows.map((r) => String(r.date || '').slice(0, 7)).filter(Boolean).sort();
+  const rangeHint = cMonths.length ? `统计区间 ${cMonths[0]} ~ ${cMonths[cMonths.length - 1]}` : '';
+
+  // 汇总卡：走项目统一 KPI 体系（锚点卡承载主数字，其余三张为卫星指标）。
+  // 渲染目标是顶部 #closedKpiBody（与持仓 KPI 同一块区域互换显示），眉标在
+  // index.html 的 #closedHero 里，此处只产出卡片行。
+  const summaryRow = `<div class="kpi-row cols-anchor">
+      <div class="kpi-card density-standard anchor">
+        <div class="kpi-icon ${grandTotal >= 0 ? 'kpi-ico-up' : 'kpi-ico-down'}"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></div>
+        <div class="kpi-label">落袋合计</div>
+        <div class="kpi-main"><div class="kpi-value ${clsPnl(grandTotal)}">${grandTotal > 0 ? '+' : ''}${yuanOfW(grandTotal)}</div></div>
+        <div class="kpi-sub">持仓 <span class="hl">${yuanOfW(hTotalRealized)}</span> · 理财 <span class="hl">${yuanOfW(wTotalPnl)}</span></div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+        <div class="kpi-label">清仓笔数</div>
+        <div class="kpi-main"><div class="kpi-value">${ctRows.length}</div></div>
+        <div class="kpi-sub">持仓 ${hCount} · 理财 ${wCount}${manN ? ` · 补录 ${manN}` : ''}</div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-pct"><svg viewBox="0 0 24 24"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg></div>
+        <div class="kpi-label">胜率</div>
+        <div class="kpi-main"><div class="kpi-value">${winRate === null ? '—' : winRate + '%'}</div></div>
+        <div class="kpi-sub">盈 <span class="hl">${winN}</span> · 亏 <span class="hl">${lossN}</span>${flatN ? ` · 平 ${flatN}` : ''}</div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg></div>
+        <div class="kpi-label">平均持有</div>
+        <div class="kpi-main"><div class="kpi-value">${avgDays || '—'}${avgDays ? '<span class="kpi-unit">天</span>' : ''}</div></div>
+        <div class="kpi-sub">持仓 ${hAvgDays} 天 · 理财 ${wAvgDays} 天</div>
+      </div>
   </div>`;
+
+  // KPI 落到顶部固定位置：无论有无记录都渲染（空数据时为零值/「—」），
+  // 保证在「平仓 ↔ 持仓」之间切换时顶部高度恒定，不产生跳变。
+  const kpiEl = document.getElementById('closedKpiBody');
+  if (kpiEl) kpiEl.innerHTML = summaryRow;
+  // 统计区间回填到工具条右侧（工具条先于本函数渲染，故此处单独写回）
+  const rangeEl = document.getElementById('closedRangeHint');
+  if (rangeEl) rangeEl.textContent = rangeHint;
+
+  if (totalCount === 0) {
+    box.innerHTML = `<div class="closed-empty">
+      <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="closed-empty-icon"><circle cx="60" cy="60" r="36"/><path d="M40 58l14 14 26-28"/></svg>
+      <h3 class="empty-title">暂无已平仓记录</h3>
+      <p class="empty-desc">清仓后标的会保留历史数据自动归入此视图；系统外的平仓可在首页「快捷功能 · 新增平仓」补录。</p>
+    </div>`;
+    return;
+  }
 
   // 表头：名称 / 类型(可点开下拉勾选筛选) / 盈亏金额 / 盈亏% / 年化% / 来源(账户名) / 清仓时间 / 天数 / 操作
   const H = `<thead><tr>
@@ -632,11 +688,10 @@ function renderClosed(box, closedHoldings, closedWealth) {
     <th class="ct-ops">操作</th>
   </tr></thead>`;
 
-  let html = summary;
+  let html = '';
 
   // 合并表：系统持仓 + 手动持仓 + 系统理财 + 手动理财（同套列，行内类型徽标区分类型）
   const sysHRows = closedHoldings.map((h) => {
-    const curSym = curSymbolJS(h.currency);
     const principal = Number(h.invested_cost) || Number(h.cost_value) || 0;
     const realized = Number(h.realized_pnl) || 0;
     const closeDate = h.closed_date || '—';
@@ -651,7 +706,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
     return `<tr class="ct-row ct-row-h" data-ct-type="hold">
       <td class="ct-name"><span class="name-clickable" title="${esc(h.name)}（已清仓）">${esc(h.name)}</span>${h.symbol ? `<span class="ct-code">${esc(h.symbol)}</span>` : ''}</td>
       <td class="ct-type-col"><span class="ct-type ct-type-hold">持仓</span></td>
-      <td class="ct-num ${clsPnl(realized)}">${realized >= 0 ? '+' : ''}${curSym}${fmt(realized)}</td>
+      <td class="ct-num ${clsPnl(realized)}">${signedCur(realized, h.currency)}</td>
       <td class="ct-num ${pctCls}">${pctTxt}</td>
       <td class="ct-num ${clsPnl(ann)}">${annTxt}</td>
       <td class="ct-src">${esc(h.source_name || '—')}</td>
@@ -668,7 +723,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
     return `<tr class="ct-row ct-row-m" data-ct-type="manual">
       <td class="ct-name"><span class="name-clickable" title="${esc(m.name)}（手动补录）">${esc(m.name)}</span></td>
       <td class="ct-type-col"><span class="ct-type ct-type-manual">补录</span></td>
-      <td class="ct-num ${clsPnl(amt)}">${amt >= 0 ? '+' : ''}¥${fmt(amt)}</td>
+      <td class="ct-num ${clsPnl(amt)}">${signedCur(amt, 'cny')}</td>
       <td class="ct-num flat">—</td>
       <td class="ct-num flat">—</td>
       <td class="ct-src">${esc(m.source || '—')}</td>
@@ -679,7 +734,6 @@ function renderClosed(box, closedHoldings, closedWealth) {
   }).join('');
   const sysWRows = closedWealth.map((w) => {
     const cumPnl = Number(w.cum_pnl) || 0;
-    const curSym = curSymbolJS(w.currency);
     const cumRate = w.cum_return_rate;
     const annRate = w.annualized_return_rate;
     const days = w.holding_days || 0;
@@ -691,7 +745,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
     return `<tr class="ct-row ct-row-w" data-ct-type="wealth">
       <td class="ct-name"><span class="name-clickable" title="${esc(w.name)}（已清仓）">${esc(w.name)}</span></td>
       <td class="ct-type-col"><span class="ct-type ct-type-wealth">理财</span></td>
-      <td class="ct-num ${clsPnl(cumPnl)}">${cumPnl >= 0 ? '+' : ''}${curSym}${fmt(cumPnl)}</td>
+      <td class="ct-num ${clsPnl(cumPnl)}">${signedCur(cumPnl, w.currency)}</td>
       <td class="ct-num ${rateCls}">${ratePct}</td>
       <td class="ct-num ${clsPnl(annRate)}">${annPct}</td>
       <td class="ct-src">${esc(w.source_name || '—')}</td>
@@ -708,7 +762,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
     return `<tr class="ct-row ct-row-m" data-ct-type="manual">
       <td class="ct-name"><span class="name-clickable" title="${esc(m.name)}（手动补录）">${esc(m.name)}</span></td>
       <td class="ct-type-col"><span class="ct-type ct-type-manual">补录</span></td>
-      <td class="ct-num ${clsPnl(amt)}">${amt >= 0 ? '+' : ''}¥${fmt(amt)}</td>
+      <td class="ct-num ${clsPnl(amt)}">${signedCur(amt, 'cny')}</td>
       <td class="ct-num flat">—</td>
       <td class="ct-num flat">—</td>
       <td class="ct-src">${esc(m.source || '—')}</td>
@@ -858,18 +912,25 @@ function bindClosedActions(box) {
 function renderInvestToolbar() {
   const bar = document.getElementById('investToolbar');
   if (!bar) return;
-  // 存款视图：不需要持仓筛选 / 排序 / 密度切换
-  if (homeSection === 'deposits') { bar.innerHTML = ''; return; }
+  // 存款视图：没有筛选 / 排序 / 密度切换，但这一行不能空着 ——
+  // 右侧放一句当前最有行动价值的信息（到期待落袋），空行会把上方 KPI 和下方表格隔开显得断裂。
+  if (homeSection === 'deposits') {
+    const list = depositsCache || [];
+    const pending = list.filter((d) => d.status !== 'settled' && d.matured);
+    bar.innerHTML = pending.length
+      ? '<div class="toolbar-gain right">已到期待落袋 <b>' + pending.length + '</b> 笔 · 行内点「确认落袋」把本金+利息入账</div>'
+      : '<div class="toolbar-gain right">共 <b>' + list.length + '</b> 笔 · 预计利息按「年利率 × 天数 / 365」估算</div>';
+    return;
+  }
   if (homeSection === 'wealth') {
-    const products = (assetData.wealth || {}).products || [];
-    const cum = products.reduce((s, p) => s + (Number(p.cum_pnl) || 0), 0);
+    // 累计收益已上移到顶部理财 KPI 卡，工具条只留分类 chips（避免同一数字出现两次）。
+    // 注意：不能带 .keep-space —— 那个类只用于占位，会 visibility:hidden 把可点的筛选器藏掉。
     bar.innerHTML =
-      '<div class="filter-group keep-space" id="wealthCatChips">' +
+      '<div class="filter-group" id="wealthCatChips">' +
         toolbarChip('', '全部', wealthCatFilter === '') +
         toolbarChip('nav', '净值型', wealthCatFilter === 'nav') +
         toolbarChip('other', '其他', wealthCatFilter === 'other') +
-      '</div>' +
-      '<div class="toolbar-gain">累计收益 <b class="' + (clsPnl(cum)) + '">' + (cum >= 0 ? '+' : '−') + moneyCurW(Math.abs(cum), 'cny') + '</b></div>';
+      '</div>';
     bar.querySelectorAll('.filter-chip').forEach((b) => {
       b.onclick = () => { wealthCatFilter = b.dataset.cat; renderInvestToolbar(); renderWealth(document.getElementById('homeWealthBox')); };
     });
@@ -918,11 +979,14 @@ function toolbarChip(cat, label, active) {
 }
 
 // 已平仓视图工具条：左侧标题（新增入口已收归首页「快捷功能 · 新增平仓」）。
+// 平仓工具条：标题已上移到顶部 KPI 眉标（#closedHero），此处只留统计区间提示。
+// 行高由 CSS 的 min-height 兜住，与持仓工具条的 chips 行等高 —— 否则切 tab 时
+// 这一行会矮一截，下方表格跟着上移，同样是跳变。
 function renderClosedToolbar(bar) {
   bar.innerHTML =
     '<div class="closed-toolbar">' +
-      '<span class="ct-title">已平仓 · 落袋收益总览</span>' +
       '<span class="ct-spacer"></span>' +
+      '<span class="ct-hint" id="closedRangeHint"></span>' +
     '</div>';
 }
 
@@ -961,38 +1025,6 @@ function holdingDaysOf(h) {
 function supportsAnalysis(h) {
   if (isFund(h)) return true;
   return !!(h.symbol && String(h.symbol).trim());
-}
-
-// 分析按钮角标：根据持仓自动技术分析的买卖信号展示 买/卖（红涨绿跌），hold 不展示。
-function anaBadge(sig) {
-  if (!sig) return '';
-  if (sig === 'buy') return '<span class="ana-badge buy" title="自动分析：看涨">买</span>';
-  if (sig === 'sell') return '<span class="ana-badge sell" title="自动分析：看跌">卖</span>';
-  return '';
-}
-
-// 用最新分析结论刷新某持仓行右上角的买卖角标，使角标与弹框结论保持一致。
-// 例：弹框显示“中性”时，角标应清空（hold 不展示），而不是停留在旧的“买”。
-function syncAnalysisBadge(id, sig) {
-  // 用 data-ana 定位（.act-analysis 已随操作列图标化移除，别再依赖样式类）
-  const btn = document.querySelector('.row-act[data-ana="' + id + '"]');
-  if (!btn) return;
-  // 角标已改挂到名称上（.name-cap），与分析按钮不再是同一容器 →
-  // 先回到单元格，再取名称容器。顺序不能颠倒，否则角标同步静默失效。
-  const cell = btn.closest('.name-cell');
-  const cap = cell ? cell.querySelector('.name-cap') : null;
-  if (!cap) return;
-  const old = cap.querySelector('.ana-badge');
-  const neu = anaBadge(sig);
-  if (old) {
-    if (neu) old.outerHTML = neu;
-    else old.remove();
-  } else if (neu) {
-    cap.insertAdjacentHTML('beforeend', neu);
-  }
-  // 同步全局持仓数据，避免后续整表重渲染把角标回退为旧值
-  const h = allHoldings.find((x) => String(x.id) === String(id));
-  if (h) h.analysis_signal = sig;
 }
 
 // 预填「修改/加减仓」弹框内的补仓成本计算器（合并自首页操作列的「计算」按钮）。
@@ -1079,18 +1111,18 @@ function renderHoldingsBySource(hs) {
       + `<span class="hat-title">${srcLogo(g.sid)} ${esc(g.name)} <span class="hat-count">${g.items.length} 只</span></span>`
       + `<span class="hat-side">`
       + `<span class="hat-stat hat-stat-mv" title="该账户持仓折合人民币市值"><span class="hat-stat-lbl">市值</span><b${wanTitle(g.mv, '¥')}>¥${fmtWan(g.mv)}</b></span>`
-      + `<span class="hat-side-extra" title="当日 / 总盈亏（该账户合计）">`
-      + `<span class="hat-stat" title="该账户当日盈亏合计"><span class="hat-stat-lbl">当日</span><b class="${clsPnl(g.dayPnl)}"${wanTitle(g.dayPnl, '¥')}>¥${fmtWanPnl(g.dayPnl)}</b></span>`
+      + `<span class="hat-side-extra" title="今日 / 总盈亏（该账户合计）">`
+      + `<span class="hat-stat" title="该账户今日盈亏合计"><span class="hat-stat-lbl">今日</span><b class="${clsPnl(g.dayPnl)}"${wanTitle(g.dayPnl, '¥')}>¥${fmtWanPnl(g.dayPnl)}</b></span>`
       + `<span class="hat-stat" title="该账户累计盈亏合计"><span class="hat-stat-lbl">总盈亏</span><b class="${clsPnl(g.pnl)}"${wanTitle(g.pnl, '¥')}>¥${fmtWanPnl(g.pnl)}</b></span>`
       + `</span>`
       + `<span class="hat-chevron">▾</span></span>`
       + `</div>`
       + `<div class="collapse-body source-group-body">`
       + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
-      + `<thead><tr><th>名称</th><th class="num" title="近20日收盘价走势">近20日走势</th><th>代码</th><th class="num">现价</th><th class="num" title="今日涨跌幅：现价相对昨收（基金为昨日净值），行情口径；与「当日」列括号里的盈亏率不同——当日% 首日按买入成本计">涨跌幅</th><th class="num" title="成本价（每份）">成本价</th>`
+      + `<thead><tr><th>名称</th><th class="num" title="近20日收盘价走势">近20日走势</th><th>代码</th><th class="num">现价</th><th class="num" title="今日涨跌幅：现价相对昨收（基金为昨日净值），行情口径；与「今日」列括号里的盈亏率不同——今日% 首日按买入成本计">涨跌幅</th><th class="num" title="成本价（每份）">成本价</th>`
       + `<th class="num${sortedCls('mv')}" title="持仓市值（折人民币；悬停查看原币种市值）">市值</th>`
       + `<th class="num" title="占该账户同币种资金池比例：持仓市值 ÷ 持仓合计+现金子账户余额；无匹配现金子账户时显示 —">仓位</th>`
-      + `<th class="num" title="当日盈亏金额">当日</th>`
+      + `<th class="num" title="今日盈亏金额">今日</th>`
       + `<th class="num${sortedCls('pnl', 'profit')}" title="持有期总盈亏金额">盈亏</th>`
       + `<th class="num${sortedCls('days')}">持仓</th>`
       + `<th>操作</th>`
@@ -1158,7 +1190,7 @@ function renderGroupRow(h, i, maxItemMV, pool) {
   return `<tr${rowCls ? ` class="${rowCls}"` : ''}>
     <td class="name-cell">
       ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">' + actIcon('warn') + '</span>' : ''}
-      ${holdTypeTag(h)}<span class="name-cap"><span class="name-clickable" title="${nameTitle}">${esc(h.name)}</span>${supportsAnalysis(h) ? anaBadge(h.analysis_signal) : ''}</span>
+      ${holdTypeTag(h)}<span class="name-cap"><span class="name-clickable" title="${nameTitle}">${esc(h.name)}</span></span>
       ${actBtn('adjust', `data-adjust="${h.id}"`, '修改', { cls: 'push-right' })}
       ${supportsAnalysis(h) ? actBtn('analysis', 'data-ana="' + h.id + '"', '技术分析') : ''}
     </td>
@@ -1381,15 +1413,15 @@ function bindHomeRateHover() {
     const cls = pnl > 0 ? 'up' : (pnl < 0 ? 'down' : 'flat');
     const sign = pnl > 0 ? '+' : (pnl < 0 ? '-' : '');
     const dateStr = (st.dates[i] || '').slice(0, 10);
-    // 本金（持仓成本=累计投入）与持仓现价（权益市值=当日净值）：contrib 缺失时隐藏本金行
+    // 本金（持仓成本=累计投入）与持仓现价（权益市值=该日净值）：contrib 缺失时隐藏本金行
     const cost = st.contrib[i];
     const mv = st.cumNet[i] || 0;
-    // 当日净投入（持仓成本日环比）：减仓/取出日本行现身，直接解释曲线上的"悬崖"
-    // （如 10/6 卖出纳指100ETF，成本撤出 ≈ -¥2,855，曲线当日垂直下落并非亏损）
+    // 净投入（持仓成本日环比）：减仓/取出日本行现身，直接解释曲线上的"悬崖"
+    // （如 10/6 卖出纳指100ETF，成本撤出 ≈ -¥2,855，曲线当天垂直下落并非亏损）
     const costPrev = i > 0 ? st.contrib[i - 1] : null;
     const flow = (cost != null && costPrev != null) ? cost - costPrev : 0;
     const flowRow = Math.abs(flow) >= 0.5
-      ? '<div class="rt-row"><span>当日投入</span><b class="flat">' + (flow > 0 ? '+' : '-') + '¥' + fmt(Math.abs(flow)) + '</b></div>'
+      ? '<div class="rt-row"><span>净投入</span><b class="flat">' + (flow > 0 ? '+' : '-') + '¥' + fmt(Math.abs(flow)) + '</b></div>'
       : '';
     tip.innerHTML =
       '<div class="rt-date">' + dateStr + '</div>' +
@@ -3068,14 +3100,14 @@ async function renderHomeDashboard() {
     ch.innerHTML = segs.join('');
   }
 
-  // 资产分布条：持仓 / 理财 / 现金 / 负债（负债以负向展示）
+  // 资产分布条：持仓 / 理财 / 现金（2026-10-27 起不再在首页 Hero 展示负债，
+  // 净资产仍按 资产 − 负债 计算，负债明细只保留在资产页）
   const bd = $('#homeAssetBreakdown');
   if (bd) {
     const rows = [
       { label: '持仓', val: eqMV, color: 'var(--home-eq)' },
       { label: '理财', val: wTotal, color: 'var(--home-wealth)' },
       { label: '现金', val: cTotal, color: 'var(--home-cash)' },
-      { label: '负债', val: lTotal, color: 'var(--home-debt)', neg: true },
     ];
     // 资产分布 → 芯片行（原型 hero-asset-chip）：一枚一个口径，金额右对齐读数
     bd.innerHTML = rows.map((r) => {
@@ -3094,10 +3126,11 @@ async function renderHomeDashboard() {
       { ico: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>', label: '记支出', fn: async () => { await openFlowModal('out'); } },
       { ico: '<rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 9.5h16"/><path d="M8 3.2v3M16 3.2v3"/><path d="M12 11.6v4.2"/>', label: '基金定投', fn: () => openDCAPlans() },
       { ico: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>', label: '新增平仓', fn: () => openClosedRecordModal(null) },
-      { ico: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>', label: '截图导入', fn: () => toast('截图导入：请通过 AI 助手或 MCP 客户端导入', 'info') },
+      // 「截图导入」入口已删除（2026-10-27）：该能力后续并入 AI 助手弹框，暂不实现，
+      // 快捷区只保留已落地的操作，避免占位项点了只弹 toast。
     ];
     // 每个快捷功能取一个独立强调色（注入 --tint，仅作用于该微件子树，不影响全局强调色）
-    const SC_TINTS = ['217, 165, 43', '42, 163, 155', '232, 110, 145', '56, 132, 232', '139, 92, 246', '150, 165, 180', '120, 140, 170'];
+    const SC_TINTS = ['217, 165, 43', '42, 163, 155', '232, 110, 145', '56, 132, 232', '139, 92, 246', '150, 165, 180'];
     sc.innerHTML = items.map((it, i) => `<div class="shortcut tier-3" data-i="${i}" style="--tint:${SC_TINTS[i] || 'var(--tint)'}">
       <div class="shortcut-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${it.ico}</svg></div>
       <div class="shortcut-label">${it.label}</div></div>`).join('');
@@ -3799,11 +3832,8 @@ function finCatBadge(key, cls) {
 
 
 
-// 「持仓侠」标题文本：点击回到首页
-$('#brandTitle').onclick = () => {
-  navigate('home');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-};
+// brand-nav 已从 header 移除，点击回首页职责交给主导航 pills（首页 pill）
+
 // ESC 键：从任意二级页（资产/速算/日历）返回主页
 document.addEventListener('keydown', (e) => {
   const t = e.target;
@@ -3968,6 +3998,16 @@ function calActiveVal(rec) {
 // 当前口径下数值的展示文本
 function calActiveFmt(v) {
   if (calMetric === 'rate') return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  return fmt(v);
+}
+// 月视图格子专用：格宽只有 90px（手机 45px），四位数以上带小数会被裁掉 → 取整显示。
+// 完整数值仍在格子 title（悬停/长按）与月汇总里，不影响核对。
+function calCellFmt(v) {
+  if (calMetric === 'rate') return calActiveFmt(v);
+  if (Math.abs(v) >= 1000) {
+    const n = Math.round(v);
+    return (n > 0 ? '+' : '') + n.toLocaleString('zh-CN');
+  }
   return fmt(v);
 }
 // 当前口径下着色归一化最大值（仅遍历当月以外的全量，保证切月时色阶稳定）
@@ -5144,13 +5184,13 @@ function showHistTip(e, x, cur, closedInfo, tx, isRate) {
     const cumP = (x.total_pnl_pct != null ? x.total_pnl_pct : 0);
     const pCls = dayP > 0 ? 't-up' : dayP < 0 ? 't-down' : 't-muted';
     const cPCls = cumP > 0 ? 't-up' : cumP < 0 ? 't-down' : 't-muted';
-    html += '<div class="t-row"><span>当日涨跌幅</span><span class="' + pCls + '">' + pct(dayP) + '</span></div>'
+    html += '<div class="t-row"><span>涨跌幅</span><span class="' + pCls + '">' + pct(dayP) + '</span></div>'
       + '<div class="t-row"><span>累计收益率</span><span class="' + cPCls + '">' + pct(cumP) + '</span></div>'
-      + '<div class="t-row"><span>当日盈亏</span><span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span></div>';
+      + '<div class="t-row"><span>盈亏</span><span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span></div>';
   } else {
-    html += '<div class="t-row"><span>当日盈亏</span><span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span></div>';
+    html += '<div class="t-row"><span>盈亏</span><span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span></div>';
     if (x.day_pnl_pct !== undefined && x.day_pnl_pct !== null)
-      html += '<div class="t-row"><span>当日涨跌幅</span><span class="' + cls + '">' + pct(x.day_pnl_pct) + '</span></div>';
+      html += '<div class="t-row"><span>涨跌幅</span><span class="' + cls + '">' + pct(x.day_pnl_pct) + '</span></div>';
   }
   html += '<div class="t-row"><span>累计盈亏</span><span class="' + cumCls + '">' + (cum > 0 ? '+' : '') + money(cum) + '</span></div>';
   if (x.total_pnl_pct !== undefined && x.total_pnl_pct !== null)
@@ -5825,7 +5865,7 @@ function renderAssetTab() {
     { name: '现金', value: cTotal, color: 'rgb(var(--cat-cash))' },
   ].filter((s) => s.value > 0.01);
   const catTotal = catSegs.reduce((a, s) => a + s.value, 0);
-  const donutHtml = catTotal > 0 ? donutSvg(catSegs, catTotal, '分类', yuanOfW(catTotal)) : '';
+  const donutHtml = catTotal > 0 ? donutSvg(catSegs, catTotal, '总资产', yuanOfW(catTotal), 42, 9) : '';
   const donutLegend = catSegs.map((s) => {
     const pct = catTotal > 0 ? (s.value / catTotal * 100).toFixed(1) : '0';
     return `<div class="asset-ov-legend-row"><span class="legend-dot" style="--bg:${s.color}"></span><span>${s.name}</span><span class="legend-val">${pct}% · ${yuanOfW(s.value)}</span></div>`;
@@ -5884,6 +5924,7 @@ function renderAssetTab() {
   const hkA = Number(regA.hk || 0), usA = Number(regA.us || 0), cnA = Number(regA.cn || 0);
   const cnyA = Number(curA.cny || 0);
 
+  // 资产构成卡主数字 = 持仓市值（股票+基金，折 CNY）；圆环中心显示总资产。
   body.innerHTML = `
     <div class="kpi-head">
       <span class="kpi-head-label">资产概览</span>
@@ -5893,8 +5934,8 @@ function renderAssetTab() {
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-fund"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 3v9h9"/></svg></div>
         <div class="kpi-label">资产构成</div>
-        <div class="kpi-main"><div class="kpi-value">${yuanOfW(totalA)}</div></div>
-        <div class="kpi-sub">持仓 · 理财 · 现金 三类合计</div>
+        <div class="kpi-main"><div class="kpi-value">${yuanOfW(eqMV)}</div></div>
+        <div class="kpi-sub">持仓市值 · 股票与基金，折算 CNY</div>
         <div class="kpi-extra asset-cmp-body asset-cmp-donut">${donutHtml}<div class="asset-ov-legend">${donutLegend}</div></div>
       </div>
       <div class="kpi-card density-standard">
@@ -5939,18 +5980,19 @@ function renderAssetTab() {
 }
 
 // 环形图 SVG：复用资产分类色（rgb(var(--cat-*))），经 --sc 自定义属性注入（SVG 属性不解析 var()）。
-function donutSvg(segs, total, centerLabel, centerVal) {
-  const C = 2 * Math.PI * 38;
+function donutSvg(segs, total, centerLabel, centerVal, r, sw) {
+  r = r || 38; sw = sw || 12;
+  const C = 2 * Math.PI * r;
   let offset = 0;
   const rings = segs.map((s) => {
     const len = s.value / total * C;
     const dash = len.toFixed(2) + ' ' + (C - len).toFixed(2);
     const off = (-offset).toFixed(2);
     offset += len;
-    return '<circle class="asset-donut-seg" cx="50" cy="50" r="38" fill="none" stroke-width="12" stroke-dasharray="' + dash + '" stroke-dashoffset="' + off + '" transform="rotate(-90 50 50)" style="--sc:' + s.color + '"/>';
+    return '<circle class="asset-donut-seg" cx="50" cy="50" r="' + r + '" fill="none" stroke-width="' + sw + '" stroke-dasharray="' + dash + '" stroke-dashoffset="' + off + '" transform="rotate(-90 50 50)" style="--sc:' + s.color + '"/>';
   }).join('');
   return '<svg viewBox="0 0 100 100" class="asset-donut">' +
-    '<circle class="asset-donut-track" cx="50" cy="50" r="38" fill="none" stroke-width="12"/>' + rings +
+    '<circle class="asset-donut-track" cx="50" cy="50" r="' + r + '" fill="none" stroke-width="' + sw + '"/>' + rings +
     '<text class="donut-cap" x="50" y="46" text-anchor="middle">' + centerLabel + '</text>' +
     '<text class="donut-total" x="50" y="58" text-anchor="middle">' + centerVal + '</text>' +
     '</svg>';
@@ -6282,7 +6324,61 @@ function wRmbTitle(p, v) {
   return ` title="约 ¥${fmt(wCny(p, v))}"`;
 }
 
+// 理财 KPI（渲染进顶部 #wealthKpiBody，与持仓/平仓 KPI 同一位置互换显示）。
+// 口径：市值/收益一律折 CNY（多币种不能直接相加，与表格「合计」列一致）；
+// 年化用单利 = 累计收益 ÷ 本金 ÷ 加权持有天数 × 365（本金近似 = 市值 − 累计收益），
+// 与表格「年化」列同口径，只是这里按持仓金额加权汇总成一个组合级数字。
+function renderWealthKpi() {
+  const el = document.getElementById('wealthKpiBody');
+  if (!el) return;
+  const all = (assetData && assetData.wealth ? assetData.wealth.products : []) || [];
+  const live = all.filter((p) => !p.archived);
+  const dead = all.filter((p) => p.archived);
+  let mv = 0, day = 0, cum = 0, dayW = 0;
+  for (const p of live) {
+    const amt = Number(p.amount) || 0;
+    mv += wCny(p, amt);
+    day += wCny(p, Number(p.today_pnl) || 0);
+    cum += wCny(p, Number(p.cum_pnl) || 0);
+    dayW += (Number(p.holding_days) || 0) * amt;
+  }
+  const principal = mv - cum;                       // 本金近似（同表格年化口径）
+  const wDays = mv > 0 ? Math.round(dayW / mv) : 0; // 金额加权持有天数
+  const cumRate = principal > 0.005 ? cum / principal * 100 : null;
+  const annRate = (cumRate != null && wDays > 0) ? cumRate * 365 / wDays : null;
+  // 今日收益占市值只有千分之几，pctOf 的 1 位小数会全被抹成 0.1%／0.0%，这里给 2 位
+  const dayPct = mv > 0.005 ? (day / mv * 100).toFixed(2) + '%' : '—';
+
+  el.innerHTML = `<div class="kpi-row cols-anchor">
+      <div class="kpi-card density-standard anchor">
+        <div class="kpi-icon kpi-ico-equity"><svg viewBox="0 0 24 24"><path d="M3 7h18l-2 13H5L3 7Z"/><path d="M8 7V5a4 4 0 0 1 8 0v2"/></svg></div>
+        <div class="kpi-label">理财市值</div>
+        <div class="kpi-main"><div class="kpi-value">${yuanOfW(mv)}</div></div>
+        <div class="kpi-sub">在持 <span class="hl">${live.length}</span> 款${dead.length ? ` · 已清仓 <span class="hl">${dead.length}</span> 款` : ''}</div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
+        <div class="kpi-label">今日收益</div>
+        <div class="kpi-main"><div class="kpi-value ${clsPnl(day)}">${day > 0 ? '+' : ''}${yuanOfW(day)}</div></div>
+        <div class="kpi-sub">占市值 <span class="hl">${dayPct}</span></div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-down"><svg viewBox="0 0 24 24"><path d="M3 7l6 6 4-4 8 8"/><path d="M14 17h7v-7"/></svg></div>
+        <div class="kpi-label">累计收益</div>
+        <div class="kpi-main"><div class="kpi-value ${clsPnl(cum)}">${cum > 0 ? '+' : ''}${yuanOfW(cum)}</div></div>
+        <div class="kpi-sub">累计收益率 <span class="hl ${clsPnl(cumRate)}">${cumRate == null ? '—' : (cumRate >= 0 ? '+' : '') + cumRate.toFixed(2) + '%'}</span></div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-pct"><svg viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg></div>
+        <div class="kpi-label">年化收益</div>
+        <div class="kpi-main"><div class="kpi-value ${clsPnl(annRate)}">${annRate == null ? '—' : (annRate >= 0 ? '+' : '') + annRate.toFixed(2) + '%'}</div></div>
+        <div class="kpi-sub">加权持有 ${wDays ? wDays + ' 天' : '—'}</div>
+      </div>
+    </div>`;
+}
+
 function renderWealth(body) {
+  renderWealthKpi(); // 顶部 KPI 与表格同源（assetData.wealth），任何一次重渲染都同步刷新
   let raw = (assetData.wealth || {}).products || [];
   if (wealthCatFilter === 'nav') raw = raw.filter((p) => (Number(p.nav) || 0) > 0);
   else if (wealthCatFilter === 'other') raw = raw.filter((p) => (Number(p.nav) || 0) <= 0);
@@ -6830,9 +6926,12 @@ function fillAcctForm(kind, rec, srcIdLocked) {
     kind, id: rec.id, name: rec.name || '', type: rec.type || '',
     currency: rec.currency || 'cny', amount: Number(rec.amount || 0),
     source_id: Number(rec.source_id || 0), note: rec.note || '',
+    excluded: !!rec.excluded,
   } : null;
   const srcId = rec ? Number(rec.source_id || 0) : (Number(srcIdLocked) || 0);
   $('#c_is_liab').checked = kind === 'liability';
+  // 负债没有「日常开销」概念，勾上「负债」时整行由 applyAcctKind 隐藏
+  $('#c_excluded').checked = rec ? !!rec.excluded : false;
   $('#c_name').value = rec ? (rec.name || '') : '';
   // 编辑态带入已有余额：值等于原余额视为「未改动」，可直接改用 ± 资金
   $('#c_amount').value = rec ? round4(rec.amount) : '';
@@ -6933,7 +7032,7 @@ $('#cashForm').onsubmit = async (e) => {
       } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
       return;
     }
-    await submitCashEdit(name, type, currency, note, amountRaw);
+    await submitCashEdit(name, type, currency, note, amountRaw, $('#c_excluded').checked);
     return;
   }
 
@@ -6944,6 +7043,7 @@ $('#cashForm').onsubmit = async (e) => {
     name, type, currency, note,
     amount: round4(Number(amountRaw || 0)),
     source_id: Number($('#c_source').value) || 0,
+    excluded: !isLiab && $('#c_excluded').checked,
   };
   try {
     let r;
@@ -6960,7 +7060,7 @@ $('#cashForm').onsubmit = async (e) => {
 };
 
 // 编辑子账户：名称/类型/币种/备注走全量 PUT；余额支持「改为新余额」（自动折算 delta）或「± 资金」增量
-async function submitCashEdit(name, type, currency, note, amountRaw) {
+async function submitCashEdit(name, type, currency, note, amountRaw, excluded) {
   const deltaRaw = $('#c_delta').value.trim();
   // 预填原余额后：值等于原余额视为「未改动」，不算有效输入，方便直接用 ± 资金
   const amtIsSet = amountRaw !== '' && Number(amountRaw) !== acctEdit.amount;
@@ -6981,13 +7081,14 @@ async function submitCashEdit(name, type, currency, note, amountRaw) {
   const curChanged = currency !== acctEdit.currency; // 只改币种、余额不变也要能保存
   const typeChanged = type !== (acctEdit.type || '');
   const noteChanged = note !== (acctEdit.note || '');
-  if (!nameChanged && !curChanged && !typeChanged && !noteChanged && !delta) { $('#cashErr').textContent = '没有需要保存的修改（修改名称/货币/类型/备注、改新余额或填写 ± 资金）'; return; }
+  const exclChanged = !!excluded !== !!acctEdit.excluded; // 只改「日常开销」标记也要能保存
+  if (!nameChanged && !curChanged && !typeChanged && !noteChanged && !exclChanged && !delta) { $('#cashErr').textContent = '没有需要保存的修改（修改名称/货币/类型/备注/日常开销标记、改新余额或填写 ± 资金）'; return; }
   try {
-    if (nameChanged || curChanged || typeChanged || noteChanged) {
+    if (nameChanged || curChanged || typeChanged || noteChanged || exclChanged) {
       // 全量 PUT：未展示的字段回传原值；amount 传原值，余额变动由下方 adjust 增量处理
       const rp = await api('/api/asset/cash/' + acctEdit.id, { method: 'PUT', body: JSON.stringify({
         name, currency, type, note, amount: acctEdit.amount,
-        source_id: acctEdit.source_id,
+        source_id: acctEdit.source_id, excluded: !!excluded,
       }) });
       if (!rp.ok) { let m = '保存失败'; try { const d = await rp.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
     }
@@ -7002,7 +7103,7 @@ async function submitCashEdit(name, type, currency, note, amountRaw) {
     $('#cashModal').hidden = true;
     await loadAsset();
     const balTxt = deltaVia === 'set' ? '余额已改为新值' : (delta > 0 ? '已存入现金' : '已取出现金');
-    const metaChanged = nameChanged || curChanged || typeChanged || noteChanged;
+    const metaChanged = nameChanged || curChanged || typeChanged || noteChanged || exclChanged;
     toast(metaChanged && delta ? '已更新资料，' + balTxt : (metaChanged ? '已更新子账户资料' : balTxt), 'ok');
   } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
 }
@@ -7721,29 +7822,29 @@ async function openSnapModal() {
   groups.sort((a, b) => Number(b.items[0].amount || 0) - Number(a.items[0].amount || 0));
   const rowHtml = (p) => {
     const amount = Number(p.amount || 0);
-    // 当日已录净存入（绝对值语义，data-cf0 仅用于提交时合成累计值，不在输入框回显）。
-    // 输入框每次打开归零：填的是「本次资金变动」（正数存入 / 负数取出），提交时加上已录值合成当日累计 —— 避免带入上次输入造成误改。
+    // 今日已录净存入（绝对值语义，data-cf0 仅用于提交时合成累计值，不在输入框回显）。
+    // 输入框每次打开归零：填的是「本次资金变动」（正数存入 / 负数取出），提交时加上已录值合成今日累计 —— 避免带入上次输入造成误改。
     const cfToday = Number(p.cashflow_today || 0);
-    // 建仓态：首次新增 或 清仓后重建（持仓金额=0）。此类产品当日持仓全部来自净存入，
-    // 首日盈亏应计为 0 —— 故「今日持仓金额」由「当日净存入」派生且禁用，避免二者脱节产生 Phantom 盈亏；
-    // 且当日净存入一旦录入（cfToday>0）即锁定，当日不可再填（防止重复建仓）。
+    // 建仓态：首次新增 或 清仓后重建（持仓金额=0）。此类产品今日持仓全部来自净存入，
+    // 首日盈亏应计为 0 —— 故「今日持仓金额」由「今日净存入」派生且禁用，避免二者脱节产生 Phantom 盈亏；
+    // 且今日净存入一旦录入（cfToday>0）即锁定，今日不可再填（防止重复建仓）。
     const opening = amount <= 0.005;
     const cfLocked = opening && cfToday > 0.005;
     const amtAttrs = `type="number" step="0.01" min="0" class="sr-amt" id="amt-${p.id}" data-id="${p.id}" data-cur="${p.currency || 'cny'}" data-base="${round2(amount)}" data-cf0="${cfToday}" value="${round2(amount)}"`;
     const amtOninput = opening ? '' : ' oninput="clampDecimals(this,2);this.dataset.touched=1"';
-    const amtTitle = opening ? ' title="建仓态自动等于当日净存入，无需手动填（首日盈亏计为 0）"' : '';
-    const amtPlaceholder = opening ? '自动＝当日净存入' : '今天收盘后的总市值';
+    const amtTitle = opening ? ' title="建仓态自动等于今日净存入，无需手动填（首日盈亏计为 0）"' : '';
+    const amtPlaceholder = opening ? '自动＝今日净存入' : '今天收盘后的总市值';
     const cfMin = opening ? ' min="0"' : '';
     const cfAttrs = `type="number" step="0.01"${cfMin} class="sr-cf" id="cf-${p.id}" data-id="${p.id}" value="0"`;
     const cfOninput = cfLocked ? '' : ' oninput="clampDecimals(this,2);snapCfSync(this)"';
     const cfTitle = cfLocked
-      ? '当日已录入建仓净存入，今日不可再填；如需调整请到该理财「每日盈亏 → 审计记录」撤销'
+      ? '今日已录入建仓净存入，今日不可再填；如需调整请到该理财「每日盈亏 → 审计记录」撤销'
       : (opening
         ? '建仓/重建投入金额：持仓金额会自动等于此值（首日盈亏计为 0）'
         : '本次资金变动：正数=存入（自动从同来源同币种余额最大子账户扣款），负数=取出（回款自动入账该子账户）；每次打开弹框从 0 开始');
     const cfPlaceholder = cfLocked ? '已锁定（今日已建仓）' : (opening ? '建仓/重建投入金额' : '正数=存入，负数=取出');
     const amtLabel = opening ? '① 今日持仓金额（＝净存入）' : '① 今日持仓金额';
-    const cfLabel = cfLocked ? '② 当日净存入（已锁定）' : '② 当日净存入';
+    const cfLabel = cfLocked ? '② 今日净存入（已锁定）' : '② 今日净存入';
     const openHint = opening
       ? `<small class="sr-open-hint">${cfLocked ? '今日已建仓，净存入已锁定' : '建仓态：持仓金额自动等于净存入，首日盈亏计 0'}</small>` : '';
     return `
@@ -7820,18 +7921,20 @@ $('#snapSave').onclick = async () => {
       toast(`「${old ? old.name : ('#' + id)}」取出金额超过当前持仓（上限 ${moneyCur(oldAmt, old ? old.currency : 'cny')}）`, 'err');
       return;
     }
-    const cashflow = Math.round((oldCf + cfInput) * 100) / 100; // 当日累计净存入（提交值）
+    const cashflow = Math.round((oldCf + cfInput) * 100) / 100; // 今日累计净存入（提交值）
     const cfDelta = cfInput;                                     // 本次实际资金变动
     // 资金账户不选：传 0 由后端 resolveCashAccount 回落同来源、同币种、余额最大子账户
     const cashAccountID = 0;
     let cashName = '';
     if (Math.abs(cfDelta) >= 0.005) {
-      cashName = (cfDelta > 0 ? '扣自：' : '入账：') + '自动（同来源同币种余额最大子账户）'
+      // 账户去向（同来源同币种余额最大子账户）已在弹框顶部的说明里交代，行内只留方向 + 今日累计，
+      // 避免这一列被长附注撑成两行、把 4 列表格挤歪
+      cashName = (cfDelta > 0 ? '自动扣款' : '自动入账')
         + (cfDelta > 0
-          ? (oldCf > 0.005 ? `；当日累计 +${moneyCur(cashflow, old.currency)}` : '')
-          : (oldCf < -0.005 ? `；当日累计 ${moneyCur(cashflow, old.currency)}` : ''));
+          ? (oldCf > 0.005 ? ` · 今日累计 +${moneyCur(cashflow, old.currency)}` : '')
+          : (oldCf < -0.005 ? ` · 今日累计 ${moneyCur(cashflow, old.currency)}` : ''));
     }
-    // 当日盈亏预览：新持仓 − 前一快照 − 当日累计净存入 + 当日分红（与后端口径一致；负净存入天然不计入当日盈亏）
+    // 今日盈亏预览：新持仓 − 前一快照 − 今日累计净存入 + 今日分红（与后端口径一致；负净存入天然不计入今日盈亏）
     const pnlPreview = Math.round((amount - prevAmt - cashflow + divInput) * 100) / 100;
     // 只提交有变化的行：金额与上次不同，或本次有资金变动（存入或取出）。
     // 未变化的行不进 items —— 避免整批保存时把未编辑的产品也 upsert+写审计（产生「旧值空→新值」冗余审计记录）。
@@ -7848,9 +7951,9 @@ let pendingSnapSave = null;
 function renderSnapConfirm(date, diff, items) {
   pendingSnapSave = { date, items };
   const body = $('#snapConfirmBody');
-  body.innerHTML = `<p class="snap-hint">请核对以下 ${diff.length} 项「旧值 → 新值」，确认无误后保存。净存入正数=存入（自动从同来源同币种余额最大子账户扣款），负数=取出（回款自动入账该子账户）；保存后若录错，可到该理财「每日盈亏 → 审计记录」里一键撤销或删除。</p>
-    <table class="asset-table"><thead><tr><th>理财</th><th class="num">旧持仓</th><th></th><th class="num">新持仓</th><th class="num">本次净存入</th><th class="num">当日分红</th><th class="num">当日盈亏（预览）</th></tr></thead><tbody>
-    ${diff.map((d) => `<tr><td>${esc(d.name)}</td><td class="num">${moneyCur(d.oldAmt, d.currency)}</td><td class="num">→</td><td class="num">${moneyCur(d.amount, d.currency)}</td><td class="num ${d.cfInput >= 0 ? 'up' : 'down'}">${d.cfInput >= 0 ? '+' : ''}${moneyCur(d.cfInput, d.currency)}${d.cashName ? `<div class="snap-cash-note">${esc(d.cashName)}</div>` : ''}</td><td class="num">${d.divInput > 0 ? '+' : ''}${moneyCur(d.divInput, d.currency)}</td><td class="num ${clsPnl(d.pnl)}">${d.pnl >= 0 ? '+' : ''}${moneyCur(d.pnl, d.currency)}</td></tr>`).join('')}
+  body.innerHTML = `<p class="snap-hint">请核对以下 ${diff.length} 项的本次资金变动与今日盈亏预览，确认无误后保存。净存入正数=存入（自动从同来源同币种余额最大子账户扣款），负数=取出（回款自动入账该子账户）；保存后若录错，可到该理财「每日盈亏 → 审计记录」里一键撤销或删除。</p>
+    <table class="asset-table"><thead><tr><th>理财</th><th class="num">本次净存入</th><th class="num">今日分红</th><th class="num">今日盈亏（预览）</th></tr></thead><tbody>
+    ${diff.map((d) => `<tr><td>${esc(d.name)}</td><td class="num ${d.cfInput >= 0 ? 'up' : 'down'}">${d.cfInput >= 0 ? '+' : ''}${moneyCur(d.cfInput, d.currency)}${d.cashName ? `<div class="snap-cash-note">${esc(d.cashName)}</div>` : ''}</td><td class="num">${d.divInput > 0 ? '+' : ''}${moneyCur(d.divInput, d.currency)}</td><td class="num ${clsPnl(d.pnl)}">${d.pnl >= 0 ? '+' : ''}${moneyCur(d.pnl, d.currency)}</td></tr>`).join('')}
     </tbody></table>`;
   $('#snapConfirmModal').hidden = false;
 }
@@ -7910,8 +8013,6 @@ async function openAnalysis(id) {
     // 标题固定为「技术分析」；标的名称已置于 K 线卡片右上角
     $('#analysisTitle').textContent = '技术分析';
     renderAnalysis(a);
-    // 用本次分析结论刷新该行买卖角标，避免弹框显示“中性”而角标仍显示“买”
-    syncAnalysisBadge(id, a.signal || '');
     const tsEl = document.getElementById('analysisTime');
     if (tsEl) tsEl.textContent = (a.market ? a.market + ' · ' : '') + '周期 1d · 数据截至 ' + (a.generated_at || '—');
   } catch (e) {
@@ -9458,7 +9559,64 @@ async function loadDeposits() {
   return depositsCache;
 }
 
+// 存款 KPI（渲染进顶部 #depositKpiBody，与其它 tab 的 KPI 同一位置互换显示）。
+// 口径：只统计未落袋（存期中/待落袋）的本金与预计利息；已落袋的计入「已落袋利息」小字。
+// 加权利率按本金加权（10 万@3% + 1 万@1.5% 的实际收益率应偏向前者，不能简单算术平均）。
+function renderDepositKpi() {
+  const el = document.getElementById('depositKpiBody');
+  if (!el) return;
+  const list = depositsCache || [];
+  const live = list.filter((d) => d.status !== 'settled');
+  const done = list.filter((d) => d.status === 'settled');
+  let principal = 0, expInt = 0, rateW = 0, doneInt = 0;
+  for (const d of live) {
+    const amt = Number(d.amount) || 0;
+    principal += wCny(d, amt);
+    expInt += wCny(d, Number(d.expected_interest) || 0);
+    rateW += amt * (Number(d.rate) || 0);
+  }
+  for (const d of done) doneInt += wCny(d, Number(d.actual_interest) || 0);
+  const avgRate = principal > 0.005 ? rateW / live.reduce((s, d) => s + (Number(d.amount) || 0), 0) : null;
+  const rates = live.map((d) => Number(d.rate) || 0).filter((r) => r > 0);
+  const maxRate = rates.length ? Math.max(...rates) : null;
+  const minRate = rates.length ? Math.min(...rates) : null;
+  // 30 天内到期：只算未落袋的，避免已落袋的旧记录被重复提醒
+  const today = new Date();
+  const horizon = new Date(today.getTime() + 30 * 864e5).toISOString().slice(0, 10);
+  const todayStr = today.toISOString().slice(0, 10);
+  const soon = live.filter((d) => d.end_date && d.end_date >= todayStr && d.end_date <= horizon);
+  const soonAmt = soon.reduce((s, d) => s + wCny(d, Number(d.amount) || 0), 0);
+
+  el.innerHTML = `<div class="kpi-row cols-anchor">
+      <div class="kpi-card density-standard anchor">
+        <div class="kpi-icon kpi-ico-equity"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 11h18"/><circle cx="12" cy="11" r="2.5"/></svg></div>
+        <div class="kpi-label">存款本金</div>
+        <div class="kpi-main"><div class="kpi-value">${yuanOfW(principal)}</div></div>
+        <div class="kpi-sub">存期中 <span class="hl">${live.length}</span> 笔${done.length ? ` · 已落袋 <span class="hl">${done.length}</span> 笔` : ''}</div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></div>
+        <div class="kpi-label">预计利息</div>
+        <div class="kpi-main"><div class="kpi-value up">${expInt > 0 ? '+' : ''}${yuanOfW(expInt)}</div></div>
+        <div class="kpi-sub">已落袋利息 <span class="hl">${yuanOfW(doneInt)}</span></div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon kpi-ico-pct"><svg viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg></div>
+        <div class="kpi-label">加权利率</div>
+        <div class="kpi-main"><div class="kpi-value">${avgRate == null ? '—' : avgRate.toFixed(2) + '%'}</div></div>
+        <div class="kpi-sub">${maxRate == null ? '暂无存期中存款' : `最高 <span class="hl">${maxRate.toFixed(2)}%</span> · 最低 <span class="hl">${minRate.toFixed(2)}%</span>`}</div>
+      </div>
+      <div class="kpi-card density-standard">
+        <div class="kpi-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div>
+        <div class="kpi-label">30 天内到期</div>
+        <div class="kpi-main"><div class="kpi-value">${soon.length || '—'}${soon.length ? '<span class="kpi-unit">笔</span>' : ''}</div></div>
+        <div class="kpi-sub">${soon.length ? `合计 <span class="hl">${yuanOfW(soonAmt)}</span>` : '暂无临期'}</div>
+      </div>
+    </div>`;
+}
+
 function renderDeposits(box) {
+  renderDepositKpi(); // 顶部 KPI 与表格同源（depositsCache），任何一次重渲染都同步刷新
   if (!box) return;
   const list = depositsCache || [];
   const head = `<div class="asset-section-head"><h3>存款（${list.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="depAddBtn" type="button" title="新增存款" aria-label="新增存款">${actIcon('plus')}</button></div></div>`;
