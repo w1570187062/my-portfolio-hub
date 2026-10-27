@@ -115,7 +115,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ---- 视图路由（hash）：每个常驻视图都有后缀 URL，刷新保持当前路径 ----
-const VIEWS = ['home', 'invest', 'asset', 'finance', 'settings'];
+// 2026-10-27：新增 rebalance（再平衡）独立页；settings 仍在 VIEWS 内可直达 #/settings，
+// 只是不再占据主导航——入口已迁到右上角个人菜单。
+const VIEWS = ['home', 'invest', 'asset', 'finance', 'rebalance', 'settings'];
+
+// ==== 再平衡页状态与配色（声明必须早于下方同步执行的 applyRoute()，否则 TDZ 报错）====
+const RB_CLASS_LABEL = { stock: '股票', fund: '基金', wealth: '理财', cash: '现金' };
+// 分类色复用 --cat-*（与资产构成卡同源，同一类别跨页同色）。
+// 值以字符串形式注入 style 的 --rb-c，故此处保留 rgba(var(--cat-x), 1) 原样写法。
+const RB_CLASS_COLOR = {
+  stock: 'rgba(var(--cat-equity), 1)',
+  fund: 'rgba(var(--cat-fund), 1)',
+  wealth: 'rgba(var(--cat-wealth), 1)',
+  cash: 'rgba(var(--cat-cash), 1)',
+};
+let rbData = null;         // /api/rebalance 最近一次结果
+let rbPicked = new Set();  // 本次勾选要执行的类别 key
+let rbHistoryLogs = [];
 // 2026-10-20 tab 重构：原 hash 'holdings' 兼容映射到 'invest'（持仓/理财视图）。
 function viewFromHash() {
   const h = (location.hash || '').replace(/^#\/?/, '');
@@ -131,7 +147,7 @@ function setActiveNav(view) {
 }
 // 隐藏全部常驻视图（含已废弃的 notifyView，避免残留显示）
 function hideAllViews() {
-  ['homeView', 'holdingsView', 'assetView', 'financeView', 'settingsView'].forEach((id) => {
+  ['homeView', 'holdingsView', 'assetView', 'financeView', 'rebalanceView', 'settingsView'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
@@ -141,9 +157,11 @@ function applyRoute() {
   currentNavView = v;
   setActiveNav(v);
   hideAllViews();
+  closeAcctMenu(); // 路由切换时收起个人菜单（同 PanWatch 的 route 变化即关闭）
   if (v === 'home') showHomeView();
   else if (v === 'asset') showAssetView();
   else if (v === 'finance') showFinanceView();
+  else if (v === 'rebalance') showRebalanceView();
   else if (v === 'settings') showSettingsView();
   else showHoldingsView();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -6695,7 +6713,8 @@ function cashSubTrHtml(sourceId, open) {
     const cur = (c.currency || 'cny').toLowerCase();
     const nm = (c.name || '').trim() || (c.type || '').trim() || ('子账户 #' + c.id);
     html += '<tr class="srow" data-sub="' + sourceId + '"' + h + '>' +
-      '<td><span class="sn" title="' + esc(nm) + '">' + esc(nm) + '</span></td>' +
+      '<td><span class="sn" title="' + esc(nm) + '">' + esc(nm) + '</span>' +
+        (c.excluded ? '<span class="sn-excl" title="日常开销账户：不计入再平衡（既不算现金类也不算总市值）">日常</span>' : '') + '</td>' +
       '<td class="ty"></td>' +
       '<td class="cur">' + cur.toUpperCase() + '</td>' +
       '<td class="num"' + wanTitle(Number(c.amount) || 0, curSymbolJS(cur)) + '>' + moneyCurW(Number(c.amount) || 0, cur) + '</td>' +
@@ -6912,6 +6931,9 @@ function applyAcctKind() {
   $('#c_adj_note_cap').textContent = isLiab ? '说明（欠款变动备注，可选）' : '说明（资金变动备注，可选）';
   $('#c_adj_note').placeholder = isLiab ? '如 提前还款 / 周转借入' : '如 发工资 / 还信用卡';
   $('#cashTitle').textContent = (editing ? '编辑' : '添加') + (isLiab ? '负债' : '子账户');
+  // 日常开销标记只对子账户有意义（负债不参与再平衡，无需该开关）
+  const exclRow = $('#c_excluded_row');
+  if (exclRow) exclRow.hidden = isLiab;
 }
 
 // 所属账户下拉：按最新来源列表重建
@@ -10859,4 +10881,607 @@ async function dcaDeletePlan() {
   if (eo) eo.onclick = () => submitDCAExec();
   const ec = document.getElementById('dcaExecCancel');
   if (ec) ec.onclick = () => { document.getElementById('dcaExecModal').hidden = true; };
+})();
+
+// ===== 再平衡（2026-10-27 重新引入）=====
+// 口径（经确认）：股票 / 基金 / 理财 / 现金 四大类，不细到 asset_type 行业标签。
+// 市值、权重、偏离、建议金额全部由 GET /api/rebalance 在服务端算好，
+// 前端只负责呈现 + 勾选 + 记录，避免两边各算一套导致数字对不上。
+// 注：RB_CLASS_LABEL / RB_CLASS_COLOR / rbData / rbPicked / rbHistoryLogs
+// 已在文件顶部 VIEWS 之后声明（那里必须早于同步执行的 applyRoute()）。
+// 动作文案按类别区分：理财在实务里叫「赎回/申购」，现金叫「转出/补入」，
+// 只有股票/基金才说「卖出/买入」。后端只给 sell|buy 语义，措辞在前端落地。
+function rbActionLabel(key, action) {
+  if (action === 'none') return '—';
+  if (key === 'cash') return action === 'sell' ? '转出' : '补入';
+  if (key === 'wealth') return action === 'sell' ? '赎回' : '申购';
+  return action === 'sell' ? '卖出' : '买入';
+}
+
+async function showRebalanceView() {
+  const v = document.getElementById('rebalanceView');
+  if (v) v.hidden = false; // hideAllViews 后必须显式恢复，否则页面空白
+  await loadRebalance();
+}
+
+async function loadRebalance() {
+  const bars = document.getElementById('rbBars');
+  if (bars && !rbData) bars.innerHTML = '<div class="rb-act-empty">计算中…</div>';
+  try {
+    const r = await api('/api/rebalance');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    rbData = await r.json();
+    // 默认勾选全部偏离项，用户可逐项取消（记录时只存勾选的）
+    rbPicked = new Set((rbData.buckets || []).filter((b) => b.action !== 'none').map((b) => b.key));
+    renderRebalance();
+    loadRbHistory();
+  } catch (e) {
+    if (bars) bars.innerHTML = '<div class="rb-act-empty">再平衡计算失败：' + esc(e.message) + '</div>';
+  }
+}
+
+// —— 再平衡页渲染（2026-10-27 v2：叠加收益维度）——
+// 收益三个口径全部由服务端算好（GET /api/rebalance 的 returns 对象），前端只负责呈现。
+// 这里不重新计算，避免两边算法漂移导致 KPI 与表格对不上。
+const rbYuan = (v) => (Number(v) < 0 ? '−¥' : '¥') + Math.abs(Math.round(Number(v) || 0)).toLocaleString('en-US');
+const rbSignedYuan = (v) => {
+  const n = Math.round(Number(v) || 0);
+  if (n === 0) return '¥0';
+  return (n < 0 ? '−¥' : '+¥') + Math.abs(n).toLocaleString('en-US');
+};
+const rbFixed = (v, d = 2) => (Number(v) || 0).toFixed(d);
+const rbPP = (v, d = 2) => {
+  const n = Number(v) || 0;
+  return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(d) + 'pp';
+};
+
+function renderRebalance() {
+  if (!rbData) return;
+  renderRbKpi();
+  renderRbInsight();
+  renderRbBars();
+  renderRbDrift();
+  renderRbActions();
+  const up = document.getElementById('rbUpdated');
+  if (up) {
+    const cfg = rbData.config || {};
+    const days = Number(rbData.days_since);
+    const interval = Number(rbData.interval_days) || 0;
+    // caption 一行承载三件事：目标何时保存、距上次多久、是否超期。
+    // 文案要短：这一行与右侧两个按钮抢宽度，过长会被压到裁切。
+    let txt = cfg.updated_at
+      ? '目标更新于 ' + String(cfg.updated_at).slice(0, 10)
+      : '默认目标 · 未按偏好调整';
+    let overdue = false;
+    if (days >= 0) {
+      txt += ' · 距上次 ' + days + ' 天';
+      if (interval > 0 && days > interval) {
+        txt += '（超期 ' + (days - interval) + ' 天）';
+        overdue = true;
+      }
+    } else {
+      txt += ' · 尚无再平衡记录';
+    }
+    up.textContent = txt;
+    up.classList.toggle('is-overdue', overdue);
+    up.title = overdue
+      ? `已超过建议间隔 ${interval} 天，建议尽快复查配置`
+      : cfg.updated_at
+        ? '目标权重最后保存于 ' + String(cfg.updated_at)
+        : '当前使用内置默认目标（股票 15 / 基金 30 / 理财 40 / 现金 15），点右上角「配置」按自己的偏好调整';
+  }
+}
+
+function renderRbKpi() {
+  const grid = document.getElementById('rbKpiBody');
+  if (!grid) return;
+  const buckets = rbData.buckets || [];
+  const rt = rbData.returns || {};
+  const total = Number(rbData.total_cny) || 0;
+  const md = rbData.max_drift;
+  const pending = buckets.filter((b) => b.action !== 'none');
+  const need = Number(rbData.need_cny) || 0;
+
+  // 现金是子账户（数量多且意义弱），副标题只列持仓/理财件数
+  const countText = buckets.filter((b) => b.key !== 'cash' && b.count > 0)
+    .map((b) => `${b.label} ${b.count}`).join(' · ') || '暂无在持资产';
+
+  // 目标年化收益卡的副行：设了收益目标就优先报「还差多少」，否则报目标 / 当前收益率对比。
+  // 只留一行 —— 多一行会让这张卡比其他四张高，破坏 KPI 行等高。
+  let tgtSub;
+  const goalPct = rt.goal_pct;
+  if (goalPct == null) {
+    tgtSub = `目标 <b>${rbFixed(rt.ret_target)}%</b> · 当前 ${rbFixed(rt.ret_actual)}%`;
+  } else {
+    const gap = Number(rt.gap_amt) || 0;
+    tgtSub = gap > 0
+      ? `你的目标 ${rbFixed(goalPct, 1)}% · 还差 <b>${rbYuan(gap)}</b>`
+      : `你的目标 ${rbFixed(goalPct, 1)}% · 超出 <b>${rbYuan(-gap)}</b>`;
+  }
+
+  const ex = Number(rt.excess_pct) || 0;
+  const exDir = Math.abs(ex) < 0.05 ? '贴合目标' : (ex < 0 ? '比目标保守' : '比目标激进');
+  const maxText = md ? (md.drift > 0 ? '+' : '−') + Math.abs(Number(md.drift)).toFixed(1) + '%' : '—';
+  const maxSub = md ? `${md.label} · ${md.drift > 0 ? '超配' : '低配'}` : '各类均在目标区间';
+
+  grid.innerHTML = `
+    <div class="kpi-card density-standard">
+      <div class="kpi-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 6.6v10.8"/><path d="M8.4 9.6h7.2M8.4 14.4h7.2"/></svg></div>
+      <div class="kpi-label">组合总市值</div>
+      <div class="kpi-main"><div class="kpi-value">${total > 0 ? moneyCurW(total, 'cny') : '—'}</div></div>
+      <div class="kpi-sub">${esc(countText)}</div>
+    </div>
+    <div class="kpi-card density-standard" title="按「目标权重 × 各类预期年化」加权得出的年化收益；是配置层期望值，不是预测">
+      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 6-7"/><path d="M14 8h4v4"/></svg></div>
+      <div class="kpi-label">目标年化收益</div>
+      <div class="kpi-main"><div class="kpi-value">${rbYuan(rt.tgt_amt)}<span class="kpi-unit">/年</span></div></div>
+      <div class="kpi-sub">${tgtSub}</div>
+    </div>
+    <div class="kpi-card density-standard" title="超额收益率 = 当前配置加权年化 − 目标配置加权年化。负=比目标保守（少赚），正=比目标激进（多赚但风险更高）">
+      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M4 12h6"/><path d="M14 12h6"/><circle cx="12" cy="12" r="2.4"/></svg></div>
+      <div class="kpi-label">超额收益率</div>
+      <div class="kpi-main"><div class="kpi-value">${rbPP(ex)}</div></div>
+      <div class="kpi-sub">${rbSignedYuan(rt.excess_amt)}/年 · ${exDir}</div>
+    </div>
+    <div class="kpi-card density-standard">
+      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 3.6 21 20H3Z"/><path d="M12 9.4v4.2"/><path d="M12 16.6h.01"/></svg></div>
+      <div class="kpi-label">最大偏离</div>
+      <div class="kpi-main"><div class="kpi-value">${maxText}</div></div>
+      <div class="kpi-sub">${esc(maxSub)}</div>
+    </div>
+    <div class="kpi-card density-standard">
+      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M4 7h11"/><path d="M18 7h2"/><path d="M4 12h5"/><path d="M12 12h8"/><path d="M4 17h9"/><path d="M16 17h4"/></svg></div>
+      <div class="kpi-label">待调整金额</div>
+      <div class="kpi-main"><div class="kpi-value">${rbYuan(need)}</div></div>
+      <div class="kpi-sub">${pending.length ? pending.length + ' 类超阈值 · 买卖两侧等额' : '无需调仓'}</div>
+    </div>`;
+}
+
+// 收益结论条：把「偏保守还是偏激进 / 差多少钱 / 主因是哪类 / 执行后怎么变」压成一句话。
+// 这是整页最该被读到的结论 —— 比 KPI 数字更能回答「这次要不要动」。
+function renderRbInsight() {
+  const box = document.getElementById('rbInsight');
+  if (!box) return;
+  const buckets = rbData.buckets || [];
+  const rt = rbData.returns || {};
+  const total = Number(rbData.total_cny) || 0;
+  if (!buckets.length || !(total > 0)) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  const ex = Number(rt.excess_pct) || 0;
+  const top = buckets.slice().sort((a, b) => Math.abs(b.contrib) - Math.abs(a.contrib))[0];
+  const topWord = top ? (top.drift > 0 ? '超配' : '低配') : '';
+  const icoCheck = '<svg class="rb-insight-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  const icoUp = '<svg class="rb-insight-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l5-5 4 3 6-7"/><path d="M14 8h4v4"/></svg>';
+  const icoWarn = '<svg class="rb-insight-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>';
+
+  if (Math.abs(ex) < 0.05) {
+    box.className = 'rb-insight';
+    box.innerHTML = icoCheck + `<div>当前配置与目标基本一致：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>（<b>${rbYuan(rt.cur_amt)}</b>/年），超额收益率 <b>${rbPP(ex)}</b>。按纪律定期复查即可，不必为收益调仓。</div>`;
+    box.hidden = false;
+    return;
+  }
+  if (ex < 0) {
+    box.className = 'rb-insight';
+    box.innerHTML = icoUp + `<div>当前配置比目标<b>保守 ${Math.abs(ex).toFixed(2)}pp</b>：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>，低于目标配置的 <b>${rbFixed(rt.ret_target)}%</b>，一年少 <b>${rbYuan(-rt.excess_amt)}</b>。
+      主因是 <b>${esc(top.label)}${topWord}</b>（${rbSignedYuan(top.contrib)}）。执行建议后收益补齐到 <b>${rbFixed(rt.ret_target)}%</b>，代价是波动敞口由 <b>${rbFixed(rt.vol_actual, 1)}%</b> 升至 <b>${rbFixed(rt.vol_target, 1)}%</b>。</div>`;
+    box.hidden = false;
+    return;
+  }
+  box.className = 'rb-insight is-warn';
+  box.innerHTML = icoWarn + `<div>当前配置比目标<b>激进 ${ex.toFixed(2)}pp</b>：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>，高于目标配置 <b>${rbFixed(rt.ret_target)}%</b>，一年多 <b>${rbYuan(rt.excess_amt)}</b>。
+    这部分超额来自 <b>${esc(top.label)}${topWord}</b>（${rbSignedYuan(top.contrib)}）的权重漂移，不是选股能力。执行再平衡意味着<b>主动让出这部分收益</b>，把波动敞口从 <b>${rbFixed(rt.vol_actual, 1)}%</b> 降回 <b>${rbFixed(rt.vol_target, 1)}%</b>。</div>`;
+  box.hidden = false;
+}
+
+function renderRbBars() {
+  const box = document.getElementById('rbBars');
+  if (!box) return;
+  const buckets = rbData.buckets || [];
+  const rt = rbData.returns || {};
+  const total = Number(rbData.total_cny) || 0;
+  if (!buckets.length || !(total > 0)) {
+    box.innerHTML = '<div class="rb-act-empty">暂无资产数据</div>';
+    const gap = document.getElementById('rbRetGap');
+    if (gap) gap.textContent = '';
+    return;
+  }
+  // 横轴按最大占比归一（至少 50%），保证小占比类别也看得出条长差异
+  const scale = Math.max(50, ...buckets.map((b) => Math.max(Number(b.weight) || 0, Number(b.target) || 0)));
+  box.innerHTML = buckets.map((b) => {
+    const w = Math.max(0, Math.min(100, (Number(b.weight) || 0) / scale * 100));
+    const t = Math.max(0, Math.min(100, (Number(b.target) || 0) / scale * 100));
+    return `<div class="rb-bar-row">
+      <div class="rb-bar-label"><span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[b.key]}"></span>${esc(b.label)}</div>
+      <div class="rb-bar-track" title="实际 ${rbFixed(b.weight, 1)}% · 目标 ${b.target}%">
+        <div class="rb-bar-fill" style="--rb-w:${w}%;--rb-c:${RB_CLASS_COLOR[b.key]}"></div>
+        <div class="rb-bar-marker" style="--rb-t:${t}%"></div>
+      </div>
+      <div class="rb-bar-vals"><b>${rbFixed(b.weight, 1)}%</b><span>/ ${b.target}%</span></div>
+    </div>`;
+  }).join('');
+
+  // 收益双条：同一刻度下比长短；实心=现在在哪，虚线框=应该到哪
+  const rCur = Number(rt.ret_actual) || 0;
+  const rTgt = Number(rt.ret_target) || 0;
+  const rmax = Math.max(rCur, rTgt, 0.1) * 1.18;
+  const elCur = document.getElementById('rbRetCur');
+  const elTgt = document.getElementById('rbRetTgt');
+  if (elCur) elCur.style.setProperty('--rb-rw', (Math.max(0, rCur) / rmax * 100) + '%');
+  if (elTgt) elTgt.style.setProperty('--rb-rw', (Math.max(0, rTgt) / rmax * 100) + '%');
+  const vCur = document.getElementById('rbRetCurV');
+  const vTgt = document.getElementById('rbRetTgtV');
+  if (vCur) vCur.textContent = rbFixed(rCur) + '%';
+  if (vTgt) vTgt.textContent = rbFixed(rTgt) + '%';
+
+  const gap = document.getElementById('rbRetGap');
+  if (gap) {
+    const ex = Number(rt.excess_pct) || 0;
+    gap.innerHTML = `差额 <b class="${ex < -0.05 ? 'is-cons' : ex > 0.05 ? 'is-aggr' : ''}">${rbPP(ex)}</b>` +
+      ` · 折合 <b>${rbSignedYuan(rt.excess_amt)}</b>/年` +
+      ` · 波动敞口 ${rbFixed(rt.vol_actual, 1)}% vs 目标 ${rbFixed(rt.vol_target, 1)}%`;
+  }
+}
+
+function renderRbDrift() {
+  const body = document.getElementById('rbDriftBody');
+  const foot = document.getElementById('rbDriftFoot');
+  if (!body) return;
+  const buckets = rbData.buckets || [];
+  const rt = rbData.returns || {};
+  body.innerHTML = buckets.map((b) => {
+    const d = Number(b.drift) || 0;
+    const none = b.action === 'none';
+    const cls = none ? 'ok' : (d > 0 ? 'over' : 'under');
+    const actText = rbActionLabel(b.key, b.action);
+    return `<tr>
+      <td><span class="rb-cat"><span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[b.key]}"></span>${esc(b.label)}</span></td>
+      <td class="num">${b.target}%</td>
+      <td class="num">${rbFixed(b.weight, 1)}%</td>
+      <td class="num"><span class="rb-drift ${cls}">${none ? '容差内' : (d > 0 ? '+' : '−') + Math.abs(d).toFixed(1) + '%'}</span></td>
+      <td class="num">${rbFixed(b.exp, 1)}%</td>
+      <td class="num rb-imp">${rbSignedYuan(b.contrib)}</td>
+      <td class="num"><span class="rb-act ${b.action}">${actText}${none ? '' : ' ' + rbYuan(Math.abs(b.amount))}</span></td>
+    </tr>`;
+  }).join('');
+
+  if (foot) {
+    // 表尾把「收益影响」收口：四类相加恒等于组合超额收益，用户可逐行加总验算
+    const sumW = buckets.reduce((a, b) => a + (Number(b.weight) || 0), 0);
+    foot.innerHTML = `<tr>
+      <td>合计</td>
+      <td class="num">100%</td>
+      <td class="num">${rbFixed(sumW, 1)}%</td>
+      <td class="num">—</td>
+      <td class="num">加权 ${rbFixed(rt.ret_target)}%</td>
+      <td class="num rb-imp">${rbSignedYuan(rt.excess_amt)}</td>
+      <td class="num">—</td>
+    </tr>`;
+  }
+
+  const note = document.getElementById('rbNote');
+  if (note) {
+    const cfg = rbData.config || {};
+    const pend = buckets.filter((b) => b.action !== 'none');
+    const thr = cfg.drift_alert != null ? cfg.drift_alert : 1;
+    // 日常开销账户被剔除时必须写出来 —— 否则用户对比资产页会发现「现金少了一截」以为算漏了
+    const exclN = Number(rbData.cash_excluded_n) || 0;
+    const exclTxt = exclN
+      ? `其中 ${exclN} 个「日常开销」子账户（${rbYuan(Number(rbData.cash_excluded_amt) || 0)}）已剔除，既不计入现金类也不计入总市值。`
+      : '';
+    note.textContent = (pend.length
+      ? `共 ${pend.length} 类偏离超过 ${thr}pp；买卖金额天然配平（合计为 0）。`
+      : `四类均在 ${thr}pp 容差内，本期无需调仓。`) + exclTxt +
+      `「收益影响」= 该类偏离 × 总市值 × 该类年化，四类相加等于组合超额收益 ${rbSignedYuan(rt.excess_amt)}/年。` +
+      `年化为假设值，不是承诺收益；波动率为简单加权（未计相关性），仅作方向参考。`;
+  }
+}
+
+function renderRbActions() {
+  const box = document.getElementById('rbActions');
+  if (!box) return;
+  const rt = rbData.returns || {};
+  const pend = (rbData.buckets || []).filter((b) => b.action !== 'none');
+  const btn = document.getElementById('rbLogBtn');
+  const hint = document.getElementById('rbListHint');
+  if (!pend.length) {
+    box.innerHTML = '<div class="rb-act-empty">本期无需调整 —— 四类都在目标区间内。</div>';
+    if (hint) hint.textContent = '';
+    if (btn) btn.disabled = true;
+    return;
+  }
+  if (btn) btn.disabled = false;
+  if (hint) {
+    // 先说「要动多少钱」，再说「动完收益怎么变」—— 这是用户决策的两个关键数
+    const from = rbFixed(rt.ret_actual);
+    const to = rbFixed(rt.ret_target);
+    hint.textContent = `合计 ${rbYuan(Number(rbData.need_cny) || 0)} 需换手 · 执行后预期年化 ${from}% → ${to}%`;
+  }
+  box.innerHTML = pend.map((b) => {
+    const on = rbPicked.has(b.key);
+    return `<label class="rb-act-row${on ? '' : ' off'}">
+      <input type="checkbox" data-key="${b.key}"${on ? ' checked' : ''}>
+      <span class="rb-act-name"><span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[b.key]}"></span>${esc(b.label)}</span>
+      <span class="rb-act ${b.action}">${rbActionLabel(b.key, b.action)}</span>
+      <span class="rb-act-amt">${rbYuan(Math.abs(b.amount))}</span>
+    </label>`;
+  }).join('');
+  box.querySelectorAll('input[data-key]').forEach((el) => {
+    el.onchange = () => {
+      const k = el.dataset.key;
+      if (el.checked) rbPicked.add(k); else rbPicked.delete(k);
+      const row = el.closest('.rb-act-row');
+      if (row) row.classList.toggle('off', !el.checked);
+      const lb = document.getElementById('rbLogBtn');
+      if (lb) lb.disabled = rbPicked.size === 0;
+    };
+  });
+}
+
+async function loadRbHistory() {
+  try {
+    const r = await api('/api/rebalance/history?limit=12');
+    if (!r.ok) return;
+    const d = await r.json();
+    rbHistoryLogs = d.logs || [];
+    renderRbHistory();
+  } catch (_) { /* 历史失败不影响主计算 */ }
+}
+
+function renderRbHistory() {
+  const box = document.getElementById('rbHistory');
+  if (!box) return;
+  if (!rbHistoryLogs.length) {
+    box.innerHTML = '<div class="rb-hist-empty">还没有记录。调整后点右上角「记录」，之后这里会留下每次的配置快照与当时的收益假设。</div>';
+    return;
+  }
+  box.innerHTML = '<div class="rb-hist-list">' + rbHistoryLogs.map((l) => {
+    const mix = (l.actual || []).map((a) => `${RB_CLASS_LABEL[a.key] || a.key} ${Number(a.pct).toFixed(0)}%`).join(' · ');
+    const md = Number(l.max_drift) || 0;
+    // 收益率列 = 当时实际 / 当时目标。两者都来自落库快照，不会因为今天改了假设而变形。
+    const rtA = Number(l.ret_actual) || 0;
+    const rtT = Number(l.ret_target) || 0;
+    const hasRet = rtA !== 0 || rtT !== 0;
+    return `<div class="rb-hist-row">
+      <span class="rb-hist-date">${esc(l.date)}</span>
+      <span class="rb-hist-mix"><span>${esc(mix)}</span></span>
+      <span class="rb-hist-total">${moneyCurW(l.total_cny, 'cny')}</span>
+      <span class="rb-hist-ret">${hasRet ? `<b>${rbFixed(rtA)}%</b> / ${rbFixed(rtT)}%` : '—'}</span>
+      <span class="rb-hist-drift">${(md > 0 ? '+' : md < 0 ? '−' : '') + Math.abs(md).toFixed(1)}%</span>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+// —— 目标配置与收益假设弹框 ——
+// 每类三个参数：目标权重 / 预期年化 / 预期波动。三者都只是「假设」，改完立刻在下方试算，
+// 不必保存就能看到「目标收益率会变成多少」—— 避免用户在弹框里盲填。
+// 与服务端 defaultRebalanceConfig / rbDefaultExp / rbDefaultVol 保持一致，改动时两处同步。
+const RB_DEFAULT = {
+  pct: { stock: 15, fund: 30, wealth: 40, cash: 15 },
+  exp: { stock: 8, fund: 6, wealth: 2.8, cash: 1.2 },
+  vol: { stock: 22, fund: 16, wealth: 2, cash: 0.6 },
+};
+// 预设只改权重，收益/波动假设沿用当前值（假设是对资产类别的判断，不该被配置风格覆盖）
+const RB_PRESETS = {
+  cons: { stock: 10, fund: 20, wealth: 60, cash: 10 },
+  bal: { stock: 15, fund: 30, wealth: 40, cash: 15 },
+  aggr: { stock: 30, fund: 40, wealth: 25, cash: 5 },
+};
+
+function rbSetInputs() {
+  return Array.from(document.querySelectorAll('#rbTgtInputs input[data-f]'));
+}
+
+// 从弹框读出一份完整配置（targets 数组按 RB_CLASS_LABEL 顺序）
+function rbReadCfg() {
+  const o = { pct: {}, exp: {}, vol: {} };
+  rbSetInputs().forEach((el) => {
+    const f = el.dataset.f;
+    const k = el.dataset.k;
+    const raw = el.value === '' ? 0 : Number(el.value);
+    o[f][k] = Number.isFinite(raw) ? raw : 0;
+  });
+  const freq = (document.getElementById('rbFreqSel') || {}).value || 'monthly';
+  const thrRaw = Number((document.getElementById('rbDriftThr') || {}).value);
+  const goalRaw = (document.getElementById('rbGoalPct') || {}).value;
+  const goal = goalRaw === '' || goalRaw == null ? null : Number(goalRaw);
+  return {
+    targets: Object.keys(RB_CLASS_LABEL).map((k) => ({
+      key: k,
+      pct: Math.max(0, Math.min(100, o.pct[k] || 0)),
+      exp: Math.max(0, Math.min(50, o.exp[k] || 0)),
+      vol: Math.max(0, Math.min(80, o.vol[k] || 0)),
+    })),
+    freq,
+    drift_alert: Number.isFinite(thrRaw) && thrRaw > 0 ? thrRaw : 1,
+    goal_pct: goal != null && Number.isFinite(goal) && goal > 0 ? goal : null,
+  };
+}
+
+// 弹框内联动：合计校验 + 试算预览 + 预设高亮
+function rbSyncSetForm() {
+  const cfg = rbReadCfg();
+  const sum = cfg.targets.reduce((a, t) => a + t.pct, 0);
+  const sumEl = document.getElementById('rbTgtSum');
+  if (sumEl) {
+    sumEl.textContent = (Math.round(sum * 100) / 100) + '%';
+    sumEl.className = Math.abs(sum - 100) < 0.01 ? 'ok' : 'bad';
+  }
+  const save = document.getElementById('rbSetSave');
+  if (save) save.disabled = Math.abs(sum - 100) > 0.01;
+
+  // 试算：用实际权重（来自 rbData.buckets）套用弹框里的假设，保存前就能看到收益变化
+  const buckets = (rbData && rbData.buckets) || [];
+  const total = Number(rbData && rbData.total_cny) || 0;
+  const byKey = {};
+  cfg.targets.forEach((t) => { byKey[t.key] = t; });
+  let retT = 0, volT = 0, retA = 0, volA = 0;
+  cfg.targets.forEach((t) => {
+    retT += t.pct / 100 * t.exp;
+    volT += t.pct / 100 * t.vol;
+  });
+  buckets.forEach((b) => {
+    const t = byKey[b.key];
+    if (!t) return;
+    retA += (Number(b.weight) || 0) / 100 * t.exp;
+    volA += (Number(b.weight) || 0) / 100 * t.vol;
+  });
+  const pv = document.getElementById('rbPreview');
+  if (pv) {
+    pv.innerHTML = `
+      <div class="rb-pv-box">
+        <div class="rb-pv-k">目标配置预期年化</div>
+        <div class="rb-pv-v">${rbFixed(retT)}%</div>
+        <div class="rb-pv-s">${rbYuan(total * retT / 100)}/年 · 波动 ${rbFixed(volT, 1)}%</div>
+      </div>
+      <div class="rb-pv-box">
+        <div class="rb-pv-k">当前配置预期年化</div>
+        <div class="rb-pv-v">${rbFixed(retA)}%</div>
+        <div class="rb-pv-s">${rbYuan(total * retA / 100)}/年 · 波动 ${rbFixed(volA, 1)}%</div>
+      </div>`;
+  }
+  const goalAmt = document.getElementById('rbGoalAmt');
+  if (goalAmt) {
+    goalAmt.textContent = cfg.goal_pct == null
+      ? '留空则只看配置内生的预期收益'
+      : '≈ ' + rbYuan(total * cfg.goal_pct / 100) + '/年';
+  }
+  // 预设高亮：权重完全命中某个预设才点亮
+  document.querySelectorAll('#rbPresets .rb-chip').forEach((c) => {
+    const p = RB_PRESETS[c.dataset.preset];
+    const hit = p && Object.keys(p).every((k) => Math.abs((byKey[k] ? byKey[k].pct : -1) - p[k]) < 0.01);
+    c.classList.toggle('is-on', !!hit);
+  });
+}
+
+function openRbSettings() {
+  if (!rbData) return;
+  const box = document.getElementById('rbTgtInputs');
+  if (!box) return;
+  const cfg = rbData.config || {};
+  const cur = {};
+  ((cfg.targets) || []).forEach((t) => {
+    cur[t.key] = { pct: Number(t.pct) || 0, exp: Number(t.exp) || 0, vol: Number(t.vol) || 0 };
+  });
+  const keys = Object.keys(RB_CLASS_LABEL);
+  box.innerHTML = `
+    <div class="rb-pgrid-h">类别</div>
+    <div class="rb-pgrid-h">权重</div>
+    <div class="rb-pgrid-h">年化</div>
+    <div class="rb-pgrid-h">波动</div>` +
+    keys.map((k) => {
+      const c = cur[k] || { pct: 0, exp: 0, vol: 0 };
+      return `
+      <div class="rb-pgrid-name"><span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[k]}"></span>${RB_CLASS_LABEL[k]}</div>
+      <input type="number" min="0" max="100" step="1" data-f="pct" data-k="${k}" value="${c.pct}" aria-label="${RB_CLASS_LABEL[k]} 目标权重">
+      <input type="number" min="0" max="50" step="0.1" data-f="exp" data-k="${k}" value="${c.exp}" aria-label="${RB_CLASS_LABEL[k]} 预期年化">
+      <input type="number" min="0" max="80" step="0.1" data-f="vol" data-k="${k}" value="${c.vol}" aria-label="${RB_CLASS_LABEL[k]} 预期波动">`;
+    }).join('');
+  rbSetInputs().forEach((el) => { el.oninput = rbSyncSetForm; });
+
+  const f = document.getElementById('rbFreqSel');
+  if (f) f.value = cfg.freq || 'monthly';
+  const th = document.getElementById('rbDriftThr');
+  if (th) th.value = cfg.drift_alert != null ? cfg.drift_alert : 1;
+  const g = document.getElementById('rbGoalPct');
+  if (g) g.value = cfg.goal_pct == null ? '' : cfg.goal_pct;
+  rbSyncSetForm();
+  document.getElementById('rbSettingsModal').hidden = false;
+}
+
+async function saveRbSettings() {
+  const cfg = rbReadCfg();
+  const sum = cfg.targets.reduce((a, t) => a + t.pct, 0);
+  if (Math.abs(sum - 100) > 0.01) {
+    toast('目标权重合计必须为 100%（当前 ' + (Math.round(sum * 100) / 100) + '%）', 'err');
+    return;
+  }
+  try {
+    const r = await api('/api/settings/rebalance_targets', {
+      method: 'PUT',
+      body: JSON.stringify({ payload: cfg }),
+    });
+    if (!r.ok) {
+      let m = '保存失败';
+      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
+      toast(m, 'err');
+      return;
+    }
+    document.getElementById('rbSettingsModal').hidden = true;
+    toast('目标与收益假设已保存', 'ok');
+    rbData = null;
+    await loadRebalance();
+  } catch (e) { toast('保存失败：' + e.message, 'err'); }
+}
+
+async function submitRbLog() {
+  if (!rbData) return;
+  const pend = (rbData.buckets || []).filter((b) => b.action !== 'none');
+  const picked = pend.filter((b) => rbPicked.has(b.key));
+  if (!picked.length) { toast('请至少勾选一项调整', 'err'); return; }
+  const btn = document.getElementById('rbLogBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '记录中…'; }
+  try {
+    const r = await api('/api/rebalance/log', {
+      method: 'POST',
+      body: JSON.stringify({ actions: picked.map((b) => ({ key: b.key })) }),
+    });
+    if (!r.ok) {
+      let m = '记录失败';
+      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
+      toast(m, 'err');
+      return;
+    }
+    toast('已记录本次再平衡', 'ok');
+    await loadRebalance();
+  } catch (e) {
+    toast('记录失败：' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '记录'; }
+  }
+}
+
+(function bindRebalanceUI() {
+  const s = document.getElementById('rbSettingsBtn');
+  if (s) s.onclick = openRbSettings;
+  const l = document.getElementById('rbLogBtn');
+  if (l) l.onclick = submitRbLog;
+  const close = () => { const m = document.getElementById('rbSettingsModal'); if (m) m.hidden = true; };
+  ['rbSetClose', 'rbSetCancel'].forEach((id) => { const b = document.getElementById(id); if (b) b.onclick = close; });
+  const sv = document.getElementById('rbSetSave');
+  if (sv) sv.onclick = saveRbSettings;
+  const rs = document.getElementById('rbSetReset');
+  if (rs) rs.onclick = () => {
+    // 恢复默认：三类参数一起回默认（只重置权重会让「默认权重 + 上次的假设」变成四不像）
+    rbSetInputs().forEach((el) => {
+      const k = el.dataset.k;
+      const f = el.dataset.f;
+      el.value = RB_DEFAULT[f] && RB_DEFAULT[f][k] != null ? RB_DEFAULT[f][k] : 0;
+    });
+    const th = document.getElementById('rbDriftThr');
+    if (th) th.value = 1;
+    const g = document.getElementById('rbGoalPct');
+    if (g) g.value = '';
+    rbSyncSetForm();
+  };
+  // 预设：只改权重，不动收益假设
+  document.querySelectorAll('#rbPresets .rb-chip').forEach((c) => {
+    c.onclick = () => {
+      const p = RB_PRESETS[c.dataset.preset];
+      if (!p) return;
+      rbSetInputs().forEach((el) => {
+        if (el.dataset.f !== 'pct') return;
+        if (p[el.dataset.k] != null) el.value = p[el.dataset.k];
+      });
+      rbSyncSetForm();
+    };
+  });
+  ['rbGoalPct', 'rbDriftThr'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.oninput = rbSyncSetForm;
+  });
+  const fq = document.getElementById('rbFreqSel');
+  if (fq) fq.onchange = rbSyncSetForm;
 })();

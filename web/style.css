@@ -2865,6 +2865,15 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .atbl tr.shead td { padding: 8px 12px 4px; background: rgba(var(--tint), .028); }
 .atbl tr.shead .sl { font-size: var(--fs-2xs); color: var(--text-faint); letter-spacing: .6px; }
 .atbl .sn { font-size: var(--fs-sm); color: var(--text-muted); padding-left: 32px; }
+/* 「日常」徽标：标记不参与再平衡的日常开销子账户。用中性灰底而非语义色 ——
+   它不是风险/收益信号，只是口径提示，给颜色反而会喧宾夺主。 */
+.atbl .sn-excl {
+  margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: 3px;
+  font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .2px;
+  /* 用 text-muted 而非 text-faint：#64748b 在 10px 下对比度只有 3.4:1，标记会糊成一片；
+     chip 形态 + 底纹已足以把它降级为辅助信息，不必再压暗。 */
+  color: var(--text-muted); background: var(--bg-soft); white-space: nowrap;
+}
 .atbl tr.srow td.num { font-size: var(--fs-sm); font-weight: 500; color: var(--text-muted); }
 .atbl tr.srow td.num.neg { color: rgb(var(--down-rgb)); }
 .atbl .sub-empty { padding: 8px 12px 8px 32px; font-size: var(--fs-sm); color: var(--text-faint); }
@@ -5832,8 +5841,9 @@ textarea::placeholder {
 .user-clear { display: flex; justify-content: flex-end; }
 
 
-/* 首页 / 资产 / 投资 / 设置 / 财务：统一占满可用宽度（2026-10-23 起与财务页一致，超宽屏不再 1920 收边） */
-#homeView, #assetView, #holdingsView, #settingsView, #financeView {
+/* 首页 / 资产 / 投资 / 设置 / 财务 / 再平衡：统一占满可用宽度（2026-10-23 起与财务页一致，超宽屏不再 1920 收边）
+   页级 padding 也在这里统一，漏加会让该页卡片顶到屏幕边缘、顶部紧贴顶栏（2026-10-27 再平衡页踩过） */
+#homeView, #assetView, #holdingsView, #settingsView, #financeView, #rebalanceView {
   max-width: none;
   margin: 0 auto;
   padding: var(--sp-4) var(--sp-5) var(--sp-8);
@@ -6344,7 +6354,8 @@ textarea::placeholder {
 #app:has(#holdingsView:not([hidden])),
 #app:has(#assetView:not([hidden])),
 #app:has(#settingsView:not([hidden])),
-#app:has(#financeView:not([hidden])) { max-width: none; }
+#app:has(#financeView:not([hidden])),
+#app:has(#rebalanceView:not([hidden])) { max-width: none; }
 #finHeatmap[hidden] { display: none !important; }
 
 @media (max-width: 880px) {
@@ -6511,3 +6522,254 @@ textarea::placeholder {
 .fincat-add { display: flex; gap: var(--sp-2); align-items: center; margin-bottom: var(--sp-3); }
 .fincat-add input { flex: 1 1 auto; min-width: 0; width: 100%; }
 #settingsView .fincat-add select { flex: 0 0 auto; width: auto; min-width: 0; }
+
+/* ===== 再平衡页（2026-10-27）=====
+   口径：股票 / 基金 / 理财 / 现金 四大类，沿用 --cat-* 既有分类色（与资产构成卡同源，
+   跨页看到同一类别永远是同一个色）。布局参考财务页：KPI 段 + 主卡两栏 + 列表卡。 */
+/* display 必须挂在 :not([hidden]) 上：无条件写 #rebalanceView{display:flex} 会以 ID 特异性
+   压掉 UA 的 [hidden]{display:none}，导致该页在任何路由下都永久显示（2026-10-27 踩过）。
+   其余属性（方向/间距）保持无条件，不影响显隐。 */
+#rebalanceView { flex-direction: column; gap: var(--sp-5); }
+#rebalanceView:not([hidden]) { display: flex; }
+.rb-head-actions { display: flex; align-items: center; gap: var(--sp-2); }
+.rb-updated { flex: 0 0 auto; white-space: nowrap; font-size: var(--fs-xs); color: var(--text-muted); margin-right: var(--sp-1); }
+.rb-head-actions .btn { flex: 0 0 auto; }
+/* 「配置」按钮走右上角操作区同款芯片（透明边 + primary-soft 底 + 无阴影），
+   与纯 .btn（白 6% 底 + 白 8% 边）不是一套体系；并排主 CTA 时只保留一个实心。
+   内联 svg 不吃 .btn 的 gap（再叠 margin-right 会拉出 9px 空隙），统一交给 gap 控制。 */
+.rb-head-actions .btn.rb-cfg {
+  border-color: transparent;
+  border-radius: var(--btn-radius);
+  background: var(--primary-soft);
+  color: var(--primary);
+  box-shadow: none;
+}
+.rb-head-actions .btn.rb-cfg:hover {
+  border-color: transparent;
+  background: rgba(var(--tint), .22);
+  color: var(--primary-hover);
+}
+.rb-head-actions .btn.rb-cfg > svg { flex: 0 0 auto; }
+
+/* .card 全局是 flex row + align-items:center，本页三张卡都是「标题行 + 内容」的竖排结构，
+   必须显式改 column + stretch，否则标题会被挤到左侧竖排、内容只占一半宽 */
+.rb-main-card, .rb-list-card, .rb-hist-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--sp-4) var(--sp-5);
+}
+.rb-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: var(--sp-5); align-items: stretch; }
+.rb-col { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.rb-sub-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-1); }
+.rb-sub-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.rb-sub-hint { font-size: var(--fs-xs); color: var(--text-muted); }
+
+/* —— 目标 vs 实际：每类一行「标签 + 轨道（实际条 + 目标刻度线） + 数值」 —— */
+.rb-bars { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-between; gap: var(--sp-3); }
+.rb-bar-row { min-height: 30px; display: grid; grid-template-columns: 62px minmax(0, 1fr) 96px; align-items: center; gap: var(--sp-2); }
+.rb-bar-label { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-secondary); }
+/* 类别色与几何值都由 JS 以自定义属性注入（app.js 内联样式只允许 --x: v 形式），CSS 侧兜底 */
+.rb-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--rb-c, var(--text-faint)); }
+.rb-bar-track { position: relative; height: 12px; border-radius: 2px; background: var(--bg-soft); overflow: visible; }
+.rb-bar-fill { width: var(--rb-w, 0%); height: 100%; border-radius: 2px; background: var(--rb-c, var(--primary)); transition: width .3s ease; }
+/* 目标刻度：细竖线，位置由 JS 用 --rb-t 注入；条长于线=超配，短于线=低配 */
+.rb-bar-marker { position: absolute; top: -3px; bottom: -3px; left: var(--rb-t, 0%); width: 2px; border-radius: 2px; background: var(--text-muted); transform: translateX(-1px); }
+.rb-bar-vals { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; font-variant-numeric: tabular-nums; }
+.rb-bar-vals b { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.rb-bar-vals span { font-size: var(--fs-xs); color: var(--text-muted); }
+
+/* —— 偏离建议表 —— */
+.rb-tbl-wrap { overflow-x: auto; }
+.rb-tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.rb-tbl th {
+  padding: 6px var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.rb-tbl td { padding: 6px var(--sp-2); border-bottom: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
+.rb-tbl tbody tr:last-child td { border-bottom: 0; }
+.rb-tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+.rb-tbl .rb-cat { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); }
+/* 偏离徽标：超配走警示黄（需减仓）、低配走现金青（需补仓）、达标走中性 */
+.rb-drift { display: inline-block; padding: 1px 6px; border-radius: var(--r-xs); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.rb-drift.over { color: var(--warning); background: var(--warning-soft); }
+.rb-drift.under { color: rgba(var(--cat-cash), 1); background: rgba(var(--cat-cash), .12); }
+.rb-drift.ok { color: var(--text-muted); background: var(--bg-soft); }
+.rb-act { font-size: var(--fs-xs); font-weight: 600; }
+.rb-act.sell { color: var(--warning); }
+.rb-act.buy { color: var(--primary); }
+.rb-act.none { color: var(--text-muted); font-weight: 400; }
+.rb-note { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.6; margin: var(--sp-2) 0 0; }
+
+/* —— 5 列 KPI（比例 3 + 收益 2）。断点全落在白名单 {640,880,1340} 内 —— */
+.kpi-row.cols-5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1340px) { .kpi-row.cols-5 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 880px) { .kpi-row.cols-5 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .kpi-row.cols-5 { grid-template-columns: 1fr; } }
+
+/* —— 收益结论条 ——
+   蓝 = 当前比目标保守（差收益），黄 = 当前比目标激进（有风险敞口）。
+   必须显式写 [hidden]：display:flex 是无条件作者样式，会盖掉 UA 的 [hidden]{display:none}。 */
+.rb-insight {
+  display: flex; gap: var(--sp-3); align-items: flex-start;
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--r-sm);
+  background: var(--primary-soft); border: 1px solid rgba(var(--tint), .22);
+  font-size: var(--fs-sm); line-height: 1.65; color: var(--text-secondary);
+}
+.rb-insight[hidden] { display: none; }
+.rb-insight.is-warn { background: var(--warning-soft); border-color: rgba(var(--warning-rgb), .28); }
+.rb-insight-ico { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 2px; color: var(--primary); }
+.rb-insight.is-warn .rb-insight-ico { color: var(--warning); }
+.rb-insight b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* —— 收益双条（主卡左栏底部）—— */
+.rb-ret {
+  margin-top: var(--sp-3); padding-top: var(--sp-3);
+  border-top: 1px dashed var(--border);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.rb-ret-head { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-ret-note { font-size: var(--fs-xs); color: var(--text-faint); }
+.rb-ret-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) 62px; align-items: center; gap: var(--sp-2); }
+.rb-ret-k { font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-ret-track { position: relative; height: 8px; border-radius: 2px; background: var(--bg-soft); }
+.rb-ret-fill { width: var(--rb-rw, 0%); height: 100%; border-radius: 2px; transition: width .3s ease; }
+.rb-ret-fill.is-cur { background: rgba(var(--cat-equity), 1); }
+/* 目标条用 outline 画虚线框而不是 border：border 会吃掉 2px 高度，两根条就不等高、比不了长短 */
+.rb-ret-fill.is-tgt { background: transparent; outline: 1px dashed rgba(var(--cat-equity), .8); outline-offset: -1px; }
+.rb-ret-v { text-align: right; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.rb-ret-v b { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.rb-ret-gap { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5; }
+.rb-ret-gap b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+/* 方向色只用在差额这行小字上：KPI 大数字保持中性（超额不是好坏，只表明偏离方向） */
+.rb-ret-gap .is-cons { color: rgba(var(--cat-cash), 1); }
+.rb-ret-gap .is-aggr { color: var(--warning); }
+/* 概览 caption 超期提醒 */
+.rb-updated.is-overdue { color: var(--warning); }
+
+/* —— 明细表：收益影响列 + 合计行 —— */
+.rb-tbl .rb-imp { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.rb-tbl tfoot td {
+  padding: 8px var(--sp-2);
+  border-top: 1px solid var(--border-strong);
+  font-size: var(--fs-xs); font-weight: 600; color: var(--text);
+  white-space: nowrap;
+}
+.rb-tbl tfoot td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* —— 本次调整清单 —— */
+.rb-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-2); }
+.rb-act-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-xs);
+  background: var(--bg-soft);
+  font-size: var(--fs-sm);
+}
+.rb-act-row input[type="checkbox"] { flex: 0 0 auto; margin: 0; accent-color: var(--primary); }
+.rb-act-row.off { opacity: .45; }
+.rb-act-row .rb-act-name { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); flex: 0 0 auto; }
+.rb-act-row .rb-act-amt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+.rb-act-empty, .rb-hist-empty { padding: var(--sp-4); text-align: center; font-size: var(--fs-sm); color: var(--text-muted); }
+
+/* —— 历史 —— */
+.rb-hist-list { display: flex; flex-direction: column; }
+.rb-hist-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) 104px 92px 78px;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+.rb-hist-row:last-child { border-bottom: 0; }
+.rb-hist-date { color: var(--text); font-variant-numeric: tabular-nums; }
+.rb-hist-mix { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.rb-hist-mix span { font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-hist-total { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.rb-hist-ret { text-align: right; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.rb-hist-ret b { color: var(--text-secondary); font-weight: 600; }
+.rb-hist-drift { text-align: right; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--warning); }
+
+/* —— 目标配置与收益假设弹框 —— */
+/* .modal-card 本身 padding:0（各弹框按子项自带横向 28px 内缩），本弹框的子项多且平铺，
+   直接给卡片补横向内边距，标题的左内边距归零避免双倍缩进 */
+.rb-set-card { width: 520px; max-width: 94vw; padding: 0 28px var(--sp-6); }
+.rb-set-card > h2 { padding-left: 0; }
+/* 预设 chips：只改权重，不改收益假设 */
+.rb-presets { display: flex; align-items: center; gap: 6px; margin: 0 0 var(--sp-3); flex-wrap: wrap; }
+.rb-chip {
+  padding: var(--sp-1) var(--sp-2); border-radius: 999px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-muted); font-size: var(--fs-xs);
+  cursor: pointer; font-family: inherit;
+}
+.rb-chip:hover { color: var(--text); border-color: var(--border-strong); }
+.rb-chip.is-on { color: var(--primary); border-color: rgba(var(--tint), .45); background: var(--primary-soft); }
+.rb-presets-hint { font-size: var(--fs-xs); color: var(--text-faint); margin-left: auto; }
+/* 四行 × 三列参数表：类别 / 权重 / 年化 / 波动。列宽固定，类别列吃剩余宽度 */
+.rb-pgrid {
+  display: grid; grid-template-columns: minmax(0, 1fr) 74px 74px 74px;
+  gap: 6px var(--sp-2); align-items: center;
+}
+.rb-pgrid-h { font-size: var(--fs-xs); color: var(--text-muted); text-align: right; padding-bottom: 2px; }
+.rb-pgrid-h:first-child { text-align: left; }
+.rb-pgrid-name { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-secondary); min-width: 0; }
+.rb-pgrid input {
+  width: 100%; min-width: 0; height: 30px; padding: 0 6px; text-align: right;
+  border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--bg-input);
+  color: var(--text); font: inherit; font-size: var(--fs-sm); font-variant-numeric: tabular-nums;
+}
+.rb-pgrid input:focus { outline: none; border-color: var(--primary); }
+.rb-tgt-sum { margin: var(--sp-3) 0 var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); text-align: right; }
+.rb-tgt-sum b { font-variant-numeric: tabular-nums; }
+.rb-tgt-sum b.ok { color: var(--primary); }
+.rb-tgt-sum b.bad { color: var(--warning); }
+.rb-tgt-extra { margin-top: var(--sp-2); }
+/* .f-row 的 grid 规则挂在 #modal 下，本弹框是独立 id，需单独声明两列 + label 竖排 */
+#rbSettingsModal .f-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+#rbSettingsModal .f-row > label { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-muted); min-width: 0; }
+.rb-thr { display: flex; align-items: center; gap: 5px; }
+.rb-thr input { flex: 1 1 auto; min-width: 0; }
+.rb-thr span { flex: 0 0 auto; color: var(--text-muted); }
+/* 分节标题（收益目标 / 触发规则） */
+.rb-sec-label { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); letter-spacing: .4px; }
+.rb-sec-label:first-of-type { margin-top: var(--sp-3); }
+.rb-goal-row { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); }
+/* 横向行里的 label 必须清掉 .modal-card label 的 12px 行间距：align-items:center 拿的是
+   含 margin 的外框，12px 下边距会把「年度收益率」整体顶高 6px（12/2），看着就是没对齐。 */
+.rb-goal-row > label { flex: 0 0 auto; width: 68px; margin-bottom: 0; }
+.rb-goal-row .rb-thr { flex: 0 0 auto; width: 104px; }
+/* 同理会中的 input 也要清掉 .modal-card input 的 4px 上边距：它把 .rb-thr 从 32 撑到 36，
+   输入框贴底坐低 4px、与右侧「%」不同心。纵向（阈值行）仍保留那 4px 作「描述→控件」间距。 */
+.rb-goal-row .rb-thr input { margin-top: 0; }
+.rb-goal-amt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--text-faint); }
+/* 试算：弹框里改假设立刻看到「目标 / 当前配置的预期年化」，不必先保存 */
+.rb-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); margin-top: var(--sp-3); }
+.rb-pv-box { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-xs); background: var(--bg-soft); }
+.rb-pv-k { font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-pv-v { margin-top: 2px; font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.rb-pv-s { margin-top: 1px; font-size: var(--fs-xs); color: var(--text-faint); }
+.rb-thr-hint { margin-top: var(--sp-2); }
+
+/* 断点：≤880 主卡改单列（既有白名单值，不新增） */
+@media (max-width: 880px) {
+  .rb-grid { grid-template-columns: minmax(0, 1fr); }
+  .rb-main-card, .rb-list-card, .rb-hist-card { padding: var(--sp-3) var(--sp-4); }
+  .rb-hist-row { grid-template-columns: 78px minmax(0, 1fr) 84px 76px; }
+  .rb-hist-drift { display: none; }
+}
+@media (max-width: 640px) {
+  .rb-bar-row { grid-template-columns: 54px minmax(0, 1fr) 82px; }
+  /* 390px 下标题行放不下「caption + 两个按钮」，caption 信息量最低，让位给按钮 */
+  .rb-updated { display: none; }
+  .rb-act-row { flex-wrap: wrap; gap: var(--sp-2); }
+  .rb-act-row .rb-act-amt { margin-left: 0; }
+}

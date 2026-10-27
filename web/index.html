@@ -32,15 +32,51 @@
       <button class="nav-pill" data-view="finance" type="button" onclick="navigate('finance')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M7 15h4"/></svg><span>财务</span>
       </button>
-      <button class="nav-pill" data-view="settings" type="button" onclick="navigate('settings')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>设置</span>
+      <!-- 再平衡（2026-10-27 重新引入）：按 股票/基金/理财/现金 四大类做资产配置偏离追踪 -->
+      <button class="nav-pill" data-view="rebalance" type="button" onclick="navigate('rebalance')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9"/><path d="M17 6h3"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span>再平衡</span>
       </button>
     </nav>
     <div class="act-group">
-      <button id="themeToggleBtn" class="btn theme-toggle" type="button" title="切换日间/夜间模式" aria-label="切换主题"></button>
-      <button id="aiChatTopBtn" class="btn icon-btn" type="button" title="AI 助手" aria-label="AI 助手"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
-      <button id="pnlCalTopBtn" class="btn icon-btn" type="button" title="盈亏日历" aria-label="盈亏日历"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px"><rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8 3v4M16 3v4M3 10h18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>
-      <button id="userBtn" class="btn act-user" type="button" title="用户切换"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto"><circle cx="12" cy="8.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M4.8 19.2 C4.8 15.3 8 13.6 12 13.6 C16 13.6 19.2 15.3 19.2 19.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span id="userNameText" style="display:none">默认</span></button>
+      <!-- AI 入口用「星芒(sparkles)」而非聊天气泡：气泡只表达「对话」，星芒才是当下 AI 的通用符号，
+           也与相邻的日历/头像线性图标区分度更高 -->
+      <button id="aiChatTopBtn" class="btn icon-btn" type="button" title="AI 助手" aria-label="AI 助手"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><!-- 星芒图形包围盒 y[3,16.4] 中心 9.7，整体下移 2.3 使视觉中心落在 viewBox 中心 12 --><g transform="translate(0 2.3)"><path d="M10.6 3.2l1.75 4.85 4.85 1.75-4.85 1.75L10.6 16.4 8.85 11.55 4 9.8l4.85-1.75z"/><path d="M18.4 3v3.2"/><path d="M20 4.6h-3.2"/></g></svg></button>
+      <!-- 顶栏操作区现在只剩 AI 助手 + 头像；盈亏日历 2026-10-27 已并入个人菜单（#acctPop 的 data-act="pnl-cal"），
+           它原本多占 40px 宽，正是 641–880 档导航溢出的主因 -->
+      <!-- 右上角个人菜单（2026-10-27）：设置从主导航迁入此处，导航回落 5 项。
+           样式参照 PanWatch AccountMenu：头像触发 + 右侧下拉面板 + 分组分隔线 + 激活项打勾 -->
+      <div class="acct-menu" id="acctMenu">
+        <button id="userBtn" class="btn act-user" type="button" title="账户与设置" aria-haspopup="true" aria-expanded="false"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="display:block;margin:auto"><circle cx="12" cy="8.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M4.8 19.2 C4.8 15.3 8 13.6 12 13.6 C16 13.6 19.2 15.3 19.2 19.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span id="userNameText" style="display:none">默认</span></button>
+        <div class="acct-pop" id="acctPop" hidden>
+          <div class="acct-sec">用户</div>
+          <div class="acct-user-list" id="acctUserList"></div>
+          <button class="acct-item" type="button" data-act="manage-users">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="8" r="3.2"/><path d="M20 19v-1.6a3.4 3.4 0 0 0-2.6-3.3"/><path d="M15.4 5.2a3.2 3.2 0 0 1 0 5.6"/></svg>
+            <span>管理用户</span>
+          </button>
+          <div class="acct-sep"></div>
+          <div class="acct-sec">外观主题</div>
+          <button class="acct-item" type="button" data-act="theme" data-theme="light">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6V4.6M12 19.4v2M2.6 12H4.6M19.4 12h2M5.4 5.4l1.4 1.4M17.2 17.2l1.4 1.4M5.4 18.6l1.4-1.4M17.2 6.8l1.4-1.4"/></svg>
+            <span>日间</span><span class="acct-check" aria-hidden="true">✓</span>
+          </button>
+          <button class="acct-item" type="button" data-act="theme" data-theme="dark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3A7 7 0 0 0 21 12.79Z"/></svg>
+            <span>夜间</span><span class="acct-check" aria-hidden="true">✓</span>
+          </button>
+          <div class="acct-sep"></div>
+          <button class="acct-item" type="button" data-act="pnl-cal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+            <span>盈亏日历</span>
+          </button>
+          <button class="acct-item" type="button" data-act="settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>设置</span>
+          </button>
+          <div class="acct-sep"></div>
+          <div class="acct-foot"><span>持仓侠</span><span class="acct-ver">v3.6</span></div>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -281,6 +317,92 @@
   <div id="assetView" hidden>
     <!-- 资产页唯一视图（2026-10-18）：账户区标题行 + 「指标条摘要头 + 账户主表」一张卡，由 renderSources 渲染 -->
     <div id="assetTabBody"></div>
+  </div>
+
+  <!-- ===== 再平衡（2026-10-27 重新引入） =====
+       口径：股票 / 基金 / 理财 / 现金 四大类（不细到行业主题）。
+       结构沿用财务页：.kpi-section（眉标 + 控件 + .kpi-row）→ 主卡（目标vs实际 + 偏离建议）→ 本次清单 / 历史。 -->
+  <div id="rebalanceView" hidden>
+    <div class="kpi-section">
+      <div class="kpi-head">
+        <span class="kpi-head-label">资产配置 · 再平衡</span>
+        <div class="rb-head-actions">
+          <span class="rb-updated" id="rbUpdated"></span>
+          <!-- 文案缩到 2 字：5 字会把右上角挤到跟主 CTA 抢位置；完整含义交给 title。
+               样式走「操作区芯片」（.btn.rb-cfg，透明边 + primary-soft 底），与纯 .btn 的白边不是一套。 -->
+          <button class="btn rb-cfg" id="rbSettingsBtn" type="button" title="配置目标权重、收益假设与触发规则">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h9"/><path d="M17 6h3"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>配置
+          </button>
+          <button class="btn primary" id="rbLogBtn" type="button" title="把当前目标权重与收益假设存成一次快照">记录</button>
+        </div>
+      </div>
+      <!-- 5 张：比例维度 3 张（市值 / 最大偏离 / 待调整）+ 收益维度 2 张（目标年化 / 超额收益率）。
+           「距上次再平衡」不进卡，挪到右上 caption —— 它是元信息不是指标，占一张卡会挤掉收益位。 -->
+      <div class="kpi-row cols-5" id="rbKpiBody"></div>
+    </div>
+
+    <!-- 收益结论：一句话说清「偏保守还是偏激进、差多少钱、主因是哪类、执行后怎么变」 -->
+    <div class="rb-insight" id="rbInsight" hidden></div>
+
+    <section class="card rb-main-card">
+      <div class="rb-grid">
+        <div class="rb-col">
+          <div class="rb-sub-head">
+            <span class="rb-sub-title">目标 vs 实际</span>
+            <span class="rb-sub-hint">占组合总市值比例</span>
+          </div>
+          <div class="rb-bars" id="rbBars"></div>
+          <!-- 收益双条：同一刻度下比长短，实心=现在在哪，虚线框=应该到哪 -->
+          <div class="rb-ret">
+            <div class="rb-ret-head">
+              <span>预期年化收益</span>
+              <span class="rb-ret-note">按各类假设收益加权</span>
+            </div>
+            <div class="rb-ret-row">
+              <span class="rb-ret-k">当前</span>
+              <div class="rb-ret-track"><div class="rb-ret-fill is-cur" id="rbRetCur"></div></div>
+              <span class="rb-ret-v"><b id="rbRetCurV">—</b></span>
+            </div>
+            <div class="rb-ret-row">
+              <span class="rb-ret-k">目标</span>
+              <div class="rb-ret-track"><div class="rb-ret-fill is-tgt" id="rbRetTgt"></div></div>
+              <span class="rb-ret-v"><b id="rbRetTgtV">—</b></span>
+            </div>
+            <div class="rb-ret-gap" id="rbRetGap"></div>
+          </div>
+        </div>
+        <div class="rb-col">
+          <div class="rb-sub-head">
+            <span class="rb-sub-title">偏离、收益影响与建议</span>
+            <span class="rb-sub-hint">收益影响 = 偏离 × 该类年化</span>
+          </div>
+          <div class="rb-tbl-wrap">
+            <table class="rb-tbl">
+              <thead><tr><th>类别</th><th class="num">目标</th><th class="num">实际</th><th class="num">偏离</th><th class="num">年化</th><th class="num">收益影响</th><th class="num">建议</th></tr></thead>
+              <tbody id="rbDriftBody"></tbody>
+              <tfoot id="rbDriftFoot"></tfoot>
+            </table>
+          </div>
+          <p class="rb-note" id="rbNote"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card rb-list-card">
+      <div class="rb-sub-head">
+        <span class="rb-sub-title">本次调整清单</span>
+        <span class="rb-sub-hint" id="rbListHint"></span>
+      </div>
+      <div class="rb-actions" id="rbActions"></div>
+    </section>
+
+    <section class="card rb-hist-card">
+      <div class="rb-sub-head">
+        <span class="rb-sub-title">再平衡历史</span>
+        <span class="rb-sub-hint">收益率 = 当时实际 / 当时目标 · 末列为最大偏离</span>
+      </div>
+      <div id="rbHistory"></div>
+    </section>
   </div>
 
     <div id="settingsView" class="page-view settings-page pano-open" hidden>
@@ -1145,6 +1267,13 @@
         <label id="c_source_fix_row" hidden>所属账户 <input id="c_source_fix" readonly placeholder="—"></label>
         <label id="c_source_sel_row" hidden>所属账户 <select id="c_source"></select></label>
         <label>备注 <input id="c_note" placeholder="备注（可选）"></label>
+        <!-- 日常开销账户：不参与再平衡口径（既不算现金类市值，也不算总市值分母）。
+             租房吃饭这类钱不是「可配置资产」，混进去会让再平衡建议把生活费也转出去。
+             负债没有这个概念，勾选「负债」时整行隐藏。 -->
+        <label class="c-default-row c-excl-row" id="c_excluded_row" hidden>
+          <input type="checkbox" id="c_excluded"> 日常开销账户
+          <span class="c-excl-hint">不计入再平衡</span>
+        </label>
         <!-- 仅编辑态出现（新增时没有可调整的余额）：
              子账户=±存入/取出，负债=±借入/还款；下方「说明」作为这一笔变动流水的备注 -->
         <div class="sign-edit" id="c_delta_row" hidden>
@@ -1392,6 +1521,56 @@
     </div>
   </div>
 </div>
+<!-- 再平衡 · 目标权重设置（2026-10-27）：四类目标合计须 100%，保存后即时重算偏离 -->
+<div id="rbSettingsModal" class="modal" hidden>
+  <div class="modal-card rb-set-card">
+    <h2 data-icon="target">目标配置与收益假设</h2>
+    <button class="card-close" type="button" id="rbSetClose" title="关闭" aria-label="关闭">✕</button>
+    <p class="snap-hint">三类参数都是「假设值」，作用是把配置比例折算成预期收益，不是行情也不是预测。目标权重合计须为 100%；现金通常留 10–20% 作为再平衡弹药。</p>
+
+    <div class="rb-presets" id="rbPresets">
+      <button type="button" class="rb-chip" data-preset="cons">保守</button>
+      <button type="button" class="rb-chip is-on" data-preset="bal">稳健</button>
+      <button type="button" class="rb-chip" data-preset="aggr">积极</button>
+      <span class="rb-presets-hint">预设会同时套用权重与三类假设，套用后可继续微调</span>
+    </div>
+
+    <div class="rb-pgrid" id="rbTgtInputs"></div>
+    <div class="rb-tgt-sum">目标权重合计：<b id="rbTgtSum">100%</b></div>
+
+    <div class="rb-sec-label">收益目标（可选）</div>
+    <div class="rb-goal-row">
+      <label for="rbGoalPct" class="field-label">年度收益率</label>
+      <div class="rb-thr"><input id="rbGoalPct" type="number" min="0" max="50" step="0.1" placeholder="不设"><span>%</span></div>
+      <span class="rb-goal-amt" id="rbGoalAmt">留空则只看配置内生的预期收益</span>
+    </div>
+
+    <div class="rb-preview" id="rbPreview"></div>
+
+    <div class="rb-sec-label">再平衡触发规则</div>
+    <div class="f-row rb-tgt-extra">
+      <label>检查频率
+        <select id="rbFreqSel">
+          <option value="monthly">每月</option>
+          <option value="quarterly">每季度</option>
+          <option value="manual">手动</option>
+        </select>
+      </label>
+      <label>偏离阈值
+        <div class="rb-thr"><input id="rbDriftThr" type="number" min="0.5" max="20" step="0.5" value="1"><span>pp</span></div>
+      </label>
+    </div>
+    <p class="snap-hint rb-thr-hint">偏离超过阈值的类别才进「本次调整清单」。阈值调小会给出更多小额调仓，调大则更接近「只在大幅漂移时动手」。</p>
+
+    <div class="modal-actions">
+      <button type="button" class="btn" id="rbSetReset">恢复默认</button>
+      <span class="modal-actions-spacer"></span>
+      <button type="button" class="btn" id="rbSetCancel">取消</button>
+      <button type="button" class="btn primary" id="rbSetSave">保存</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 <script src="/app.js" defer></script>
 </body>
