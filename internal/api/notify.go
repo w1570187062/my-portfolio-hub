@@ -372,9 +372,9 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool
 						hasData = true
 					}
 				}
-				sb.WriteString(fmt.Sprintf("- **当日总盈亏（%s）**：¥%s\n", label, moneyFmt(sCNY)))
+				sb.WriteString(fmt.Sprintf("- **今日总盈亏（%s）**：¥%s\n", label, moneyFmt(sCNY)))
 				if len(scoped) > 0 {
-					sb.WriteString(fmt.Sprintf("\n**%s 当日盈亏（按原币种）**：\n", label))
+					sb.WriteString(fmt.Sprintf("\n**%s 今日盈亏（按原币种）**：\n", label))
 					n := 0
 			for _, s := range scoped {
 				// 减仓/清仓落袋的「XX·已实现」条目不是真实持仓，没有实时行情（现价/涨跌无意义），
@@ -400,7 +400,7 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool
 				if s.ChangePct >= 0.005 || s.ChangePct <= -0.005 {
 					chgStr = moneyFmtPrec(s.ChangePct, 2) + "%"
 				}
-				sb.WriteString(fmt.Sprintf("- %s %s：现价%s 涨跌%s 当日%s%s\n",
+				sb.WriteString(fmt.Sprintf("- %s %s：现价%s 涨跌%s 今日%s%s\n",
 					s.Symbol, s.Name, priceStr, chgStr, curSymbol(s.Currency), moneyFmtPrec(amt, dec)))
 				n++
 			}

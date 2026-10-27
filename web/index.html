@@ -108,7 +108,7 @@
   </div>
 
   <div id="holdingsView">
-  <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 3 卫星（当日 / 本月 / 收益率），统一 .kpi-card -->
+  <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 3 卫星（今日 / 本月 / 收益率），统一 .kpi-card -->
   <section class="invest-hero" id="investHero">
     <div class="kpi-head"><span class="kpi-head-label">持仓市值 · 盈亏 · 收益率</span></div>
     <div class="kpi-row cols-anchor">
@@ -120,7 +120,7 @@
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
-        <div class="kpi-label">当日盈亏</div>
+        <div class="kpi-label">今日盈亏</div>
         <div class="kpi-main"><div class="kpi-value" id="investDayPnl">—</div></div>
         <div class="kpi-sub" id="investDayPct">—</div>
       </div>
@@ -1003,12 +1003,12 @@
   <!-- ===== 编辑理财每日快照弹框（修正分红日历史曲线） ===== -->
   <div id="whEditModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 data-icon="edit">编辑当日记录</h2>
+      <h2 data-icon="edit">编辑今日记录</h2>
       <p id="whEditHint" class="snap-hint"></p>
       <div class="m-body">
         <div class="sr-field"><label class="sr-label">持仓金额</label><input type="number" step="0.01" id="whEditAmt"></div>
         <div class="sr-field"><label class="sr-label">净存入</label><input type="number" step="0.01" id="whEditCf"></div>
-        <div class="sr-field"><label class="sr-label">当日分红</label><input type="number" step="0.01" id="whEditDiv"></div>
+        <div class="sr-field"><label class="sr-label">今日分红</label><input type="number" step="0.01" id="whEditDiv"></div>
       </div>
       <div class="modal-actions"><button type="button" id="whEditCancel" class="btn">取消</button><button type="button" id="whEditSave" class="btn primary">保存</button></div>
     </div>

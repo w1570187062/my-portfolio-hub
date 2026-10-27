@@ -1981,10 +1981,10 @@ func buildAssetStats(uid int64) (string, error) {
 	b.WriteString("\n【权益类（基金 / 股票）】\n")
 	b.WriteString("持仓数：" + fmt.Sprintf("%d", len(hs)) + " 条\n")
 	b.WriteString("市值(CNY)：" + nf(eqMV) + "  成本(CNY)：" + nf(eqCV) + "\n")
-	b.WriteString("总盈亏(CNY)：" + sf(eqPnl) + "（" + pf(eqTotalPct) + "）  当日盈亏(CNY)：" + sf(eqDay) + "\n")
+	b.WriteString("总盈亏(CNY)：" + sf(eqPnl) + "（" + pf(eqTotalPct) + "）  今日盈亏(CNY)：" + sf(eqDay) + "\n")
 	for i, v := range eqViews {
 		h := v.Holding
-		line := fmt.Sprintf("%d. %s(%s) %s/%s 市值(CNY)%s 当日盈亏%s(%s) 总盈亏%s(%s)",
+		line := fmt.Sprintf("%d. %s(%s) %s/%s 市值(CNY)%s 今日盈亏%s(%s) 总盈亏%s(%s)",
 			i+1, h.Name, h.Symbol, catLabel(h.Category), h.Market,
 			nf(fxToCNY(v.MarketValue, h.Currency, cnyRate, hkdRate)),
 			sf(fxToCNY(v.DayPnl, h.Currency, cnyRate, hkdRate)), pf(v.DayPnlPct),

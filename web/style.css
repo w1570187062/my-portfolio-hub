@@ -729,7 +729,7 @@ w {
 }
 .holdings-group .holdings-subtable td.share.is-empty,
 .wealth-group .wealth-subtable td.share.is-empty { background-image: none; }
-.holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: var(--col-hold-day); }    /* 当日（金额；比例悬停 title 展示） */
+.holdings-group .holdings-subtable :is(th, td):nth-child(9) { width: var(--col-hold-day); }    /* 今日（金额；比例悬停 title 展示） */
 .holdings-group .holdings-subtable :is(th, td):nth-child(10) { width: var(--col-hold-pnl); }   /* 盈亏（金额；比例悬停 title 展示） */
 .holdings-group .holdings-subtable :is(th, td):nth-child(11) { width: var(--col-hold-days); }    /* 持仓天数 */
 /* 操作列：吸右常驻。**背景必须用 --card-bg-sticky（不透明）**，不能用 --card-bg——
@@ -1463,7 +1463,7 @@ header {
 .hero-mv-seg-name { font-weight: 500; color: var(--text-muted); }
 .hero-mv-seg-pct { font-variant-numeric: tabular-nums; }
 /* 收益率 panel：大数字（只保留 %，删除金额；删除涨跌家数）
-   v3.4 精简：pnl-big 只显示百分比；pnl-detail 只留当日/本月金额 */
+   v3.4 精简：pnl-big 只显示百分比；pnl-detail 只留今日/本月金额 */
 .hero-pnl-big {
   font-size: var(--fs-lg); font-weight: 700; font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -3025,7 +3025,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 /* 建仓态：持仓金额/净存入被派生或锁定 */
 .sr-field input:disabled { background: rgba(127, 127, 127, .12); color: var(--text-muted); cursor: not-allowed; border-style: dashed; }
 .sr-field input:disabled::placeholder { color: var(--text-muted); opacity: .7; }
-/* 字段两列等宽：① 持仓金额 / ② 当日净存入（资金账户下拉已删，账户走后端自动回落） */
+/* 字段两列等宽：① 持仓金额 / ② 今日净存入（资金账户下拉已删，账户走后端自动回落） */
 .sr-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: var(--sp-3); align-items: end; }
 .sr-field { display: flex; flex-direction: column; min-width: 0; margin: 0 0 var(--sp-3); }
 /* 栅格版：行间距由 .sr-fields 的 gap 提供，去掉容器自身的 12px，避免双计成 24px */

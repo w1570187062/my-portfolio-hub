@@ -392,7 +392,7 @@ func recordWealthTX(uid int64, hit *entityHit, action string, args map[string]in
 	if e := db.UpsertWealthSnapshot(w.ID, today, newAmount, round2(oldCf+cashflow), oldDiv); e != nil {
 		return "", e
 	}
-	return fmt.Sprintf("已记录理财%s流水：%s(%s) 当日净%s %.2f，持仓金额更新为 %.2f。",
+	return fmt.Sprintf("已记录理财%s流水：%s(%s) 今日净%s %.2f，持仓金额更新为 %.2f。",
 		actionName(action), w.Name, w.Currency, actionName(action), round2(cashflow), newAmount), nil
 }
 

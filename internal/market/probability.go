@@ -75,7 +75,7 @@ func CalculateProbability(ind *IndicatorsResult) *ProbabilityResult {
 			Indicator: "单日急涨",
 			Direction: "bearish",
 			Score:     -rushPenalty,
-			Reason:    fmt.Sprintf("当日涨幅 %.1f%%，急涨后回踩风险上升", ind.DailyChangePct),
+			Reason:    fmt.Sprintf("今日涨幅 %.1f%%，急涨后回踩风险上升", ind.DailyChangePct),
 		})
 	}
 	result.Signals = signals

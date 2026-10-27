@@ -406,7 +406,7 @@ func chatToolAnalyzeHolding(uid int64, args map[string]interface{}) string {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("【%s】代码 %s | 市场 %s | 类别 %s\n", h.Name, h.Symbol, h.Market, catLabel(h.Category)))
-	sb.WriteString(fmt.Sprintf("现价 %.4f | 当日涨跌 %+.2f%%\n", ind.Price, ind.DailyChangePct))
+	sb.WriteString(fmt.Sprintf("现价 %.4f | 今日涨跌 %+.2f%%\n", ind.Price, ind.DailyChangePct))
 	sb.WriteString(fmt.Sprintf("MA5 %.4f / MA10 %.4f / MA20 %.4f / MA60 %.4f\n", ind.MA5, ind.MA10, ind.MA20, ind.MA60))
 	sb.WriteString(fmt.Sprintf("MACD: DIF %.4f DEA %.4f 柱 %.4f（上日柱 %.4f）\n", ind.MACD.DIF, ind.MACD.DEA, ind.MACD.HIST, ind.MACD.HistPrev))
 	sb.WriteString(fmt.Sprintf("RSI %.2f | KDJ: K %.2f D %.2f J %.2f\n", ind.RSI, ind.KDJ.K, ind.KDJ.D, ind.KDJ.J))

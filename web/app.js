@@ -253,7 +253,7 @@ let hkdRate = 1;
 let snapshotDate = '';   // 最近 pnl_daily 快照日期（YYYY-MM-DD）
 let monthPnlCNY = 0;     // 本月累计盈亏（CNY 折算）
 let monthPnlCny = 0;     // 本月累计盈亏（CNY 原始货币）
-let todayRealizedCny = 0; // 今日已实现盈亏（减仓落库，CNY 折算），并入首页「当日盈亏」
+let todayRealizedCny = 0; // 今日已实现盈亏（减仓落库，CNY 折算），并入首页「今日盈亏」
 let monthPnlUsd = 0;     // 本月累计盈亏（USD 原始货币）
 let failedSymbols = {};  // symbol -> 失败原因（刷新失败持久标记）
 // table | card；移动端（窄屏）默认卡片视图（表格横向溢出体验差），但不强制——允许用户手动切回表格（可横向滚动）
@@ -564,7 +564,7 @@ function renderFiltered() {
       if (allClosed) {
         if (emptyIcon) emptyIcon.innerHTML = EMPTY_ICONS.inbox;
         if (emptyTitle) emptyTitle.textContent = '全部持仓已清仓';
-        if (emptyMsg) emptyMsg.textContent = '列表暂无可持仓标的；重新买入后会自动恢复显示，已落袋盈亏已计入首页「当日盈亏」。';
+        if (emptyMsg) emptyMsg.textContent = '列表暂无可持仓标的；重新买入后会自动恢复显示，已落袋盈亏已计入首页「今日盈亏」。';
       } else {
         if (emptyIcon) emptyIcon.innerHTML = EMPTY_ICONS.searchX;
         if (emptyTitle) emptyTitle.textContent = '无匹配结果';
@@ -1020,7 +1020,7 @@ function prefillAdjCalc(h) {
 }
 
 // 按来源分组渲染首页持仓为折叠卡片（每来源一张子表 + 4 列汇总）
-// 来源标题 + 数量 + 右侧市值/当日/总盈亏 + 折叠
+// 来源标题 + 数量 + 右侧市值/今日/总盈亏 + 折叠
 // 持仓按 id 索引，供首页「计算」按钮快速取用成本/现价/数量（避免二次请求）
 let HOLDINGS_BY_ID = {};
 function renderHoldingsBySource(hs) {
@@ -1149,7 +1149,7 @@ function renderGroupRow(h, i, maxItemMV, pool) {
   // 仓位：同(来源,币种)资金池占比，动态宽度颜色条（同资产页账户列表「占比」表现形式）
   const posPct = pool > 0 ? (Number(h.market_value) || 0) / pool * 100 : 0;
   // 今日涨跌幅：现价 vs 昨收（行情口径，红涨绿跌）。prev_close 取不到行情时显示 —。
-  // 与「当日」列括号里的 day_pnl_pct 区分：那个首日按买入成本计，这里恒为昨收口径。
+  // 与「今日」列括号里的 day_pnl_pct 区分：那个首日按买入成本计，这里恒为昨收口径。
   const chgPct = (h.prev_close > 0 && h.current_price > 0)
     ? (h.current_price - h.prev_close) / h.prev_close * 100 : null;
   const rowCls = [isFail ? 'row-failed' : '', closed ? 'holding-archived' : ''].filter(Boolean).join(' ');
@@ -1169,7 +1169,7 @@ function renderGroupRow(h, i, maxItemMV, pool) {
     <td class="num" title="成本价（每份）">${fmtNav(h.cost_price, isFund(h) ? 'fund' : 'stock')}</td>
     <td class="num"${mvOrigTitle(h)}>¥${fmtWan(mvCny)}</td>
     <td class="num share${pool > 0 ? '' : ' is-empty'}"${pool > 0 ? ` style="--p:${posPct.toFixed(1)}%"` : ''} title="占该账户同币种资金池比例${pool > 0 ? ' ' + posPct.toFixed(2) + '%' : '；该账户无匹配现金子账户，无法算占比'}">${pool > 0 ? posPct.toFixed(2) + '%' : '—'}</td>
-    <td class="num ${clsPnl(h.day_pnl)}" title="当日盈亏${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）"><span${wanTitle(dayCny, '¥')}>¥${fmtWanPnl(dayCny)}</span></td>
+    <td class="num ${clsPnl(h.day_pnl)}" title="今日盈亏${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）"><span${wanTitle(dayCny, '¥')}>¥${fmtWanPnl(dayCny)}</span></td>
     <td class="num ${clsPnl(h.pnl)}" title="持有期总盈亏${h.pnl_pct ? ' ' + pct(h.pnl_pct) : ''}"><span${wanTitle(pnlCny, '¥')}>¥${fmtWanPnl(pnlCny)}</span></td>
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
     <td class="row-act-cell">
@@ -1227,13 +1227,13 @@ function renderSummary(hs) {
   if (otherMV > 0) mvSegs.push({ name: '其他', v: otherMV, c: '#94a3b8', rgb: '148,163,184' });
   // 总市值 panel 主色跟随占比最高的分类色
   const topSeg = mvSegs.slice().sort((a, b) => b.v - a.v)[0];
-  // 投资页 Hero（KPI 居中卡）：持仓市值 / 当日盈亏 / 本月盈亏 / 持仓收益率
+  // 投资页 Hero（KPI 居中卡）：持仓市值 / 今日盈亏 / 本月盈亏 / 持仓收益率
   const invMv = document.getElementById('investMv');
   if (invMv) invMv.textContent = '¥' + fmt(totalCNY);
   // 锚点卡副标：只数 + 成本（不重复卡片 4 的收益率）
   const invMvSub = document.getElementById('investMvSub');
   if (invMvSub) invMvSub.innerHTML = `持仓 <span class="hl">${hs.length}</span> 只 · 成本 <span class="hl">¥${fmt(totalCostCNY)}</span>`;
-  // 当日盈亏口径与首页「今日」一致：持仓当日盈亏 + 今日已实现（清仓/减仓）盈亏，均折 CNY
+  // 今日盈亏口径与首页「今日」一致：持仓今日盈亏 + 今日已实现（清仓/减仓）盈亏，均折 CNY
   const invDay = document.getElementById('investDayPnl');
   if (invDay) {
     invDay.textContent = (dayPnlCNY > 0 ? '+' : '') + '¥' + fmt(Math.abs(dayPnlCNY));
@@ -1356,7 +1356,7 @@ async function renderRateSpark(rangeDays, netVal) {
 }
 
 // 首页权益曲线 hover 弹框：鼠标在曲线上移动时，定位到最近数据点，显示日期 + 持仓市值 + 持仓成本（本金）
-// + 盈亏金额 + 盈亏率，并画一条竖向参考线。持仓市值=当日权益净值（实线），持仓成本=累计投入（虚线）。
+// + 盈亏金额 + 盈亏率，并画一条竖向参考线。持仓市值=该日权益净值（实线），持仓成本=累计投入（虚线）。
 // 坐标映射与 sparklineDual 共用同一套（xPad = max(1.5, h*0.08)；y 用统一 min/max），所以弹框位置与曲线点对齐。
 function bindHomeRateHover() {
   const box = document.getElementById('homeRateSpark');
@@ -2744,7 +2744,7 @@ function trendDefs(uid) {
     + `</defs>`;
 }
 
-// 盈亏走势 tooltip：hover 柱子显示当日/累计盈亏
+// 盈亏走势 tooltip：hover 柱子显示单日/累计盈亏
 function moveTrendTip(e) {
   const tip = document.getElementById('trendTip'); if (!tip) return;
   const r = tip.getBoundingClientRect();
@@ -3055,8 +3055,7 @@ async function renderHomeDashboard() {
   const eqMV = (ov.equity && ov.equity.market_value) || 0;
   const wTotal = (ov.wealth && ov.wealth.total) || 0;
   const cTotal = (ov.cash && ov.cash.total) || 0;
-  const lTotal = (ov.liability && ov.liability.total) || 0;
-  // 今日变动 = 持仓当日盈亏 + 理财当日盈亏（CNY）；本月变动复用 summary 的持仓本月盈亏
+  // 今日变动 = 持仓今日盈亏 + 理财今日收益（CNY）；本月变动复用 summary 的持仓本月盈亏
   const dayPnl = ((ov.equity && ov.equity.day_pnl) || 0) + ((ov.wealth && ov.wealth.today_pnl) || 0);
   const monthPnl = monthPnlCNY || 0;
 
@@ -4401,7 +4400,7 @@ let aiChatModelIdx = 0; // AI 助手聊天面板选中的模型下标（独立�
 function defaultAITemplates() {
   return [
     { name: '诙谐幽默', content: '你是一位喜欢拿用户持仓开涮、但数据从不乱编的财经段子手。请基于下面「我的持仓数据」，用诙谐、幽默、带点调侃（可以适度玩梗、使用表情符号）的口吻，给我写一份专属的「持仓体检报告」。\n要求：\n1. 先来一句风趣的总体定调（赚麻了还是绿油油）；\n2. 挑几个有代表性的持仓点评一下，夸就夸到位，亏就损到位，但数字必须准确；\n3. 用轻松的方式点出风险或槽点；\n4. 结尾给一句毒舌又实在的寄语。\n不要说教，多用口语，篇幅适中（300~500字）。\n\n我的持仓数据如下：\n{{DATA}}' },
-    { name: '专业视角', content: '你是一名严谨、客观、专业的投资顾问。请基于下面的「我的持仓数据」，用专业、结构化、条理清晰的视角，做一份持仓分析报告。\n要求：\n1. 组合概览：总资产、总盈亏及收益率、CNY/USD 市值分布；\n2. 结构分析：股票与基金的占比、各市场分布、单一标的集中度风险；\n3. 当日表现：当日盈亏与当日盈亏率的整体与个股情况；\n4. 风险提示：结合回撤、集中度、币种敞口给出客观判断；\n5. 配置建议：基于以上数据给出 2~3 条可执行的优化建议。\n语言专业克制，避免夸张表述，可适度使用分点与小标题，篇幅 400~600字。\n\n我的持仓数据如下：\n{{DATA}}' },
+    { name: '专业视角', content: '你是一名严谨、客观、专业的投资顾问。请基于下面的「我的持仓数据」，用专业、结构化、条理清晰的视角，做一份持仓分析报告。\n要求：\n1. 组合概览：总资产、总盈亏及收益率、CNY/USD 市值分布；\n2. 结构分析：股票与基金的占比、各市场分布、单一标的集中度风险；\n3. 今日表现：今日盈亏与今日盈亏率的整体与个股情况；\n4. 风险提示：结合回撤、集中度、币种敞口给出客观判断；\n5. 配置建议：基于以上数据给出 2~3 条可执行的优化建议。\n语言专业克制，避免夸张表述，可适度使用分点与小标题，篇幅 400~600字。\n\n我的持仓数据如下：\n{{DATA}}' },
   ];
 }
 
@@ -4840,7 +4839,7 @@ function buildWealthAuditMap(rows) {
   }
 }
 
-// 撤销 / 删除当日快照：委托到表格容器，重渲染后按钮仍生效
+// 撤销 / 删除该日快照：委托到表格容器，重渲染后按钮仍生效
 function bindWealthHistActions(scope) {
   scope.querySelectorAll('[data-undo]').forEach((b) => {
     b.onclick = async () => {
@@ -4856,7 +4855,7 @@ function bindWealthHistActions(scope) {
   scope.querySelectorAll('[data-del-date]').forEach((b) => {
     b.onclick = () => {
       pendingSnapDelete = { wealth_id: currentWealthHistId, date: b.dataset.delDate };
-      $('#confirmTitle').textContent = '删除当日快照';
+      $('#confirmTitle').textContent = '删除该日快照';
       $('#confirmMsg').textContent = '确认删除 ' + b.dataset.delDate + ' 的这条持仓记录？删除后仍可在本表撤销。';
       $('#confirmOk').textContent = '删除';
       $('#confirmOk').classList.add('danger');
@@ -4923,7 +4922,7 @@ $('#whTo').addEventListener('change', () => { wealthHistCustomTo = $('#whTo').va
 
 // （持仓历史不再渲染每日表格；曲线悬停/点按柱子弹框展示，见 drawPnlCurve / showHistTip）
 
-// 复用全局盈亏走势的 SVG 双轴风格：当日盈亏柱状（左轴，红涨绿跌）+ 累计盈亏折线（右轴）
+// 复用全局盈亏走势的 SVG 双轴风格：单日盈亏柱状（左轴，红涨绿跌）+ 累计盈亏折线（右轴）
 // 持仓历史盈亏 / 理财每日盈亏 共用绘制器（数据结构统一为 { date, day_pnl, total_pnl }）。
 // 这两处此前各写一份近乎相同的 SVG 逻辑，改视觉时极易只改一半（曾导致柱子静默不渲染），
 // 合并后只需改这一处。视觉规格见 docs/ui-design-spec.md §3.11。
@@ -4969,7 +4968,7 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
     hotspots += `<rect class="trend-hot" data-i="${i}" data-x="${cx.toFixed(2)}" data-y="${ly.toFixed(2)}"`
       + ` x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
     linePts.push([cx, ly]);
-    // 2026-10-15：去掉当日盈亏柱状，只保留累计盈亏折线 + 悬停读数（当日盈亏在 tooltip 里仍可见）
+    // 2026-10-15：去掉单日盈亏柱状，只保留累计盈亏折线 + 悬停读数（单日盈亏在 tooltip 里仍可见）
     line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
     // 只在最新一天画实心圆点：逐点信息交给悬停指示点
     if (i === n - 1) {
@@ -5126,8 +5125,8 @@ function renderHistChart(d, cur, mode) {
   drawPnlCurve(d.series || [], cur, d.markers || [], ci, d.closed_info || null, mode);
 }
 
-// 历史盈亏曲线 tooltip：悬停/点按柱子显示当日盈亏、涨跌幅、累计盈亏等。
-// isRate（盈亏率分段）：主行改展示 当日涨跌幅 / 累计收益率（%），金额行保留作辅助信息。
+// 历史盈亏曲线 tooltip：悬停/点按柱子显示单日盈亏、涨跌幅、累计盈亏等。
+// isRate（盈亏率分段）：主行改展示 涨跌幅 / 累计收益率（%），金额行保留作辅助信息。
 // 所有金额一律带货币符号（cur0 已含 ¥ / USD / HK$ 前缀）。
 // closedInfo 命中当前点时（清仓日）追加「清仓落袋」区块：累计收益 / 持仓天数 / 收益率 / 成本 / 成交价。
 function showHistTip(e, x, cur, closedInfo, tx, isRate) {
@@ -6306,7 +6305,7 @@ function renderWealth(body) {
 // 首页跟随式理财区块（renderWealthInline）已移除（2026-10-19）：理财统一由顶部「理财」切换进入 #homeWealthBox，不再在持仓下方跟随展示。
 
 // 理财表格视图（账户分组折叠，样式复用持仓来源分组）：按 source_id 分组，组头显示账户名 + 款数 + 合计金额，
-// 悬停展开当日/累计收益。行内不再重复账户列（账户已是组头），其余列沿用原口径。
+// 悬停展开单日/累计收益。行内不再重复账户列（账户已是组头），其余列沿用原口径。
 function renderWealthTable(w) {
   const groups = new Map();
   for (const p of w) {
@@ -6527,7 +6526,7 @@ $('#wealthForm').onsubmit = async (e) => {
 };
 
 // 刷新净值：手动录入最新净值（银行理财从 App 查看后填；基金码产品亦可在此手动覆盖）。
-// 后端按 金额 = 份额 × 净值 自动重算当日持仓金额与每日盈亏；无份额时优先复用已有份额，其次由最新快照金额反推。
+// 后端按 金额 = 份额 × 净值 自动重算持仓金额与每日盈亏；无份额时优先复用已有份额，其次由最新快照金额反推。
 async function openWealthNavModal(id) {
   let w = null;
   try {
@@ -7312,7 +7311,7 @@ function renderWealthHistTable() {
   const view = (isAll && wealthHistShown < filtered.length) ? filtered.slice(0, wealthHistShown) : filtered;
   const hasMore = isAll && wealthHistShown < filtered.length;
   // 审计记录已并入本表：末列「操作」= 该 date 最新可撤销快照的 撤销 / 删除 按钮
-  let html = '<table class="asset-table"><thead><tr><th>日期</th><th class="num">持仓金额</th><th class="num">净存入</th><th class="num">分红</th><th class="num">当日盈亏</th><th class="num">累计盈亏</th><th>操作</th></tr></thead><tbody>';
+  let html = '<table class="asset-table"><thead><tr><th>日期</th><th class="num">持仓金额</th><th class="num">净存入</th><th class="num">分红</th><th class="num">盈亏</th><th class="num">累计盈亏</th><th>操作</th></tr></thead><tbody>';
   for (const r2 of view) {
     const p = r2.pnl || 0, cum = r2.cum_pnl || 0;
     const a = wealthHistAuditMap[r2.date];
@@ -7320,7 +7319,7 @@ function renderWealthHistTable() {
     ops += actBtn('edit', `data-edit-date="${r2.date}"`, '编辑该日持仓金额/净存入/分红');
     if (a && a.action !== 'undo') {
       ops += actBtn('undo', `data-undo="${a.id}"`, '撤销该操作并冲正子账户');
-      if (a.action === 'upsert') ops += actBtn('del', `data-del-date="${a.date}"`, '删除当日快照', { danger: true });
+      if (a.action === 'upsert') ops += actBtn('del', `data-del-date="${a.date}"`, '删除该日快照', { danger: true });
     }
     const div = r2.dividend || 0;
     html += `<tr><td>${r2.date}</td><td class="num">${money(r2.amount || 0)}</td><td class="num">${money(r2.cashflow || 0)}</td>
@@ -7701,7 +7700,7 @@ async function openSnapModal() {
   await loadAsset();
   await loadCashAccounts();
   // 与理财卡片列表保持相同顺序（按原币持仓金额从大到小）；
-  // 已清仓停用（archived）的产品不参与持仓更新（取出：在②当日净存入填负数）
+  // 已清仓停用（archived）的产品不参与持仓更新（取出：在②今日净存入填负数）
   const raw = ((assetData.wealth || {}).products || []).filter((p) => !p.archived);
   const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount));
   if (!w.length) { toast('请先在「理财」里添加一个产品', 'err'); return; }
@@ -7760,8 +7759,8 @@ async function openSnapModal() {
           <input ${cfAttrs}${cfLocked ? ' disabled' : ''}${cfOninput} placeholder="${cfPlaceholder}" title="${cfTitle}">
         </div>
         <div class="sr-field">
-          <label class="sr-label" for="div-${p.id}">③ 当日分红 ${curSymbolJS(p.currency)}</label>
-          <input type="number" step="0.01" min="0" class="sr-div" id="div-${p.id}" data-id="${p.id}" value="0" placeholder="现金分红填此（红利再投资填 0）" title="现金分红：净值因分红跳降，填此金额后当日盈亏不再误计为亏损；红利再投资份额增加、金额不变，留 0 即可">
+          <label class="sr-label" for="div-${p.id}">③ 今日分红 ${curSymbolJS(p.currency)}</label>
+          <input type="number" step="0.01" min="0" class="sr-div" id="div-${p.id}" data-id="${p.id}" value="0" placeholder="现金分红填此（红利再投资填 0）" title="现金分红：净值因分红跳降，填此金额后今日盈亏不再误计为亏损；红利再投资份额增加、金额不变，留 0 即可">
         </div>
       </div>
     </div>`;
@@ -7783,8 +7782,8 @@ async function openSnapModal() {
 }
 
 // 净存入联动持仓金额：输入框每次打开归零，填的是「本次资金变动」（正数存入 / 负数取出），
-// 未手动改过持仓金额时，今日持仓 = 上次值 + 本次变动，避免「存入未计入持仓 → 当日盈亏把存入全额算成收益」
-// （取出同理：回款不计入当日盈亏）；持仓一旦手动修改即停止联动。
+// 未手动改过持仓金额时，今日持仓 = 上次值 + 本次变动，避免「存入未计入持仓 → 今日盈亏把存入全额算成收益」
+// （取出同理：回款不计入今日盈亏）；持仓一旦手动修改即停止联动。
 // 资金账户不提供选择：存入扣款 / 取出入账均走后端 resolveCashAccount 自动回落
 //（同来源、同币种、余额最大的子账户）。
 function snapCfSync(input) {
@@ -7805,12 +7804,12 @@ $('#snapSave').onclick = async () => {
     if (amtInput.value === '') continue;
     const id = Number(amtInput.dataset.id);
     const amount = Number(amtInput.value);
-    // 输入框填的是「本次资金变动」（正数存入 / 负数取出）；提交时加上当日已录值，合成后端要求的当日累计绝对值
+    // 输入框填的是「本次资金变动」（正数存入 / 负数取出）；提交时加上今日已录值，合成后端要求的今日累计绝对值
     const cfInput = Number(row.querySelector('.sr-cf').value || 0);
     const divInput = Number(row.querySelector('.sr-div').value || 0);
     const old = ((assetData.wealth || {}).products || []).find((p) => p.id === id);
     const oldAmt = old ? Number(old.amount || 0) : 0;
-    const oldCf = old ? Number(old.cashflow_today || 0) : 0;   // 当日已录净存入（绝对值语义）
+    const oldCf = old ? Number(old.cashflow_today || 0) : 0;   // 今日已录净存入（绝对值语义）
     const prevAmt = old ? Number(old.prev_amount || 0) : 0;    // 前一快照金额（盈亏预览基线）
     const opening = oldAmt <= 0.005;                            // 建仓态：净存入只允许正数（投入）
     if (cfInput < -0.005 && opening) {
@@ -8190,7 +8189,7 @@ function klSubChart(ind, data, geo) {
     return { label: 'RSI(14)', body, meta: { text: v > 70 ? 'RSI 超买' : v < 30 ? 'RSI 超卖' : 'RSI ' + v.toFixed(0), cls: v > 70 ? 'down' : v < 30 ? 'up' : 'neu' } };
   }
   if (ind === 'vol') {
-    // VOL 合并进副图区（2026-10-18 起，原独立成交量块删除）：柱色随当日涨跌，附 5 日均量线
+    // VOL 合并进副图区（2026-10-18 起，原独立成交量块删除）：柱色随当天涨跌，附 5 日均量线
     const H = KL_SUB_H;
     const vols = full.map((b) => (isFinite(b.Volume) ? b.Volume : 0));
     let vMax = 0; for (let k = k0; k < nFull; k++) { if (vols[k] > vMax) vMax = vols[k]; }

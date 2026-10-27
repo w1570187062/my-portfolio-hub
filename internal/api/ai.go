@@ -69,7 +69,7 @@ var defaultTemplates = []aiTemplate{
 要求：
 1. 组合概览：总资产、总盈亏及收益率、RMB/USD 市值分布；
 2. 结构分析：股票与基金的占比、各市场分布、单一标的集中度风险；
-3. 当日表现：当日盈亏与当日盈亏率的整体与个股情况；
+3. 今日表现：今日盈亏与今日盈亏率的整体与个股情况；
 4. 风险提示：结合回撤、集中度、币种敞口给出客观判断；
 5. 配置建议：基于以上数据给出 2~3 条可执行的优化建议。
 语言专业克制，避免夸张表述，可适度使用分点与小标题，篇幅 400~600字。
@@ -442,7 +442,7 @@ func buildPortfolioStats(uid int64) (string, error) {
 	b.WriteString("总资产(CNY)：" + nf(totalCNY) + "\n")
 	b.WriteString("总成本(CNY)：" + nf(totalCostCNY) + "\n")
 	b.WriteString("总盈亏(CNY)：" + sf(totalPnl) + "（总收益率 " + pf(totalPct) + "）\n")
-	b.WriteString("当日盈亏(CNY)：" + sf(totalDayCNY) + "\n")
+	b.WriteString("今日盈亏(CNY)：" + sf(totalDayCNY) + "\n")
 	b.WriteString("RMB 市值(CNY)：" + nf(cnyMV) + "（盈亏 " + sf(cnyPnl) + "）\n")
 	b.WriteString("USD 市值折合(CNY)：" + nf(fxToCNY(usdMV, "USD", rate, hkdRate)) + "（盈亏 " + sf(fxToCNY(usdPnl, "USD", rate, hkdRate)) + "）\n")
 	b.WriteString("HKD 市值折合(CNY)：" + nf(fxToCNY(hkdMV, "HKD", rate, hkdRate)) + "（盈亏 " + sf(fxToCNY(hkdPnl, "HKD", rate, hkdRate)) + "）\n")
@@ -468,7 +468,7 @@ func buildPortfolioStats(uid int64) (string, error) {
 		line := fmt.Sprintf("%d. %s(%s) %s/%s/%s 份额%s 成本价%s 现价%s 市值(CNY)%s",
 			i+1, h.Name, h.Symbol, catLabel(h.Category), h.Market, h.Currency,
 			nf(h.Quantity), nf(h.CostPrice), nf(h.CurrentPrice), nf(fxToCNY(v.MarketValue, h.Currency, rate, hkdRate)))
-		line += " 当日盈亏" + sf(fxToCNY(v.DayPnl, h.Currency, rate, hkdRate)) + "(" + pf(v.DayPnlPct) + ")"
+		line += " 今日盈亏" + sf(fxToCNY(v.DayPnl, h.Currency, rate, hkdRate)) + "(" + pf(v.DayPnlPct) + ")"
 		line += " 总盈亏" + sf(fxToCNY(v.Pnl, h.Currency, rate, hkdRate)) + "(" + pf(v.PnlPct) + ")"
 		b.WriteString(line + "\n")
 	}
