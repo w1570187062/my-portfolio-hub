@@ -10148,6 +10148,9 @@ const aiChatState = { chats: [], curId: 0, msgs: [], busy: false, inited: false 
 let aiOcrWorker = null;
 let aiOcrEnginePromise = null;
 const aiOcrTexts = [];
+// 打开截图识别时复用面板头部（标题换成「截图识别」），关闭后还原原先的标题 / 副标题
+let aiOcrTitleBak = '';
+let aiOcrSubBak = '';
 
 // 聊天面板的模型下拉：与「设置 → AI」共享 aiCfg.models，但选中下标独立。
 function renderAiChatModelSelect() {
@@ -10495,9 +10498,11 @@ async function aiChatSend() {
 const AI_OCR_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 const AI_OCR_LANGS = 'chi_sim+eng';
 
+// 状态文案写进面板副标题（工作区自己不再画标题行）；工作区未打开时不打扰会话标题。
 function aiOcrStatus(msg) {
-  const el = document.getElementById('aiOcrStatus');
-  if (el) el.textContent = msg || '本地 OCR · 不调用 AI';
+  const l = aiOcrLayerEl();
+  const el = document.getElementById('aiChatSub');
+  if (l && !l.hidden && el) el.textContent = msg || '本地 OCR · 不调用 AI';
 }
 
 function aiOcrLoadEngine() {
@@ -10654,15 +10659,30 @@ function aiOcrReset() {
 function aiOcrOpen() {
   const p = aiChatPanelEl();
   if (p && p.hidden) aiChatOpen();
+  if (p) p.classList.remove('side-open'); // 窄屏：进工作区前先收起会话抽屉
   const l = aiOcrLayerEl();
   if (!l) return;
+  // 标题复用面板头部：把「AI 助手」换成「截图识别」，副标题显示引擎状态
+  const titleEl = document.getElementById('aiChatTitle');
+  const subEl = document.getElementById('aiChatSub');
+  if (titleEl && !aiOcrTitleBak) aiOcrTitleBak = titleEl.textContent;
+  if (subEl && !aiOcrSubBak) aiOcrSubBak = subEl.textContent;
+  if (titleEl) titleEl.textContent = '截图识别';
   l.hidden = false;
   aiOcrReset();
 }
 
 function aiOcrClose() {
   const l = aiOcrLayerEl();
-  if (l) l.hidden = true;
+  if (!l || l.hidden) return;
+  l.hidden = true;
+  // 还原面板头部（会话标题 / 副标题）
+  const titleEl = document.getElementById('aiChatTitle');
+  const subEl = document.getElementById('aiChatSub');
+  if (titleEl && aiOcrTitleBak) titleEl.textContent = aiOcrTitleBak;
+  if (subEl && aiOcrSubBak) subEl.textContent = aiOcrSubBak;
+  aiOcrTitleBak = '';
+  aiOcrSubBak = '';
 }
 
 // 识别一张图并填充工作区（右上角「截图识别」入口）
@@ -10766,6 +10786,11 @@ document.addEventListener('click', (e) => {
   if (t.closest('#aiChatSend')) { aiChatSend(); return; }
   // ---- 截图识别（纯 OCR）----
   if (t.closest('#aiChatOcr')) { aiOcrOpen(); return; }
+  if (t.closest('#aiChatSideClose')) {
+    const p2 = aiChatPanelEl();
+    if (p2) p2.classList.remove('side-open');
+    return;
+  }
   if (t.closest('#aiOcrClose')) { aiOcrClose(); return; }
   if (t.closest('#aiOcrPick')) { const fi = document.getElementById('aiOcrFile'); if (fi) fi.click(); return; }
   if (t.closest('#aiOcrClear')) { aiOcrReset(); return; }

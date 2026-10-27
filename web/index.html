@@ -650,10 +650,13 @@
   <!-- ===== AI 助手：右下角悬浮按钮 + 聊天面板（不在 #app 内，避免未登录/boot 前被隐藏） ===== -->
   <div id="aiChatPanel" class="ai-chat-panel" role="dialog" aria-label="AI 助手" hidden>
     <div class="acp-head">
-      <span class="acp-title">AI 助手</span>
+      <!-- 「会话列表」按钮在窄屏（≤640px）显示在标题左侧，宽屏隐藏（侧栏常驻） -->
+      <button id="aiChatListToggle" class="acp-ibtn acp-list-toggle" type="button" title="会话列表" aria-label="会话列表">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+      </button>
+      <span class="acp-title" id="aiChatTitle">AI 助手</span>
       <span class="acp-sub" id="aiChatSub">持仓侠</span>
       <div class="acp-head-actions">
-        <button id="aiChatListToggle" class="btn btn-sm acp-list-toggle" type="button" title="会话列表">☰</button>
         <!-- 头部图标按钮统一走 .acp-ibtn（与全屏按钮同尺寸/同 hover），纯 icon 无文字 -->
         <button id="aiChatNew" class="acp-ibtn" type="button" title="新对话" aria-label="新对话">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
@@ -669,7 +672,11 @@
     </div>
     <div class="acp-body">
       <aside class="acp-side">
-        <div class="acp-side-head">聊天记录</div>
+        <div class="acp-side-head">
+          <span>聊天记录</span>
+          <!-- 仅窄屏抽屉态可见：宽屏侧栏常驻，没有「关闭」语义 -->
+          <button id="aiChatSideClose" class="acp-side-close" type="button" title="收起聊天记录" aria-label="收起聊天记录">✕</button>
+        </div>
         <div id="aiChatList" class="acp-list"></div>
       </aside>
       <section class="acp-main">
@@ -690,8 +697,8 @@
         <!-- ===== 截图识别工作区：纯本地 OCR（tesseract.js），不调用 AI ===== -->
         <div id="aiOcrLayer" class="acp-ocr-layer" hidden>
           <div class="acp-ocr-head">
-            <span class="acp-ocr-title">截图识别</span>
-            <span class="acp-ocr-sub" id="aiOcrStatus">本地 OCR · 不调用 AI</span>
+            <!-- 标题不在这里重复：打开时面板头部 .acp-title 会换成「截图识别」，
+                 状态文案走面板副标题 #aiChatSub，本行只留操作按钮 -->
             <div class="acp-head-actions">
               <input id="aiOcrFile" class="acp-file" type="file" accept="image/*" hidden>
               <button id="aiOcrPick" class="acp-ibtn" type="button" title="选择图片" aria-label="选择图片">

@@ -5389,10 +5389,12 @@ textarea::placeholder {
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-card-solid) 88%, var(--primary) 12%);
 }
-.acp-title { font-size: var(--fs-lg); font-weight: 700; color: var(--text); }
+/* 标题不换行（窄屏下「截图识别」被挤成两行），让副标题去伸缩 */
+.acp-title { font-size: var(--fs-lg); font-weight: 700; color: var(--text); white-space: nowrap; flex: 0 0 auto; }
 .acp-sub {
   font-size: var(--fs-sm); color: var(--text-muted);
-  max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1 1 auto; min-width: 0; max-width: 46%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .acp-head-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
 .acp-close {
@@ -5435,11 +5437,26 @@ textarea::placeholder {
   background: color-mix(in srgb, var(--bg-card-solid) 94%, var(--bg-input) 6%);
 }
 .acp-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-3) var(--sp-2);
   font-size: var(--fs-sm);
   color: var(--text-muted);
   letter-spacing: .04em;
 }
+/* 抽屉关闭叉：仅窄屏抽屉态出现（宽屏侧栏常驻，无「关闭」语义） */
+.acp-side-close { display: none; }
+.ai-chat-panel.side-open .acp-side-close {
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border: none; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-muted);
+  font-size: var(--fs-lg); line-height: 1; cursor: pointer;
+}
+.ai-chat-panel.side-open .acp-side-close:hover { background: var(--bg-hover); color: var(--text); }
 .acp-list { flex: 1 1 auto; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
 .acp-empty { padding: var(--sp-3); font-size: var(--fs-sm); color: var(--text-faint); }
 .acp-item {
@@ -5661,17 +5678,12 @@ textarea::placeholder {
   background: var(--bg-card-solid);
 }
 .acp-ocr-layer[hidden] { display: none; }
+/* 工具条：标题复用面板头部（.acp-title 会切成「截图识别」），这里只放操作按钮，
+   不再画第二条带底色的头部，避免出现上下两条标题带 */
 .acp-ocr-head {
   flex: 0 0 auto;
-  display: flex; align-items: center; gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4);
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-card-solid) 88%, var(--primary) 12%);
-}
-.acp-ocr-title { font-size: var(--fs-lg); font-weight: 700; color: var(--text); }
-.acp-ocr-sub {
-  font-size: var(--fs-sm); color: var(--text-muted);
-  max-width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
 }
 .acp-ocr-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--sp-4); }
 .acp-ocr-drop {
