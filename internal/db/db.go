@@ -1346,6 +1346,10 @@ func initAssetTables() error {
 	// 新代码不再读写；如无历史包袱可择机 DROP。
 	addColumnIfMissing("cash_accounts", "is_default", "INTEGER NOT NULL DEFAULT 0")
 	addColumnIfMissing("cash_accounts", "type", "TEXT NOT NULL DEFAULT ''")
+	// excluded：日常开销账户标记（2026-10-27）。1 = 不参与再平衡口径：既不计入现金类市值，
+	// 也不计入再平衡的总市值分母（生活费不是「可配置资产」）。记账、转账、流水、兜底选账户
+	// 一律照旧使用，只有 computeRebalance 会跳过。
+	addColumnIfMissing("cash_accounts", "excluded", "INTEGER NOT NULL DEFAULT 0")
 	// currency：负债支持多币种（与现金/持仓一致），默认 cny
 	addColumnIfMissing("liabilities", "currency", "TEXT NOT NULL DEFAULT 'cny'")
 	// end_date：收支计划截止日期（YYYY-MM-DD，空=长期有效）
@@ -1394,6 +1398,10 @@ func initAssetTables() error {
 	addColumnIfMissing("cashflow_plans", "category", "TEXT NOT NULL DEFAULT ''")
 	migrateFinCategory()
 	if err := initDeposits(); err != nil {
+		return err
+	}
+	// 再平衡记录表（2026-10-27 重新引入再平衡功能时新增）
+	if err := initRebalance(); err != nil {
 		return err
 	}
 	return nil

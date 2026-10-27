@@ -257,6 +257,11 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/asset/liabilities/:id", updateLiability)
 		g.DELETE("/asset/liabilities/:id", deleteLiability)
 		g.GET("/asset/liabilities/:id/flows", liabilityFlows)
+		// 资产再平衡（2026-10-27 重新引入）：股票/基金/理财/现金 四大类配置偏离 + 历史记录
+		g.GET("/rebalance", rebalanceOverview)
+		g.POST("/rebalance/log", rebalanceLogPost)
+		g.GET("/rebalance/history", rebalanceHistoryGet)
+		g.DELETE("/rebalance/log/:id", rebalanceLogDelete)
 		// 存款（定期存款 / 大额存单）：新增扣款、到期确认落袋后才入账利息
 		g.GET("/asset/deposits", listDeposits)
 		g.POST("/asset/deposits", createDeposit)

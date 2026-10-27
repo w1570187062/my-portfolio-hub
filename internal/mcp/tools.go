@@ -54,6 +54,8 @@ func (s *Server) registerDefaultTools() {
 
 	// 只读查询工具：账户/子账户、持仓、理财
 	s.registerQueryTools()
+	// 只读查询工具：资产再平衡（实现由 api 包注入，见 rebalance.go）
+	s.registerRebalanceTools()
 }
 
 // resolveUserID 解析 MCP 操作归属的用户：

@@ -15,6 +15,8 @@ import (
 const (
 	settingAssetTypeLabels = "asset_type_labels"
 	settingFlowCategories  = "flow_categories"
+	// 再平衡目标权重与频率（2026-10-27 重新引入再平衡功能）
+	settingRebalanceTargets = "rebalance_targets"
 )
 
 // defaultAssetTypeLabels 返回内置默认资产类型标签（首次访问设置时落库）。
@@ -134,6 +136,7 @@ func settingsGet(c *gin.Context) {
 	switch kind {
 	case settingAssetTypeLabels:
 	case settingFlowCategories:
+	case settingRebalanceTargets:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未知的设置类型"})
 		return
@@ -145,12 +148,19 @@ func settingsGet(c *gin.Context) {
 	}
 	if !ok {
 		var seed string
-		if kind == settingFlowCategories {
+		switch kind {
+		case settingFlowCategories:
 			if b, e := json.Marshal(defaultFlowCategories()); e == nil {
 				seed = string(b)
 			}
-		} else if b, e := json.Marshal(defaultAssetTypeLabels()); e == nil {
-			seed = string(b)
+		case settingRebalanceTargets:
+			if b, e := json.Marshal(defaultRebalanceConfig()); e == nil {
+				seed = string(b)
+			}
+		default:
+			if b, e := json.Marshal(defaultAssetTypeLabels()); e == nil {
+				seed = string(b)
+			}
 		}
 		_ = db.SaveSetting(kind, seed, uid)
 		payload = seed
@@ -165,6 +175,7 @@ func settingsPut(c *gin.Context) {
 	switch kind {
 	case settingAssetTypeLabels:
 	case settingFlowCategories:
+	case settingRebalanceTargets:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未知的设置类型"})
 		return
@@ -199,6 +210,22 @@ func settingsPut(c *gin.Context) {
 		if b, e := json.Marshal(norm); e == nil {
 			s = string(b)
 		}
+	} else if kind == settingRebalanceTargets {
+		// 结构校验：{targets:[{key,pct}], freq, drift_alert}；合计必须 100%
+		var cfg rbConfig
+		if err := json.Unmarshal([]byte(s), &cfg); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "再平衡配置必须是 {targets,freq,drift_alert} 结构"})
+			return
+		}
+		norm, err := normalizeRebalanceConfig(cfg)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		// UpdatedAt 由服务端盖时间戳，忽略前端传入值
+		if b2, e := json.Marshal(norm); e == nil {
+			s = string(b2)
+		}
 	} else {
 		// 结构校验：资产类型标签为字符串数组
 		var ls []string
@@ -221,6 +248,7 @@ func settingsDelete(c *gin.Context) {
 	switch kind {
 	case settingAssetTypeLabels:
 	case settingFlowCategories:
+	case settingRebalanceTargets:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未知的设置类型"})
 		return

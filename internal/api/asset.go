@@ -225,6 +225,8 @@ func assetOverview(c *gin.Context) {
 			"source_name": srcName[cc.SourceID],
 			"amount":      round2(cc.Amount),
 			"note":        cc.Note,
+			// 日常开销账户：账户表打「日常」徽标，再平衡页据此把这部分从口径里剔除
+			"excluded": cc.Excluded,
 		})
 	}
 
