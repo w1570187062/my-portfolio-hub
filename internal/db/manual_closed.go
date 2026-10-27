@@ -14,7 +14,8 @@ type ManualClosed struct {
 	Kind        string   `json:"kind"`         // stock（股票）| fund（基金）| wealth（理财）
 	Code        string   `json:"code"`         // 代码（股票/基金代码或理财产品代码，可空）
 	Name        string   `json:"name"`         // 名称
-	Amount      float64  `json:"amount"`       // 盈亏金额（正=赚，负=亏）
+	Currency    string   `json:"currency"`     // 金额币种：cny / hkd / usd（空串按 cny 处理）
+	Amount      float64  `json:"amount"`       // 盈亏金额（正=赚，负=亏），与本金同币种
 	Principal   *float64 `json:"principal"`    // 本金（可空：留空表示不参与收益率计算）
 	ReturnRate  *float64 `json:"return_rate"`  // 持有期收益率 %（可空：留空表示按 盈亏÷本金 推算）
 	Note        string   `json:"note"`         // 备注（前端已下线输入，保留列兼容旧数据）
@@ -48,6 +49,8 @@ func initManualClosed() error {
 	// 前者决定表格显示 +0.00% 还是显示「—」。
 	addColumnIfMissing("manual_closed_records", "principal", "REAL")
 	addColumnIfMissing("manual_closed_records", "return_rate", "REAL")
+	// 币种：存量行是空串（新增列前的数据一律人民币），展示与折算都按 cny 兜底。
+	addColumnIfMissing("manual_closed_records", "currency", "TEXT NOT NULL DEFAULT ''")
 	// 类型口径变更：hold（持仓）拆成 stock（股票）/ fund（基金），历史 hold 一律归为股票。
 	// 幂等：第二次启动时已无 kind='hold' 的行。
 	DB.Exec(`UPDATE manual_closed_records SET kind='stock' WHERE kind='hold'`)
@@ -56,7 +59,7 @@ func initManualClosed() error {
 
 // ListManualClosed 返回某用户全部手动已平仓记录，按清仓时间倒序（无时间排最后）。
 func ListManualClosed(uid int64) ([]ManualClosed, error) {
-	rows, err := DB.Query(`SELECT id,user_id,kind,code,name,amount,note,holding_days,source,realized_at,created_at,principal,return_rate
+	rows, err := DB.Query(`SELECT id,user_id,kind,code,name,currency,amount,note,holding_days,source,realized_at,created_at,principal,return_rate
 		FROM manual_closed_records WHERE user_id=?
 		ORDER BY CASE WHEN realized_at='' THEN 1 ELSE 0 END, realized_at DESC, id DESC`, uid)
 	if err != nil {
@@ -67,7 +70,7 @@ func ListManualClosed(uid int64) ([]ManualClosed, error) {
 	for rows.Next() {
 		var m ManualClosed
 		var principal, rate sql.NullFloat64
-		if err := rows.Scan(&m.ID, &m.UserID, &m.Kind, &m.Code, &m.Name, &m.Amount, &m.Note, &m.HoldingDays, &m.Source, &m.RealizedAt, &m.CreatedAt, &principal, &rate); err != nil {
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Kind, &m.Code, &m.Name, &m.Currency, &m.Amount, &m.Note, &m.HoldingDays, &m.Source, &m.RealizedAt, &m.CreatedAt, &principal, &rate); err != nil {
 			return nil, err
 		}
 		if principal.Valid {
@@ -78,6 +81,7 @@ func ListManualClosed(uid int64) ([]ManualClosed, error) {
 			v := rate.Float64
 			m.ReturnRate = &v
 		}
+		m.Currency = manClosedCurrency(m.Currency)
 		out = append(out, m)
 	}
 	return out, rows.Err()
@@ -91,11 +95,22 @@ func nullFloat(p *float64) interface{} {
 	return *p
 }
 
+// manClosedCurrency 币种归一：只允许 cny / hkd / usd，未知与空串一律按 cny（存量数据即空串）。
+func manClosedCurrency(c string) string {
+	switch normCurrency(c) {
+	case "hkd":
+		return "hkd"
+	case "usd":
+		return "usd"
+	}
+	return "cny"
+}
+
 // CreateManualClosed 新增一条手动已平仓记录，返回新 id。
 func CreateManualClosed(m *ManualClosed) (int64, error) {
-	res, err := DB.Exec(`INSERT INTO manual_closed_records(user_id,kind,code,name,amount,note,holding_days,source,realized_at,created_at,principal,return_rate)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		m.UserID, normKind(m.Kind), m.Code, m.Name, m.Amount, m.Note, m.HoldingDays, m.Source, m.RealizedAt, nowStr(),
+	res, err := DB.Exec(`INSERT INTO manual_closed_records(user_id,kind,code,name,currency,amount,note,holding_days,source,realized_at,created_at,principal,return_rate)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		m.UserID, normKind(m.Kind), m.Code, m.Name, manClosedCurrency(m.Currency), m.Amount, m.Note, m.HoldingDays, m.Source, m.RealizedAt, nowStr(),
 		nullFloat(m.Principal), nullFloat(m.ReturnRate))
 	if err != nil {
 		return 0, err
@@ -108,9 +123,9 @@ func CreateManualClosed(m *ManualClosed) (int64, error) {
 // 备注（note）字段已在界面上下线，UPDATE 不再写入它 —— 否则前端提交时缺该键会把老备注清空。
 func UpdateManualClosed(m *ManualClosed) error {
 	_, err := DB.Exec(`UPDATE manual_closed_records
-		SET kind=?,code=?,name=?,amount=?,principal=?,return_rate=?,holding_days=?,source=?,realized_at=?
+		SET kind=?,code=?,name=?,currency=?,amount=?,principal=?,return_rate=?,holding_days=?,source=?,realized_at=?
 		WHERE id=? AND user_id=?`,
-		normKind(m.Kind), m.Code, m.Name, m.Amount, nullFloat(m.Principal), nullFloat(m.ReturnRate),
+		normKind(m.Kind), m.Code, m.Name, manClosedCurrency(m.Currency), m.Amount, nullFloat(m.Principal), nullFloat(m.ReturnRate),
 		m.HoldingDays, m.Source, m.RealizedAt, m.ID, m.UserID)
 	return err
 }
