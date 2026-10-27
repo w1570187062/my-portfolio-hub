@@ -634,11 +634,17 @@ function renderClosed(box, closedHoldings, closedWealth) {
   const totalCount = hCount + wCount;
 
   // 汇总 KPI（系统 + 手动补录合并统计落袋）
+  // 手动补录的盈亏可能记在 HKD / USD，汇总统一折 CNY（与持仓、理财页同一口径）
+  const mcToCny = (m) => {
+    const c = normCurJS(m.currency);
+    const v = Number(m.amount) || 0;
+    return c === 'usd' ? v * usdRate : c === 'hkd' ? v * hkdRate : v;
+  };
   let hTotalDays = 0, hTotalRealized = 0, wTotalDays = 0, wTotalPnl = 0;
   closedHoldings.forEach((h) => { hTotalDays += ((h.closed_date && h.buy_date) ? daysBetween(h.buy_date, h.closed_date) : (h.holding_days || 0)); hTotalRealized += (Number(h.realized_pnl) || 0); });
-  mHold.forEach((m) => { hTotalDays += (Number(m.holding_days) || 0); hTotalRealized += (Number(m.amount) || 0); });
+  mHold.forEach((m) => { hTotalDays += (Number(m.holding_days) || 0); hTotalRealized += mcToCny(m); });
   closedWealth.forEach((w) => { wTotalDays += (w.holding_days || 0); wTotalPnl += (Number(w.cum_pnl) || 0); });
-  mWealth.forEach((m) => { wTotalDays += (Number(m.holding_days) || 0); wTotalPnl += (Number(m.amount) || 0); });
+  mWealth.forEach((m) => { wTotalDays += (Number(m.holding_days) || 0); wTotalPnl += mcToCny(m); });
   const hAvgDays = hCount ? Math.round(hTotalDays / hCount) : 0;
   const wAvgDays = wCount ? Math.round(wTotalDays / wCount) : 0;
   const grandTotal = hTotalRealized + wTotalPnl;
@@ -773,7 +779,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
       <td class="ct-name"><span class="name-clickable" title="${esc(m.name)}（手动补录）">${esc(m.name)}</span></td>
       <td class="ct-code-col">${m.code ? esc(m.code) : '—'}</td>
       <td class="ct-type-col"><span class="ct-type ct-type-${mk}">${mk === 'fund' ? '基金' : '股票'}</span></td>
-      <td class="ct-num ${clsPnl(amt)}">${signedCur(amt, 'cny')}</td>
+      <td class="ct-num ${clsPnl(amt)}">${signedCur(amt, normCurJS(m.currency))}</td>
       <td class="ct-num ${rt.pctCls}">${rt.pctTxt}</td>
       <td class="ct-num ${rt.annCls}" title="${rt.annHint}">${rt.annTxt}</td>
       <td class="ct-src">${esc(m.source || '—')}</td>
@@ -817,7 +823,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
       <td class="ct-name"><span class="name-clickable" title="${esc(m.name)}（手动补录）">${esc(m.name)}</span></td>
       <td class="ct-code-col">${m.code ? esc(m.code) : '—'}</td>
       <td class="ct-type-col"><span class="ct-type ct-type-wealth">理财</span></td>
-      <td class="ct-num ${clsPnl(amt)}">${signedCur(amt, 'cny')}</td>
+      <td class="ct-num ${clsPnl(amt)}">${signedCur(amt, normCurJS(m.currency))}</td>
       <td class="ct-num ${rt.pctCls}">${rt.pctTxt}</td>
       <td class="ct-num ${rt.annCls}" title="${rt.annHint}">${rt.annTxt}</td>
       <td class="ct-src">${esc(m.source || '—')}</td>
@@ -1062,6 +1068,7 @@ function openClosedRecordModal(record) {
   $('#cr_name').value = m ? (m.name || '') : '';
   $('#cr_code').value = m ? (m.code || '') : '';
   $('#cr_amount').value = m ? (m.amount != null ? m.amount : '') : '';
+  $('#cr_currency').value = m ? normCurJS(m.currency) : 'cny';
   $('#cr_principal').value = m && m.principal != null ? m.principal : '';
   $('#cr_rate').value = m && m.return_rate != null ? m.return_rate : '';
   $('#cr_days').value = m ? (m.holding_days != null ? m.holding_days : '') : '';
@@ -2935,6 +2942,7 @@ $('#crSave').addEventListener('click', async () => {
     name,
     code: ($('#cr_code').value || '').trim(),
     amount: parseFloat($('#cr_amount').value) || 0,
+    currency: normCurJS($('#cr_currency') ? $('#cr_currency').value : 'cny'),
     principal: numOrNull($('#cr_principal')),
     return_rate: numOrNull($('#cr_rate')),
     holding_days: parseInt($('#cr_days').value, 10) || 0,
@@ -5452,6 +5460,12 @@ function curSymbolJS(cur) {
   return '¥';
 }
 const moneyCur = (n, cur) => curSymbolJS(cur) + fmt(n == null ? 0 : n);
+// 币种归一：只认 cny / hkd / usd，未知值与空串一律 cny（存量数据新增列前为空串）。
+// 声明为 function 以便提升：已平仓弹框等文件后段的逻辑也能用。
+function normCurJS(cur) {
+  const c = String(cur || '').toLowerCase();
+  return (c === 'usd' || c === 'hkd') ? c : 'cny';
+}
 
 async function showAssetView() {
   $('#holdingsView').hidden = true;
@@ -10326,6 +10340,10 @@ async function aiChatSelect(id) {
 }
 
 async function aiChatNew() {
+  // 窄屏：先收起会话抽屉、退出截图识别工作区，否则新会话被盖住看不见
+  const pn = aiChatPanelEl();
+  if (pn) pn.classList.remove('side-open');
+  aiOcrClose();
   try {
     const r = await api('/api/ai/chats', { method: 'POST', body: JSON.stringify({ title: '新对话' }) });
     if (!r.ok) { toast('创建会话失败', 'err'); return; }
@@ -10827,6 +10845,8 @@ document.addEventListener('click', (e) => {
     if (del && del.dataset.del) { aiChatDelete(del.dataset.del); return; }
     const edit = t.closest('.acp-item-edit');
     if (edit) { aiChatStartRename(item); return; }
+    // 从「聊天记录」切会话：若正在截图识别工作区，先退回聊天区（还原面板标题）
+    aiOcrClose();
     if (item.dataset.id) aiChatSelect(item.dataset.id);
     // 手机端：选中会话后顺手收起抽屉（桌面端无 side-open 类，不受影响）
     const pp = aiChatPanelEl();

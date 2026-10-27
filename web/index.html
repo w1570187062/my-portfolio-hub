@@ -1143,8 +1143,9 @@
         </div>
         <label id="crSourceCustomRow" hidden>自定义账户名 <input id="cr_source_custom" placeholder="如 线下转让 / 朋友代持"></label>
         <div class="f-row">
-          <label>本金 <input id="cr_principal" type="number" step="0.01" placeholder="选填，用于算收益率"></label>
-          <label>盈亏金额 <input id="cr_amount" type="number" step="0.01" placeholder="正=赚，负=亏"></label>
+          <label>本金 <input id="cr_principal" type="number" step="0.01" placeholder="选填，用于算收益率" title="与盈亏金额同币种"></label>
+          <!-- 盈亏金额：币种下拉 + 金额输入合并为组合控件（同「子账户余额」） -->
+          <label>盈亏金额 <div class="combo"><select id="cr_currency"><option value="cny">CNY</option><option value="hkd">HKD</option><option value="usd">USD</option></select><input id="cr_amount" type="number" step="0.01" placeholder="正=赚，负=亏"></div></label>
         </div>
         <div class="f-row">
           <label>收益率 % <input id="cr_rate" type="number" step="0.01" placeholder="选填，留空按 盈亏÷本金"></label>

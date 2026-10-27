@@ -3497,6 +3497,22 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   box-shadow: none;
   background: transparent;
 }
+/* 组合控件放进 .f-row 时必须再降一级：各弹框的 `#modal .f-row > label select { width:100% }`
+   带 id、优先级高于上面的 .modal-card 降级规则，会把币种下拉撑满整格、
+   把后面的数字输入框挤成一条缝（实测只剩 16px）。这里显式还原成「下拉定宽 + 输入框吃掉剩余」。 */
+#modal .f-row > label .combo,
+#closedRecordModal .f-row > label .combo {
+  width: 100%;
+  margin-top: var(--sp-1);
+}
+#modal .f-row > label .combo > select,
+#closedRecordModal .f-row > label .combo > select {
+  width: auto; flex: 0 0 auto; margin: 0;
+}
+#modal .f-row > label .combo > input,
+#closedRecordModal .f-row > label .combo > input {
+  width: auto; flex: 1 1 0; min-width: 0; margin: 0;
+}
 
 .tool-result {
   background: var(--bg-glass);
@@ -5396,16 +5412,19 @@ textarea::placeholder {
   flex: 1 1 auto; min-width: 0; max-width: 46%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.acp-head-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
+/* 头部操作区与图标按钮一律不可收缩：否则窄屏标题/副标题变长时会把按钮压扁（实测压到 21px） */
+.acp-head-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); flex: 0 0 auto; }
 .acp-close {
   width: 28px; height: 28px; border: none; border-radius: var(--r-sm);
   background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--fs-lg); line-height: 1;
+  flex: 0 0 auto;
 }
 /* 头部纯图标按钮（新对话 / 截图识别 / 全屏）：统一 28×28 + 幽灵底 hover */
 .acp-ibtn {
   width: 28px; height: 28px; border: none; border-radius: var(--r-sm);
   background: transparent; color: var(--text-muted); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  flex: 0 0 auto;
   transition: background .2s var(--e), color .2s var(--e);
 }
 .acp-ibtn:hover { background: var(--bg-hover); color: var(--text); }
@@ -5425,7 +5444,9 @@ textarea::placeholder {
 }
 .acp-list-toggle { display: none; }
 
-.acp-body { flex: 1 1 auto; min-height: 0; display: flex; }
+/* 定位上下文：窄屏「聊天记录」抽屉 absolute 相对这里铺满，不再顶到面板头部、
+   把「新对话 / 截图识别 / 全屏 / 收起」整排按钮盖住 */
+.acp-body { flex: 1 1 auto; min-height: 0; display: flex; position: relative; }
 
 /* 左侧：会话历史 */
 .acp-side {
@@ -5792,15 +5813,23 @@ textarea::placeholder {
   .ai-chat-panel .acp-side { display: none; }
   .ai-chat-panel.side-open .acp-side {
     display: flex;
+    /* absolute 相对 .acp-body：只盖聊天区，面板头部按钮始终可点 */
     position: absolute;
     left: 0; top: 0; bottom: 0;
     width: 74%;
     max-width: 280px;
-    z-index: 2;
+    /* 必须高于截图识别工作区（.acp-ocr-layer z-index:6），
+       否则在截图识别里点「聊天记录」会被工作区盖住 */
+    z-index: 8;
     /* 独立抽屉卡：四角全圆角（只留面板左圆角会出现「右半截直角」的割裂感） */
     border-radius: var(--r-lg);
     border: 1px solid var(--border);
     box-shadow: 0 12px 32px rgba(0, 0, 0, .32);
+  }
+  /* 抽屉遮罩：压住聊天区/截图识别工作区（z<8），点任意处收起抽屉 */
+  .ai-chat-panel.side-open .acp-main::after {
+    content: ''; position: absolute; inset: 0; z-index: 7;
+    background: rgba(0, 0, 0, .42);
   }
   .ai-msg .ai-bubble { max-width: 92%; }
   /* 截图识别：窄屏改成上下排布，图在上文字在下 */
