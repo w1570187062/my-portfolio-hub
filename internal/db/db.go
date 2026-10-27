@@ -37,9 +37,6 @@ type Holding struct {
 	Closed          bool    `json:"closed"`           // 是否已清仓（份额已归零）
 	LastQuantity    float64 `json:"last_quantity"`    // 清仓前最后份额（供历史盈亏重算基准）
 	LastCostPrice   float64 `json:"last_cost_price"`  // 清仓前最后成本价（供历史盈亏重算基准）
-	AnalysisSignal  string  `json:"analysis_signal"`  // 自动技术分析信号：buy/sell/hold（刷新时计算）
-	AnalysisUpPct   float64 `json:"analysis_up_pct"`  // 自动分析看涨概率 up_pct（刷新时计算）
-	AnalysisAt      string  `json:"analysis_at"`      // 自动分析生成时间（本地时区）
 	UserID          int64   `json:"user_id"`
 	UpdatedAt       string  `json:"updated_at"`
 }
@@ -111,17 +108,6 @@ func Init(path string) error {
 	}
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='last_cost_price'`).Scan(&lcc); e == nil && lcc == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN last_cost_price REAL NOT NULL DEFAULT 0`)
-	}
-	// 兼容旧库：新增 自动技术分析结果（买/卖/持信号 + 看涨概率 + 生成时间），由刷新时计算、前端角标读取
-	var ansig, anup, anat int
-	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='analysis_signal'`).Scan(&ansig); e == nil && ansig == 0 {
-		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN analysis_signal TEXT NOT NULL DEFAULT ''`)
-	}
-	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='analysis_up_pct'`).Scan(&anup); e == nil && anup == 0 {
-		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN analysis_up_pct REAL NOT NULL DEFAULT 0`)
-	}
-	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='analysis_at'`).Scan(&anat); e == nil && anat == 0 {
-		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN analysis_at TEXT NOT NULL DEFAULT ''`)
 	}
 	// 兼容旧库：新增 transaction_cost 列（交易成本/手续费，按持仓币种计，可选）
 	var tcc int
@@ -471,14 +457,15 @@ func SumRealizedPnl(holdingID int64) (float64, error) {
 }
 
 // BatchSumRealizedPnl 批量返回每个 holding_id 的累计已实现盈亏（reverted 交易不计）。
-func BatchSumRealizedPnl(uid int64, holdingIDs []int64) (map[int64]float64, error) {
+// 注意：position_tx 表没有 user_id 列（归属由 holding_id 决定），调用方传进来的
+// IDs 已按用户过滤，故 SQL 里不能再带 user_id 条件，否则查询直接报错。
+func BatchSumRealizedPnl(holdingIDs []int64) (map[int64]float64, error) {
 	out := map[int64]float64{}
 	if len(holdingIDs) == 0 {
 		return out, nil
 	}
 	ph := make([]string, len(holdingIDs))
-	args := make([]interface{}, 0, len(holdingIDs)+1)
-	args = append(args, uid)
+	args := make([]interface{}, 0, len(holdingIDs))
 	for i, id := range holdingIDs {
 		ph[i] = "?"
 		args = append(args, id)
@@ -501,19 +488,19 @@ func BatchSumRealizedPnl(uid int64, holdingIDs []int64) (map[int64]float64, erro
 
 // BatchLastSellDate 批量返回每个 holding_id 的最后一次 SELL（减仓）日期（YYYY-MM-DD），
 // 用于「已平仓」视图展示真实清仓时间。reverted=1 的回滚交易不计。无 SELL 的持仓返回空串。
-func BatchLastSellDate(uid int64, holdingIDs []int64) (map[int64]string, error) {
+// 同 BatchSumRealizedPnl：position_tx 无 user_id 列，不能带该过滤条件。
+func BatchLastSellDate(holdingIDs []int64) (map[int64]string, error) {
 	out := map[int64]string{}
 	if len(holdingIDs) == 0 {
 		return out, nil
 	}
 	ph := make([]string, len(holdingIDs))
-	args := make([]interface{}, 0, len(holdingIDs)+1)
-	args = append(args, uid)
+	args := make([]interface{}, 0, len(holdingIDs))
 	for i, id := range holdingIDs {
 		ph[i] = "?"
 		args = append(args, id)
 	}
-	rows, err := DB.Query(`SELECT holding_id, substr(MAX(created_at),1,10) FROM position_tx WHERE user_id=? AND holding_id IN (`+strings.Join(ph, ",")+`) AND tx_type='SELL' AND reverted=0 GROUP BY holding_id`, args...)
+	rows, err := DB.Query(`SELECT holding_id, substr(MAX(created_at),1,10) FROM position_tx WHERE holding_id IN (`+strings.Join(ph, ",")+`) AND tx_type='SELL' AND reverted=0 GROUP BY holding_id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -531,19 +518,19 @@ func BatchLastSellDate(uid int64, holdingIDs []int64) (map[int64]string, error) 
 
 // BatchInvestedCost 批量返回每个 holding_id 的累计买入成本（BUY 交易金额之和，reverted 不计），
 // 用于「已平仓」视图计算盈亏率（清仓后 quantity=0 导致 cost_value 归零，需用原始买入成本作分母）。
-func BatchInvestedCost(uid int64, holdingIDs []int64) (map[int64]float64, error) {
+// 同 BatchSumRealizedPnl：position_tx 无 user_id 列，不能带该过滤条件。
+func BatchInvestedCost(holdingIDs []int64) (map[int64]float64, error) {
 	out := map[int64]float64{}
 	if len(holdingIDs) == 0 {
 		return out, nil
 	}
 	ph := make([]string, len(holdingIDs))
-	args := make([]interface{}, 0, len(holdingIDs)+1)
-	args = append(args, uid)
+	args := make([]interface{}, 0, len(holdingIDs))
 	for i, id := range holdingIDs {
 		ph[i] = "?"
 		args = append(args, id)
 	}
-	rows, err := DB.Query(`SELECT holding_id, COALESCE(SUM(amount),0) FROM position_tx WHERE user_id=? AND holding_id IN (`+strings.Join(ph, ",")+`) AND tx_type='BUY' AND reverted=0 GROUP BY holding_id`, args...)
+	rows, err := DB.Query(`SELECT holding_id, COALESCE(SUM(amount),0) FROM position_tx WHERE holding_id IN (`+strings.Join(ph, ",")+`) AND tx_type='BUY' AND reverted=0 GROUP BY holding_id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -839,7 +826,7 @@ func LoadFXRate() (cny, hkd, yesterdayCny, yesterdayHkd float64, updated string,
 
 // List returns holdings for a user (userID). Pass 0 to get all (used by scheduled jobs).
 func List(userID int64) ([]Holding, error) {
-	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,analysis_signal,analysis_up_pct,analysis_at,transaction_cost,asset_type FROM holdings"
+	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,transaction_cost,asset_type FROM holdings"
 	var args []interface{}
 	if userID > 0 {
 		q += " WHERE user_id=?"
@@ -854,7 +841,7 @@ func List(userID int64) ([]Holding, error) {
 	var out []Holding
 	for rows.Next() {
 		var h Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt, &h.TransactionCost, &h.AssetType); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.TransactionCost, &h.AssetType); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -864,8 +851,8 @@ func List(userID int64) ([]Holding, error) {
 
 func Get(id int64) (*Holding, error) {
 	var h Holding
-	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,analysis_signal,analysis_up_pct,analysis_at,transaction_cost,asset_type FROM holdings WHERE id=?", id).
-		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.AnalysisSignal, &h.AnalysisUpPct, &h.AnalysisAt, &h.TransactionCost, &h.AssetType)
+	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,transaction_cost,asset_type FROM holdings WHERE id=?", id).
+		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.TransactionCost, &h.AssetType)
 	if err != nil {
 		return nil, err
 	}
@@ -949,17 +936,6 @@ func UpdatePrice(id int64, price, prevClose float64) error {
 	prevClose = math.Round(prevClose*1e4) / 1e4
 	_, err := DB.Exec("UPDATE holdings SET current_price=?, prev_close=?, updated_at=? WHERE id=?",
 		price, prevClose, time.Now().Format("2006-01-02 15:04:05"), id)
-	return err
-}
-
-// UpdateAnalysis persists the latest auto-computed technical-analysis signal
-// (buy/sell/hold) and the up_pct for a holding. Computed during quote refresh
-// (see api.autoAnalyzeAndStore) so the frontend can render a 买/卖 badge without
-// re-running analysis. These columns are only ever written here, so db.Update's
-// narrower column list never clobbers them.
-func UpdateAnalysis(id int64, signal string, upPct float64, at string) error {
-	_, err := DB.Exec("UPDATE holdings SET analysis_signal=?, analysis_up_pct=?, analysis_at=? WHERE id=?",
-		signal, upPct, at, id)
 	return err
 }
 
@@ -1287,6 +1263,7 @@ func initAssetTables() error {
 			type TEXT NOT NULL DEFAULT '',
 			amount REAL NOT NULL DEFAULT 0,
 			note TEXT NOT NULL DEFAULT '',
+			excluded INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL DEFAULT ''
 		)`,
 		// 现金流水：记录每个现金账户的余额变动（加仓付款 / 减仓回款 / 手工调整），
@@ -1668,6 +1645,9 @@ type Cash struct {
 	// 均可单独删除、资金兜底改按余额最大选取），列与字段保留仅为兼容存量数据，不再读写、
 	// 不输出到 API（json:"-"）。
 	IsDefault bool   `json:"-"`
+	// Excluded：日常开销账户（2026-10-27）。true = 不参与再平衡口径 —— 既不计入现金类市值，
+	// 也不计入再平衡的总市值分母。记账/转账/流水/兜底选账户一律照旧，只有再平衡会跳过它。
+	Excluded  bool   `json:"excluded"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -1693,7 +1673,7 @@ type CashFlow struct {
 }
 
 func ListCash(userID int64) ([]Cash, error) {
-	rows, err := DB.Query(`SELECT id,user_id,source_id,name,currency,type,amount,note,is_default,created_at FROM cash_accounts WHERE user_id=? ORDER BY amount DESC, id DESC`, userID)
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,currency,type,amount,note,is_default,excluded,created_at FROM cash_accounts WHERE user_id=? ORDER BY amount DESC, id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1702,10 +1682,12 @@ func ListCash(userID int64) ([]Cash, error) {
 	for rows.Next() {
 		var c Cash
 		var def int
-		if err := rows.Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Type, &c.Amount, &c.Note, &def, &c.CreatedAt); err != nil {
+		var exc int
+		if err := rows.Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Type, &c.Amount, &c.Note, &def, &exc, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		c.IsDefault = def == 1
+		c.Excluded = exc == 1
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -1713,7 +1695,7 @@ func ListCash(userID int64) ([]Cash, error) {
 
 // ListCashBySource 返回某来源下的全部现金账户（默认账户排最前）。
 func ListCashBySource(userID, sourceID int64) ([]Cash, error) {
-	rows, err := DB.Query(`SELECT id,user_id,source_id,name,currency,type,amount,note,is_default,created_at FROM cash_accounts WHERE user_id=? AND source_id=? ORDER BY amount DESC, id DESC`, userID, sourceID)
+	rows, err := DB.Query(`SELECT id,user_id,source_id,name,currency,type,amount,note,is_default,excluded,created_at FROM cash_accounts WHERE user_id=? AND source_id=? ORDER BY amount DESC, id DESC`, userID, sourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -1722,10 +1704,12 @@ func ListCashBySource(userID, sourceID int64) ([]Cash, error) {
 	for rows.Next() {
 		var c Cash
 		var def int
-		if err := rows.Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Type, &c.Amount, &c.Note, &def, &c.CreatedAt); err != nil {
+		var exc int
+		if err := rows.Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Type, &c.Amount, &c.Note, &def, &exc, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		c.IsDefault = def == 1
+		c.Excluded = exc == 1
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -1734,9 +1718,9 @@ func ListCashBySource(userID, sourceID int64) ([]Cash, error) {
 // GetCash 按 ID 取单个现金账户；不存在返回 (nil, nil)。
 func GetCash(id int64) (*Cash, error) {
 	var c Cash
-	var def int
-	err := DB.QueryRow(`SELECT id,user_id,source_id,name,currency,type,amount,note,is_default,created_at FROM cash_accounts WHERE id=?`, id).
-		Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Type, &c.Amount, &c.Note, &def, &c.CreatedAt)
+	var def, exc int
+	err := DB.QueryRow(`SELECT id,user_id,source_id,name,currency,type,amount,note,is_default,excluded,created_at FROM cash_accounts WHERE id=?`, id).
+		Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Type, &c.Amount, &c.Note, &def, &exc, &c.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1744,6 +1728,7 @@ func GetCash(id int64) (*Cash, error) {
 		return nil, err
 	}
 	c.IsDefault = def == 1
+	c.Excluded = exc == 1
 	return &c, nil
 }
 
@@ -1757,8 +1742,8 @@ func CreateCash(c *Cash) (int64, error) {
 	c.Currency = normCurrency(c.Currency)
 	c.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
 	// is_default 列不再写入（默认子账户概念已移除），由 schema 默认值 0 兜底
-	res, err := DB.Exec(`INSERT INTO cash_accounts(user_id,source_id,name,currency,type,amount,note,created_at) VALUES(?,?,?,?,?,?,?,?)`,
-		c.UserID, c.SourceID, c.Name, c.Currency, c.Type, c.Amount, c.Note, c.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO cash_accounts(user_id,source_id,name,currency,type,amount,note,excluded,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+		c.UserID, c.SourceID, c.Name, c.Currency, c.Type, c.Amount, c.Note, boolToInt(c.Excluded), c.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -1771,8 +1756,8 @@ func UpdateCash(c *Cash) error {
 	}
 	c.Currency = normCurrency(c.Currency)
 	// is_default 列不再写入（默认子账户概念已移除）
-	_, err := DB.Exec(`UPDATE cash_accounts SET user_id=?,source_id=?,name=?,currency=?,type=?,amount=?,note=? WHERE id=?`,
-		c.UserID, c.SourceID, c.Name, c.Currency, c.Type, c.Amount, c.Note, c.ID)
+	_, err := DB.Exec(`UPDATE cash_accounts SET user_id=?,source_id=?,name=?,currency=?,type=?,amount=?,note=?,excluded=? WHERE id=?`,
+		c.UserID, c.SourceID, c.Name, c.Currency, c.Type, c.Amount, c.Note, boolToInt(c.Excluded), c.ID)
 	return err
 }
 
@@ -1799,7 +1784,7 @@ func DeleteCashBySource(sourceID int64) error {
 // sourceID>0 时取该来源下、否则取该用户全部（收支计划不挂来源）同币种中**余额最大**的
 // 子账户，并列取较新创建。不存在返回 (nil, nil)。
 func PickCashAccount(userID, sourceID int64, currency string) (*Cash, error) {
-	q := `SELECT id,user_id,source_id,name,currency,type,amount,note,is_default,created_at FROM cash_accounts WHERE user_id=? AND currency=?`
+	q := `SELECT id,user_id,source_id,name,currency,type,amount,note,is_default,excluded,created_at FROM cash_accounts WHERE user_id=? AND currency=?`
 	args := []interface{}{userID, normCurrency(currency)}
 	if sourceID > 0 {
 		q += ` AND source_id=?`
@@ -1807,9 +1792,9 @@ func PickCashAccount(userID, sourceID int64, currency string) (*Cash, error) {
 	}
 	q += ` ORDER BY amount DESC, id DESC LIMIT 1`
 	var c Cash
-	var def int
+	var def, exc int
 	err := DB.QueryRow(q, args...).
-		Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Type, &c.Amount, &c.Note, &def, &c.CreatedAt)
+		Scan(&c.ID, &c.UserID, &c.SourceID, &c.Name, &c.Currency, &c.Type, &c.Amount, &c.Note, &def, &exc, &c.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1817,6 +1802,7 @@ func PickCashAccount(userID, sourceID int64, currency string) (*Cash, error) {
 		return nil, err
 	}
 	c.IsDefault = def == 1
+	c.Excluded = exc == 1
 	return &c, nil
 }
 

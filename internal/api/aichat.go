@@ -426,9 +426,6 @@ func chatToolAnalyzeHolding(uid int64, args map[string]interface{}) string {
 	cost := h.Quantity * h.CostPrice
 	sb.WriteString(fmt.Sprintf("持仓：份额 %.4f | 成本价 %.4f | 现价 %.4f | 市值 %.2f | 浮动盈亏 %.2f\n",
 		h.Quantity, h.CostPrice, h.CurrentPrice, mv, mv-cost))
-	if h.AnalysisSignal != "" {
-		sb.WriteString(fmt.Sprintf("系统自动分析信号：%s（看涨 %.1f%%，生成于 %s）\n", h.AnalysisSignal, h.AnalysisUpPct, h.AnalysisAt))
-	}
 	return sb.String()
 }
 

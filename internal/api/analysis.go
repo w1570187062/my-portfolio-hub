@@ -14,16 +14,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AnalysisResponse 是技术分析弹框所需的精简数据：仅保留迷你K线(series)与
-// 自动分析信号(signal，驱动持仓列表买卖角标)。指标/概率/逐日信号/估值等
-// 子面板已在本次重构中移除，后端不再计算与返回它们。
+// AnalysisResponse 是技术分析弹框所需的精简数据：仅保留迷你K线(series)。
+// 自动买卖信号(角标)已随「判断买卖信号」功能下线；AI 对话的买卖判断仍保留，
+// 由 aichat 复用 market 概率引擎。指标/概率/逐日信号/估值等子面板此前已移除。
 type AnalysisResponse struct {
 	ID          int               `json:"id"`
 	Name        string            `json:"name"`
 	Symbol      string            `json:"symbol"`
 	Category    string            `json:"category"`
 	Market      string            `json:"market"`
-	Signal      string            `json:"signal,omitempty"`
 	Error       string            `json:"error,omitempty"`
 	GeneratedAt string            `json:"generated_at"`
 	Series      []market.KlineBar `json:"series,omitempty"`
@@ -86,8 +85,8 @@ func analysisCacheFresh(row *db.AnalysisCacheRow, marketName string) bool {
 	return true
 }
 
-// getAnalysis 返回迷你K线所需的日K线数据，并依据概率结论回写持仓买卖角标信号。
-// 指标/概率/逐日信号/估值等子面板已移除，此处不再计算与返回它们。
+// getAnalysis 返回迷你K线所需的日K线数据。
+// 自动买卖信号已下线；指标/概率/逐日信号/估值等子面板此前已移除。
 // GET /holdings/:id/analysis
 func getAnalysis(c *gin.Context) {
 	idStr := c.Param("id")
@@ -133,14 +132,6 @@ func getAnalysis(c *gin.Context) {
 			resp.Series = capSeries(bars)
 			resp.Symbol = symForFetch
 			resp.GeneratedAt = row.GeneratedAt
-			// 缓存命中也回写角标信号，使首页角标与弹框结论一致
-			var prob market.ProbabilityResult
-			if e2 := json.Unmarshal([]byte(row.ProbabilityJSON), &prob); e2 == nil && prob.UpPct > 0 {
-				resp.Signal = market.SignalFromUpPct(prob.UpPct)
-				if e := db.UpdateAnalysis(h.ID, resp.Signal, prob.UpPct, genAt); e != nil {
-					log.Printf("[analysis] 回写信号失败 id=%d: %v", h.ID, e)
-				}
-			}
 			c.JSON(http.StatusOK, gin.H{"analysis": resp, "cache": true})
 			return
 		}
@@ -170,16 +161,7 @@ func getAnalysis(c *gin.Context) {
 	resp.Symbol = symForFetch
 	resp.GeneratedAt = genAt
 
-	if prob != nil && prob.UpPct > 0 {
-		// 回写最新信号到持仓，使首页角标与弹框结论保持一致（中性→hold，不展示角标）
-		resp.Signal = market.SignalFromUpPct(prob.UpPct)
-		if err := db.UpdateAnalysis(h.ID, resp.Signal, prob.UpPct, genAt); err != nil {
-			log.Printf("[analysis] 回写信号失败 id=%d: %v", h.ID, err)
-		}
-	}
-
-	// 异步落库缓存（失败不影响响应）：仅缓存 K线 + 指标 + 概率（供 AI 分析复用）；
-	// 逐日信号与估值已不再计算。
+	// 异步落库缓存（失败不影响响应）：K线 + 指标 + 概率，供 AI 分析复用。
 	go func() {
 		barsJSON, _ := json.Marshal(bars)
 		indJSON, _ := json.Marshal(ind)

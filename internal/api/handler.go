@@ -134,6 +134,20 @@ func enrich(h db.Holding, userID int64) HoldingView {
 		DayPnl: round2(dayPnl), DayPnlPct: round2(dayPnlPct), HoldingDays: db.CalcHoldingDays(h.BuyDate)}
 }
 
+// costBasisOf 返回「已平仓」盈亏率的分母（累计本金）。
+// 优先用 position_tx 的 BUY 金额合计；早期持仓建仓时未写交易流水（只有减仓 SELL 记录），
+// 此时回落到清仓前快照 last_quantity × last_cost_price（AdjustHolding 清仓时写入）。
+// 两者都没有则返回 0，前端按「—」展示（不做除零）。
+func costBasisOf(h db.Holding, invested float64) float64 {
+	if invested > 0.005 {
+		return round2(invested)
+	}
+	if h.LastQuantity > 0 && h.LastCostPrice > 0 {
+		return round2(h.LastQuantity * h.LastCostPrice)
+	}
+	return 0
+}
+
 func RegisterRoutes(r *gin.Engine) {
 	g := r.Group("/api")
 	{
@@ -381,9 +395,9 @@ func computeHoldings(uid int64) ([]HoldingView, string, string, string, error) {
 	for _, h := range hs {
 		ids = append(ids, h.ID)
 	}
-	realizedMap, _ := db.BatchSumRealizedPnl(uid, ids)
-	closeDateMap, _ := db.BatchLastSellDate(uid, ids)
-	investMap, _ := db.BatchInvestedCost(uid, ids)
+	realizedMap, _ := db.BatchSumRealizedPnl(ids)
+	closeDateMap, _ := db.BatchLastSellDate(ids)
+	investMap, _ := db.BatchInvestedCost(ids)
 
 	out := make([]HoldingView, 0, len(hs))
 	srcName := map[int64]string{}
@@ -397,7 +411,7 @@ func computeHoldings(uid int64) ([]HoldingView, string, string, string, error) {
 		v.SourceName = srcName[h.SourceID]
 		v.RealizedPnl = realizedMap[h.ID]
 		v.ClosedDate = closeDateMap[h.ID]
-		v.InvestedCost = investMap[h.ID]
+		v.InvestedCost = costBasisOf(h, investMap[h.ID])
 		out = append(out, v)
 	}
 	return out,
@@ -921,13 +935,13 @@ func refresh(c *gin.Context) {
 	for _, h := range hs {
 		rids = append(rids, h.ID)
 	}
-	closeDateMap, _ := db.BatchLastSellDate(uid, rids)
-	investMap, _ := db.BatchInvestedCost(uid, rids)
+	closeDateMap, _ := db.BatchLastSellDate(rids)
+	investMap, _ := db.BatchInvestedCost(rids)
 	for _, h := range hs {
 		v := enrich(h, uid)
 		v.SourceName = srcName[h.SourceID]
 		v.ClosedDate = closeDateMap[h.ID]
-		v.InvestedCost = investMap[h.ID]
+		v.InvestedCost = costBasisOf(h, investMap[h.ID])
 		out = append(out, v)
 	}
 	_ = doSnapshot(uid)
@@ -1140,63 +1154,6 @@ func isTradingDayCN(t time.Time) bool {
 // CurrentPrice/PrevClose to the DB, and returns the updated slice plus any
 // symbols that failed to refresh. Used by both the manual refresh endpoint and
 // the scheduled/time-triggered snapshots so each snapshot computes from fresh prices.
-// runAutoAnalysis performs technical analysis for a holding (if it supports analysis)
-// and returns a normalized signal: "buy", "sell", "hold", or "" if not applicable.
-// "Supported" mirrors supportsAnalysis: a stock (has symbol) or a fund with a linked_symbol.
-// Funds without a linked_symbol cannot be analyzed and return "".
-func runAutoAnalysis(h db.Holding) (signal string, upPct float64) {
-	if h.Category == "fund" && strings.TrimSpace(h.LinkedSymbol) == "" {
-		return "", 0
-	}
-	symbol := h.Symbol
-	if h.Category == "fund" {
-		symbol = h.LinkedSymbol // 基金用关联股票做技术分析
-	}
-	sym := resolveSymbol(symbol, h.Market)
-	today := time.Now().Format("2006-01-02")
-
-	// 优先命中当日缓存：避免每次整页刷新都对每个持仓实时抓 K线（多持仓时显著拖慢）。
-	// 命中仍需通过新鲜度校验（末根K线落后于期望交易日或超 TTL 则回落到实时抓取）。
-	if row, e := db.GetAnalysisCache(sym, today); e == nil && row != nil && analysisCacheFresh(row, h.Market) {
-		var prob market.ProbabilityResult
-		if e2 := json.Unmarshal([]byte(row.ProbabilityJSON), &prob); e2 == nil && prob.UpPct > 0 {
-			upPct = prob.UpPct
-			return market.SignalFromUpPct(upPct), upPct
-		}
-	}
-
-	bars, err := market.FetchKline(sym)
-	if err != nil || len(bars) < 30 {
-		log.Printf("[autoAnalysis] %s(%s) 跳过：K线获取失败或不足30根", h.Name, symbol)
-		return "", 0
-	}
-	ind := market.CalculateIndicators(bars)
-	prob := market.CalculateProbability(ind)
-	if prob == nil {
-		return "", 0
-	}
-	upPct = prob.UpPct
-	// 回写缓存：供弹框与 AI 分析复用（K线 + 指标 + 概率）；逐日信号与估值已不再计算
-	go func() {
-		barsJSON, _ := json.Marshal(bars)
-		indJSON, _ := json.Marshal(ind)
-		probJSON, _ := json.Marshal(prob)
-		_ = db.SaveAnalysisCache(sym, today, string(barsJSON), string(indJSON), string(probJSON), "[]", "{}", time.Now().Format("2006-01-02 15:04:05"))
-	}()
-	return market.SignalFromUpPct(upPct), upPct
-}
-
-// autoAnalyzeAndStore 对一只持仓跑自动技术分析并落库（best-effort：网络失败/数据不足仅记日志，不阻断刷新）。
-func autoAnalyzeAndStore(h db.Holding) {
-	sig, up := runAutoAnalysis(h)
-	if sig == "" {
-		return
-	}
-	if err := db.UpdateAnalysis(h.ID, sig, up, time.Now().Format("2006-01-02 15:04:05")); err != nil {
-		log.Printf("[autoAnalysis] 落库失败 id=%d: %v", h.ID, err)
-	}
-}
-
 func refreshAllQuotes(uid int64) ([]db.Holding, []string, error) {
 	hs, err := db.List(uid)
 	if err != nil {
@@ -1222,7 +1179,6 @@ func refreshAllQuotes(uid int64) ([]db.Holding, []string, error) {
 						hs[i].Name = q.Name
 					}
 				}
-				autoAnalyzeAndStore(hs[i])
 			} else {
 				failed = append(failed, fmt.Sprintf("%s: %s", hs[i].Symbol, e.Error()))
 			}
@@ -1236,7 +1192,6 @@ func refreshAllQuotes(uid int64) ([]db.Holding, []string, error) {
 						hs[i].Name = q.Name
 					}
 				}
-				autoAnalyzeAndStore(hs[i])
 			} else {
 				failed = append(failed, fmt.Sprintf("%s: %s", hs[i].Symbol, e.Error()))
 			}

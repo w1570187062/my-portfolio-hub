@@ -148,39 +148,61 @@ func assetOverview(c *gin.Context) {
 		if cum == 0 {
 			cum = round2(wealthCumPnl(w.ID))
 		}
-		// 累计收益率 = 累计收益 ÷ （当前金额 - 累计收益）× 100（近似：累计赚/亏 ÷ 本金）
-		cumReturnRate := math.NaN()
+		// 本金基准 = 当前金额 − 累计收益（等价于「期初金额 + 后续净存入」）。
+		// 已清仓（archived）产品的最新快照金额被清零，该式失效 → 回落到快照历史里
+		// 最后一个仍持有金额的节点反推，否则清仓行盈亏率/年化只能显示「—」。
+		principal := math.NaN()
 		if amt > 0.005 {
-			costBasis := amt - cum
-			if costBasis > 0.005 {
-				cumReturnRate = math.Round(cum/costBasis*10000) / 100
+			principal = amt - cum
+		}
+		snaps, snapErr := db.ListWealthSnapshots(w.ID)
+		if snapErr == nil && len(snaps) > 0 {
+			if math.IsNaN(principal) || principal <= 0.005 {
+				if p := wealthPrincipalAtLastHold(snaps); !math.IsNaN(p) {
+					principal = p
+				}
 			}
+			// 已清仓：持有天数固定为「首次快照 → 最后一次快照」，避免清仓后逐日拉长把年化稀释
+			if w.Archived {
+				wDays = daysBetweenDates(firstDate, snaps[len(snaps)-1].Date)
+			}
+		}
+		// 累计收益率 = 累计收益 ÷ 本金 × 100
+		cumReturnRate := math.NaN()
+		if !math.IsNaN(principal) && principal > 0.005 {
+			cumReturnRate = math.Round(cum/principal*10000) / 100
 		}
 		var cumRateVal interface{} = nil
 		if !math.IsNaN(cumReturnRate) {
 			cumRateVal = cumReturnRate
 		}
+		// 年化%（单利）= 累计收益率 × 365 ÷ 持有天数；与原持仓「单利年化」口径一致
+		var annRateVal interface{} = nil
+		if !math.IsNaN(cumReturnRate) && wDays > 0 {
+			annRateVal = math.Round(cumReturnRate*365/float64(wDays)*100) / 100
+		}
 		wItems = append(wItems, gin.H{
-			"id":              w.ID,
-			"name":            w.Name,
-			"code":            w.Code,
-			"currency":        w.Currency,
-			"note":            w.Note,
-			"source_id":       w.SourceID,
-			"source_name":     srcName[w.SourceID],
-			"amount":          amt,
-			"today_pnl":       todayPnl,
-			"cum_pnl":         cum,
-			"snap_date":       latestDate,
-			"snap_count":      cnt,
-			"holding_days":    wDays,
-			"cum_return_rate": cumRateVal,
-			"archived":        w.Archived,
-			"cashflow_today":  round2(todayCf),
-			"prev_amount":     round2(prevAmt),
-			"nav":             round4(w.Nav),
-			"nav_updated_at":  w.NavUpdatedAt,
-			"shares":          round4(w.Shares),
+			"id":                     w.ID,
+			"name":                   w.Name,
+			"code":                   w.Code,
+			"currency":               w.Currency,
+			"note":                   w.Note,
+			"source_id":              w.SourceID,
+			"source_name":            srcName[w.SourceID],
+			"amount":                 amt,
+			"today_pnl":              todayPnl,
+			"cum_pnl":                cum,
+			"snap_date":              latestDate,
+			"snap_count":             cnt,
+			"holding_days":           wDays,
+			"cum_return_rate":        cumRateVal,
+			"annualized_return_rate": annRateVal,
+			"archived":               w.Archived,
+			"cashflow_today":         round2(todayCf),
+			"prev_amount":            round2(prevAmt),
+			"nav":                    round4(w.Nav),
+			"nav_updated_at":         w.NavUpdatedAt,
+			"shares":                 round4(w.Shares),
 		})
 	}
 
@@ -299,6 +321,42 @@ func wealthCumPnl(wealthID int64) float64 {
 		hasPrev = true
 	}
 	return round2(cum)
+}
+
+// wealthPrincipalAtLastHold 从快照历史反推理财本金基准：
+// 取「最后一个金额 > 0 的快照」，用「该点金额 − 截至该点的累计收益」得到本金。
+// 不能直接用「期初金额 + 全部净存入」——清仓那一笔 cashflow 是「本金 + 收益」的整额赎回，
+// 加进去会把本金算穿（变成负数或只剩收益部分），导致盈亏率/年化出现 0 或荒谬值。
+func wealthPrincipalAtLastHold(snaps []db.WealthSnapshot) float64 {
+	idx := -1
+	for i, s := range snaps {
+		if s.Amount > 0.005 {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return math.NaN()
+	}
+	var cum float64
+	for i := 1; i <= idx; i++ {
+		cum += snaps[i].Amount - snaps[i-1].Amount - snaps[i].Cashflow + snaps[i].Dividend
+	}
+	return snaps[idx].Amount - cum
+}
+
+// daysBetweenDates 返回两个 YYYY-MM-DD 日期之间的天数（end − start）。
+// 日期非法或 end 早于 start 时返回 0，供持有天数/年化计算时安全除零。
+func daysBetweenDates(start, end string) int {
+	s, e1 := time.Parse("2006-01-02", start)
+	e, e2 := time.Parse("2006-01-02", end)
+	if e1 != nil || e2 != nil {
+		return 0
+	}
+	d := int(e.Sub(s).Hours() / 24)
+	if d < 0 {
+		return 0
+	}
+	return d
 }
 
 // ---- 资产来源 CRUD ----
@@ -740,7 +798,7 @@ func listCash(c *gin.Context) {
 			"id": cc.ID, "user_id": cc.UserID, "source_id": cc.SourceID,
 			"source_name": srcName[cc.SourceID],
 			"name":        cc.Name, "currency": cc.Currency, "type": cc.Type, "amount": cc.Amount,
-			"note": cc.Note, "created_at": cc.CreatedAt,
+			"note": cc.Note, "excluded": cc.Excluded, "created_at": cc.CreatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"cash": items})
@@ -781,12 +839,29 @@ func updateCash(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
 	}
+	// excluded 是布尔值，false 与「没传这个键」不可区分。本接口是全量 PUT，若直接绑定会把
+	// 老调用方（余额对账、± 资金调整）没带的 excluded 静默清成 false → 用指针探测键是否存在，
+	// 缺失时沿用库中原值。
+	raw, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	var probe struct {
+		Excluded *bool `json:"excluded"`
+	}
+	_ = json.Unmarshal(raw, &probe)
 	var cc db.Cash
-	if err := c.ShouldBindJSON(&cc); err != nil {
+	if err := json.Unmarshal(raw, &cc); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
 	cc.ID = id
+	if probe.Excluded != nil {
+		cc.Excluded = *probe.Excluded
+	} else if fresh, e := db.GetCash(id); e == nil && fresh != nil {
+		cc.Excluded = fresh.Excluded
+	}
 	cc.Name = strings.TrimSpace(cc.Name)
 	if cc.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
