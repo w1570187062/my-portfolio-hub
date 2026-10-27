@@ -10144,6 +10144,10 @@ if (depositModalEl) depositModalEl.addEventListener('click', (e) => { if (e.targ
 // ============================================================================
 
 const aiChatState = { chats: [], curId: 0, msgs: [], busy: false, inited: false };
+// 截图识别（纯 OCR）：OCR 引擎单例 worker + 对话内图片消息引用到的识别文本（按序号存，避免把整段文本塞进 dataset）
+let aiOcrWorker = null;
+let aiOcrEnginePromise = null;
+const aiOcrTexts = [];
 
 // 聊天面板的模型下拉：与「设置 → AI」共享 aiCfg.models，但选中下标独立。
 function renderAiChatModelSelect() {
@@ -10195,6 +10199,7 @@ function aiChatOpen() {
 function aiChatClose() {
   const p = aiChatPanelEl();
   if (p) {
+    aiOcrClose();
     p.hidden = true; p.classList.remove('open'); p.classList.remove('side-open');
     if (p.classList.remove('fullscreen')) {
       const btn = document.getElementById('aiChatFullscreen');
@@ -10229,7 +10234,7 @@ function aiChatRenderList() {
   const box = document.getElementById('aiChatList');
   if (!box) return;
   if (!aiChatState.chats.length) {
-    box.innerHTML = '<p class="acp-empty">还没有对话，点「＋ 新对话」开始。</p>';
+    box.innerHTML = '<p class="acp-empty">还没有对话，点头部的「＋」开始。</p>';
     return;
   }
   box.innerHTML = aiChatState.chats.map((c) => {
@@ -10395,6 +10400,21 @@ function aiChatRenderMsgs() {
       return '<div class="ai-msg ai"><div class="ai-avatar">AI</div><div class="ai-bubble acp-typing">'
         + '<span class="acp-dot"></span><span class="acp-dot"></span><span class="acp-dot"></span></div></div>';
     }
+    // 本地图片消息（截图识别）：只存在于当前会话的前端状态里，不落库、不经过 AI
+    if (m.role === 'image') {
+      const txt = aiOcrTexts[m.ocrIdx] || '';
+      let body;
+      if (m.pending) {
+        body = '<div class="ai-ocr-loading"><span class="acp-dot"></span><span class="acp-dot"></span><span class="acp-dot"></span>正在识别截图…</div>';
+      } else if (m.err) {
+        body = '<div class="ai-ocr-text">识别失败：' + esc(m.err) + '</div>';
+      } else {
+        body = '<pre class="ai-ocr-text">' + esc(txt || '（未识别到文字）') + '</pre>' + aiOcrGuideHtml(m.ocrIdx);
+      }
+      return '<div class="ai-msg user">' + timeHtml
+        + '<div class="ai-bubble ai-img-bubble"><img class="ai-img" src="' + m.image + '" alt="截图">' + body + '</div>'
+        + '<div class="ai-avatar user-avatar">我</div></div>';
+    }
     return '';
   }).join('');
   box.scrollTop = box.scrollHeight;
@@ -10404,6 +10424,8 @@ function aiChatSetBusy(on) {
   aiChatState.busy = on;
   const b = document.getElementById('aiChatSend');
   if (b) { b.disabled = on; b.textContent = on ? '思考中…' : '发送'; }
+  const img = document.getElementById('aiChatImg');
+  if (img) img.disabled = on;
   if (on) { const e = document.getElementById('aiChatErr'); if (e) e.textContent = ''; }
 }
 
@@ -10463,6 +10485,257 @@ async function aiChatSend() {
   }
 }
 
+// ============================================================================
+// 截图识别（纯本地 OCR，不调用 AI）
+// 引擎用成熟开源方案 tesseract.js（WASM + 中英混排字库），按需从 CDN 拉取并常驻：
+// 识别全程在浏览器内完成 —— 图片不上传服务器、不经过大模型。
+// OCR 输出只做「结构化提示」（金额 / 余额 / 净值 / 日期 / 方向 / 可能的产品名），
+// 再交给既有的流水 / 理财 / 余额对账弹框由用户确认落库（当前不自动写账）。
+// ============================================================================
+const AI_OCR_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+const AI_OCR_LANGS = 'chi_sim+eng';
+
+function aiOcrStatus(msg) {
+  const el = document.getElementById('aiOcrStatus');
+  if (el) el.textContent = msg || '本地 OCR · 不调用 AI';
+}
+
+function aiOcrLoadEngine() {
+  if (aiOcrEnginePromise) return aiOcrEnginePromise;
+  aiOcrEnginePromise = new Promise((resolve, reject) => {
+    if (window.Tesseract) { resolve(window.Tesseract); return; }
+    const s = document.createElement('script');
+    s.src = AI_OCR_CDN;
+    s.async = true;
+    s.onload = () => (window.Tesseract ? resolve(window.Tesseract) : reject(new Error('OCR 引擎加载异常')));
+    s.onerror = () => { aiOcrEnginePromise = null; reject(new Error('OCR 引擎加载失败：需能访问 cdn.jsdelivr.net')); };
+    document.head.appendChild(s);
+  });
+  return aiOcrEnginePromise;
+}
+
+async function aiOcrEnsureWorker() {
+  const T = await aiOcrLoadEngine();
+  if (aiOcrWorker) return aiOcrWorker;
+  aiOcrWorker = await T.createWorker(AI_OCR_LANGS, 1, {
+    logger: (m) => {
+      if (!m) return;
+      const pct = Math.round((m.progress || 0) * 100);
+      if (m.status === 'recognizing text') aiOcrStatus('正在识别文字… ' + pct + '%');
+      else aiOcrStatus('正在加载识别字库（首次约 10 秒）… ' + pct + '%');
+    },
+  });
+  return aiOcrWorker;
+}
+
+function aiOcrReadFile(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result || ''));
+    fr.onerror = () => reject(new Error('图片读取失败'));
+    fr.readAsDataURL(file);
+  });
+}
+
+// OCR 文本 → 结构化提示。命中不了就留空，交给用户手填，不做"猜也得猜一个"的幻觉填充。
+function aiOcrParse(text) {
+  const t = String(text || '');
+  const f = { amount: null, balance: null, nav: null, date: '', out: false, name: '' };
+  const near = (kw) => {
+    const m = new RegExp(kw + '[^\\d\\n]{0,10}(-?\\d[\\d,]*\\.?\\d*)').exec(t);
+    if (!m) return null;
+    const v = parseFloat(String(m[1]).replace(/,/g, ''));
+    return isFinite(v) ? Math.abs(v) : null;
+  };
+  f.nav = near('(?:单位净值|最新净值|净值)');
+  f.balance = near('(?:可用余额|账户余额|当前余额|余额)');
+  f.amount = near('(?:交易金额|发生额|变动金额|金额|合计|总计)');
+  if (f.amount == null && f.balance == null) {
+    // 兜底：取文本里最大的非年份数字（银行/券商截图里金额通常是页面上最大的数）
+    const nums = (t.match(/\d[\d,]*\.?\d*/g) || [])
+      .map((s) => parseFloat(String(s).replace(/,/g, '')))
+      .filter((v) => isFinite(v) && v > 0 && v < 1e9 && !(v >= 1900 && v <= 2100 && Number.isInteger(v)));
+    if (nums.length) f.amount = Math.max.apply(null, nums);
+  }
+  const dm = /(20\d{2})[-/年.](\d{1,2})[-/月.](\d{1,2})/.exec(t) || /(\d{1,2})[-/月](\d{1,2})/.exec(t);
+  if (dm) {
+    const y = dm[1].length === 4 ? dm[1] : String(new Date().getFullYear());
+    const p = (n) => String(n).padStart(2, '0');
+    f.date = y + '-' + p(dm[dm.length - 2]) + '-' + p(dm[dm.length - 1]);
+  }
+  f.out = /支出|转出|付款|支付|消费|扣款|还款|取出|买入/.test(t);
+  const line = (t.split('\n').map((s) => s.trim()).filter(Boolean)[0] || '').slice(0, 20);
+  f.name = line;
+  return f;
+}
+
+function aiOcrFactsHtml(f) {
+  const chips = [];
+  if (f.amount != null) chips.push('金额 <b>' + f.amount + '</b>');
+  if (f.balance != null) chips.push('余额 <b>' + f.balance + '</b>');
+  if (f.nav != null) chips.push('净值 <b>' + f.nav + '</b>');
+  if (f.date) chips.push('日期 <b>' + esc(f.date) + '</b>');
+  chips.push('方向 <b>' + (f.out ? '支出' : '收入') + '</b>');
+  return chips.map((c) => '<span class="acp-ocr-fact">' + c + '</span>').join('');
+}
+
+function aiOcrFirstLine(text) {
+  const l = String(text || '').split('\n').map((s) => s.trim()).filter(Boolean)[0] || '';
+  return l.slice(0, 60);
+}
+
+// 三个引导动作：只负责「带着识别结果打开对应弹框并预填」，写库仍由用户点确认。
+async function aiOcrGuide(act, text) {
+  const f = aiOcrParse(text);
+  if (act === 'flow') {
+    await openFlowModal(f.out ? 'out' : 'in');
+    const d = document.getElementById('flow_delta');
+    const v = f.amount != null ? f.amount : f.balance;
+    if (d && v != null) d.value = String(v);
+    const n = document.getElementById('flow_note');
+    if (n) n.value = '截图识别：' + aiOcrFirstLine(text);
+    return;
+  }
+  if (act === 'wealth') {
+    let list = ((assetData && assetData.wealth) || {}).items || [];
+    if (!list.length) {
+      try { const r = await api('/api/asset/wealth'); if (r.ok) { const d = await r.json(); list = (d && d.wealth) || []; } } catch (_) {}
+    }
+    const key = (f.name || '').trim();
+    const hit = key ? list.find((w) => {
+      const n = String((w && w.name) || '');
+      return n && (n.indexOf(key) >= 0 || key.indexOf(n) >= 0);
+    }) : null;
+    if (hit) {
+      await openWealthNavModal(hit.id);
+      const navEl = document.getElementById('wn_nav');
+      if (navEl && f.nav != null) navEl.value = String(f.nav);
+      else toast('未识别到净值，请在弹框里手动填写', 'info');
+      return;
+    }
+    await openWealthModal(0);
+    const nameEl = document.getElementById('w_name');
+    if (nameEl && key) nameEl.value = key;
+    const navEl2 = document.getElementById('w_nav');
+    if (navEl2 && f.nav != null) navEl2.value = String(f.nav);
+    toast('未匹配到已有理财，已打开新增理财', 'info');
+    return;
+  }
+  if (act === 'balance') {
+    await openBalanceSyncModal();
+    const v = f.balance != null ? f.balance : f.amount;
+    if (v == null) { toast('未识别到余额数字，请在弹框里手动填写', 'info'); return; }
+    const key = (f.name || '').trim();
+    let acc = key ? (cashAccountsCache || []).find((c) => {
+      const n = String((c && c.name) || '');
+      return n && (n.indexOf(key) >= 0 || key.indexOf(n) >= 0);
+    }) : null;
+    if (!acc) acc = pickFallbackCash(cashAccountsCache);
+    const inp = acc ? document.querySelector('.bsync-input[data-cash="' + acc.id + '"]') : null;
+    if (inp) { inp.value = String(v); inp.focus(); }
+    else toast('未匹配到账户，请在弹框里选择后填写 ' + v, 'info');
+  }
+}
+
+function aiOcrLayerEl() { return document.getElementById('aiOcrLayer'); }
+
+function aiOcrReset() {
+  const drop = document.getElementById('aiOcrDrop');
+  const res = document.getElementById('aiOcrResult');
+  if (drop) drop.hidden = false;
+  if (res) res.hidden = true;
+  const ta = document.getElementById('aiOcrText');
+  if (ta) ta.value = '';
+  const fb = document.getElementById('aiOcrFacts');
+  if (fb) fb.innerHTML = '';
+  aiOcrStatus('');
+}
+
+function aiOcrOpen() {
+  const p = aiChatPanelEl();
+  if (p && p.hidden) aiChatOpen();
+  const l = aiOcrLayerEl();
+  if (!l) return;
+  l.hidden = false;
+  aiOcrReset();
+}
+
+function aiOcrClose() {
+  const l = aiOcrLayerEl();
+  if (l) l.hidden = true;
+}
+
+// 识别一张图并填充工作区（右上角「截图识别」入口）
+async function aiOcrHandleFile(file) {
+  if (!file) return;
+  if (!/^image\//.test(String(file.type || ''))) { toast('请选择图片文件', 'err'); return; }
+  const layer = aiOcrLayerEl();
+  if (layer) layer.hidden = false;
+  const drop = document.getElementById('aiOcrDrop');
+  const res = document.getElementById('aiOcrResult');
+  const ta = document.getElementById('aiOcrText');
+  const fb = document.getElementById('aiOcrFacts');
+  const img = document.getElementById('aiOcrImg');
+  if (drop) drop.hidden = true;
+  if (res) res.hidden = false;
+  if (ta) ta.value = '';
+  if (fb) fb.innerHTML = '';
+  let dataUrl = '';
+  try { dataUrl = await aiOcrReadFile(file); } catch (err) { toast(err.message, 'err'); return; }
+  if (img) img.src = dataUrl;
+  try {
+    const w = await aiOcrEnsureWorker();
+    aiOcrStatus('正在识别文字…');
+    const { data } = await w.recognize(file);
+    const txt = ((data && data.text) || '').trim();
+    if (ta) ta.value = txt;
+    if (fb) fb.innerHTML = txt ? aiOcrFactsHtml(aiOcrParse(txt)) : '';
+    aiOcrStatus(txt ? '识别完成' : '未识别到文字');
+    if (!txt) toast('未识别到文字，换一张更清晰的截图试试', 'err');
+  } catch (err) {
+    aiOcrStatus('识别失败');
+    toast('OCR 失败：' + (err && err.message ? err.message : err), 'err');
+  }
+}
+
+// 输入框「发送图片」：识别结果作为一条本地图片消息进对话，并给出三个引导动作。
+// 注意：这条消息只存在于前端（不落库、不调用 AI），切换会话 / 刷新后会消失。
+async function aiChatSendImageFile(file) {
+  if (!file) return;
+  if (!/^image\//.test(String(file.type || ''))) { toast('请选择图片文件', 'err'); return; }
+  if (aiChatState.busy) { toast('AI 正在回复，请稍候', 'err'); return; }
+  let dataUrl = '';
+  try { dataUrl = await aiOcrReadFile(file); } catch (err) { toast(err.message, 'err'); return; }
+  const idx = aiOcrTexts.push('') - 1;
+  aiChatState.msgs = aiChatState.msgs.filter((x) => x.role !== 'pending');
+  aiChatState.msgs.push({ role: 'image', image: dataUrl, ocrIdx: idx, pending: true, created_at: new Date() });
+  aiChatRenderMsgs();
+  try {
+    const w = await aiOcrEnsureWorker();
+    const { data } = await w.recognize(file);
+    const txt = ((data && data.text) || '').trim();
+    aiOcrTexts[idx] = txt;
+    const m = aiChatState.msgs.find((x) => x.role === 'image' && x.ocrIdx === idx);
+    if (m) m.pending = false;
+    aiChatRenderMsgs();
+    if (!txt) toast('未识别到文字，换一张更清晰的截图试试', 'err');
+  } catch (err) {
+    const m = aiChatState.msgs.find((x) => x.role === 'image' && x.ocrIdx === idx);
+    if (m) { m.pending = false; m.err = (err && err.message) ? err.message : String(err); }
+    aiChatRenderMsgs();
+    toast('OCR 失败：' + m.err, 'err');
+  }
+}
+
+function aiOcrGuideHtml(idx) {
+  return '<div class="acp-ocr-guide">'
+    + '<span class="acp-ocr-guide-h">识别完成，接下来可以：</span>'
+    + '<button class="acp-ocr-act" type="button" data-ocr-act="flow" data-ocr-i="' + idx + '">更新流水</button>'
+    + '<button class="acp-ocr-act" type="button" data-ocr-act="wealth" data-ocr-i="' + idx + '">更新理财</button>'
+    + '<button class="acp-ocr-act" type="button" data-ocr-act="balance" data-ocr-i="' + idx + '">更新账户余额</button>'
+    + '</div>';
+}
+
 // ---- 事件绑定（全部走 document 级委托，避免动态节点绑不上） ----
 document.addEventListener('click', (e) => {
   const t = e.target;
@@ -10491,6 +10764,20 @@ document.addEventListener('click', (e) => {
   if (t.closest('#aiChatClose')) { aiChatClose(); return; }
   if (t.closest('#aiChatNew')) { aiChatNew(); return; }
   if (t.closest('#aiChatSend')) { aiChatSend(); return; }
+  // ---- 截图识别（纯 OCR）----
+  if (t.closest('#aiChatOcr')) { aiOcrOpen(); return; }
+  if (t.closest('#aiOcrClose')) { aiOcrClose(); return; }
+  if (t.closest('#aiOcrPick')) { const fi = document.getElementById('aiOcrFile'); if (fi) fi.click(); return; }
+  if (t.closest('#aiOcrClear')) { aiOcrReset(); return; }
+  if (t.closest('#aiChatImg')) { const fi = document.getElementById('aiChatFile'); if (fi) fi.click(); return; }
+  const ocrAct = t.closest('[data-ocr-act]');
+  if (ocrAct) {
+    const i = Number(ocrAct.dataset.ocrI);
+    const fromLayer = document.getElementById('aiOcrText');
+    const txt = (isFinite(i) && aiOcrTexts[i] != null) ? aiOcrTexts[i] : (fromLayer ? fromLayer.value : '');
+    aiOcrGuide(ocrAct.dataset.ocrAct, txt);
+    return;
+  }
   if (t.closest('#aiChatListToggle')) {
     const p = aiChatPanelEl();
     if (p) p.classList.toggle('side-open');
@@ -10532,6 +10819,9 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  // 截图识别工作区优先响应 Esc（它盖在聊天区之上，应先收它而不是整个面板）
+  const ol = aiOcrLayerEl();
+  if (ol && !ol.hidden) { aiOcrClose(); return; }
   const p = aiChatPanelEl();
   if (!p || p.hidden) return;
   if (document.querySelectorAll('.modal:not([hidden])').length) return; // 弹框优先关闭
@@ -10560,6 +10850,55 @@ document.addEventListener('keydown', (e) => {
   }
   const sel = document.getElementById('aiChatModel');
   if (sel) sel.onchange = () => { aiChatModelIdx = parseInt(sel.value, 10) || 0; };
+})();
+
+// 截图识别的图片入口：两个隐藏 file input + 粘贴 + 拖拽，最终都汇到 OCR / 发送图片两个函数。
+(function initAiChatOcr() {
+  const bindFile = (id, fn) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      const f = el.files && el.files[0];
+      if (f) fn(f);
+      el.value = ''; // 允许连续选同一张图
+    });
+  };
+  bindFile('aiOcrFile', aiOcrHandleFile);
+  bindFile('aiChatFile', aiChatSendImageFile);
+
+  // 粘贴截图：工作区开着 → 进工作区；否则焦点在聊天输入框 → 作为图片消息发送
+  document.addEventListener('paste', (e) => {
+    const items = ((e.clipboardData || {}).items) || [];
+    let img = null;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it && it.kind === 'file' && /^image\//.test(String(it.type || ''))) { img = it.getAsFile(); break; }
+    }
+    if (!img) return;
+    const layer = aiOcrLayerEl();
+    if (layer && !layer.hidden) { e.preventDefault(); aiOcrHandleFile(img); return; }
+    const p = aiChatPanelEl();
+    const inp = document.getElementById('aiChatInput');
+    if (p && !p.hidden && inp && e.target === inp) { e.preventDefault(); aiChatSendImageFile(img); }
+  });
+
+  // 拖拽进工作区投放区（整层可接，不必精确落在虚线框上）
+  const zone = document.getElementById('aiOcrLayer');
+  const drop = document.getElementById('aiOcrDrop');
+  if (zone) {
+    ['dragenter', 'dragover'].forEach((ev) => zone.addEventListener(ev, (e) => {
+      if (!e.dataTransfer) return;
+      e.preventDefault();
+      if (drop) drop.classList.add('is-over');
+    }));
+    zone.addEventListener('dragleave', () => { if (drop) drop.classList.remove('is-over'); });
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (drop) drop.classList.remove('is-over');
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) aiOcrHandleFile(f);
+    });
+  }
 })();
 
 // ============================================================================

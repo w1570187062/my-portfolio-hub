@@ -654,8 +654,14 @@
       <span class="acp-sub" id="aiChatSub">持仓侠</span>
       <div class="acp-head-actions">
         <button id="aiChatListToggle" class="btn btn-sm acp-list-toggle" type="button" title="会话列表">☰</button>
-        <button id="aiChatNew" class="btn btn-sm" type="button">＋ 新对话</button>
-        <button id="aiChatFullscreen" class="acp-fs" type="button" title="全屏" aria-label="全屏">
+        <!-- 头部图标按钮统一走 .acp-ibtn（与全屏按钮同尺寸/同 hover），纯 icon 无文字 -->
+        <button id="aiChatNew" class="acp-ibtn" type="button" title="新对话" aria-label="新对话">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        </button>
+        <button id="aiChatOcr" class="acp-ibtn" type="button" title="截图识别" aria-label="截图识别">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>
+        </button>
+        <button id="aiChatFullscreen" class="acp-ibtn" type="button" title="全屏" aria-label="全屏">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>
         </button>
         <button id="aiChatClose" class="acp-close" type="button" title="收起" aria-label="收起">✕</button>
@@ -671,10 +677,54 @@
         <div class="acp-input">
           <textarea id="aiChatInput" rows="2" spellcheck="false" placeholder="问点什么：如「帮我总结持仓」「茅台技术面怎么样，该卖吗」「给招行活期存入 1000」"></textarea>
           <div class="acp-input-bar">
+            <!-- 发送图片：选中截图后本地 OCR 识别（不调用 AI），识别结果直接进对话并给引导操作 -->
+            <input id="aiChatFile" class="acp-file" type="file" accept="image/*" hidden>
+            <button id="aiChatImg" class="acp-img-btn" type="button" title="发送图片（截图识别）" aria-label="发送图片">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 17l-5-5-6 6"/></svg>
+            </button>
             <select id="aiChatModel" class="acp-model" title="选择模型"></select>
             <button id="aiChatSend" class="btn primary acp-send" type="button">发送</button>
           </div>
           <div id="aiChatErr" class="err"></div>
+        </div>
+        <!-- ===== 截图识别工作区：纯本地 OCR（tesseract.js），不调用 AI ===== -->
+        <div id="aiOcrLayer" class="acp-ocr-layer" hidden>
+          <div class="acp-ocr-head">
+            <span class="acp-ocr-title">截图识别</span>
+            <span class="acp-ocr-sub" id="aiOcrStatus">本地 OCR · 不调用 AI</span>
+            <div class="acp-head-actions">
+              <input id="aiOcrFile" class="acp-file" type="file" accept="image/*" hidden>
+              <button id="aiOcrPick" class="acp-ibtn" type="button" title="选择图片" aria-label="选择图片">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              </button>
+              <button id="aiOcrClear" class="acp-ibtn" type="button" title="重新识别（清空）" aria-label="重新识别">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+              </button>
+              <button id="aiOcrClose" class="acp-close" type="button" title="关闭" aria-label="关闭">✕</button>
+            </div>
+          </div>
+          <div class="acp-ocr-body">
+            <div id="aiOcrDrop" class="acp-ocr-drop">
+              <p class="acp-ocr-drop-h">把截图拖进来</p>
+              <p class="acp-ocr-drop-p">也可以直接 <b>Ctrl / ⌘ + V</b> 粘贴，或点右上角按钮选择图片。</p>
+              <p class="acp-ocr-drop-note">识别在本机浏览器完成（tesseract.js），图片不会上传服务器，也不会调用 AI。</p>
+            </div>
+            <div id="aiOcrResult" class="acp-ocr-result" hidden>
+              <div class="acp-ocr-cols">
+                <div class="acp-ocr-img"><img id="aiOcrImg" alt="待识别截图"></div>
+                <div class="acp-ocr-txt">
+                  <textarea id="aiOcrText" spellcheck="false" placeholder="识别结果（可编辑）"></textarea>
+                  <div id="aiOcrFacts" class="acp-ocr-facts"></div>
+                </div>
+              </div>
+              <div class="acp-ocr-guide">
+                <span class="acp-ocr-guide-h">识别完成，接下来可以：</span>
+                <button class="acp-ocr-act" type="button" data-ocr-act="flow">更新流水</button>
+                <button class="acp-ocr-act" type="button" data-ocr-act="wealth">更新理财</button>
+                <button class="acp-ocr-act" type="button" data-ocr-act="balance">更新账户余额</button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </div>

@@ -5399,12 +5399,14 @@ textarea::placeholder {
   width: 28px; height: 28px; border: none; border-radius: var(--r-sm);
   background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--fs-lg); line-height: 1;
 }
-.acp-fs {
+/* 头部纯图标按钮（新对话 / 截图识别 / 全屏）：统一 28×28 + 幽灵底 hover */
+.acp-ibtn {
   width: 28px; height: 28px; border: none; border-radius: var(--r-sm);
   background: transparent; color: var(--text-muted); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  transition: background .2s var(--e), color .2s var(--e);
 }
-.acp-fs:hover { background: var(--bg-hover); color: var(--text); }
+.acp-ibtn:hover { background: var(--bg-hover); color: var(--text); }
 .ai-chat-panel.fullscreen {
   position: fixed;
   top: 0 !important;
@@ -5489,7 +5491,7 @@ textarea::placeholder {
 }
 
 /* 右侧：消息区 + 输入区 */
-.acp-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.acp-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; }
 .acp-msgs {
   flex: 1 1 auto;
   min-height: 0;
@@ -5640,6 +5642,113 @@ textarea::placeholder {
 .acp-model:focus { outline: none; border-color: var(--primary); }
 .acp-send { flex: 0 0 auto; min-width: 84px; }
 .acp-input .err { margin-top: var(--sp-2); font-size: var(--fs-sm); }
+/* 输入区「发送图片」：与头部图标按钮同几何，描边使其读成控件而非图标 */
+.acp-file { display: none; }
+.acp-img-btn {
+  flex: 0 0 auto;
+  width: 28px; height: 28px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg-input); color: var(--text-muted); cursor: pointer;
+  transition: background .2s var(--e), color .2s var(--e), border-color .2s var(--e);
+}
+.acp-img-btn:hover { background: var(--bg-hover); color: var(--primary); border-color: var(--primary); }
+
+/* ---- 截图识别工作区（覆盖在聊天区之上，纯本地 OCR）---- */
+.acp-ocr-layer {
+  position: absolute; inset: 0; z-index: 6;
+  display: flex; flex-direction: column;
+  background: var(--bg-card-solid);
+}
+.acp-ocr-layer[hidden] { display: none; }
+.acp-ocr-head {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-card-solid) 88%, var(--primary) 12%);
+}
+.acp-ocr-title { font-size: var(--fs-lg); font-weight: 700; color: var(--text); }
+.acp-ocr-sub {
+  font-size: var(--fs-sm); color: var(--text-muted);
+  max-width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.acp-ocr-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--sp-4); }
+.acp-ocr-drop {
+  height: 100%; min-height: 180px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2);
+  border: 1px dashed var(--border-strong); border-radius: var(--r);
+  background: var(--bg-input); text-align: center; padding: var(--sp-4);
+}
+.acp-ocr-drop-h { margin: 0; font-size: var(--fs-lg); font-weight: 700; color: var(--text); }
+.acp-ocr-drop-p { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
+.acp-ocr-drop-note { margin: 0; font-size: var(--fs-xs); color: var(--text-faint); }
+.acp-ocr-result { display: flex; flex-direction: column; gap: var(--sp-3); }
+.acp-ocr-cols { display: flex; gap: var(--sp-3); align-items: stretch; }
+.acp-ocr-img {
+  flex: 0 0 40%; min-width: 0;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg-input); overflow: auto; max-height: 320px;
+}
+.acp-ocr-img img { display: block; width: 100%; height: auto; }
+.acp-ocr-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.acp-ocr-txt textarea {
+  flex: 1 1 auto; min-height: 160px; resize: vertical;
+  width: 100%; padding: var(--sp-2) var(--sp-3);
+  border: none; border-radius: var(--btn-radius);
+  background: var(--bg-input); color: var(--text);
+  font-size: var(--fs-sm); font-family: inherit; line-height: 1.7;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.acp-ocr-txt textarea:focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--primary), inset 0 0 0 5px var(--primary-soft); }
+.acp-ocr-facts { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.acp-ocr-fact {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 2px var(--sp-2); border-radius: var(--r-xs);
+  background: var(--primary-soft); color: var(--text-muted); font-size: var(--fs-xs);
+}
+.acp-ocr-fact b { color: var(--text); font-weight: 600; }
+.acp-ocr-guide {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg-input);
+}
+.acp-ocr-guide-h { font-size: var(--fs-sm); color: var(--text-muted); }
+.acp-ocr-act {
+  padding: var(--sp-1) var(--sp-3); min-height: var(--h-2);
+  border: 1px solid var(--btn-border); border-radius: var(--btn-radius);
+  background: var(--btn-ghost); color: var(--btn-text);
+  font-size: var(--fs-sm); font-family: inherit; cursor: pointer;
+  transition: background .2s var(--e), color .2s var(--e), border-color .2s var(--e);
+}
+.acp-ocr-act:hover { background: var(--btn-ghost-hover); color: var(--btn-text-hover); border-color: var(--primary); }
+/* 对话里的图片消息（本地展示，不落库） */
+.ai-img-bubble { max-width: 100%; }
+.ai-img {
+  display: block; max-width: 100%; max-height: 240px; width: auto;
+  border-radius: var(--r-xs); margin-bottom: var(--sp-2);
+}
+.ai-ocr-text {
+  margin: 0; padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-input); border-radius: var(--r-xs);
+  font-size: var(--fs-sm); line-height: 1.7; color: var(--text);
+  white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto;
+}
+.ai-ocr-loading { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-muted); }
+/* 作者样式 display 会盖掉 UA 的 [hidden]{display:none}，显式补一条 */
+.acp-ocr-drop[hidden], .acp-ocr-result[hidden] { display: none; }
+.acp-ocr-drop.is-over { border-color: var(--primary); background: var(--primary-soft); }
+/* 图片消息落在用户气泡里（底色是 --primary 实色），控件要换成白字半透明底 */
+.ai-msg.user .ai-ocr-text { background: rgba(255, 255, 255, .16); color: var(--on-primary); }
+.ai-msg.user .ai-ocr-loading { color: var(--on-primary); }
+.ai-bubble .acp-ocr-guide { background: transparent; border: none; padding: var(--sp-2) 0 0; }
+.ai-bubble .acp-ocr-guide-h { color: var(--on-primary); opacity: .85; }
+.ai-bubble .acp-ocr-act {
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .35);
+  color: var(--on-primary);
+}
+.ai-bubble .acp-ocr-act:hover { background: rgba(255, 255, 255, .24); border-color: rgba(255, 255, 255, .6); color: var(--on-primary); }
 
 /* ---- 窄屏（手机）：与底部 tab 栏（.main-nav，断点同为 640px）协同 ---- */
 @media (max-width: 640px) {
@@ -5682,6 +5791,9 @@ textarea::placeholder {
     box-shadow: 0 12px 32px rgba(0, 0, 0, .32);
   }
   .ai-msg .ai-bubble { max-width: 92%; }
+  /* 截图识别：窄屏改成上下排布，图在上文字在下 */
+  .acp-ocr-cols { flex-direction: column; }
+  .acp-ocr-img { flex: 0 0 auto; max-height: 200px; }
 }
 
 /* ==========================================================================
