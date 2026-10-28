@@ -14,8 +14,6 @@
 | **设置**<br /><img src="docs/screenshots/settings.png" width="520" alt="设置"> | **盈亏日历**<br /><img src="docs/screenshots/calendar-pnl.png" width="520" alt="盈亏日历"> |
 | **技术分析**<br /><img src="docs/screenshots/analysis.png" width="520" alt="技术分析"> | **AI 助手**<br /><img src="docs/screenshots/ai-assistant.png" width="520" alt="AI 助手"> |
 
-> 截图由 `node scripts/screenshot.mjs` 一键生成（Playwright + Edge，无需手动摆拍）。
-
 ## 功能一览
 
 五大视图（顶部导航）：**首页 · 投资 · 资产 · 财务 · 再平衡**；设置收在右上角个人菜单里（同头像下拉）。

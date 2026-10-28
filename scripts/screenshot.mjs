@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * portfolio README 截图脚本 —— Playwright 版（一键截图）
+ * portfolio 界面截图脚本 —— Playwright 版（一键截图）
  *
  * 设计要点：
  *   - 不依赖外部 daemon，playwright 自启 Edge(msedge channel)。
@@ -9,11 +9,15 @@
  *   - 路由用 SPA 真实 hash：#/home #/invest #/asset #/finance #/settings。
  *   - 弹框统一调用全局函数（openPnlModal / openSnapModal / openAnalysis /
  *     openCashflowModal），不再依赖动态生成的按钮 id。
+ *   - 脚本不处理登录态：认证层启用后只能截「已授权」的实例；本地自测可临时
+ *     `AUTH_MODE=off PORT=9991 DATA_DIR=./data/shot.db ./portfolio` 起一个免登录实例。
  *
  * 用法：
  *   node scripts/screenshot.mjs                # 全部
  *   node scripts/screenshot.mjs home finance    # 只跑指定名称（空格分隔）
- *   SHOT_URL=http://localhost:8080 node scripts/screenshot.mjs
+ *   SHOT_URL=http://localhost:9991 node scripts/screenshot.mjs
+ *
+ * 依赖：root package.json 的 playwright（首次 npm install）。
  */
 import { chromium } from 'playwright';
 import { mkdirSync, statSync } from 'node:fs';
@@ -23,7 +27,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const OUT_DIR = resolve(ROOT, 'docs/screenshots');
-const TARGET = (process.env.SHOT_URL || 'http://192.168.31.254:9989').replace(/\/$/, '');
+// 默认打本机实例（README 的本地运行方式起在 9989）；截图别处用 SHOT_URL 覆盖
+const TARGET = (process.env.SHOT_URL || 'http://localhost:9989').replace(/\/$/, '');
 const VIEWPORT = { width: 1500, height: 960 };
 const TIMEOUT = 25_000;
 
@@ -54,22 +59,27 @@ const SHOTS = [
   {
     name: 'home', route: '#/home', theme: 'light', accent: 'gold',
     waitFor: (p) => viewReady(p, 'homeView', 40, '#homeHero'),
+    fullPage: false, // 视口截图：统一 1.56:1；财务/设置整页高达 2800~3500px，缩到预览宽度只剩一条
   },
   {
     name: 'invest', route: '#/invest', theme: 'light', accent: 'gold',
     waitFor: (p) => viewReady(p, 'holdingsView', 40, '.holdings-subtable tbody tr'),
+    fullPage: false,
   },
   {
     name: 'asset', route: '#/asset', theme: 'light', accent: 'gold',
     waitFor: (p) => viewReady(p, 'assetView', 40, '#assetTabBody .as-card'),
+    fullPage: false,
   },
   {
     name: 'finance', route: '#/finance', theme: 'light', accent: 'gold',
     waitFor: (p) => viewReady(p, 'financeView', 40, '#finKpiGrid'),
+    fullPage: false,
   },
   {
     name: 'settings', route: '#/settings', theme: 'light', accent: 'gold',
     waitFor: (p) => viewReady(p, 'settingsView', 40, '#userSheet'),
+    fullPage: false,
   },
 
   // ===== 弹框类（全局函数直接打开，不点动态按钮）=====
