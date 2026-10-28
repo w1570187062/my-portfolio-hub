@@ -2150,10 +2150,28 @@ func AddCashAmountFrom(source string, cashID int64, delta float64, typ, refType 
 	return AddCashAmountFromCat(source, cashID, delta, typ, refType, refID, refName, note, "", false)
 }
 
+// normFlowDate 校验并归一化流水日期（YYYY-MM-DD）；空或非法一律回落今天。
+func normFlowDate(d string) string {
+	d = strings.TrimSpace(d)
+	if d != "" {
+		if t, err := time.Parse("2006-01-02", d); err == nil {
+			return t.Format("2006-01-02")
+		}
+	}
+	return time.Now().Format("2006-01-02")
+}
+
 // AddCashAmountFromCat 同 AddCashAmountFrom，但显式指定收支语义分类。
 // snapshot=true 时仅落库一条流水（计入汇总分析），不改动对应子账户实时余额；
 // 流水余额记录为账户当前余额（未变动），以便流水列表如实展示。
 func AddCashAmountFromCat(source string, cashID int64, delta float64, typ, refType string, refID int64, refName, note, category string, snapshot bool) error {
+	return AddCashAmountFromCatOn(source, cashID, delta, typ, refType, refID, refName, note, category, snapshot, "")
+}
+
+// AddCashAmountFromCatOn 同 AddCashAmountFromCat，但可指定流水日期（YYYY-MM-DD，空/非法=今天）。
+// 补录历史流水（截图批量录入）必须把 date 落在截图那天：否则 10 月 25–27 日的消费会全部
+// 记到导入当天，月度收支、热力图与日盈亏都会串位。余额仍然按当前实时余额递推。
+func AddCashAmountFromCatOn(source string, cashID int64, delta float64, typ, refType string, refID int64, refName, note, category string, snapshot bool, date string) error {
 	c, err := GetCash(cashID)
 	if err != nil {
 		return err
@@ -2172,7 +2190,7 @@ func AddCashAmountFromCat(source string, cashID int64, delta float64, typ, refTy
 	return AddCashFlow(&CashFlow{
 		UserID:   c.UserID,
 		CashID:   cashID,
-		Date:     time.Now().Format("2006-01-02"),
+		Date:     normFlowDate(date),
 		Type:     typ,
 		Amount:   math.Round(delta*100) / 100,
 		Balance:  bal,

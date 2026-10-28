@@ -1330,6 +1330,7 @@ func adjustCash(c *gin.Context) {
 		Note     string  `json:"note"`
 		Category string  `json:"category"` // 收支语义分类（空=按类型自动推导）
 		Snapshot bool    `json:"snapshot"` // 仅快照：计入汇总分析不改动账户真实余额
+		Date     string  `json:"date"`     // 可选：补录历史流水（YYYY-MM-DD），空=今天
 	}
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
@@ -1338,6 +1339,14 @@ func adjustCash(c *gin.Context) {
 	if b.CashID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择子账户"})
 		return
+	}
+	// 补录日期：截图批量录入要把流水落在那一天，而不是导入当天（否则月度统计串位）
+	flowDate := strings.TrimSpace(b.Date)
+	if flowDate != "" {
+		if _, err := time.Parse("2006-01-02", flowDate); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式应为 YYYY-MM-DD"})
+			return
+		}
 	}
 	delta := math.Round(b.Delta*100) / 100
 	if math.Abs(delta) < 0.005 {
@@ -1369,7 +1378,7 @@ func adjustCash(c *gin.Context) {
 		return
 	}
 	// 仅手动调账路径支持快照；还款到负债走原子端点（repayLiability），忽略 snapshot。
-	if err := db.AddCashAmountFromCat("", acc.ID, delta, "manual", "manual", acc.ID, acc.Name, note, category, b.Snapshot); err != nil {
+	if err := db.AddCashAmountFromCatOn("", acc.ID, delta, "manual", "manual", acc.ID, acc.Name, note, category, b.Snapshot, flowDate); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
