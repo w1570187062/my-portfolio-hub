@@ -1248,6 +1248,37 @@ function supportsAnalysis(h) {
   return !!(h.symbol && String(h.symbol).trim());
 }
 
+// 按「交易日期」取该持仓当日收盘净值/收盘价（基金净值 4 位小数），填进「补仓现价」。
+// 逻辑要点：补仓价必须来自「补仓当日收盘」，不能用当前现价预填 —— 补录历史日期的补仓时，
+// 用最新净值会把成交价算错、摊薄成本随之失真；净值口径固定 4 位小数。
+let adjNavSeq = 0;
+async function syncAdjNavPrice(force) {
+  const idEl = document.getElementById('adj_id');
+  const priceEl = document.getElementById('addNewPrice');
+  const dateEl = document.getElementById('add_date');
+  const hint = document.getElementById('addPriceHint');
+  if (!idEl || !priceEl || !dateEl || !idEl.value) return;
+  const date = normDateInput(dateEl) || todayStr();
+  if (!force && priceEl.dataset.navDate === date) return;   // 同一天不重复请求
+  const seq = ++adjNavSeq;
+  try {
+    const r = await api('/api/holdings/' + idEl.value + '/nav?date=' + encodeURIComponent(date));
+    if (seq !== adjNavSeq || !r.ok) return;
+    const d = await r.json();
+    if (seq !== adjNavSeq) return;
+    if (d && d.price != null && d.price > 0) {
+      priceEl.value = String(roundByCat(d.price, calcCat));
+      priceEl.dataset.navDate = date;
+    }
+    if (hint) {
+      // 单行短提示，避免撑高该列破坏三列节奏；完整来源放 title
+      const srcLabel = d.source === 'current' ? '当前价·无历史' : (d.date === date ? '当日收盘' : '最近交易日');
+      hint.textContent = d && d.price != null ? `${(d.date || '').slice(5)} ${fmtNav(d.price, calcCat)}` : '';
+      hint.title = d && d.price != null ? `${d.date} ${srcLabel} ${fmtNav(d.price, calcCat)}` : '';
+    }
+  } catch (_) { /* 取价失败不阻断手填 */ }
+}
+
 // 预填「修改/加减仓」弹框内的补仓成本计算器（合并自首页操作列的「计算」按钮）。
 // 计算器表单字段直接内嵌于 #adjustModal，故此处只做表单赋值，不单独开弹框。
 function prefillAdjCalc(h) {
@@ -1267,9 +1298,15 @@ function prefillAdjCalc(h) {
   const aw = document.getElementById('addAmtWrap'); if (aw) aw.style.display = 'none';
   const res = document.getElementById('addResult');
   if (res) res.innerHTML = '';
+  const ph = document.getElementById('addPriceHint');
+  if (ph) ph.textContent = '';
+  const pn = document.getElementById('addNewPrice');
+  if (pn) delete pn.dataset.navDate;
   lastAdd = null;
   const ab = document.getElementById('addApply');
   if (ab) ab.disabled = true;
+  // 补仓价按「交易日期」取当日收盘净值（4 位），覆盖上面的当前价预填
+  syncAdjNavPrice(true);
 }
 
 // 按来源分组渲染首页持仓为折叠卡片（每来源一张子表 + 4 列汇总）
@@ -2164,6 +2201,12 @@ async function openAdjust(id) {
   $('#div_method').value = 'cash';
   $('#div_date').value = todayStr();
   $('#add_date').value = todayStr();
+  // 改「交易日期」→ 重新按该日收盘净值取价（补录历史补仓时不会沿用最新净值）
+  $('#add_date').onchange = () => {
+    const pe = document.getElementById('addNewPrice');
+    if (pe) delete pe.dataset.navDate;
+    syncAdjNavPrice(true);
+  };
   renderDivModePills();
   renderDivMethodPills();
   syncDivModeUI();
@@ -2238,7 +2281,7 @@ function syncAdjSideUI() {
   const pL = document.getElementById('addPriceLabel');
   if (qL) qL.textContent = isSell ? '减仓数量' : '补仓数量';
   if (aL) aL.textContent = isSell ? '减仓金额' : '补仓金额';
-  if (pL) pL.textContent = isSell ? '减仓现价' : '补仓现价';
+  if (pL) pL.textContent = isSell ? '减仓价' : '补仓价';
 }
 // 计算方式切换：同步下方输入行显隐（原 select onchange 逻辑）；按金额→金额框、按数量→数量框
 function syncAdjModeUI() {
@@ -5775,7 +5818,7 @@ $('#addApply').onclick = () => {
   btn.classList.remove('danger');
   btn.classList.add('primary');
   $('#confirmTitle').textContent = '计入持仓';
-  $('#confirmMsg').textContent = '将把这笔操作作为一笔「' + sideLabel + '」交易计入「' + name + '」：' + sideLabel + ' ' + fmt(lastAdd.q1) + ' 份 × ¥' + fmt(lastAdd.p1)
+  $('#confirmMsg').textContent = '将把这笔操作作为一笔「' + sideLabel + '」交易计入「' + name + '」：' + sideLabel + ' ' + fmtCat(lastAdd.q1, calcCat) + ' 份 × ¥' + fmtCat(lastAdd.p1, calcCat)
     + '，手续费 ¥' + fmt(lastAdd.fee) + '。计入后该持仓的数量与成本/盈亏将按交易流水重新核算。';
   $('#confirmModal').hidden = false;
 };
@@ -5920,7 +5963,7 @@ function calcAdd() {
   const P0 = parseFloat($('#addOldPrice').value);
   const Q0 = parseFloat($('#addOldQty').value);
   const f  = parseFloat($('#addFee').value);
-  const P1 = parseFloat($('#addNewPrice').value);
+  const P1 = roundByCat(parseFloat($('#addNewPrice').value), calcCat);   // 净值/现价按类别精度（基金 4 位）
   const el = $('#addResult');
   const mode = $('#addMode').value;
   const side = $('#addSide').value || 'buy';
@@ -5939,6 +5982,9 @@ function calcAdd() {
     return;
   }
   // 第一步：按买卖方向 + 计算方式，算出本次交易数量 Q1 与描述（买卖双方通用）
+  // 份额按类别精度归整（基金、股票 4 位小数，其余 2 位）：基金份额是 4 位口径，
+  // 按金额补仓时 份额 = 金额 ÷ 净值 必须归整，否则会带出 float64 全精度尾巴
+  // （459.1368337924701）污染持仓数量与摊薄成本。
   let Q1, addDesc;
   if (mode === 'amount') {
     const X = parseFloat($('#addAmount').value);
@@ -5950,20 +5996,20 @@ function calcAdd() {
       el.innerHTML = `<span class="tool-empty">${verb}金额需大于${dirLabel}手续费</span>`;
       return;
     }
-    Q1 = (X - fee) / P1;          // 买入费从金额中扣除 → 实际份额；卖出=净回款换得份额
-    addDesc = `按金额${verb} ¥${fmt(X)} → ${dirLabel} ${fmt(Q1)} 份（已扣${dirLabel}费 ¥${fmt(fee)}）`;
+    Q1 = roundByCat((X - fee) / P1, calcCat);   // 买入费从金额中扣除 → 实际份额；卖出=净回款换得份额
+    addDesc = `按金额${verb} ¥${fmt(X)} → ${dirLabel} ${fmtCat(Q1, calcCat)} 份（已扣${dirLabel}费 ¥${fmt(fee)}）`;
   } else {
-    Q1 = parseFloat($('#addNewQty').value);
+    Q1 = roundByCat(parseFloat($('#addNewQty').value), calcCat);
     if (!Number.isFinite(Q1) || Q1 <= 0) {
       el.innerHTML = `<span class="tool-empty">请填写有效的${verb}数量（大于 0）</span>`;
       return;
     }
-    addDesc = `按数量${verb} ${fmt(Q1)} 份 × ¥${fmt(P1)} + ${dirLabel}费 ¥${fmt(fee)}`;
+    addDesc = `按数量${verb} ${fmtCat(Q1, calcCat)} 份 × ¥${fmtCat(P1, calcCat)} + ${dirLabel}费 ¥${fmt(fee)}`;
   }
   // 卖出（减仓）：按剩余持仓 + 实现盈亏口径，不再并入成本
   if (side === 'sell') {
     if (Q1 > Q0) {
-      el.innerHTML = `<span class="tool-empty">卖出数量（${fmt(Q1)}）不能超过当前持仓（${fmt(Q0)}）</span>`;
+      el.innerHTML = `<span class="tool-empty">卖出数量（${fmtCat(Q1, calcCat)}）不能超过当前持仓（${fmtCat(Q0, calcCat)}）</span>`;
       return;
     }
     const remainingQty = Q0 - Q1;                       // 减仓后剩余份额
@@ -5973,7 +6019,7 @@ function calcAdd() {
     const proceeds = Q1 * P1 - fee;                     // 实际回款（入账现金账户）
     let html = '';
     html += `<div class="res-main ${sign}">本次实现盈亏：¥${fmt(Math.abs(realized))} ${realized >= 0 ? '盈利' : '亏损'}（收益率 ${pct(rPct)}）</div>`;
-    html += `<div class="res-row">剩余数量 <b>${fmt(remainingQty)}</b>　｜　回款 <b>¥${fmt(proceeds)}</b></div>`;
+    html += `<div class="res-row">剩余数量 <b>${fmtCat(remainingQty, calcCat)}</b>　｜　回款 <b>¥${fmt(proceeds)}</b></div>`;
     el.innerHTML = html;
     lastAdd = { q1: Q1, p1: P1, fee: fee, mode: mode, side: side };
     if (applyBtn) applyBtn.disabled = false;
@@ -5995,7 +6041,7 @@ function calcAdd() {
   const sign = clsPnl(pnl);
   let html = '';
   html += `<div class="res-main ${sign}">补仓后盈亏（净）：¥${fmt(Math.abs(pnl))} ${pnl >= 0 ? '盈利' : '亏损'}（${pct(pctVal)}）</div>`;
-  html += `<div class="res-row">合并数量 <b>${fmt(Q)}</b>　｜　合并成本 <b>${fmtCat(avgCost, calcCat)}</b>/份</div>`;
+  html += `<div class="res-row">合并数量 <b>${fmtCat(Q, calcCat)}</b>　｜　合并成本 <b>${fmtCat(avgCost, calcCat)}</b>/份</div>`;
   el.innerHTML = html;
   // 记录本次有效方案，供「计入持仓」使用
   lastAdd = { q1: Q1, p1: P1, fee: fee, mode: mode, side: side };

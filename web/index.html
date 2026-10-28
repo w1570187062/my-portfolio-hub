@@ -940,7 +940,7 @@
           <div class="adj-row">
             <label class="adj-inline" id="addQtyWrap"><span id="addQtyLabel">补仓数量</span><input id="addNewQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 500"></label>
             <label class="adj-inline" id="addAmtWrap" style="display:none"><span id="addAmtLabel">补仓金额</span><input id="addAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 5000"></label>
-            <label class="adj-inline"><span id="addPriceLabel">补仓现价</span><input id="addNewPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 9.80"></label>
+            <label class="adj-inline"><span id="addPriceLabel">补仓价</span><input id="addNewPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="按交易日期取收盘"><span class="ua-hint" id="addPriceHint"></span></label>
             <label class="adj-inline">手续费<input id="addFee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 0 或 5"></label>
           </div>
           <div class="tool-result" id="addResult"></div>

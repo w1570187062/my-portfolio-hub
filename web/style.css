@@ -4368,6 +4368,8 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
 .adj-inline { flex: 1; display: flex; flex-direction: column; gap: var(--sp-1); margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
 .adj-inline input,
 .adj-inline select { width: 100%; margin-top: var(--sp-1); }
+/* 加减仓「补仓价」下方的取价来源提示（净值日期+净值）：单行左对齐，不参与三列行高节奏 */
+.adj-inline > #addPriceHint { align-self: stretch; width: 100%; margin-left: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .adj-row { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-2); align-items: flex-start; }
 .adj-pills { display: block; margin-bottom: var(--sp-2); }
 .adj-preview { display: none; margin: var(--sp-1) 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); font-size: var(--fs-md); line-height: 1.6; color: var(--text); }

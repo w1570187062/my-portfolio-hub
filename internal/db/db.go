@@ -630,6 +630,11 @@ func AdjustHolding(id int64, txType string, quantity, price, fee float64, note, 
 	newQty := cur.Quantity
 	newCost := cur.CostPrice
 	realized := 0.0
+	// 价格 / 份额先按类别规整小数位（基金、股票 4 位，其余 2 位），再参与摊薄计算。
+	// 根因：按金额补仓时 份额 = 金额 ÷ 净值 会带出 float64 全精度尾巴（如 459.1368337924701），
+	// 直接落库会把持仓数量、摊薄成本一路污染成超长小数；净值本身也必须是 4 位（基金净值口径）。
+	quantity = roundByCategory(cur.Category, quantity)
+	price = roundByCategory(cur.Category, price)
 	switch txType {
 	case "BUY":
 		newQty = cur.Quantity + quantity
@@ -1008,6 +1013,21 @@ func GetPrevClose(symbol, date string, userID int64) (float64, bool, error) {
 		return 0, false, err
 	}
 	return close, true, nil
+}
+
+// GetCloseOnOrBefore returns the most recent close for a symbol on or before the given
+// date (falls back to earlier trading days when the date itself has no record, e.g. a
+// weekend or a fund NAV that has not been published yet).
+func GetCloseOnOrBefore(symbol, date string, userID int64) (PriceDay, bool, error) {
+	var p PriceDay
+	err := DB.QueryRow(`SELECT date, close FROM price_daily WHERE symbol=? AND date<=? AND user_id=? ORDER BY date DESC LIMIT 1`, symbol, date, userID).Scan(&p.Date, &p.Close)
+	if err == sql.ErrNoRows {
+		return PriceDay{}, false, nil
+	}
+	if err != nil {
+		return PriceDay{}, false, err
+	}
+	return p, true, nil
 }
 
 // PriceDay is one day's closing price for a symbol.

@@ -183,6 +183,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.PUT("/holdings/:id", updateHolding)
 		g.DELETE("/holdings/:id", deleteHolding)
 		g.GET("/holdings/:id/analysis", getAnalysis)
+		g.GET("/holdings/:id/nav", holdingNavOn)
 		g.POST("/refresh", refresh)
 		g.POST("/holdings/:id/adjust", adjustHolding)
 		g.POST("/holdings/:id/dividend", dividendHolding)
@@ -627,6 +628,57 @@ func deleteHolding(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// holdingNavOn 返回某持仓在指定日期（含当日；该日无数据时向前回退到最近一个有数据的
+// 交易日）的收盘价 / 基金净值，供「加减仓」按「补仓日期」取价，净值统一 4 位小数。
+// 取价优先级：本地 price_daily（当日已快照）→ 远端净值历史 / K 线 → 回退当前现价。
+// 存在的理由：补仓现价若预填「当前现价」，补录历史日期的补仓会把成交价算成最新净值，
+// 摊薄成本随之失真；净值又必须是 4 位（基金口径），前端不能只留 2 位。
+func holdingNavOn(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	uid := currentUserID(c)
+	h, err := db.Get(id)
+	if err != nil || h.UserID != uid {
+		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
+		return
+	}
+	date := strings.TrimSpace(c.Query("date"))
+	if date == "" {
+		date = time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
+	}
+	// 1) 本地日线
+	if p, ok, e := db.GetCloseOnOrBefore(h.Symbol, date, uid); e == nil && ok && p.Close > 0 {
+		c.JSON(http.StatusOK, gin.H{"date": p.Date, "price": round4(p.Close), "source": "local"})
+		return
+	}
+	// 2) 远端：基金净值历史 / 股票 K 线
+	hist := map[string]float64{}
+	if h.Category == "fund" {
+		if m, e := market.FetchFundNAVHistory(h.Symbol, 60); e == nil {
+			hist = m
+		}
+	} else if bars, e := market.FetchKline(resolveSymbol(h.Symbol, h.Market)); e == nil {
+		for _, b := range bars {
+			hist[b.Date] = b.Close
+		}
+	}
+	best := ""
+	for d, v := range hist {
+		if v > 0 && d <= date && d > best {
+			best = d
+		}
+	}
+	if best != "" {
+		c.JSON(http.StatusOK, gin.H{"date": best, "price": round4(hist[best]), "source": "remote"})
+		return
+	}
+	// 3) 回退当前现价（前端会提示来源，用户仍可手改）
+	c.JSON(http.StatusOK, gin.H{"date": date, "price": round4(h.CurrentPrice), "source": "current"})
 }
 
 // adjustHolding applies a 加仓/减仓 transaction to a holding and returns the
