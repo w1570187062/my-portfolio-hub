@@ -296,7 +296,7 @@
       <!-- 标题行：左眉标 + 右年份切换（年度作用于整页：KPI / 热力图 / 月度明细，故与卡片同区而非塞进热力图卡） -->
       <div class="kpi-head">
         <span class="kpi-head-label">年度收支 · 总览</span>
-        <div class="year-switcher" id="finYearSwitcher">
+        <div class="year-switcher">
           <button class="year-nav-btn" id="finYearPrev" type="button" aria-label="上一年">‹</button>
           <span class="year-label" id="finYearLabel">—</span>
           <button class="year-nav-btn" id="finYearNext" type="button" aria-label="下一年">›</button>
@@ -513,7 +513,7 @@
       <section class="settings-group">
         <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="10" rx="2"/><path d="M4 11h16"/><circle cx="16" cy="14.5" r="1.2"/></svg>收支分类</span></h3>
         <p class="settings-group-desc">自定义收支分类。内置已含：收入（工资薪金/经营收入/投资分红/投资利息/落袋收益/其他收入）、支出（日常消费/居住支出/资本开支/负债偿还/税费/保险保障/教育医疗/投资费用/其他支出）；投资活动与内部划转为中性类不计收支。</p>
-        <div class="settings-group-body" id="stPanelFinCat">
+        <div class="settings-group-body">
           <div id="finCatList" class="fincat-list"></div>
           <div class="fincat-add">
             <input id="finCatNewLabel" placeholder="新分类名称，如 宠物 / 健身" maxlength="12" />
@@ -625,7 +625,8 @@
         </div>
       </section>
 
-      <!-- 登录与设备（认证层，2026-10-28）：本机凭 Cookie 记身份；加设备/邀请走一次性码 -->
+      <!-- 登录与设备（认证层，2026-10-28）：本机凭 Cookie 记身份；加设备/邀请走一次性码。
+           id 供 scripts/auth-check.mjs / auth-shot.mjs 定位，勿删。 -->
       <section class="settings-group" id="authSettingsGroup">
         <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.6"/></svg>登录与设备</span></h3>
         <p class="settings-group-desc">本机凭 Cookie 记住身份，换设备用一次性配对码接入；出码 / 清空 / 删用户 / 导入等敏感操作由操作 PIN 保护。</p>
@@ -717,7 +718,7 @@
   </div>
   </div>
 
-  <!-- ===== AI 助手：右下角悬浮按钮 + 聊天面板（不在 #app 内，避免未登录/boot 前被隐藏） ===== -->
+  <!-- ===== AI 助手：聊天面板（入口是顶栏 #aiChatTopBtn；不在 #app 内，避免未登录/boot 前被隐藏） ===== -->
   <div id="aiChatPanel" class="ai-chat-panel" role="dialog" aria-label="AI 助手" hidden>
     <div class="acp-head">
       <!-- 「会话列表」按钮在窄屏（≤640px）显示在标题左侧，宽屏隐藏（侧栏常驻） -->
@@ -727,7 +728,7 @@
       <span class="acp-title" id="aiChatTitle">AI 助手</span>
       <span class="acp-sub" id="aiChatSub">持仓侠</span>
       <div class="acp-head-actions">
-        <!-- 头部图标按钮统一走 .acp-ibtn（与全屏按钮同尺寸/同 hover），纯 icon 无文字 -->
+        <!-- 头部一律纯图标（新对话 / 截图识别 / 全屏 / 关闭），带文字的入口放在聊天区快捷胶囊里 -->
         <button id="aiChatNew" class="acp-ibtn" type="button" title="新对话" aria-label="新对话">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         </button>
@@ -754,11 +755,7 @@
         <div class="acp-input">
           <textarea id="aiChatInput" rows="2" spellcheck="false" placeholder="问点什么：如「帮我总结持仓」「茅台技术面怎么样，该卖吗」「给招行活期存入 1000」"></textarea>
           <div class="acp-input-bar">
-            <!-- 发送图片：选中截图后本地 OCR 识别（不调用 AI），识别结果直接进对话并给引导操作 -->
-            <input id="aiChatFile" class="acp-file" type="file" accept="image/*" hidden>
-            <button id="aiChatImg" class="acp-img-btn" type="button" title="发送图片（截图识别）" aria-label="发送图片">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 17l-5-5-6 6"/></svg>
-            </button>
+            <!-- 截图识别入口只在面板头部（#aiChatOcr）：输入区不再放「选图」按钮，避免两套入口 -->
             <select id="aiChatModel" class="acp-model" title="选择模型"></select>
             <button id="aiChatSend" class="btn primary acp-send" type="button">发送</button>
           </div>
@@ -784,7 +781,7 @@
             <div id="aiOcrDrop" class="acp-ocr-drop">
               <p class="acp-ocr-drop-h">把截图拖进来</p>
               <p class="acp-ocr-drop-p">也可以直接 <b>Ctrl / ⌘ + V</b> 粘贴，或点右上角按钮选择图片。</p>
-              <p class="acp-ocr-drop-note">识别在本机浏览器完成（tesseract.js），图片不会上传服务器，也不会调用 AI。</p>
+              <p class="acp-ocr-drop-note">识别在本机浏览器完成（tesseract.js），图片不会上传服务器，也不会调用 AI。识别字库首次需从本机服务端下载约 39MB，之后本地缓存、断网可用。</p>
             </div>
             <div id="aiOcrResult" class="acp-ocr-result" hidden>
               <div class="acp-ocr-cols">
@@ -797,7 +794,7 @@
               <div class="acp-ocr-guide">
                 <span class="acp-ocr-guide-h">识别完成，接下来可以：</span>
                 <button class="acp-ocr-act" type="button" data-ocr-act="flow">更新流水</button>
-                <button class="acp-ocr-act" type="button" data-ocr-act="wealth">更新理财</button>
+                <button class="acp-ocr-act" type="button" data-ocr-act="wealth">更新持仓</button>
                 <button class="acp-ocr-act" type="button" data-ocr-act="balance">更新账户余额</button>
               </div>
             </div>
@@ -843,7 +840,7 @@
           <!-- 低频字段收进高级折叠：主流程只留 名称/代码/数量成本/日期/账户，弹框高度降约 30%。
                持仓类型（独立一行）与关联股票代码均为基金分类相关低频项：输入关联代码会实时反推
                持仓类型（syncCatFromLinked），二者收在同一折叠里保持联动可见。 -->
-          <details class="f-adv" id="fAdv">
+          <details class="f-adv">
             <summary><span class="hat-chevron">▾</span>高级选项</summary>
             <div class="f-adv-body">
               <label>持仓类型
@@ -888,7 +885,7 @@
               <span class="f-pill-cap">分红方式</span>
               <div id="divModePills" class="f-pills"></div>
             </div>
-            <div class="f-pills-row" id="divMethodRow">
+            <div class="f-pills-row">
               <span class="f-pill-cap">分红去向</span>
               <div id="divMethodPills" class="f-pills"></div>
             </div>
@@ -904,7 +901,7 @@
           <label id="divFeeWrap">扣除费用<span class="ua-hint">代扣税 / 手续费等</span>
             <input id="div_fee" type="number" step="any" min="0" oninput="clampDecimals(this,2); computeDivPreview()" placeholder="如 0 或 19.88">
           </label>
-          <label id="divDateWrap">分红日期<span class="ua-hint">可回填历史日期</span>
+          <label>分红日期<span class="ua-hint">可回填历史日期</span>
             <input id="div_date" type="date">
           </label>
           <label id="divCashWrap">入账账户<span class="ua-hint">分红金额入此账户</span>
@@ -1192,7 +1189,7 @@
     <div class="modal-card" style="width:480px; max-width:94vw;">
       <h2 id="crTitle" data-icon="check">新增已平仓记录</h2>
       <p id="crHint" class="snap-hint"></p>
-      <form id="closedRecordForm">
+      <form>
         <input type="hidden" id="cr_id">
         <input type="hidden" id="cr_sys" value="0">
         <input type="hidden" id="cr_target_id">
@@ -1358,7 +1355,7 @@
         <div id="wrErr" class="err"></div>
         <div class="modal-actions">
           <button class="btn danger" type="button" id="wrDelete">永久删除</button>
-          <button class="btn primary" type="submit" id="wrConfirm">赎回</button>
+          <button class="btn primary" type="submit">赎回</button>
           <button class="btn" type="button" id="wrCancel">取消</button>
         </div>
       </form>
@@ -1430,6 +1427,7 @@
           <div class="cat-chips" id="flowCatChips" role="group" aria-label="收支分类"></div>
           <input type="hidden" id="flow_cat" value="">
         </div>
+        <label>交易日期 <input id="flow_date" type="date"></label>
         <label>说明（可选）<input id="flow_note" placeholder="如 发工资 / 还信用卡"></label>
         <label class="snap-check" id="flowSnapRow">
           <input type="checkbox" id="flow_snapshot">
@@ -1438,6 +1436,24 @@
         <div id="flowErr" class="err"></div>
         <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
       </form>
+    </div>
+  </div>
+
+  <!-- 批量录入流水：截图识别出多条明细时用（每行可勾选 / 改分类 / 改金额 / 改说明） -->
+  <div id="flowBatchModal" class="modal" hidden>
+    <div class="modal-card fb-card">
+      <h2 class="m-head" data-icon="list">批量录入流水</h2>
+      <p class="fb-desc">核对识别结果后一次写入；取消勾选可跳过某条。</p>
+      <label class="fb-acct">子账户
+        <select id="fb_cash"></select>
+      </label>
+      <div id="fbRows" class="fb-rows"></div>
+      <div id="fbSum" class="fb-sum"></div>
+      <div id="fbErr" class="err"></div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="fbCancel">取消</button>
+        <button class="btn primary" type="button" id="fbSave">写入全部</button>
+      </div>
     </div>
   </div>
 
@@ -1507,7 +1523,7 @@
         <div id="depErr" class="err"></div>
         <div class="modal-actions">
           <button class="btn" type="button" id="depCancel">取消</button>
-          <button class="btn primary" type="submit" id="depSubmit">保存</button>
+          <button class="btn primary" type="submit">保存</button>
         </div>
       </form>
     </div>
@@ -1742,7 +1758,7 @@
 <!-- 操作 PIN 输入弹框（危险操作前弹出，promise 化） -->
 <div class="modal" id="pinPromptModal" hidden>
   <div class="modal-card pin-card">
-    <h2 data-icon="warn" id="pinPromptTitle">需要操作 PIN</h2>
+    <h2 data-icon="warn">需要操作 PIN</h2>
     <button class="card-close" type="button" id="pinPromptClose" title="关闭" aria-label="关闭">✕</button>
     <div class="pin-prompt-wrap">
       <input id="pinPromptInput" type="password" inputmode="numeric" maxlength="6" placeholder="输入 4–6 位操作 PIN" autocomplete="off">

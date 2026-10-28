@@ -10,7 +10,6 @@ function applyTheme(theme) {
 }
 applyTheme(localStorage.getItem('pf_theme') || 'dark');
 
-
 // ===== 主题色（后期可调）：给 <html> 挂 data-accent，具体色值见 style.css 的预设块 =====
 // 预设主题：在 style.css 追加一对 :root[data-accent="x"] 规则并把色名加进 ACCENTS；
 // 自定义主题（铅笔）：任意颜色以内联 CSS 变量覆盖 --primary/--tint 及 hover/active 衍生色，
@@ -244,14 +243,6 @@ const signedCur = (v, cur) => {
   return (n < 0 ? '-' : n > 0 ? '+' : '') + curSymbolJS(cur) + fmt(Math.abs(n));
 };
 
-// 驾驶舱卡片标题图标：按卡片语义映射纯色主题色 icon（currentColor = --primary，自动跟随 accent）
-const PS_ICONS = {
-  mv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.3" fill="currentColor" stroke="none"/></svg>',
-  pnl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 16 9 10 13 14 21 6"/><polyline points="14 6 21 6 21 13"/></svg>',
-  net: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.6 4 5.7 4 9s-1.4 6.4-4 9c-2.6-2.6-4-5.7-4-9s1.4-6.4 4-9z"/></svg>',
-  dist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v9h9"/></svg>',
-};
-const psHeadIcon = (k) => (PS_ICONS[k] ? `<span class="ps-ico">${PS_ICONS[k]}</span>` : '');
 // 价格类字段统一截断到 4 位小数，避免 float64 全精度（如 12.34738291）污染输入框与落库。
 const round4 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return Math.round(v * 1e4) / 1e4; };
 const round2 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return Math.round(v * 1e2) / 1e2; };
@@ -260,7 +251,6 @@ const roundByCat = (v, cat) => (cat === 'fund' || cat === 'stock' ? round4(v) : 
 function fmtCat(n, cat) { return Number(n).toLocaleString('zh-CN', { maximumFractionDigits: (cat === 'fund' || cat === 'stock') ? 4 : 2 }); }
 // 试算 Tab 上下文类别（决定价格输入框保留几位小数），由 prefillAdjCalc 写入
 let calcCat = 'stock';
-function clampCalc(el) { clampDecimals(el, (calcCat === 'fund' || calcCat === 'stock') ? 4 : 2); }
 const pct = (n) => (n > 0 ? '+' : '') + (n == null ? '' : n.toFixed(2)) + '%';
 // 盈亏颜色统一入口：正=红(up)、负=绿(down)、零=灰(flat)（中国惯例涨红跌绿）。
 // 全项目所有盈亏/涨跌幅着色都走这里，消除分散的 > 0 ? 'up' : 'down' 判断。
@@ -337,7 +327,6 @@ let flowRangeDays = 30;         // 资产页流水区间：7 | 30 | 365
 let homeRangeDays = 30;         // 首页净资产走势区间：30 | 90 | 365 | 0(全部)
 let homeNetVal = 0;             // 首页净资产走势区间收益率基准（= 净资产）
 let homeRateSparkState = null;  // 首页权益曲线 hover 弹框所用序列（日期 / 累计盈亏 / 净值 / 基准）
-let assetSummaryMode = 'text';  // 资产摘要卡展示模式：text 文本明细 | chart 资产构成环形图
 let flowTypeFilter = 'all';     // 资产页流水类型：all | in | out | dividend | trade
 let assetFlowsCache = [];       // 资产页流水全量缓存（供筛选/区间重渲染，避免重复请求）
 let homeRecentFilter = 'all';    // 首页最新流水类型过滤：all | in | out | neutral
@@ -383,7 +372,7 @@ function toast(msg, type = 'info') {
 }
 
 // 理财总览数据（/api/asset/overview）：首页总市值卡「理财」段与首页理财视图共用。
-// 只赋值 assetData，不触发资产页渲染（renderAssetSummary/renderAssetTab 仅资产页需要）。
+// 只赋值 assetData，不触发资产页渲染（renderAssetTab 仅资产页需要）。
 async function fetchOverview() {
   try {
     const r = await api('/api/asset/overview');
@@ -1133,7 +1122,6 @@ async function doRefresh() {
   if (cancel) cancel.onclick = () => { modal.hidden = true; refreshBtnRef = null; };
   modal.addEventListener('click', (e) => { if (e.target === modal) { modal.hidden = true; refreshBtnRef = null; } });
 })();
-
 
 function toolbarChip(cat, label, active) {
   return '<button type="button" class="filter-chip' + (active ? ' active' : '') + '" data-cat="' + cat + '">' + label + '</button>';
@@ -1983,9 +1971,6 @@ const SEARCH_MKT_TO_PF = { CN: '沪深', HK: '港股', US: '美股' };
 let curSel = null;
 let selCat = 'stock';   // 当前类别胶囊
 let selMkt = '沪深';    // 当前市场胶囊
-
-
-
 
 // 选中一条联想结果：自动识别 港/美/A股/基金，市场与类别不再让用户手选。
 // 基金（it.category==='fund'）自动归为基金，无需选择市场（市场细分留空，由后端兜底）；
@@ -3024,15 +3009,6 @@ function showPieDrill(key) {
 }
 
 // ===== 彩色组合圆环（donut）=====
-// 紧凑金额：万/亿 为单位，用于圆环中心文字（避免过长溢出）
-function fmtShort(n) {
-  n = n || 0;
-  const a = Math.abs(n);
-  if (a >= 1e8) return (n / 1e8).toFixed(2).replace(/\.?0+$/, '') + '亿';
-  if (a >= 1e4) return (n / 1e4).toFixed(1).replace(/\.0$/, '') + '万';
-  return fmt(n);
-}
-
 
 // 盈亏走势 / 持仓历史 的 SVG 渐变 id 序号：两个渲染容器可能同时在 DOM 中，id 必须唯一
 let trendUidSeq = 0;
@@ -3135,31 +3111,45 @@ if (flowSignToggle) {
   });
 }
 $('#flowModal').addEventListener('click', (e) => { if (e.target === $('#flowModal')) hideFlow(); });
-// 添加流水：折叠选择器交互（展开/收起账户、选择子账户、点击外部关闭）
-const flowCashBtn = document.getElementById('flowCashBtn');
-const flowCashPanel = document.getElementById('flowCashPanel');
-if (flowCashBtn) flowCashBtn.addEventListener('click', () => { if (flowCashPanel) flowCashPanel.hidden = !flowCashPanel.hidden; });
-if (flowCashPanel) {
-  flowCashPanel.addEventListener('click', (e) => {
-    const head = e.target.closest('.ac-pick-head');
-    if (head) {
-      const body = head.nextElementSibling;
-      if (body && body.classList.contains('ac-pick-body')) { body.hidden = !body.hidden; head.classList.toggle('open', !body.hidden); }
-      return;
-    }
-    const row = e.target.closest('.ac-pick-row');
-    if (row) {
-      // data-kind 是 'cash'/'liab'，写入 flow_cash 的值必须用它对应的单字母前缀
-      const prefixed = (row.dataset.kind === 'liab' ? 'l' : 'c') + ':' + row.dataset.id;
-      const a = flowAccountById(prefixed);
-      if (a) selectFlowCash(prefixed, flowAccountLabel(a.kind, a.obj));
-    }
-  });
+// 子账户折叠选择器统一绑定（流水 / 持仓 / 理财 / 定投 / 收支五处共用）。
+// 结构一律是「按钮 + .ac-pick-head/.ac-pick-body 分组 + .ac-pick-row 子账户」，
+// 差异只有选中回调 —— 先前五份独立实现曾漂移出「漏判 .ac-pick-body 类名」的分支，收敛成一处即不再有第二份口径。
+// cfg: { btn, panel, picker } id 后缀；onRow(row) 选中回调；markOn 选中后维护行高亮。
+function bindCashPicker(cfg) {
+  const btn = document.getElementById(cfg.btn + 'CashBtn');
+  const panel = document.getElementById(cfg.panel + 'CashPanel');
+  const picker = document.getElementById(cfg.picker + 'CashPicker');
+  if (btn && panel) btn.addEventListener('click', () => { panel.hidden = !panel.hidden; });
+  if (panel) {
+    panel.addEventListener('click', (e) => {
+      const head = e.target.closest('.ac-pick-head');
+      if (head) {
+        const body = head.nextElementSibling;
+        if (body) { body.hidden = !body.hidden; head.classList.toggle('open', !body.hidden); }
+        return;
+      }
+      const row = e.target.closest('.ac-pick-row');
+      if (!row) return;
+      if (cfg.markOn) {
+        panel.querySelectorAll('.ac-pick-row.on').forEach((r) => r.classList.remove('on'));
+        row.classList.add('on');
+      }
+      cfg.onRow(row);
+      panel.hidden = true;
+    });
+  }
+  if (picker) document.addEventListener('click', (e) => { if (!picker.contains(e.target)) panel.hidden = true; });
 }
-document.addEventListener('click', (e) => {
-  const picker = document.getElementById('flowCashPicker');
-  if (!picker) return;
-  if (!picker.contains(e.target)) { const p = document.getElementById('flowCashPanel'); if (p) p.hidden = true; }
+
+// 添加流水：折叠选择器（新增/编辑流水弹框）
+bindCashPicker({
+  btn: 'flow', panel: 'flow', picker: 'flow',
+  onRow: (row) => {
+    // data-kind 是 'cash'/'liab'，写入 flow_cash 的值必须用它对应的单字母前缀
+    const prefixed = (row.dataset.kind === 'liab' ? 'l' : 'c') + ':' + row.dataset.id;
+    const a = flowAccountById(prefixed);
+    if (a) selectFlowCash(prefixed, flowAccountLabel(a.kind, a.obj));
+  },
 });
 // 添加/编辑持仓：账户·币种合并选择器（带二级子账户折叠面板，交互同「添加流水」选择器）
 // editSourceId 非空时只列该父账户下的子账户（编辑模式）。
@@ -3172,110 +3162,54 @@ function holdSetSelection(acc) {
   $('#f_cash').value = acc ? acc.id : '0';
   $('#holdCashBtn').textContent = acc ? flowCashLabel(acc) : '请选择子账户';
 }
-const holdCashBtn = document.getElementById('holdCashBtn');
-const holdCashPanel = document.getElementById('holdCashPanel');
-if (holdCashBtn) holdCashBtn.addEventListener('click', () => { if (holdCashPanel) holdCashPanel.hidden = !holdCashPanel.hidden; });
-if (holdCashPanel) {
-  holdCashPanel.addEventListener('click', (e) => {
-    const head = e.target.closest('.ac-pick-head');
-    if (head) {
-      const body = head.nextElementSibling;
-      if (body && body.classList.contains('ac-pick-body')) { body.hidden = !body.hidden; head.classList.toggle('open', !body.hidden); }
-      return;
-    }
-    const row = e.target.closest('.ac-pick-row');
-    if (row) {
-      const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
-      if (c) holdSetSelection(c);
-      holdCashPanel.hidden = true;
-    }
-  });
-}
-document.addEventListener('click', (e) => {
-  const picker = document.getElementById('holdCashPicker');
-  if (!picker) return;
-  if (!picker.contains(e.target)) { const p = document.getElementById('holdCashPanel'); if (p) p.hidden = true; }
+// 添加/编辑持仓：账户·币种合并选择器（带二级子账户折叠面板）
+bindCashPicker({
+  btn: 'hold', panel: 'hold', picker: 'hold',
+  onRow: (row) => {
+    const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
+    if (c) holdSetSelection(c);
+  },
 });
 
-// ---- 添加/编辑理财：账户·币种合并选择器（与「添加持仓」同一套折叠面板，交互一致，仅 id 前缀不同避免冲突） ----
+// ---- 添加/编辑理财：账户·币种合并选择器（与「添加持仓」同一套折叠面板） ----
 function wealthSetSelection(acc) {
   $('#w_cash').value = acc ? acc.id : '0';
   $('#wealthCashBtn').textContent = acc ? flowCashLabel(acc) : '请选择子账户';
 }
-const wealthCashBtn = document.getElementById('wealthCashBtn');
-const wealthCashPanel = document.getElementById('wealthCashPanel');
-if (wealthCashBtn) wealthCashBtn.addEventListener('click', () => { if (wealthCashPanel) wealthCashPanel.hidden = !wealthCashPanel.hidden; });
-if (wealthCashPanel) {
-  wealthCashPanel.addEventListener('click', (e) => {
-    const head = e.target.closest('.ac-pick-head');
-    if (head) { const body = head.nextElementSibling; if (body) body.hidden = !body.hidden; return; }
-    const row = e.target.closest('.ac-pick-row');
-    if (row) {
-      const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
-      if (c) wealthSetSelection(c);
-      wealthCashPanel.hidden = true;
-    }
-  });
-}
-document.addEventListener('click', (e) => {
-  const picker = document.getElementById('wealthCashPicker');
-  if (!picker) return;
-  if (!picker.contains(e.target)) { const p = document.getElementById('wealthCashPanel'); if (p) p.hidden = true; }
+bindCashPicker({
+  btn: 'wealth', panel: 'wealth', picker: 'wealth',
+  onRow: (row) => {
+    const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
+    if (c) wealthSetSelection(c);
+  },
 });
 
-// ---- 定投计划：资金子账户二级折叠选择器（与「添加持仓」同一套面板，仅 id 前缀不同） ----
-const dcaCashBtn = document.getElementById('dcaCashBtn');
-const dcaCashPanel = document.getElementById('dcaCashPanel');
-if (dcaCashBtn) dcaCashBtn.addEventListener('click', () => { if (dcaCashPanel) dcaCashPanel.hidden = !dcaCashPanel.hidden; });
-if (dcaCashPanel) {
-  dcaCashPanel.addEventListener('click', (e) => {
-    const head = e.target.closest('.ac-pick-head');
-    if (head) {
-      const body = head.nextElementSibling;
-      if (body && body.classList.contains('ac-pick-body')) { body.hidden = !body.hidden; head.classList.toggle('open', !body.hidden); }
-      return;
-    }
-    const row = e.target.closest('.ac-pick-row');
-    if (row) {
-      const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
-      if (c) dcaSetSelection(c);
-      dcaCashPanel.querySelectorAll('.ac-pick-row.on').forEach((r) => r.classList.remove('on'));
-      row.classList.add('on');
-      dcaCashPanel.hidden = true;
-    }
-  });
-}
-document.addEventListener('click', (e) => {
-  const picker = document.getElementById('dcaCashPicker');
-  if (picker && !picker.contains(e.target)) { const p = document.getElementById('dcaCashPanel'); if (p) p.hidden = true; }
+// ---- 定投计划：资金子账户二级折叠选择器（选中行保持 .on 高亮） ----
+bindCashPicker({
+  btn: 'dca', panel: 'dca', picker: 'dca', markOn: true,
+  onRow: (row) => {
+    const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
+    if (c) dcaSetSelection(c);
+  },
 });
 
-// ---- 新建/编辑收支计划：关联账户选择器（与「添加持仓/理财」同一套二级子账户折叠面板，仅 id 前缀不同） ----
+// ---- 新建/编辑收支计划：关联账户选择器（与「添加持仓/理财」同一套二级子账户折叠面板） ----
 function cfSetSelection(acc) {
   $('#cf_account_id').value = acc ? acc.id : '0';
   $('#cfCashBtn').textContent = acc ? flowCashLabel(acc) : '请选择子账户';
 }
-const cfCashBtn = document.getElementById('cfCashBtn');
-const cfCashPanel = document.getElementById('cfCashPanel');
-if (cfCashBtn) cfCashBtn.addEventListener('click', () => { if (cfCashPanel) cfCashPanel.hidden = !cfCashPanel.hidden; });
-if (cfCashPanel) {
-  cfCashPanel.addEventListener('click', (e) => {
-    const head = e.target.closest('.ac-pick-head');
-    if (head) { const body = head.nextElementSibling; if (body) body.hidden = !body.hidden; return; }
-    const row = e.target.closest('.ac-pick-row');
-    if (row) {
-      const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
-      if (c) cfSetSelection(c);
-      cfCashPanel.hidden = true;
-    }
-  });
-}
+bindCashPicker({
+  btn: 'cf', panel: 'cf', picker: 'cf',
+  onRow: (row) => {
+    const c = (cashAccountsCache || []).find((x) => String(x.id) === String(row.dataset.id));
+    if (c) cfSetSelection(c);
+  },
+});
+// 负债账户选择器只有开合，无二级子账户
 const cfLiabilityBtn = document.getElementById('cfLiabilityBtn');
 const cfLiabilityPanel = document.getElementById('cfLiabilityPanel');
 if (cfLiabilityBtn) cfLiabilityBtn.addEventListener('click', () => { if (cfLiabilityPanel) cfLiabilityPanel.hidden = !cfLiabilityPanel.hidden; });
 document.addEventListener('click', (e) => {
-  const picker = document.getElementById('cfCashPicker');
-  if (picker && !picker.contains(e.target)) { const p = document.getElementById('cfCashPanel'); if (p) p.hidden = true; }
   const lp = document.getElementById('cfLiabilityPicker');
   if (lp && !lp.contains(e.target)) { const p = document.getElementById('cfLiabilityPanel'); if (p) p.hidden = true; }
 });
@@ -4134,9 +4068,6 @@ function finCatBadge(key, cls) {
   return `<span class="flow-tag cat ${tone} ${cls || ''}">${esc(finCatLabel(key))}</span>`;
 }
 
-
-
-
 // brand-nav 已从 header 移除，点击回首页职责交给主导航 pills（首页 pill）
 
 // ESC 键：从任意二级页（资产/速算/日历）返回主页
@@ -4840,7 +4771,6 @@ function selectTpl(i) {
   $('#ai_tpl_name').value = t.name;
   $('#ai_tpl_content').value = t.content;
 }
-
 
 async function aiSaveSettings() {
   $('#aiErr').textContent = '';
@@ -5550,7 +5480,6 @@ boot();
 let assetData = null;       // /api/asset/overview 响应
 let pieData = null;          // 最近一次绘制「资产构成」饼图所用的总览数据，供二级下钻使用
 let assetSources = [];       // 资产来源缓存（供下拉）
-let assetTab = 'sources';     // 资产页唯一视图：账户卡片列表（胶囊 tab 行已于 2026-10-16 整体删除；现金并入账户卡片的子账户折叠行）
 let pendingAssetDel = null;   // { type, id }
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -6099,72 +6028,6 @@ function maskIdent(no) {
   if (no.length <= 8) return '•••• ' + no.slice(-4);
   return no.slice(0, 4) + ' •••• ' + no.slice(-4);
 }
-// 资产页「资产摘要」卡：文本 = 净资产/总资产/负债/地域净值指标条；图表 = 资产构成环形图
-// （持仓/理财/现金/负债）。展示模式由 #assetSummaryToggle 控制 assetSummaryMode。
-function renderAssetSummary() {
-  const body = document.getElementById('assetSummaryBody');
-  if (!body) return;
-  const d = assetData; if (!d) return;
-  if (assetSummaryMode === 'chart') {
-    const eq = (d.equity || {}).market_value || 0, w = (d.wealth || {}).total || 0,
-      c = (d.cash || {}).total || 0, l = (d.liability || {}).total || 0;
-    const total = eq + w + c;
-    const segs = [
-      { label: '持仓', value: eq, color: 'rgb(var(--cat-equity))' },
-      { label: '理财', value: w, color: 'rgb(var(--cat-wealth))' },
-      { label: '现金', value: c, color: 'rgb(var(--cat-cash))' },
-    ].filter((s) => s.value > 0);
-    if (total <= 0 || !segs.length) { body.innerHTML = '<div class="asset-ov-pie-label">暂无资产</div>'; return; }
-    body.innerHTML = '<div class="asset-ov-pie">' +
-      '<div class="asset-ov-pie-label">资产构成</div>' +
-      donutSvg(segs, total, '总资产', yuanOfW(total)) +
-      '<div class="asset-ov-legend">' + donutLegend(segs, total) + '</div>' +
-    '</div>';
-    return;
-  }
-  // 文本模式：指标条（净资产 hero + 总资产/负债/各地域净值）
-  const eq = d.equity || {}, w = d.wealth || {}, l = d.liability || {}, cash = d.cash || {};
-  const eqMV = eq.market_value || 0, wTotal = w.total || 0, cTotal = cash.total || 0, lTotal = l.total || 0;
-  const net = eqMV + wTotal + cTotal - lTotal;
-  const total = eqMV + wTotal + cTotal;
-  const regA = d.region_assets || {}, regL = d.region_liabilities || {};
-  const regKeys = ['cn', 'hk', 'us'].filter((k) => (regA[k] || 0) > 0 || (regL[k] || 0) > 0)
-    .concat(Object.keys(regA).filter((k) => !['cn', 'hk', 'us'].includes(k) && (regA[k] || 0) > 0));
-  const msItem = (o) => {
-    const footPlain = o.foot ? ' · ' + String(o.foot).replace(/<[^>]+>/g, '') : '';
-    return `<div class="mstrip-it${o.hero ? ' hero' : ''}${o.cls ? ' ' + o.cls : ''}" style="--acc:${o.acc}" title="${o.lbl} ${yuanOf(o.v)}${footPlain}">` +
-      `<span class="ms-lbl"><i></i>${o.lbl}${o.code ? `<em>${o.code}</em>` : ''}</span>` +
-      `<span class="ms-val${o.v < 0 ? ' neg' : ''}">${yuanOfW(o.v)}</span>` +
-      (o.foot ? `<span class="ms-foot">${o.foot}</span>` : '') +
-    `</div>`;
-  };
-  const html = '<div class="mstrip">' +
-    msItem({ lbl: '净资产', v: net, hero: true, acc: 'rgb(var(--tint))', foot: `占总资产 ${pctOf(net, total)}` }) +
-    msItem({ lbl: '总资产', v: total, acc: 'rgb(var(--cat-cash))',
-      foot: `权益 ${pctOf(eqMV, total)} · 理财 ${pctOf(wTotal, total)} · 现金 ${pctOf(cTotal, total)}` }) +
-    msItem({ lbl: '负债', v: lTotal, acc: 'rgb(var(--cat-debt))', cls: 'debt', foot: `占总资产 ${pctOf(lTotal, total)}` }) +
-    regKeys.map((k) => {
-      const netK = (regA[k] || 0) - (regL[k] || 0);
-      const m = REGION_META[k] || { zh: k.toUpperCase(), en: '', code: k.toUpperCase() };
-      return msItem({ lbl: m.zh, code: m.code, v: netK, acc: AS_REG_COLOR[k] || 'rgb(var(--cat-other))',
-        foot: `${m.en} · 占净资产 ${pctOf(netK, net)}` });
-    }).join('') +
-    '</div>';
-  body.innerHTML = html;
-}
-
-// 资产摘要卡 文本/图表 切换（仅切片已取数据，不重复请求）
-function bindAssetSummaryToggle() {
-  const rt = document.getElementById('assetSummaryToggle');
-  if (!rt) return;
-  rt.querySelectorAll('.range-tab').forEach((b) => {
-    b.onclick = () => {
-      rt.querySelectorAll('.range-tab').forEach((x) => x.classList.toggle('active', x === b));
-      assetSummaryMode = b.dataset.mode;
-      renderAssetSummary();
-    };
-  });
-}
 
 // 资产页：合并资产概览 + 资产摘要为一张卡。
 // 顶部 KPI（总资产 | 负债 | 净资产）+ 中部横向 4 组对比（类别 donut / 区域 / 币种 / 净值结构）。
@@ -6323,25 +6186,6 @@ function donutSvg(segs, total, centerLabel, centerVal, r, sw) {
     '<text class="donut-cap" x="50" y="46" text-anchor="middle">' + centerLabel + '</text>' +
     '<text class="donut-total" x="50" y="58" text-anchor="middle">' + centerVal + '</text>' +
     '</svg>';
-}
-function donutLegend(segs, total) {
-  return segs.map((s) => {
-    const p = total > 0 ? (s.value / total * 100).toFixed(1) : '0.0';
-    return '<div class="asset-ov-legend-row"><span class="legend-dot" style="--ld:' + s.color + '"></span><span>' + esc(s.label) + '</span><span class="legend-val">' + p + '%</span></div>';
-  }).join('');
-}
-// 资产分布 donut（资产概览卡）：复用 getTopSegs 的三段（股票/基金/理财）
-function renderAssetDonut(segs, total) {
-  const host = document.getElementById('assetDonut');
-  if (!host) return;
-  const legend = document.getElementById('assetLegend');
-  if (total <= 0 || !segs.length) {
-    host.innerHTML = '<div class="asset-ov-pie-label">暂无资产</div>';
-    if (legend) legend.innerHTML = '';
-    return;
-  }
-  host.innerHTML = donutSvg(segs, total, '总资产', yuanOfW(total));
-  if (legend) legend.innerHTML = donutLegend(segs, total);
 }
 
 // 资产页「流水」子面板：复用 /api/asset/flows（近 180 天），表格沿用现金流样式；
@@ -6568,8 +6412,6 @@ function renderSources(body) {
   }
   html += `</div></div>`;
   body.innerHTML = html;
-  // 指标条随账户卡重建后注入「资产摘要」卡（#assetSummaryBody 现位于该卡；loadAsset 不再单独调用）
-  renderAssetSummary();
   body.scrollTop = prevScroll;
   $('#addSourceBtn').onclick = () => openAssetSourceModal(null);
   // 「添加收支 / 添加流水」按钮已删（2026-10-22，与首页重复）：入口见首页财务视图「＋ 新增收支计划」与「快捷功能 · 记收入/记支出」
@@ -7633,6 +7475,8 @@ async function openFlowModal(sign) {
   $('#flow_delta').value = '';
   $('#flow_note').value = '';
   $('#flow_cat').value = '';
+  const fd = document.getElementById('flow_date');
+  if (fd) fd.value = ''; // 留空 = 今天，由后端兜底
   $('#flowErr').textContent = '';
   const snapCb = document.getElementById('flow_snapshot');
   if (snapCb) snapCb.checked = false;
@@ -7666,7 +7510,9 @@ $('#flowForm').onsubmit = async (e) => {
       const snapEl = document.getElementById('flow_snapshot');
       const snapshot = !!(snapEl && snapEl.checked);
       const category = document.getElementById('flow_cat').value || '';
-      const r = await api('/api/asset/cash/adjust', { method: 'POST', body: JSON.stringify({ cash_id: accId, delta, note, category, snapshot }) });
+      // 补录历史流水（截图识别出来的日期可能不是今天）；留空由后端按今天落
+      const flowDate = (document.getElementById('flow_date') || {}).value || '';
+      const r = await api('/api/asset/cash/adjust', { method: 'POST', body: JSON.stringify({ cash_id: accId, delta, note, category, snapshot, date: flowDate }) });
       if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#flowErr').textContent = m; return; }
       hideFlow();
       await loadAsset();
@@ -8225,8 +8071,6 @@ function refreshChannelCollapse() {
 })();
 // 2026-10-18：原「通知」卡片三 tab 已拆为设置页语义分组，tab 切换逻辑移除。
 
-
-
 // 盈亏日历弹框的关闭/遮罩点击已在 openPnlModal 内绑定，此处无需重复
 
 async function openSnapModal() {
@@ -8584,7 +8428,6 @@ function klRenderWindow() {
 
   // 副图指标（下拉切换，默认 MACD）：与主图共享 x 轴几何；klRenderSub 只换本体不动下拉框
   const sub = klSubChart(klInd, data, geo);
-
 
   const last = data[data.length - 1].Close;
   const yLast = y(last);
@@ -10324,7 +10167,7 @@ const depositModalEl = document.getElementById('depositModal');
 if (depositModalEl) depositModalEl.addEventListener('click', (e) => { if (e.target === depositModalEl) depositModalEl.hidden = true; });
 
 // ============================================================================
-// AI 助手：右下角悬浮按钮 + 聊天面板
+// AI 助手：聊天面板（入口 = 顶栏「AI 助手」按钮 #aiChatTopBtn）
 // ----------------------------------------------------------------------------
 // 会话落在后端（/api/ai/chats，按用户隔离），消息走 /api/ai/chat：
 // 后端按 OpenAI function-calling 协议把「MCP 已对接的账本工具」与「持仓分析工具」
@@ -10332,10 +10175,9 @@ if (depositModalEl) depositModalEl.addEventListener('click', (e) => { if (e.targ
 // ============================================================================
 
 const aiChatState = { chats: [], curId: 0, msgs: [], busy: false, inited: false };
-// 截图识别（纯 OCR）：OCR 引擎单例 worker + 对话内图片消息引用到的识别文本（按序号存，避免把整段文本塞进 dataset）
+// 截图识别（纯 OCR）：OCR 引擎单例 worker，识别结果直接写进工作区（不进对话、不落库）
 let aiOcrWorker = null;
 let aiOcrEnginePromise = null;
-const aiOcrTexts = [];
 // 打开截图识别时复用面板头部（标题换成「截图识别」），关闭后还原原先的标题 / 副标题
 let aiOcrTitleBak = '';
 let aiOcrSubBak = '';
@@ -10379,9 +10221,6 @@ function aiChatOpen() {
   if (!p) return;
   p.hidden = false;
   p.classList.add('open');
-  aiChatPlacePanel();
-  const fab = document.getElementById('aiFab');
-  if (fab) { fab.classList.add('open'); fab.setAttribute('aria-expanded', 'true'); }
   if (!aiChatState.inited) { aiChatState.inited = true; aiChatLoadList(); }
   const inp = document.getElementById('aiChatInput');
   if (inp) setTimeout(() => inp.focus(), 60);
@@ -10400,8 +10239,6 @@ function aiChatClose() {
       }
     }
   }
-  const fab = document.getElementById('aiFab');
-  if (fab) { fab.classList.remove('open'); fab.setAttribute('aria-expanded', 'false'); }
 }
 
 function aiChatToggle() {
@@ -10578,6 +10415,10 @@ function aiChatRenderMsgs() {
       + '<li data-q="帮我总结一下当前持仓">帮我总结一下当前持仓</li>'
       + '<li data-q="我的持仓里技术面最强和最弱的分别是哪只">技术面最强 / 最弱是哪只</li>'
       + '<li data-q="看看我的现金账户余额分布">看看现金账户余额分布</li>'
+      // 动作型胶囊：不发消息，直接打开截图识别工作区（data-ocr 由 click 委托分流）
+      + '<li class="acp-suggest-act" data-ocr="1">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>'
+      + '识别账单 / 持仓截图</li>'
       + '</ul>'
       + '<p class="acp-welcome-note">涉及买卖判断的结论仅供参考，不构成投资建议。</p>'
       + '</div>';
@@ -10595,21 +10436,7 @@ function aiChatRenderMsgs() {
       return '<div class="ai-msg ai"><div class="ai-avatar">AI</div><div class="ai-bubble acp-typing">'
         + '<span class="acp-dot"></span><span class="acp-dot"></span><span class="acp-dot"></span></div></div>';
     }
-    // 本地图片消息（截图识别）：只存在于当前会话的前端状态里，不落库、不经过 AI
-    if (m.role === 'image') {
-      const txt = aiOcrTexts[m.ocrIdx] || '';
-      let body;
-      if (m.pending) {
-        body = '<div class="ai-ocr-loading"><span class="acp-dot"></span><span class="acp-dot"></span><span class="acp-dot"></span>正在识别截图…</div>';
-      } else if (m.err) {
-        body = '<div class="ai-ocr-text">识别失败：' + esc(m.err) + '</div>';
-      } else {
-        body = '<pre class="ai-ocr-text">' + esc(txt || '（未识别到文字）') + '</pre>' + aiOcrGuideHtml(m.ocrIdx);
-      }
-      return '<div class="ai-msg user">' + timeHtml
-        + '<div class="ai-bubble ai-img-bubble"><img class="ai-img" src="' + m.image + '" alt="截图">' + body + '</div>'
-        + '<div class="ai-avatar user-avatar">我</div></div>';
-    }
+    // 本地图片消息（截图识别）已随输入区选图按钮一并移除，这里只保留纯文本三种角色
     return '';
   }).join('');
   box.scrollTop = box.scrollHeight;
@@ -10619,8 +10446,6 @@ function aiChatSetBusy(on) {
   aiChatState.busy = on;
   const b = document.getElementById('aiChatSend');
   if (b) { b.disabled = on; b.textContent = on ? '思考中…' : '发送'; }
-  const img = document.getElementById('aiChatImg');
-  if (img) img.disabled = on;
   if (on) { const e = document.getElementById('aiChatErr'); if (e) e.textContent = ''; }
 }
 
@@ -10682,12 +10507,19 @@ async function aiChatSend() {
 
 // ============================================================================
 // 截图识别（纯本地 OCR，不调用 AI）
-// 引擎用成熟开源方案 tesseract.js（WASM + 中英混排字库），按需从 CDN 拉取并常驻：
+// 引擎用成熟开源方案 tesseract.js（WASM + 中英混排字库）。资产不在任何境外 CDN：
+// 构建时由 web/build.mjs 从 node_modules 拷进 web/dist/ocr/v<ver>/，随二进制一起
+// 由本服务端同源提供，断网内网也能用；手机首次从自己服务器下一次（约 39MB），
+// 之后由 HTTP immutable 缓存 + Service Worker 兜住，不会重复下载。
 // 识别全程在浏览器内完成 —— 图片不上传服务器、不经过大模型。
 // OCR 输出只做「结构化提示」（金额 / 余额 / 净值 / 日期 / 方向 / 可能的产品名），
 // 再交给既有的流水 / 理财 / 余额对账弹框由用户确认落库（当前不自动写账）。
 // ============================================================================
-const AI_OCR_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+// ⚠ 必须与 web/package.json 里 tesseract.js 的版本一致：build.mjs 会强校验，
+//   不一致直接构建失败（否则运行时会去请求不存在的版本目录 → 404）。
+const AI_OCR_VER = '5.1.1';
+const AI_OCR_BASE = '/ocr/v' + AI_OCR_VER;
+const AI_OCR_LIB = AI_OCR_BASE + '/tesseract.min.js';
 const AI_OCR_LANGS = 'chi_sim+eng';
 
 // 状态文案写进面板副标题（工作区自己不再画标题行）；工作区未打开时不打扰会话标题。
@@ -10695,6 +10527,10 @@ function aiOcrStatus(msg) {
   const l = aiOcrLayerEl();
   const el = document.getElementById('aiChatSub');
   if (l && !l.hidden && el) el.textContent = msg || '本地 OCR · 不调用 AI';
+  // 窄屏头部要塞两枚胶囊，副标题被隐藏（见 style.css 640 档），进度改由 facts 行兜底，
+  // 否则手机端从选图到出结果之间没有任何反馈。已有识别结果（.acp-ocr-fact）时不覆盖。
+  const fb = document.getElementById('aiOcrFacts');
+  if (fb && msg && !fb.querySelector('.acp-ocr-fact')) fb.textContent = msg;
 }
 
 function aiOcrLoadEngine() {
@@ -10702,10 +10538,13 @@ function aiOcrLoadEngine() {
   aiOcrEnginePromise = new Promise((resolve, reject) => {
     if (window.Tesseract) { resolve(window.Tesseract); return; }
     const s = document.createElement('script');
-    s.src = AI_OCR_CDN;
+    s.src = AI_OCR_LIB;
     s.async = true;
     s.onload = () => (window.Tesseract ? resolve(window.Tesseract) : reject(new Error('OCR 引擎加载异常')));
-    s.onerror = () => { aiOcrEnginePromise = null; reject(new Error('OCR 引擎加载失败：需能访问 cdn.jsdelivr.net')); };
+    s.onerror = () => {
+      aiOcrEnginePromise = null;
+      reject(new Error('OCR 引擎加载失败：' + AI_OCR_LIB + ' 不可达（服务端缺该版本资产，请重新部署）'));
+    };
     document.head.appendChild(s);
   });
   return aiOcrEnginePromise;
@@ -10714,14 +10553,26 @@ function aiOcrLoadEngine() {
 async function aiOcrEnsureWorker() {
   const T = await aiOcrLoadEngine();
   if (aiOcrWorker) return aiOcrWorker;
-  aiOcrWorker = await T.createWorker(AI_OCR_LANGS, 1, {
-    logger: (m) => {
-      if (!m) return;
-      const pct = Math.round((m.progress || 0) * 100);
-      if (m.status === 'recognizing text') aiOcrStatus('正在识别文字… ' + pct + '%');
-      else aiOcrStatus('正在加载识别字库（首次约 10 秒）… ' + pct + '%');
-    },
-  });
+  try {
+    aiOcrWorker = await T.createWorker(AI_OCR_LANGS, 1, {
+      // 三个路径全部指向本项目同源目录，createWorker 不再回落到 jsdelivr / tessdata。
+      workerPath: AI_OCR_BASE + '/worker.min.js',
+      corePath: AI_OCR_BASE,
+      langPath: AI_OCR_BASE + '/lang',
+      logger: (m) => {
+        if (!m) return;
+        const pct = Math.round((m.progress || 0) * 100);
+        if (m.status === 'recognizing text') aiOcrStatus('正在识别文字… ' + pct + '%');
+        else if (m.status.indexOf('traineddata') >= 0) aiOcrStatus('正在加载识别字库（首次约 39MB，之后本地缓存）… ' + pct + '%');
+        else aiOcrStatus('正在初始化识别内核… ' + pct + '%');
+      },
+    });
+  } catch (e) {
+    // 失败后必须清掉单例，否则永远无法重试。
+    aiOcrWorker = null;
+    aiOcrEnginePromise = null;
+    throw new Error('识别内核/字库加载失败：' + ((e && e.message) || e) + '（首次需自本机服务端下载约 39MB）');
+  }
   return aiOcrWorker;
 }
 
@@ -10734,10 +10585,163 @@ function aiOcrReadFile(file) {
   });
 }
 
+// 识别前放大图片 —— 这不是画质优化，是准确率的分水岭。
+// 手机截图多为 390–430px 宽、正文 12–13px，汉字笔画糊在一起时 chi_sim 会整段误判成拉丁串：
+// 实测同一条流水截图，原图认成「(=) Esl / 白 BI / ER BEXEEREE」，放大 2 倍后变成
+// 「交通 -5.00 / 餐饮 -16.00 / 鸡鸣汤包(仙鹤门店)」。放大 3 倍反而开始丢小数点，故封顶 3 倍。
+// 目标：把短图拉到 ~900px 宽（tesseract 舒适行高 30–40px），原图已够宽则不缩放。
+function aiOcrPreprocess(file) {
+  return new Promise((resolve) => {
+    if (!file || !/^image\//.test(String(file.type || ''))) { resolve(file); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    const done = (v) => { URL.revokeObjectURL(url); resolve(v); };
+    img.onload = () => {
+      try {
+        const w0 = img.naturalWidth || 0;
+        const scale = w0 > 0 ? Math.min(3, 900 / w0) : 1;
+        if (!(scale > 1.02)) { done(file); return; }
+        const c = document.createElement('canvas');
+        c.width = Math.round(w0 * scale);
+        c.height = Math.round((img.naturalHeight || 0) * scale);
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob((blob) => done(blob || file), 'image/png');
+      } catch (_) { done(file); }
+    };
+    img.onerror = () => done(file);
+    img.src = url;
+  });
+}
+
 // OCR 文本 → 结构化提示。命中不了就留空，交给用户手填，不做"猜也得猜一个"的幻觉填充。
+// ---- 产品名识别：OCR 文本归一化 + 候选行打分 + 与账本已有名称的模糊匹配 ----
+// 两个坑（2026-10-28 用真实截图实测确认）：
+//   ① 直接取第一行当名称，拿到的往往是「持有产品 / 按持有市值」这类表头；
+//   ② tesseract 的 chi_sim 会在汉字之间插空格，并把全角「（）」认成「{}」「)(」，
+//      所以「整行 substring 匹配」必然失败。这里统一归一化后再按最长公共子序列打分。
+
+// 归一化：只保留可比较的字符（去空白、标点、连接符；括号/形近符号统一成半角）
+function ocrNorm(s) {
+  return String(s || '')
+    .replace(/[\s\u3000]+/g, '')
+    .replace(/[（{［\[]/g, '(')
+    .replace(/[）}］\]]/g, ')')
+    .replace(/[-—–－_ـ·•.\/\\|]/g, '')
+    .replace(/[“”"'’‘`~!@#$%^&*+=,，、。:：;；?？!！¢¥]/g, '')
+    .trim();
+}
+
+// 展示用清洗：去掉汉字之间的碎空格，括号统一全角（更贴近账本里的写法）
+function ocrNameDisplay(raw) {
+  return String(raw || '')
+    .replace(/\s+/g, '')
+    .replace(/[({［\[]/g, '（')
+    .replace(/[)}］\]]/g, '）')
+    .replace(/^[-,，、:：]+|[-,，、:：]+$/g, '')
+    .slice(0, 40);
+}
+
+// 最长公共子序列长度（名字都很短，O(n·m) 足够）
+function ocrLcsLen(a, b) {
+  const n = a.length;
+  const m = b.length;
+  if (!n || !m) return 0;
+  let prev = new Uint16Array(m + 1);
+  let cur = new Uint16Array(m + 1);
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      cur[j] = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+    }
+    const t = prev; prev = cur; cur = t; cur.fill(0);
+  }
+  return prev[m];
+}
+
+// 相似度 0~1：公共子序列 / 较长串长度（对「多认了几个字」「少认了几个字」都不敏感）
+function ocrNameScore(a, b) {
+  const x = ocrNorm(a);
+  const y = ocrNorm(b);
+  if (!x || !y) return 0;
+  return ocrLcsLen(x, y) / Math.max(x.length, y.length);
+}
+
+// 包含式命中（原名或归一化后任一方向包含即可）——给账户名这类「短名」用
+function nameLooseHit(key, name) {
+  const k = String(key || '').trim();
+  const n = String(name || '').trim();
+  if (!k || !n) return false;
+  if (n.indexOf(k) >= 0 || k.indexOf(n) >= 0) return true;
+  const kn = ocrNorm(k);
+  const nn = ocrNorm(n);
+  return !!kn && !!nn && (nn.indexOf(kn) >= 0 || kn.indexOf(nn) >= 0);
+}
+
+// 表头 / 字段名 / 风险提示行：这些不是产品名
+const OCR_NAME_NOISE = /持有产品|持有市值|按持有|累计收益|日收益|昨日收益|单位净值|最新净值|参考市值|市值|收益|余额|可用|金额|份额|产品有风险|投资须谨慎|非存款|活钱管理|总资产|资产|时间|状态|确认|买入|卖出|赎回|费率|日期|序号|操作|详情|全部|持仓|排序/;
+// 理财/存款类产品的常见构词：命中越多越像产品名
+const OCR_NAME_HINT = /理财|基金|计划|号|版|银行|现金|宝|债|存单|信托|资管|集合|净值型|投资|成长|稳健|稳富|安心|天天/g;
+
+// 按「汉字数 + 语义词」给每行打分，返回最像产品名的候选（最多 4 个，按分排序）
+function aiOcrNameCandidates(text) {
+  const lines = String(text || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  const out = [];
+  for (const raw of lines) {
+    const norm = ocrNorm(raw);
+    if (norm.length < 4) continue;                          // 太短：多半是「美元」「收益」这类标签
+    const han = (norm.match(/[\u4e00-\u9fa5]/g) || []).length;
+    if (han < 3) continue;                                  // 中文太少：数字行 / 英文标签
+    if (OCR_NAME_NOISE.test(norm)) continue;                 // 表头 / 字段名 / 提示语
+    const hint = (norm.match(OCR_NAME_HINT) || []).length;
+    let score = Math.min(han, 12) + Math.min(hint * 3, 9);
+    if (norm.length > 28) score -= (norm.length - 28) * 1.2; // 过长：多半整行糊在一起
+    out.push({ text: ocrNameDisplay(raw), norm: norm, score: score });
+  }
+  out.sort((a, b) => b.score - a.score);
+  return out.slice(0, 4);
+}
+
+// 理财/基金截图的「持有市值」：表格版式常是「数字在上、表头在下」
+// （4,757.24 换行后才是「持有市值(美元) 累计收益 日收益(10-27)」），
+// 所以不能只用「标签在前」的正向抓取，要能从含标签的行往邻行找数字。
+// 邻行里的日期（10-27）、百分比、序号必须先剔掉，否则会把「27」当成金额。
+function aiOcrHolding(t) {
+  const s = String(t || '').replace(/(\d)\s*,\s*(\d)/g, '$1,$2'); // 「4 , 757.24」→「4,757.24」
+  // 只剔「日期形态」的数字：10-27 / 10/27 / 10月27 / 2026-10-27。
+  // 分隔符里不能含「.」—— 否则 4,757.24 会被当成「757 月 24」整段删掉（曾踩）。
+  const dateRe = /\d{4}\s*[-/.]\s*\d{1,2}\s*[-/.]\s*\d{1,2}|\d{1,2}\s*[-/月]\s*\d{1,2}(?![\d,.])/g;
+  const grab = (line) => {
+    const clean = String(line).replace(dateRe, ' ').replace(/[(（][^)）]*[)）]/g, ' ');
+    const nums = (clean.match(/\d[\d,]*(?:\.\d+)?/g) || [])
+      .map((x) => parseFloat(x.replace(/,/g, '')))
+      .filter((v) => isFinite(v) && v > 0 && !(v >= 1900 && v <= 2100 && Number.isInteger(v)));
+    return nums.length ? Math.max.apply(null, nums) : null;
+  };
+  const lines = s.split('\n').map((x) => x.trim()).filter(Boolean);
+  // tesseract 的 chi_sim 会在汉字之间插空格（「持 有 市 值」），标签判定必须先挤掉所有空白
+  const KW = /持有市值|持仓市值|持有金额|持仓金额|总市值|市值/;
+  for (let i = 0; i < lines.length; i++) {
+    if (!KW.test(lines[i].replace(/\s+/g, ''))) continue;
+    const same = grab(lines[i]);
+    if (same != null) return same;
+    for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
+      const v = grab(lines[j]);
+      if (v != null) return v;
+    }
+    for (let j = i + 1; j < lines.length && j <= i + 3; j++) {
+      const v = grab(lines[j]);
+      if (v != null) return v;
+    }
+  }
+  return null;
+}
+
 function aiOcrParse(text) {
-  const t = String(text || '');
-  const f = { amount: null, balance: null, nav: null, date: '', out: false, name: '' };
+  // 千分位被 OCR 用空格隔开（「4 , 757.24」）会让数字在后面的正则里断成两截，先归一化
+  const t = String(text || '').replace(/(\d)\s*,\s*(\d)/g, '$1,$2');
+  const f = { amount: null, balance: null, nav: null, holding: null, date: '', out: false, name: '', names: [] };
   const near = (kw) => {
     const m = new RegExp(kw + '[^\\d\\n]{0,10}(-?\\d[\\d,]*\\.?\\d*)').exec(t);
     if (!m) return null;
@@ -10747,6 +10751,7 @@ function aiOcrParse(text) {
   f.nav = near('(?:单位净值|最新净值|净值)');
   f.balance = near('(?:可用余额|账户余额|当前余额|余额)');
   f.amount = near('(?:交易金额|发生额|变动金额|金额|合计|总计)');
+  f.holding = aiOcrHolding(t);
   if (f.amount == null && f.balance == null) {
     // 兜底：取文本里最大的非年份数字（银行/券商截图里金额通常是页面上最大的数）
     const nums = (t.match(/\d[\d,]*\.?\d*/g) || [])
@@ -10761,14 +10766,115 @@ function aiOcrParse(text) {
     f.date = y + '-' + p(dm[dm.length - 2]) + '-' + p(dm[dm.length - 1]);
   }
   f.out = /支出|转出|付款|支付|消费|扣款|还款|取出|买入/.test(t);
-  const line = (t.split('\n').map((s) => s.trim()).filter(Boolean)[0] || '').slice(0, 20);
-  f.name = line;
+  // 名称不再取「第一行」，而是按打分挑最像产品名的那行（见 aiOcrNameCandidates）
+  const cands = aiOcrNameCandidates(t);
+  f.names = cands.map((c) => c.text);
+  f.name = f.names[0] || '';
+  // 批量流水：记账本类截图一次能出多条，单条录入会逼用户重复操作 N 遍
+  f.flows = aiOcrFlows(t);
   return f;
 }
 
+// ---- 流水列表解析（批量录入）----
+// 记账本 / 银行 App 的明细页结构高度一致：
+//   10 月 27 日 昨天   出 21.00  入 0.00     ← 日期分隔行（带当日合计，不是流水）
+//   交通 -5.00                              ← 分类 + 金额（左侧图标常被认成「网」「口」等噪声）
+//   18:28 | 南京市栖霞区停车设施管…          ← 时间 + 商户
+// 解析按「日期行切上下文 → 金额行建记录 → 紧随的时间行补备注」推进；
+// 认不出的行一律跳过，绝不猜：漏一条让用户手补，比凭空造一条账更糟。
+const OCR_FLOW_CATS = [
+  [/交通|出行|打车|地铁|公交|停车|加油|高铁|机票|火车|滴滴/, 'living'],
+  [/餐饮|美食|外卖|咖啡|奶茶|超市|购物|日用|娱乐|电影|生活|便利|水果|零食|餐|饮|食/, 'living'],
+  [/房租|物业|水电|燃气|宽带|居住|家政/, 'housing'],
+  [/医院|药|医疗|体检|诊所|教育|学费|培训|书店|文具/, 'edu_health'],
+  [/保险/, 'insurance'],
+  [/还款|信用卡|房贷|车贷|分期|借呗|花呗/, 'debt'],
+  [/税/, 'tax'],
+  [/工资|薪|奖金|报销/, 'salary'],
+  [/分红|利息|收益|理财|基金/, 'invest_div'],
+];
+function aiOcrFlowCat(raw) {
+  // chi_sim 会在每个汉字后插空格（「人 交 通」），先挤掉空白再匹配，否则连「交通」都命中不了
+  const s = String(raw || '').replace(/\s+/g, '');
+  for (const [re, key] of OCR_FLOW_CATS) if (re.test(s)) return key;
+  return 'other_out';
+}
+
+// 分类文本清洗：左侧图标会被认成「人」「白」「(0)」等噪声，去掉空白后取最后一段汉字
+function aiOcrCatWord(pre) {
+  const s = String(pre || '').replace(/\s+/g, '');
+  const segs = s.match(/[\u4e00-\u9fa5]{1,8}/g);
+  return segs && segs.length ? segs[segs.length - 1] : '';
+}
+
+// 备注清洗：去列表截断的省略号、首尾噪声符号，并挤掉汉字/括号之间的碎空格
+// （「南 京 市 栖 霞 区」→「南京市栖霞区」；英文商户名里的空格原样保留）
+function aiOcrNoteClean(s) {
+  const t = String(s || '')
+    .replace(/\.{2,}|…+/g, '')
+    .replace(/^[|丨\s:：,，-]+|[|丨\s]+$/g, '')
+    .trim();
+  return t.replace(/([\u4e00-\u9fa5（）()])\s+(?=[\u4e00-\u9fa5（）()])/g, '$1').slice(0, 60);
+}
+
+function aiOcrFlows(text) {
+  const pad = (n) => String(n).padStart(2, '0');
+  let year = new Date().getFullYear();
+  let date = '';
+  let last = null;
+  const out = [];
+  for (const raw of String(text || '').split('\n')) {
+    const l = raw.trim();
+    if (!l) continue;
+    // 悬浮按钮 / 底部导航等界面噪声
+    if (/记\s*[-—一]?\s*笔|明\s*细\s*统\s*计|全部类型|总\s*支\s*出/.test(l)) continue;
+    const ym = /(20\d{2})\s*年/.exec(l);
+    if (ym) year = Number(ym[1]);
+    // ① 日期分隔行：切日期上下文；行内「出 xx 入 xx」是当日合计，不是流水
+    const dm = /(\d{1,2})\s*月\s*(\d{1,2})\s*日/.exec(l);
+    if (dm) {
+      date = year + '-' + pad(Number(dm[1])) + '-' + pad(Number(dm[2]));
+      last = null;
+      continue;
+    }
+    if (!date) continue;
+    // ② 时间 + 商户行：给上一条流水补备注
+    const tm = /^[^\d:]{0,4}(\d{1,2}):(\d{2})\s*[|丨]?\s*(.+)$/.exec(l);
+    if (tm && last && !last.note) {
+      last.time = pad(Number(tm[1])) + ':' + pad(Number(tm[2]));
+      last.note = aiOcrNoteClean(tm[3]);
+      last = null;
+      continue;
+    }
+    // ③ 分类 + 金额行：行尾必须是带两位小数的金额
+    const am = /^(.*?)([-+])?\s*(\d[\d,]*\.\d{2})\s*$/.exec(l);
+    if (!am) continue;
+    const amt = Number(String(am[3]).replace(/,/g, ''));
+    if (!isFinite(amt) || amt <= 0) continue; // 0.00 只是占位
+    // 日期没认出来时，「出 3.80 入 0.00」这类汇总行会落到这里，按双金额特征剔掉
+    if (/出\s*[\d,]+\.\d{2}/.test(l) && /[入A]\s*[\d,]+\.\d{2}/.test(l)) continue;
+    const catRaw = aiOcrCatWord(am[1]);
+    last = { date, time: '', cat: aiOcrFlowCat(catRaw), catRaw, amount: am[2] === '-' ? -amt : amt, note: '' };
+    out.push(last);
+  }
+  return out;
+}
+
 function aiOcrFactsHtml(f) {
+  // 多条流水（记账本/银行明细）走批量录入，此时「产品/净值/余额」这些持仓语义字段全是误判，不展示
+  if (f.flows && f.flows.length >= 2) {
+    const dates = [...new Set(f.flows.map((r) => r.date))].sort();
+    const out = f.flows.reduce((s, r) => s + (r.amount < 0 ? r.amount : 0), 0);
+    return (
+      '<span class="acp-ocr-fact">流水 <b>' + f.flows.length + ' 条</b></span>' +
+      '<span class="acp-ocr-fact">日期 <b>' + esc(dates[0].slice(5)) + ' ~ ' + esc(dates[dates.length - 1].slice(5)) + '</b></span>' +
+      '<span class="acp-ocr-fact">支出合计 <b>' + fmt(Math.abs(out)) + '</b></span>'
+    );
+  }
   const chips = [];
-  if (f.amount != null) chips.push('金额 <b>' + f.amount + '</b>');
+  if (f.name) chips.push('产品 <b>' + esc(f.name) + '</b>');
+  if (f.holding != null) chips.push('持有市值 <b>' + f.holding + '</b>');
+  if (f.amount != null && f.amount !== f.holding) chips.push('金额 <b>' + f.amount + '</b>');
   if (f.balance != null) chips.push('余额 <b>' + f.balance + '</b>');
   if (f.nav != null) chips.push('净值 <b>' + f.nav + '</b>');
   if (f.date) chips.push('日期 <b>' + esc(f.date) + '</b>');
@@ -10781,38 +10887,87 @@ function aiOcrFirstLine(text) {
   return l.slice(0, 60);
 }
 
+// 把识别到的「今日持仓金额」预填进「更新理财持仓」（= 理财快照，POST /api/asset/wealth/snapshots）
+// 的对应行。只预填不提交：快照写入会联动现金账户、并影响当日盈亏与审计记录，必须用户确认。
+async function aiOcrPrefillSnap(w, amt) {
+  await openSnapModal(); // 内部已 await loadAsset()，行 id 为 amt-<wealth_id> / cf-<wealth_id>
+  const amtEl = document.getElementById('amt-' + w.id);
+  if (!amtEl) {
+    toast('「' + w.name + '」不在持仓更新列表里（可能已清仓停用）', 'err');
+    return;
+  }
+  const row = amtEl.closest('.snap-row');
+  const cfEl = document.getElementById('cf-' + w.id);
+  if (amtEl.disabled) {
+    // 建仓态：持仓金额由「今日净存入」派生且输入框禁用 → 填净存入，金额自动跟随
+    if (!cfEl || cfEl.disabled) {
+      toast('「' + w.name + '」今日已建仓，如需调整请到「每日盈亏 → 审计记录」撤销', 'info');
+      return;
+    }
+    cfEl.value = String(round2(amt));
+    snapCfSync(cfEl);
+  } else {
+    amtEl.value = String(round2(amt));
+    amtEl.dataset.touched = '1'; // 已手工填入，阻止净存入联动把它覆盖回「上次值 + 本次变动」
+  }
+  if (row) {
+    row.classList.add('ocr-hit');
+    row.scrollIntoView({ block: 'center' });
+  }
+  const focusEl = amtEl.disabled ? cfEl : amtEl;
+  if (focusEl) setTimeout(() => { try { focusEl.focus(); focusEl.select(); } catch (_) {} }, 80);
+  // 文案保持一行内：手机上 toast 会压在弹框标题上，产品名已由高亮行指明，不必重复
+  toast('已填入今日持仓 ' + moneyCur(amt, w.currency) + '，核对后保存', 'ok');
+}
+
 // 三个引导动作：只负责「带着识别结果打开对应弹框并预填」，写库仍由用户点确认。
 async function aiOcrGuide(act, text) {
   const f = aiOcrParse(text);
   if (act === 'flow') {
+    // 多条流水（记账本 / 银行明细截图）→ 走批量确认表格；单条才走原来的添加流水弹框
+    if (f.flows && f.flows.length >= 2) { await openFlowBatchModal(f.flows); return; }
     await openFlowModal(f.out ? 'out' : 'in');
     const d = document.getElementById('flow_delta');
     const v = f.amount != null ? f.amount : f.balance;
     if (d && v != null) d.value = String(v);
+    const dd = document.getElementById('flow_date');
+    if (dd && f.date) dd.value = f.date; // 补录历史流水：日期跟截图走，不落成今天
     const n = document.getElementById('flow_note');
-    if (n) n.value = '截图识别：' + aiOcrFirstLine(text);
+    // 说明用识别到的产品名（已清洗空格/括号），比原始第一行更可读
+    if (n) n.value = '截图识别：' + (f.name || aiOcrFirstLine(text));
     return;
   }
   if (act === 'wealth') {
-    let list = ((assetData && assetData.wealth) || {}).items || [];
+    // /api/home 的 wealth 是 { products: [...] }；/api/asset/wealth 的 wealth 是数组，两者都兜住
+    let list = ((assetData && assetData.wealth) || {}).products || ((assetData && assetData.wealth) || {}).items || [];
     if (!list.length) {
       try { const r = await api('/api/asset/wealth'); if (r.ok) { const d = await r.json(); list = (d && d.wealth) || []; } } catch (_) {}
     }
-    const key = (f.name || '').trim();
-    const hit = key ? list.find((w) => {
-      const n = String((w && w.name) || '');
-      return n && (n.indexOf(key) >= 0 || key.indexOf(n) >= 0);
-    }) : null;
+    // 候选名逐个跟账本里的理财比相似度，取最高分；低于阈值宁可当没匹配上，
+    // 也不要因为「都含理财两个字」就张冠李戴。
+    const cands = (f.names && f.names.length ? f.names : (f.name ? [f.name] : [])).filter(Boolean);
+    let hit = null;
+    let best = 0;
+    for (const c of cands) {
+      for (const w of list) {
+        const s = ocrNameScore(c, (w && w.name) || '');
+        if (s > best) { best = s; hit = w; }
+      }
+    }
+    if (hit && best < 0.62) hit = null;
     if (hit) {
+      // 持仓截图给的是「持有市值」→ 走理财快照的今日持仓金额，而不是净值
+      const amt = f.holding != null ? f.holding : f.amount;
+      if (amt != null && amt > 0) { await aiOcrPrefillSnap(hit, amt); return; }
       await openWealthNavModal(hit.id);
       const navEl = document.getElementById('wn_nav');
       if (navEl && f.nav != null) navEl.value = String(f.nav);
-      else toast('未识别到净值，请在弹框里手动填写', 'info');
+      else toast('已匹配「' + hit.name + '」，未识别到持仓金额或净值，请手动填入', 'info');
       return;
     }
     await openWealthModal(0);
     const nameEl = document.getElementById('w_name');
-    if (nameEl && key) nameEl.value = key;
+    if (nameEl && f.name) nameEl.value = f.name;
     const navEl2 = document.getElementById('w_nav');
     if (navEl2 && f.nav != null) navEl2.value = String(f.nav);
     toast('未匹配到已有理财，已打开新增理财', 'info');
@@ -10823,10 +10978,7 @@ async function aiOcrGuide(act, text) {
     const v = f.balance != null ? f.balance : f.amount;
     if (v == null) { toast('未识别到余额数字，请在弹框里手动填写', 'info'); return; }
     const key = (f.name || '').trim();
-    let acc = key ? (cashAccountsCache || []).find((c) => {
-      const n = String((c && c.name) || '');
-      return n && (n.indexOf(key) >= 0 || key.indexOf(n) >= 0);
-    }) : null;
+    let acc = key ? (cashAccountsCache || []).find((c) => nameLooseHit(key, c && c.name)) : null;
     if (!acc) acc = pickFallbackCash(cashAccountsCache);
     const inp = acc ? document.querySelector('.bsync-input[data-cash="' + acc.id + '"]') : null;
     if (inp) { inp.value = String(v); inp.focus(); }
@@ -10835,6 +10987,129 @@ async function aiOcrGuide(act, text) {
 }
 
 function aiOcrLayerEl() { return document.getElementById('aiOcrLayer'); }
+
+// ---- 批量流水确认弹框 ----
+// 截图一次能出 N 条，逐条开弹框录入等于让用户重做一遍手工记账。
+// 这里把识别结果铺成可勾选、可改的表格，确认后按「日期从旧到新」逐条写入：
+// 顺序影响余额校验（先花后花 vs 先花后收），逆序会让本不该失败的记录报余额不足。
+let fbState = [];
+
+function fbCatOptionsHtml(cur) {
+  const seen = new Set();
+  const opts = [];
+  for (const o of finCatOptions('expense').concat(finCatOptions('income'))) {
+    if (seen.has(o.key)) continue;
+    seen.add(o.key);
+    opts.push(`<option value="${esc(o.key)}"${o.key === cur ? ' selected' : ''}>${esc(o.label)}</option>`);
+  }
+  return opts.join('');
+}
+
+function fbRowsHtml() {
+  return fbState.map((r, i) => `
+    <div class="fb-row" data-i="${i}">
+      <input class="fb-on" type="checkbox" checked aria-label="录入这一条">
+      <span class="fb-date">${esc(String(r.date || '').slice(5))}</span>
+      <select class="fb-cat" aria-label="收支分类">${fbCatOptionsHtml(r.cat)}</select>
+      <input class="fb-amt" type="number" step="0.01" value="${Number(r.amount || 0).toFixed(2)}" aria-label="金额">
+      <input class="fb-note" value="${esc(r.note || r.catRaw || '')}" placeholder="说明" aria-label="说明">
+    </div>`).join('');
+}
+
+// 从 DOM 读当前值（DOM 是唯一真源，避免每次输入都重渲染把焦点弄丢）
+function fbCollect() {
+  const rows = [];
+  document.querySelectorAll('#fbRows .fb-row').forEach((el) => {
+    if (!el.querySelector('.fb-on').checked) return;
+    const src = fbState[Number(el.dataset.i)] || {};
+    const amount = Math.round(Number(el.querySelector('.fb-amt').value || 0) * 100) / 100;
+    if (!amount) return;
+    rows.push({
+      date: src.date,
+      time: src.time || '',
+      amount,
+      cat: el.querySelector('.fb-cat').value,
+      note: el.querySelector('.fb-note').value.trim(),
+    });
+  });
+  return rows;
+}
+
+function fbUpdateSum() {
+  const rows = fbCollect();
+  const out = rows.reduce((s, r) => s + (r.amount < 0 ? r.amount : 0), 0);
+  const inn = rows.reduce((s, r) => s + (r.amount > 0 ? r.amount : 0), 0);
+  const el = document.getElementById('fbSum');
+  if (el) el.textContent = `勾选 ${rows.length} 条 · 支出 ${fmt(Math.abs(out))} · 收入 ${fmt(inn)}`;
+}
+
+async function openFlowBatchModal(flows) {
+  if (!flows || !flows.length) { toast('没有识别到流水', 'err'); return; }
+  await loadCashAccounts();
+  fbState = flows.map((f) => ({ ...f }));
+  // 默认账户：记账本截图基本来自支付宝/微信/零钱这类日常账户；直接「余额最大」会选到公积金、
+  // 定期存款这种明显不该记日常消费的账户。先按名字找日常账户，否则从非储蓄类账户里选余额最大的。
+  const list = cashAccountsCache || [];
+  const daily = list.find((c) => /支付宝|微信|零钱|余额宝|现金|日常|花呗/.test(String(c.name || '')));
+  const notDaily = /公积金|社保|医保|定期|理财|基金|股票|投资|保证金|冻结/;
+  const pool = list.filter((c) => !notDaily.test(String(c.name || '') + String(c.note || '')));
+  const acc = daily || pickFallbackCash(pool.length ? pool : list);
+  const sel = document.getElementById('fb_cash');
+  sel.innerHTML = (cashAccountsCache || []).map((c) =>
+    `<option value="${c.id}"${acc && Number(c.id) === Number(acc.id) ? ' selected' : ''}>${esc(flowCashLabel(c))}</option>`).join('');
+  if (!sel.innerHTML) { toast('还没有现金子账户，请先在资产页新建', 'err'); return; }
+  const box = document.getElementById('fbRows');
+  box.innerHTML = fbRowsHtml();
+  box.oninput = fbUpdateSum;
+  box.onchange = fbUpdateSum;
+  document.getElementById('fbErr').textContent = '';
+  fbUpdateSum();
+  document.getElementById('flowBatchModal').hidden = false;
+}
+
+async function fbSubmit() {
+  const cashId = Number(document.getElementById('fb_cash').value || 0);
+  if (!cashId) { document.getElementById('fbErr').textContent = '请选择子账户'; return; }
+  const rows = fbCollect();
+  if (!rows.length) { document.getElementById('fbErr').textContent = '没有勾选任何流水'; return; }
+  rows.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+  const btn = document.getElementById('fbSave');
+  btn.disabled = true;
+  let ok = 0;
+  let err = '';
+  for (const r of rows) {
+    const res = await api('/api/asset/cash/adjust', {
+      method: 'POST',
+      body: JSON.stringify({
+        cash_id: cashId,
+        delta: r.amount,
+        note: r.note || '截图批量录入',
+        category: r.cat,
+        date: r.date,
+      }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      err = (d && d.error) || '写入失败';
+      break;
+    }
+    ok++;
+  }
+  btn.disabled = false;
+  if (err) {
+    document.getElementById('fbErr').textContent = `已写入 ${ok} 条，第 ${ok + 1} 条失败：${err}`;
+    await loadAsset();
+    return;
+  }
+  document.getElementById('flowBatchModal').hidden = true;
+  await loadAsset();
+  toast(`已录入 ${ok} 条流水`, 'ok');
+}
+
+if (document.getElementById('fbSave')) document.getElementById('fbSave').onclick = fbSubmit;
+if (document.getElementById('fbCancel')) {
+  document.getElementById('fbCancel').onclick = () => { document.getElementById('flowBatchModal').hidden = true; };
+}
 
 function aiOcrReset() {
   const drop = document.getElementById('aiOcrDrop');
@@ -10898,7 +11173,8 @@ async function aiOcrHandleFile(file) {
   try {
     const w = await aiOcrEnsureWorker();
     aiOcrStatus('正在识别文字…');
-    const { data } = await w.recognize(file);
+    // 先放大再识别：手机截图正文只有 12–13px，原图直喂会把整行汉字认成拉丁字母（见 aiOcrPreprocess）
+    const { data } = await w.recognize(await aiOcrPreprocess(file));
     const txt = ((data && data.text) || '').trim();
     if (ta) ta.value = txt;
     if (fb) fb.innerHTML = txt ? aiOcrFactsHtml(aiOcrParse(txt)) : '';
@@ -10910,54 +11186,10 @@ async function aiOcrHandleFile(file) {
   }
 }
 
-// 输入框「发送图片」：识别结果作为一条本地图片消息进对话，并给出三个引导动作。
-// 注意：这条消息只存在于前端（不落库、不调用 AI），切换会话 / 刷新后会消失。
-async function aiChatSendImageFile(file) {
-  if (!file) return;
-  if (!/^image\//.test(String(file.type || ''))) { toast('请选择图片文件', 'err'); return; }
-  if (aiChatState.busy) { toast('AI 正在回复，请稍候', 'err'); return; }
-  let dataUrl = '';
-  try { dataUrl = await aiOcrReadFile(file); } catch (err) { toast(err.message, 'err'); return; }
-  const idx = aiOcrTexts.push('') - 1;
-  aiChatState.msgs = aiChatState.msgs.filter((x) => x.role !== 'pending');
-  aiChatState.msgs.push({ role: 'image', image: dataUrl, ocrIdx: idx, pending: true, created_at: new Date() });
-  aiChatRenderMsgs();
-  try {
-    const w = await aiOcrEnsureWorker();
-    const { data } = await w.recognize(file);
-    const txt = ((data && data.text) || '').trim();
-    aiOcrTexts[idx] = txt;
-    const m = aiChatState.msgs.find((x) => x.role === 'image' && x.ocrIdx === idx);
-    if (m) m.pending = false;
-    aiChatRenderMsgs();
-    if (!txt) toast('未识别到文字，换一张更清晰的截图试试', 'err');
-  } catch (err) {
-    const m = aiChatState.msgs.find((x) => x.role === 'image' && x.ocrIdx === idx);
-    if (m) { m.pending = false; m.err = (err && err.message) ? err.message : String(err); }
-    aiChatRenderMsgs();
-    toast('OCR 失败：' + m.err, 'err');
-  }
-}
-
-function aiOcrGuideHtml(idx) {
-  return '<div class="acp-ocr-guide">'
-    + '<span class="acp-ocr-guide-h">识别完成，接下来可以：</span>'
-    + '<button class="acp-ocr-act" type="button" data-ocr-act="flow" data-ocr-i="' + idx + '">更新流水</button>'
-    + '<button class="acp-ocr-act" type="button" data-ocr-act="wealth" data-ocr-i="' + idx + '">更新理财</button>'
-    + '<button class="acp-ocr-act" type="button" data-ocr-act="balance" data-ocr-i="' + idx + '">更新账户余额</button>'
-    + '</div>';
-}
-
 // ---- 事件绑定（全部走 document 级委托，避免动态节点绑不上） ----
 document.addEventListener('click', (e) => {
   const t = e.target;
   if (!(t instanceof Element)) return;
-  if (t.closest('#aiFab')) {
-    // 刚拖完按钮的那一次 click 不当作点击，否则拖完就弹出面板
-    if (aiFabState.justDragged) { aiFabState.justDragged = false; return; }
-    aiChatToggle();
-    return;
-  }
   if (t.closest('#aiChatFullscreen')) {
     const p = aiChatPanelEl();
     if (p) {
@@ -10986,13 +11218,10 @@ document.addEventListener('click', (e) => {
   if (t.closest('#aiOcrClose')) { aiOcrClose(); return; }
   if (t.closest('#aiOcrPick')) { const fi = document.getElementById('aiOcrFile'); if (fi) fi.click(); return; }
   if (t.closest('#aiOcrClear')) { aiOcrReset(); return; }
-  if (t.closest('#aiChatImg')) { const fi = document.getElementById('aiChatFile'); if (fi) fi.click(); return; }
   const ocrAct = t.closest('[data-ocr-act]');
   if (ocrAct) {
-    const i = Number(ocrAct.dataset.ocrI);
     const fromLayer = document.getElementById('aiOcrText');
-    const txt = (isFinite(i) && aiOcrTexts[i] != null) ? aiOcrTexts[i] : (fromLayer ? fromLayer.value : '');
-    aiOcrGuide(ocrAct.dataset.ocrAct, txt);
+    aiOcrGuide(ocrAct.dataset.ocrAct, fromLayer ? fromLayer.value : '');
     return;
   }
   if (t.closest('#aiChatListToggle')) {
@@ -11009,6 +11238,8 @@ document.addEventListener('click', (e) => {
   }
   const sug = t.closest('.acp-suggest li');
   if (sug) {
+    // 动作型胶囊（截图识别）：不是提问，直接开工作区，别把文案填进输入框
+    if (sug.dataset.ocr) { aiOcrOpen(); return; }
     const inp = document.getElementById('aiChatInput');
     if (inp) { inp.value = sug.dataset.q || ''; inp.focus(); }
     return;
@@ -11027,11 +11258,11 @@ document.addEventListener('click', (e) => {
     if (pp) pp.classList.remove('side-open');
     return;
   }
-  // 点击面板与悬浮按钮之外：收起，避免遮挡主界面
-  // 注意：顶栏「AI 助手」入口 #aiChatTopBtn（与右下角 #aiFab 同效）必须排除，
+  // 点击面板之外：收起，避免遮挡主界面
+  // 注意：顶栏「AI 助手」入口 #aiChatTopBtn 必须排除，
   // 否则它 opener 的 click 冒泡到此处会被误判为「外部点击」把刚打开的面板又关掉。
   const p = aiChatPanelEl();
-  if (p && !p.hidden && !t.closest('.ai-chat-panel') && !t.closest('#aiFab') && !t.closest('#aiChatTopBtn') && !t.closest('.modal')) {
+  if (p && !p.hidden && !t.closest('.ai-chat-panel') && !t.closest('#aiChatTopBtn') && !t.closest('.modal')) {
     aiChatClose();
   }
 });
@@ -11083,9 +11314,9 @@ document.addEventListener('keydown', (e) => {
     });
   };
   bindFile('aiOcrFile', aiOcrHandleFile);
-  bindFile('aiChatFile', aiChatSendImageFile);
 
-  // 粘贴截图：工作区开着 → 进工作区；否则焦点在聊天输入框 → 作为图片消息发送
+  // 粘贴截图：工作区开着 → 直接识别；焦点在聊天输入框 → 先打开工作区再识别
+  // （截图识别唯一入口是面板头部的 #aiChatOcr，粘图只是快捷方式，统一落到同一工作区）
   document.addEventListener('paste', (e) => {
     const items = ((e.clipboardData || {}).items) || [];
     let img = null;
@@ -11098,7 +11329,7 @@ document.addEventListener('keydown', (e) => {
     if (layer && !layer.hidden) { e.preventDefault(); aiOcrHandleFile(img); return; }
     const p = aiChatPanelEl();
     const inp = document.getElementById('aiChatInput');
-    if (p && !p.hidden && inp && e.target === inp) { e.preventDefault(); aiChatSendImageFile(img); }
+    if (p && !p.hidden && inp && e.target === inp) { e.preventDefault(); aiOcrOpen(); aiOcrHandleFile(img); }
   });
 
   // 拖拽进工作区投放区（整层可接，不必精确落在虚线框上）
@@ -11120,147 +11351,6 @@ document.addEventListener('keydown', (e) => {
   }
 })();
 
-// ============================================================================
-// AI 助手悬浮按钮：拖动定位
-// ----------------------------------------------------------------------------
-// 宽屏（>760px）可用鼠标/触控拖动，位置存 localStorage("pf_ai_fab_pos")；
-// 窄屏（手机）一律固定在右下角，不响应拖动（避免手指拖动与页面滚动打架）。
-// 双击按钮复位到默认右下角。面板打开时贴着按钮弹出并钳在视口内。
-// ============================================================================
-
-const aiFabState = { dragging: false, justDragged: false, moved: false };
-
-function aiFabEl() { return document.getElementById('aiFab'); }
-
-// 拖动始终可用（手机也能拖）：面板定位仍区分宽/窄屏（窄屏面板固定左右贴边）
-function aiFabDraggable() { return true; }
-
-function aiFabIsMobile() { return window.matchMedia('(max-width: 768px)').matches; }
-
-// 手机底部 tab 栏（.main-nav）占用高度 + 间距：拖动时按钮不允许被拖到这里，
-// 否则会挡住「持仓/资产/工具/设置」功能切换。
-function aiFabBottomLimit() {
-  if (!aiFabIsMobile()) return 0;
-  const nav = document.querySelector('.main-nav');
-  return (nav && nav.offsetHeight ? nav.offsetHeight : 58) + 12;
-}
-
-// 按视口左上角坐标落位，并钳制在视口内（留 8px 安全边距）
-function aiFabSetPos(x, y, save) {
-  const fab = aiFabEl();
-  if (!fab) return;
-  const pad = 8;
-  const w = fab.offsetWidth || 56;
-  const h = fab.offsetHeight || 56;
-  const bottomLimit = aiFabBottomLimit();
-  const maxX = Math.max(pad, window.innerWidth - w - pad);
-  const maxY = Math.max(pad, window.innerHeight - h - pad - bottomLimit);
-  const nx = Math.min(Math.max(pad, x), maxX);
-  const ny = Math.min(Math.max(pad, y), maxY);
-  fab.style.left = nx + 'px';
-  fab.style.top = ny + 'px';
-  fab.style.right = 'auto';
-  fab.style.bottom = 'auto';
-  if (save) {
-    try { localStorage.setItem('pf_ai_fab_pos', JSON.stringify({ x: Math.round(nx), y: Math.round(ny) })); } catch (_) { /* 忽略隐私模式写入失败 */ }
-  }
-}
-
-// 复位到默认右下角（清除记忆位置）
-function aiFabReset() {
-  const fab = aiFabEl();
-  if (!fab) return;
-  fab.style.left = '';
-  fab.style.top = '';
-  fab.style.right = '';
-  fab.style.bottom = '';
-  try { localStorage.removeItem('pf_ai_fab_pos'); } catch (_) { /* 忽略 */ }
-  toast('悬浮按钮已复位', 'ok');
-}
-
-// 恢复上次拖动的位置；没有记忆时清掉内联坐标，交回 CSS 的默认位置
-// （手机上默认位置=底部 tab 栏上方，见 style.css 768px 断点）
-function aiFabRestore() {
-  let p = null;
-  try { p = JSON.parse(localStorage.getItem('pf_ai_fab_pos') || 'null'); } catch (_) { p = null; }
-  if (p && typeof p.x === 'number' && typeof p.y === 'number') { aiFabSetPos(p.x, p.y, false); return; }
-  const fab = aiFabEl();
-  if (fab) { fab.style.left = ''; fab.style.top = ''; fab.style.right = ''; fab.style.bottom = ''; }
-}
-
-// 面板贴着按钮弹出：按钮在右半屏则右对齐，左半屏则左对齐；上下空间不够就翻到下方
-function aiChatPlacePanel() {
-  const p = aiChatPanelEl();
-  if (!p) return;
-  // 面板默认由 CSS 居中（桌面：inset:0 + margin:auto；移动端：底部抽屉），
-  // 不再跟随右下角悬浮按钮定位，清除内联坐标让 CSS 居中生效。
-  p.style.left = '';
-  p.style.top = '';
-  p.style.right = '';
-  p.style.bottom = '';
-  p.style.transform = '';
-  p.style.transformOrigin = '';
-}
-
-function aiFabInitDrag() {
-  const fab = aiFabEl();
-  if (!fab) return;
-  aiFabRestore();
-
-  let st = null;
-  fab.addEventListener('pointerdown', (e) => {
-    if (!aiFabDraggable()) return;               // 手机模式不拖
-    if (typeof e.button === 'number' && e.button !== 0) return;
-    const r = fab.getBoundingClientRect();
-    st = { id: e.pointerId, ox: e.clientX - r.left, oy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false };
-    try { fab.setPointerCapture(e.pointerId); } catch (_) { /* 忽略 */ }
-  });
-
-  fab.addEventListener('pointermove', (e) => {
-    if (!st || e.pointerId !== st.id) return;
-    if (!aiFabDraggable()) { st = null; return; }
-    if (!st.moved && Math.abs(e.clientX - st.sx) < 4 && Math.abs(e.clientY - st.sy) < 4) return;
-    if (!st.moved) {
-      st.moved = true;
-      aiFabState.dragging = true;
-      fab.classList.add('dragging');
-    }
-    e.preventDefault();
-    aiFabSetPos(e.clientX - st.ox, e.clientY - st.oy, false);
-  });
-
-  const end = (e) => {
-    if (!st || (e && e.pointerId !== st.id)) return;
-    const moved = st.moved;
-    try { fab.releasePointerCapture(st.id); } catch (_) { /* 忽略 */ }
-    st = null;
-    if (!moved) return;
-    aiFabState.dragging = false;
-    aiFabState.justDragged = true;               // 抑制紧随其后的 click
-    fab.classList.remove('dragging');
-    const r = fab.getBoundingClientRect();
-    aiFabSetPos(r.left, r.top, true);
-    const p = aiChatPanelEl();
-    if (p && !p.hidden) aiChatPlacePanel();
-  };
-  fab.addEventListener('pointerup', end);
-  fab.addEventListener('pointercancel', end);
-
-  // 双击复位
-  fab.addEventListener('dblclick', () => { if (aiFabDraggable()) aiFabReset(); });
-
-  // 视口变化：把按钮重新钳回可视范围（手机/宽屏都要），面板窄屏固定、宽屏跟随按钮
-  window.addEventListener('resize', () => {
-    const p = aiChatPanelEl();
-    aiFabRestore();
-    if (p) {
-      if (aiFabIsMobile()) { p.style.left = ''; p.style.top = ''; p.style.right = ''; p.style.bottom = ''; }
-      else if (!p.hidden) aiChatPlacePanel();
-    }
-  }, { passive: true });
-}
-
-aiFabInitDrag();
 
 /* ============================================================================
  * 基金定投（DCA）
