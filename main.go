@@ -38,6 +38,8 @@ func main() {
 	if err := db.EnsureUsers(); err != nil {
 		log.Fatalf("ensure users: %v", err)
 	}
+	// 认证层：清理过期配对码；无认证设备时给出认领提示或救援码。
+	api.EnsureBootstrapAccess()
 
 	// FX rates: warm cache from DB and refresh in background (handlers no longer block on upstream).
 	market.StartFXUpdater()

@@ -149,14 +149,31 @@ func costBasisOf(h db.Holding, invested float64) float64 {
 }
 
 func RegisterRoutes(r *gin.Engine) {
-	g := r.Group("/api")
+	// —— 认证公开端点：无需会话即可访问（前端首屏据此判定走认领还是配对）——
+	pub := r.Group("/api")
 	{
+		pub.GET("/session", sessionState)
+		pub.POST("/session/claim", sessionClaim) // 首启认领（仅当库内无有效会话）
+		pub.POST("/session/pair", sessionPair)   // 配对码登录
+	}
+
+	g := r.Group("/api")
+	g.Use(AuthGuard())
+	{
+		// 会话自助：退出 / 切换账本 / PIN / 设备管理 / 出码
+		g.POST("/session/logout", sessionLogout)
+		g.POST("/session/switch", sessionSwitch)
+		g.POST("/session/pin", sessionPIN)
+		g.GET("/session/devices", sessionDevices)
+		g.DELETE("/session/devices/:id", sessionDeviceRevoke)
+		g.POST("/session/code", PinGuard(), sessionCode) // 出码是新的"加设备"入口，必须 PIN
+
 		// 多用户：用户列表/新增/删除/统计/清空
 		g.GET("/users", listUsers)
 		g.POST("/users", createUserHandler)
-		g.DELETE("/users/:id", deleteUserHandler)
+		g.DELETE("/users/:id", PinGuard(), deleteUserHandler)
 		g.GET("/users/:id/stats", userStats)
-		g.POST("/users/:id/clear", clearUserHandler)
+		g.POST("/users/:id/clear", PinGuard(), clearUserHandler)
 
 		// 证券联想：名称/代码模糊匹配（添加/编辑持仓弹框的自动填充数据源）
 		g.GET("/search", searchSecuritiesHandler)
@@ -221,7 +238,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/notify/test", notifyTest)
 
 		// 数据导入（格式与「导出数据」一致）
-		g.POST("/import", importData)
+		g.POST("/import", PinGuard(), importData)
 
 		// 资产全景：来源 / 理财 / 负债 / 汇总 / AI 总结
 		g.GET("/asset/overview", assetOverview)
@@ -295,17 +312,18 @@ func RegisterRoutes(r *gin.Engine) {
 	}
 }
 
-// currentUserID 从请求头 X-User-Id 解析当前用户；缺失或非数字时回退到首个用户。
+// currentUserID 取当前用户：只认 AuthGuard 写入 context 的值。
+// 2026-10-28 起不再信任客户端自报的 X-User-Id（仅在 AUTH_MODE=off 的开发直通下回退）。
 func currentUserID(c *gin.Context) int64 {
-	raw := strings.TrimSpace(c.GetHeader("X-User-Id"))
-	id, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || id <= 0 {
-		if us, e := db.ListUsers(); e == nil && len(us) > 0 {
-			return us[0].ID
+	if v, ok := c.Get(ctxUID); ok {
+		if id, ok := v.(int64); ok {
+			return id
 		}
-		return 0
 	}
-	return id
+	if authModeOff() {
+		return legacyHeaderUserID(c)
+	}
+	return 0
 }
 
 // allUsers returns every user. On error it logs and returns nil so scheduled
@@ -920,6 +938,17 @@ func normalize(h *db.Holding) {
 
 func refresh(c *gin.Context) {
 	uid := currentUserID(c)
+	// days：回溯补刷天数（不含今天）。1 = 仅刷新当天（原行为）；>1 = 额外补刷过去 N 天缺失的每日快照。
+	var reqBody struct {
+		Days int `json:"days"`
+	}
+	if c.Request.Body != nil {
+		_ = json.NewDecoder(c.Request.Body).Decode(&reqBody)
+	}
+	days := reqBody.Days
+	if days < 1 {
+		days = 1
+	}
 	hs, failed, err := refreshAllQuotes(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -951,8 +980,17 @@ func refresh(c *gin.Context) {
 		out = append(out, v)
 	}
 	_ = doSnapshot(uid)
+	// 回溯补刷历史缺失的每日快照（不含今天；今天由上面的 doSnapshot 处理）
+	var backfill *backfillResult
+	if days > 1 {
+		if r, berr := backfillSnapshots(uid, days); berr != nil {
+			log.Printf("[refresh] 回溯补刷失败(uid=%d): %v", uid, berr)
+		} else {
+			backfill = &r
+		}
+	}
 	NotifyNetValueUpdated(uid, "手动刷新行情", "")
-	c.JSON(http.StatusOK, gin.H{"holdings": out, "rate": rate, "rate_degraded": degraded, "rate_error": rateErr, "failed": failed, "updated_at_max": maxUpdatedAt(hs)})
+	c.JSON(http.StatusOK, gin.H{"holdings": out, "rate": rate, "rate_degraded": degraded, "rate_error": rateErr, "failed": failed, "updated_at_max": maxUpdatedAt(hs), "backfill": backfill})
 }
 
 // refreshOne 已移除：单只持仓手动刷新逻辑取消，行情改由定时快照（refreshAllQuotes）自动更新。
@@ -1204,6 +1242,107 @@ func refreshAllQuotes(uid int64) ([]db.Holding, []string, error) {
 		}
 	}
 	return hs, failed, nil
+}
+
+// backfillResult summarizes what backfillSnapshots wrote.
+type backfillResult struct {
+	Days      int      `json:"days"`       // 请求回溯天数（不含今天）
+	PriceRows int      `json:"price_rows"` // 新写入的 price_daily 行数
+	PnlDates  int      `json:"pnl_dates"`  // 回算（补齐）的 pnl_daily 天数
+	Errors    []string `json:"errors"`     // 部分标的/日期失败明细
+}
+
+// backfillSnapshots fills missing daily snapshots for the past `days` calendar days
+// (excluding today, which doSnapshot handles). For each holding it fetches historical
+// closes — K-line for stocks (A/HK/US), NAV history for funds — and writes any missing
+// price_daily rows, then reconstructs each missing day's daily P&L via finalizePnlFromPrices
+// (dp = (close_T − close_{T-1}) × qty, derived from stored daily closes; safe to run at any
+// hour, no Beijing-time gate). Idempotent: existing price_daily / pnl_daily rows are never
+// overwritten (SavePriceDaily is an upsert that only fires for genuinely missing rows).
+func backfillSnapshots(uid int64, days int) (backfillResult, error) {
+	if days < 1 {
+		days = 1
+	}
+	hs, err := db.List(uid)
+	if err != nil {
+		return backfillResult{}, err
+	}
+	bj := time.Now().In(time.FixedZone("CST", 8*3600))
+	today := bj.Format("2006-01-02")
+	start := bj.AddDate(0, 0, -days)
+
+	// 预拉取每只持仓的历史收盘价（按 symbol），避免逐日重复请求行情源。
+	type holdHist struct {
+		sym  string
+		hist map[string]float64 // date -> close（来自 K线 / 基金净值历史）
+		have map[string]bool    // 已记录在 price_daily 的日期（跳过，不重复写）
+	}
+	hists := make([]holdHist, 0, len(hs))
+	var errors []string
+	for i := range hs {
+		h := hs[i]
+		hist := map[string]float64{}
+		if h.Category == "fund" {
+			if m, e := market.FetchFundNAVHistory(h.Symbol, days+2); e == nil {
+				hist = m
+			} else {
+				errors = append(errors, h.Symbol+"(基金净值): "+e.Error())
+			}
+		} else {
+			code := resolveSymbol(h.Symbol, h.Market)
+			if bars, e := market.FetchKline(code); e == nil {
+				for _, b := range bars {
+					hist[b.Date] = b.Close
+				}
+			} else {
+				errors = append(errors, h.Symbol+"(K线): "+e.Error())
+			}
+		}
+		have := map[string]bool{}
+		if existing, e := db.GetPriceSeries(h.Symbol, uid); e == nil {
+			for _, p := range existing {
+				have[p.Date] = true
+			}
+		}
+		hists = append(hists, holdHist{sym: h.Symbol, hist: hist, have: have})
+	}
+
+	var priceRows, pnlDates int
+	// 逐日补写缺失的 price_daily（按日期升序，保证 prev_close 链连续）
+	for d := start; !d.After(bj.AddDate(0, 0, -1)); d = d.AddDate(0, 0, 1) {
+		ds := d.Format("2006-01-02")
+		if ds == today {
+			continue
+		}
+		for _, hh := range hists {
+			cv, ok := hh.hist[ds]
+			if !ok || hh.have[ds] {
+				continue
+			}
+			if e := db.SavePriceDaily(ds, hh.sym, cv, uid); e == nil {
+				priceRows++
+			}
+		}
+	}
+	// 回算缺失的 pnl_daily（含 price_daily 已存在但 pnl 缺失的日期；finalizePnlFromPrices 仅在该日有收盘价时落库）
+	for d := start; !d.After(bj.AddDate(0, 0, -1)); d = d.AddDate(0, 0, 1) {
+		ds := d.Format("2006-01-02")
+		if ds == today {
+			continue
+		}
+		before, _ := db.HasPnlDate(ds, uid)
+		if before {
+			continue
+		}
+		if e := finalizePnlFromPrices(ds, uid); e != nil {
+			errors = append(errors, ds+"(pnl回算): "+e.Error())
+			continue
+		}
+		if after, _ := db.HasPnlDate(ds, uid); after {
+			pnlDates++
+		}
+	}
+	return backfillResult{Days: days, PriceRows: priceRows, PnlDates: pnlDates, Errors: errors}, nil
 }
 
 // doSnapshot records today's closing prices and computes the daily P&L vs the previous

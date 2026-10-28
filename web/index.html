@@ -14,6 +14,41 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<!-- 认证闸门（2026-10-28）：未认证设备首屏；认领=首台设备，配对=已有设备出码 -->
+<div id="authGate" class="auth-gate" hidden>
+  <div class="auth-card">
+    <div class="auth-head">
+      <svg class="auth-logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="alg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#alg)"/><path d="M16 5.4 C19.2 7.1 21.8 7.8 24 8.1 L24 15.5 C24 21 20.4 24.8 16 27 C11.6 24.8 8 21 8 15.5 L8 8.1 C10.2 7.8 12.8 7.1 16 5.4 Z" fill="rgba(255,255,255,.92)"/></svg>
+      <h1 class="auth-title">持仓侠</h1>
+      <p class="auth-sub" id="authSub">正在检查本设备…</p>
+    </div>
+
+    <div id="authClaim" hidden>
+      <p class="auth-hint">这是第一台接入的设备。勾选要管理的账本（可多选），已有数据原样保留、不需要迁移。</p>
+      <div class="auth-users" id="authUserList"></div>
+      <label class="auth-field">第一本账改名（可选）
+        <input id="authRename" maxlength="12" placeholder="如 萧晨">
+      </label>
+      <div class="auth-err" id="authClaimErr"></div>
+      <button class="btn primary auth-submit" id="authClaimBtn" type="button">接入这台设备</button>
+    </div>
+
+    <div id="authPair" hidden>
+      <p class="auth-hint">在已登录的设备上打开：右上角头像 → 设置 → 「登录与设备」→ 添加设备，获取 6 位配对码。</p>
+      <label class="auth-field">配对码
+        <input id="authCode" class="auth-code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">
+      </label>
+      <div class="auth-err" id="authPairErr"></div>
+      <button class="btn primary auth-submit" id="authPairBtn" type="button">连接</button>
+    </div>
+
+    <div id="authReadonly" hidden>
+      <p class="auth-hint">演示环境为只读模式：数据可随意浏览，修改已关闭。</p>
+      <button class="btn primary auth-submit" id="authRoBtn" type="button">进入演示</button>
+    </div>
+  </div>
+</div>
+
 <div id="app" hidden>
   <header>
     <!-- 品牌归位（2026-10-27）：从 hero 卡片迁到 header 左上，与主导航同行。
@@ -38,17 +73,19 @@
       <button class="nav-pill" data-view="finance" type="button" onclick="navigate('finance')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M7 15h4"/></svg><span>财务</span>
       </button>
-      <!-- 再平衡（2026-10-27 重新引入）：按 股票/基金/理财/现金 四大类做资产配置偏离追踪 -->
+      <!-- 复盘（原「再平衡」，2026-10-28 改名；路由仍用 rebalance）：按 股票/基金/理财/现金 四大类做资产配置偏离追踪 -->
       <button class="nav-pill" data-view="rebalance" type="button" onclick="navigate('rebalance')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9"/><path d="M17 6h3"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span>再平衡</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9"/><path d="M17 6h3"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span>复盘</span>
       </button>
     </nav>
     <div class="act-group">
       <!-- AI 入口用「星芒(sparkles)」而非聊天气泡：气泡只表达「对话」，星芒才是当下 AI 的通用符号，
            也与相邻的日历/头像线性图标区分度更高 -->
       <button id="aiChatTopBtn" class="btn icon-btn" type="button" title="AI 助手" aria-label="AI 助手"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><!-- 星芒图形包围盒 y[3,16.4] 中心 9.7，整体下移 2.3 使视觉中心落在 viewBox 中心 12 --><g transform="translate(0 2.3)"><path d="M10.6 3.2l1.75 4.85 4.85 1.75-4.85 1.75L10.6 16.4 8.85 11.55 4 9.8l4.85-1.75z"/><path d="M18.4 3v3.2"/><path d="M20 4.6h-3.2"/></g></svg></button>
-      <!-- 顶栏操作区现在只剩 AI 助手 + 头像；盈亏日历 2026-10-27 已并入个人菜单（#acctPop 的 data-act="pnl-cal"），
-           它原本多占 40px 宽，正是 641–880 档导航溢出的主因 -->
+      <!-- 盈亏日历：2026-10-28 从个人菜单「提出来」为顶栏图标按钮，置于 AI 助手右侧、样式与其一致；
+           窄屏(≤880)导航吃紧，仍回归个人菜单入口（见 #acctPop [data-act="pnl-cal"] 的桌面隐藏规则） -->
+      <button id="pnlCalTopBtn" class="btn icon-btn" type="button" title="盈亏日历" aria-label="盈亏日历" onclick="openPnlModal()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></button>
+      <!-- 顶栏操作区：AI 助手 + 盈亏日历 + 头像；盈亏日历桌面档为顶栏按钮，窄屏回退到个人菜单 -->
       <!-- 右上角个人菜单（2026-10-27）：设置从主导航迁入此处，导航回落 5 项。
            样式参照 PanWatch AccountMenu：头像触发 + 右侧下拉面板 + 分组分隔线 + 激活项打勾 -->
       <div class="acct-menu" id="acctMenu">
@@ -59,6 +96,10 @@
           <button class="acct-item" type="button" data-act="manage-users">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="8" r="3.2"/><path d="M20 19v-1.6a3.4 3.4 0 0 0-2.6-3.3"/><path d="M15.4 5.2a3.2 3.2 0 0 1 0 5.6"/></svg>
             <span>管理用户</span>
+          </button>
+          <button class="acct-item" type="button" data-act="logout">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg>
+            <span>退出登录</span>
           </button>
           <div class="acct-sep"></div>
           <div class="acct-sec">外观主题</div>
@@ -332,7 +373,6 @@
           <button class="btn icon-btn" id="rbSettingsBtn" type="button" title="配置目标权重、收益假设与触发规则" aria-label="配置目标权重、收益假设与触发规则">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h9"/><path d="M17 6h3"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
           </button>
-          <button class="btn primary" id="rbLogBtn" type="button" title="把当前目标权重与收益假设存成一次快照">记录</button>
         </div>
       </div>
       <!-- 5 张：比例维度 3 张（市值 / 最大偏离 / 待调整）+ 收益维度 2 张（目标年化 / 超额收益率）。
@@ -582,6 +622,36 @@
                       <div id="mcpErr" class="err"></div>
                     </div><!-- /aiSubPanelMcp -->
                 </div>
+        </div>
+      </section>
+
+      <!-- 登录与设备（认证层，2026-10-28）：本机凭 Cookie 记身份；加设备/邀请走一次性码 -->
+      <section class="settings-group" id="authSettingsGroup">
+        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.6"/></svg>登录与设备</span></h3>
+        <p class="settings-group-desc">本机凭 Cookie 记住身份，换设备用一次性配对码接入；出码 / 清空 / 删用户 / 导入等敏感操作由操作 PIN 保护。</p>
+        <div class="settings-group-body">
+          <div class="auth-cur-row">
+            <div>
+              <div class="grp-label">当前账本</div>
+              <div class="auth-cur-name" id="authCurName">—</div>
+            </div>
+            <button class="btn btn-sm" id="authLogoutBtn" type="button">退出登录</button>
+          </div>
+          <hr class="set-sep" />
+          <div class="grp-label">本账本已接入的设备</div>
+          <div id="deviceList" class="device-list"><div class="auth-hint">加载中…</div></div>
+          <div class="modal-actions">
+            <button class="btn" type="button" id="addDeviceBtn">＋ 添加设备</button>
+            <button class="btn" type="button" id="inviteMemberBtn">邀请家人</button>
+          </div>
+          <hr class="set-sep" />
+          <div class="grp-label">操作 PIN<span class="pin-state" id="pinState"></span></div>
+          <div class="pin-row">
+            <input id="pinOld" type="password" inputmode="numeric" maxlength="6" placeholder="原 PIN（未设可留空）">
+            <input id="pinNew" type="password" inputmode="numeric" maxlength="6" placeholder="新 PIN，4–6 位数字">
+            <button class="btn btn-sm" type="button" id="pinSaveBtn">保存</button>
+          </div>
+          <p class="tool-hint">PIN 是这台浏览器上的记忆口令：别人拿到你的已登录浏览器时，没有 PIN 就无法把新设备接入你的账本。</p>
         </div>
       </section>
 
@@ -1544,6 +1614,23 @@
     </div>
   </div>
 
+  <!-- ===== 刷新行情确认弹框（含 N 天回朔补刷） ===== -->
+  <div id="refreshConfirmModal" class="modal" hidden>
+    <div class="modal-card confirm-card">
+      <h2 data-icon="refresh">刷新行情</h2>
+      <p class="confirm-msg">将从行情源拉取最新现价与汇率、重算当日盈亏；并可<b>回朔补刷</b>过去 N 天因系统断档而缺失的每日快照（修复盈亏日历与走势的断点）。</p>
+      <div class="f-row">
+        <label for="refreshDays" class="field-label">回朔天数 N</label>
+        <input id="refreshDays" type="number" min="1" max="120" value="20" inputmode="numeric" autocomplete="off">
+      </div>
+      <p class="rf-hint"><span class="rf-hint-ico">i</span> 1 = 仅刷当天（轻量）；&gt;1 = 额外补刷过去 N 天缺失的每日快照。默认 20 天。</p>
+      <div class="modal-actions">
+        <button type="button" id="refreshCancel" class="btn">取消</button>
+        <button type="button" id="refreshOk" class="btn primary">确定刷新</button>
+      </div>
+    </div>
+  </div>
+
 <div id="calJumpModal" class="modal" hidden>
   <div class="modal-card" style="width:360px; max-width:92vw;">
     <h2 data-icon="calendar">跳转到月份</h2>
@@ -1561,7 +1648,7 @@
 <!-- 再平衡 · 目标权重设置（2026-10-27）：四类目标合计须 100%，保存后即时重算偏离 -->
 <div id="rbSettingsModal" class="modal" hidden>
   <div class="modal-card rb-set-card">
-    <h2 data-icon="target">目标配置与收益假设</h2>
+    <h2>再平衡设置</h2>
     <button class="card-close" type="button" id="rbSetClose" title="关闭" aria-label="关闭">✕</button>
     <div class="rb-set-scroll">
     <p class="snap-hint">三类参数都是「假设值」，作用是把配置比例折算成预期收益，不是行情也不是预测。目标权重合计须为 100%；现金通常留 10–20% 作为再平衡弹药。</p>
@@ -1604,10 +1691,66 @@
     <div class="modal-actions">
       <button type="button" class="btn" id="rbSetReset">恢复默认</button>
       <span class="modal-actions-spacer"></span>
-      <button type="button" class="btn" id="rbSetCancel">取消</button>
-      <button type="button" class="btn primary" id="rbSetSave" title="保存目标与收益假设" aria-label="保存">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-      </button>
+      <button type="button" class="btn primary" id="rbSetSave">保存配置</button>
+    </div>
+  </div>
+</div>
+
+<!-- 出码结果弹框：添加设备 / 邀请家人共用 -->
+<div class="modal" id="pairCodeModal" hidden>
+  <div class="modal-card pair-card">
+    <h2 data-icon="plus" id="pairCodeTitle">配对码</h2>
+    <button class="card-close" type="button" id="pairCodeClose" title="关闭" aria-label="关闭">✕</button>
+    <div class="pair-code-wrap">
+      <div class="pair-code" id="pairCodeValue">······</div>
+      <p class="pair-code-hint" id="pairCodeHint"></p>
+      <p class="tool-hint" id="pairCodeMeta"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="pairCodeCopy">复制配对码</button>
+        <button type="button" class="btn primary" id="pairCodeDone">完成</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 邀请家人：选新建账本或授权已有账本 -->
+<div class="modal" id="inviteModal" hidden>
+  <div class="modal-card invite-card">
+    <h2 data-icon="user">邀请家人</h2>
+    <button class="card-close" type="button" id="inviteClose" title="关闭" aria-label="关闭">✕</button>
+    <div class="invite-wrap">
+      <label class="invite-opt">
+        <input type="radio" name="inviteMode" value="new" checked>
+        <span>新建账本</span>
+        <input id="inviteName" class="invite-name" maxlength="12" placeholder="对方的名字，如 妈妈">
+      </label>
+      <label class="invite-opt">
+        <input type="radio" name="inviteMode" value="existing">
+        <span>授权已有账本</span>
+        <select id="inviteUser" disabled></select>
+      </label>
+      <p class="tool-hint">邀请码 24 小时内有效、只能用一次。对方在自家设备打开本站并输入邀请码即可接入。</p>
+      <div class="auth-err" id="inviteErr"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="inviteCancel">取消</button>
+        <button type="button" class="btn primary" id="inviteOk">生成邀请码</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 操作 PIN 输入弹框（危险操作前弹出，promise 化） -->
+<div class="modal" id="pinPromptModal" hidden>
+  <div class="modal-card pin-card">
+    <h2 data-icon="warn" id="pinPromptTitle">需要操作 PIN</h2>
+    <button class="card-close" type="button" id="pinPromptClose" title="关闭" aria-label="关闭">✕</button>
+    <div class="pin-prompt-wrap">
+      <input id="pinPromptInput" type="password" inputmode="numeric" maxlength="6" placeholder="输入 4–6 位操作 PIN" autocomplete="off">
+      <div class="auth-err" id="pinPromptErr"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="pinPromptCancel">取消</button>
+        <button type="button" class="btn primary" id="pinPromptOk">确认</button>
+      </div>
     </div>
   </div>
 </div>

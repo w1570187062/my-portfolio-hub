@@ -1016,6 +1016,10 @@ h2 > svg { color: var(--primary); }
   color: var(--primary-active);
   transform: translateY(1px);
 }
+/* 盈亏日历顶栏按钮：桌面(≥881)作为图标按钮置于 AI 助手右侧、样式与其一致；
+   窄屏(≤880)导航已吃紧，隐藏顶栏按钮、改回个人菜单入口（见下方桌面隐藏规则），避免 641–880 档溢出 */
+#pnlCalTopBtn { display: none; }
+@media (min-width: 881px) { #pnlCalTopBtn { display: inline-flex; } }
 
 /* ===== 右上角个人菜单（2026-10-27）=====
    设置项从主导航迁入，导航回落 5 项。面板语义对齐 PanWatch AccountMenu：
@@ -1038,6 +1042,8 @@ h2 > svg { color: var(--primary); }
 }
 /* 必须显式写：面板本身的定位 display 会盖掉 UA 的 [hidden]{display:none} */
 .acct-pop[hidden] { display: none; }
+/* 桌面档盈亏日历已是顶栏按钮，个人菜单内不再重复（窄屏仍保留，避免 641–880 导航溢出） */
+@media (min-width: 881px) { #acctPop .acct-item[data-act="pnl-cal"] { display: none; } }
 .acct-sec {
   padding: var(--sp-2) var(--sp-2) var(--sp-1);
   font-size: var(--fs-xs);
@@ -1930,7 +1936,10 @@ tbody tr:hover {
 /* v3.4 极浅斑马纹：仅偶数行、非失败行、非 hover 行，避免与警示底色 / 行 hover 抢色 */
 tbody tr:nth-child(even):not(.row-failed):not(:hover) { background: rgba(255, 255, 255, .018); }
 :root[data-theme="light"] tbody tr:nth-child(even):not(.row-failed):not(:hover) { background: rgba(0, 0, 0, .025); }
-/* v3.4 排序列指示器：激活排序的表头右侧加 8px 主色三角（当前排序恒降序，固定 ▼） */
+/* v3.6 表头点击排序：可排序表头变手型，hover 轻微高亮；激活列主色 + 方向三角（▲升 / ▼降） */
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--text); }
+th.sortable:hover:not(.sorted) { color: var(--primary); }
 th.sorted { color: var(--primary); }
 th.sorted::after {
   content: '';
@@ -1940,8 +1949,9 @@ th.sorted::after {
   vertical-align: middle;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-top: 5px solid var(--primary);
 }
+th.sorted-desc::after { border-top: 5px solid var(--primary); }
+th.sorted-asc::after { border-bottom: 5px solid var(--primary); }
 .num { text-align: right; }
 
 /* ===== 涨跌幅颜色（适配深色） ===== */
@@ -2340,6 +2350,13 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .cf-done-slot { display: contents; }
 .confirm-card { width: 340px; }
 .confirm-msg { font-size: var(--fs-base); color: var(--text-muted); line-height: 1.6; margin: var(--sp-2) 0 var(--sp-4); }
+/* 刷新确认弹框（含 N 天回朔输入）：.f-row 是 div，拿不到 .modal-card 子项的 28px 横向内缩，
+   这里单独补 padding 使其与 h2 / p / modal-actions 对齐；编辑框靠右，形成「标签左 / 输入右」设置行 */
+#refreshConfirmModal .f-row { display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-3) 0 0; padding: 0 28px; }
+#refreshConfirmModal .f-row label { font-size: var(--fs-sm); color: var(--text-muted); flex: 0 0 auto; margin: 0; }
+#refreshConfirmModal #refreshDays { width: 96px; min-width: 96px; margin-top: 0; margin-left: auto; text-align: center; }
+.rf-hint { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-faint); line-height: 1.5; margin: var(--sp-3) 0 0; }
+.rf-hint-ico { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 999px; background: rgba(var(--tint), .2); color: var(--primary); font-style: normal; font-weight: 700; font-size: 11px; }
 .chart-card { width: 780px; max-width: 94vw; padding-bottom: var(--sp-4); }
 #chartBody { margin-top: var(--sp-3); overflow: auto; }
 #chartBody svg { max-width: 100%; height: auto; }
@@ -3889,6 +3906,18 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 }
 .density-toggle .dt-btn + .dt-btn { border-left: 1px solid var(--border); }
 .density-toggle .dt-btn.active { background: var(--primary); color: var(--on-primary); }
+/* 投资页持仓工具条「刷新行情」按钮：纯图标 ghost 控件，置于行密度右侧、与其同高 */
+.inv-refresh-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 28px; padding: 0; border: 1px solid var(--border);
+  border-radius: var(--r-sm); background: var(--bg-card); color: var(--text-muted);
+  cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.inv-refresh-btn:hover { background: rgba(var(--tint), .14); color: var(--primary); border-color: rgba(var(--tint), .3); }
+.inv-refresh-btn svg { width: 16px; height: 16px; }
+.inv-refresh-btn.spinning { color: var(--primary); pointer-events: none; }
+.inv-refresh-btn.spinning svg { animation: invSpin .8s linear infinite; }
+@keyframes invSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 /* v3.4 行密度：紧凑档降行高 + 收紧上下内边距（标准档为 --row-h 默认 40px） */
 body[data-density="compact"] .holdings-subtable,
 body[data-density="compact"] .wealth-subtable { --row-h: 32px; }
@@ -6602,7 +6631,7 @@ textarea::placeholder {
 #yearBarChart .bar-grid { stroke: var(--border); stroke-width: 1; opacity: .28; }
 #yearBarChart .bar-axis { stroke: var(--border); stroke-width: 1; opacity: .6; }
 #yearBarChart .bar-tick { fill: var(--text-muted); font-size: 7.5px; text-anchor: end; dominant-baseline: middle; }
-#yearBarChart .bar-val { fill: var(--text-muted); font-size: 8px; text-anchor: middle; font-weight: 600; }
+#yearBarChart .bar-val { fill: var(--text-muted); font-size: var(--fs-2xs); text-anchor: middle; font-weight: 600; }
 #yearBarChart .bar-val.sel { fill: var(--primary); }
 
 .heatmap-right { display: flex; flex-direction: column; min-width: 0; }
@@ -7031,6 +7060,17 @@ textarea::placeholder {
 .rb-insight-ico { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 2px; color: var(--primary); }
 .rb-insight.is-warn .rb-insight-ico { color: var(--warning); }
 .rb-insight b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* 结论条正文：吃掉中间空间，把关闭按钮顶到最右 */
+.rb-insight-body { flex: 1 1 auto; min-width: 0; }
+.rb-insight-close {
+  flex: 0 0 auto; margin-left: auto; align-self: flex-start;
+  width: 22px; height: 22px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-tertiary); cursor: pointer;
+  font-size: var(--fs-base); line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+}
+.rb-insight-close:hover { background: rgba(var(--tint), .12); color: var(--text); }
+.rb-insight.is-warn .rb-insight-close:hover { background: rgba(var(--warning-rgb), .16); color: var(--text); }
 
 /* 概览 caption 超期提醒 */
 .rb-updated.is-overdue { color: var(--warning); }
@@ -7083,6 +7123,38 @@ textarea::placeholder {
    直接给卡片补横向内边距，标题的左内边距归零避免双倍缩进 */
 .rb-set-card { width: 520px; max-width: 94vw; padding: 0 28px var(--sp-6); }
 .rb-set-card > h2 { padding-left: 0; }
+
+/* —— 再平衡设置：右侧抽屉（2026-10-28）——
+   沿用 .modal 的遮罩与全局 .card-close 关闭逻辑，仅把卡片从「居中浮层」改成「右侧抽屉」：
+   遮罩淡化 + 背景 blur，卡片贴右、满高、从右滑入。 */
+#rbSettingsModal {
+  background: rgba(0, 0, 0, .5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  align-items: stretch;
+  justify-content: flex-end;
+}
+#rbSettingsModal .rb-set-card {
+  width: 460px;
+  max-width: 92vw;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+  border-left: 1px solid var(--border);
+  box-shadow: -10px 0 36px rgba(0, 0, 0, .34);
+  animation: rbDrawerIn .24s var(--e-out);
+}
+/* 抽屉内 .modal-actions 自带 28px 横向内边距，与卡片的 28px 横向内边距叠加会 double-inset；
+   归零让页脚与正文左对齐（距边缘 28px）。 */
+#rbSettingsModal .modal-actions { padding-left: 0; padding-right: 0; }
+@keyframes rbDrawerIn {
+  from { transform: translateX(100%); }
+  to   { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #rbSettingsModal .rb-set-card { animation: none; }
+}
 /* 滚动收口到内部容器：卡片 overflow:hidden 只负责圆角裁剪，内容超高时由本层内部滚动，
    避免手机上模态框滚不动、反而带动底层页面滚动；overscroll-behavior:contain 阻断滚动穿透 */
 .rb-set-scroll {
@@ -7218,4 +7290,132 @@ textarea::placeholder {
   .rb-hist-total { grid-column: 2; grid-row: 1; }
   .rb-hist-ret { grid-column: 3; grid-row: 1; }
   .rb-hist-mix { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* ===== 认证层：登录闸门 / 登录与设备（2026-10-28）===== */
+/* 闸门：未认证设备的首屏。z-index 低于弹框(100)，高于普通内容。 */
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: var(--sp-4);
+}
+.auth-gate[hidden] { display: none; }
+.auth-card {
+  width: 420px;
+  max-width: 94vw;
+  background: var(--bg-card-solid);
+  border: var(--card-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-3);
+  padding: var(--sp-6) 28px 28px;
+}
+.auth-head { text-align: center; margin-bottom: var(--sp-5); }
+.auth-logo { width: 40px; height: 40px; margin-bottom: var(--sp-2); }
+.auth-title { font-size: var(--fs-xl); font-weight: 700; margin: 0 0 var(--sp-1); }
+.auth-sub { font-size: var(--fs-sm); color: var(--text-muted); margin: 0; }
+.auth-hint { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.7; margin: 0 0 var(--sp-4); }
+.auth-users { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.auth-user-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--card-border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: var(--fs-base);
+}
+.auth-user-opt:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
+.auth-user-opt input { accent-color: var(--primary); }
+.auth-user-cnt { margin-left: auto; font-size: var(--fs-sm); color: var(--text-faint); }
+.auth-field { display: block; font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: var(--sp-3); }
+/* 闸门输入框与弹框输入框同画法（.modal-card input 基准）：内边距/描线/圆角一致，高度才不会不一致 */
+.auth-field input {
+  width: 100%;
+  margin-top: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: none;
+  border-radius: var(--btn-radius);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: var(--fs-base);
+  font-family: inherit;
+  line-height: 1.5;
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: box-shadow .2s var(--e), background .2s var(--e);
+}
+.auth-field input:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.auth-field input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--primary), inset 0 0 0 5px var(--primary-soft);
+}
+.auth-code {
+  font-size: var(--fs-lg);
+  letter-spacing: 8px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.auth-err { color: var(--danger); font-size: var(--fs-sm); min-height: 18px; margin: var(--sp-1) 0; }
+.auth-submit { width: 100%; }
+
+/* 设置页：登录与设备 */
+.auth-cur-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.auth-cur-name { font-size: var(--fs-base); font-weight: 600; margin-top: 2px; }
+.device-list { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-3); }
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--card-border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+}
+.device-name { font-weight: 600; color: var(--text); }
+.device-ua { color: var(--text-muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-seen { color: var(--text-faint); flex: none; }
+.device-badge {
+  flex: none;
+  font-size: var(--fs-sm);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  padding: 0 8px;
+  line-height: 18px;
+}
+.pin-row { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0; flex-wrap: wrap; }
+.pin-row input { width: 192px; }
+.pin-state { margin-left: var(--sp-2); font-size: var(--fs-sm); color: var(--text-faint); font-weight: 400; }
+
+/* 出码 / 邀请 / PIN 弹框：子项平铺，自带 28px 横缩（.modal-card 本体 padding:0） */
+.pair-card, .invite-card, .pin-card { width: 380px; }
+.pair-card > h2, .invite-card > h2, .pin-card > h2 { padding-left: 28px; }
+.pair-code-wrap, .invite-wrap, .pin-prompt-wrap { padding: var(--sp-2) 28px var(--sp-6); }
+.pair-code {
+  font-size: 34px;
+  letter-spacing: 12px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
+  padding: var(--sp-3) 0;
+  user-select: all;
+}
+.pair-code-hint { text-align: center; font-size: var(--fs-sm); color: var(--text-muted); margin: 0 0 var(--sp-2); }
+#pairCodeMeta { text-align: center; }
+.invite-opt { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); font-size: var(--fs-base); color: var(--text); }
+.invite-opt input[type="radio"] { accent-color: var(--primary); margin: 0; }
+.invite-name, .invite-opt select { flex: 1 1 auto; min-width: 0; }
+.invite-opt input[type="radio"]:not(:checked) ~ .invite-name { opacity: .5; }
+.pin-prompt-wrap input { width: 100%; font-size: var(--fs-lg); letter-spacing: 4px; text-align: center; }
+
+/* 移动端：闸门卡片内边距收窄 */
+@media (max-width: 640px) {
+  .auth-card { padding: var(--sp-5) 20px 20px; }
+  .pair-code { font-size: 28px; letter-spacing: 8px; }
 }

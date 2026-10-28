@@ -103,21 +103,76 @@ func loadAIConfig(uid int64) (aiConfig, error) {
 	return cfg, nil
 }
 
+// 密钥掩码：GET 只回「****末四位」，前端原样回传时按「未修改」处理，不会把掩码写进库。
+// 2026-10-28 起所有设置读取都走掩码，避免密钥被页面源码/调试面板顺手带走。
+const keyMaskPrefix = "****"
+
+func maskSecret(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if len(s) <= 4 {
+		return keyMaskPrefix
+	}
+	return keyMaskPrefix + s[len(s)-4:]
+}
+
+func isMaskedSecret(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(s), keyMaskPrefix)
+}
+
+// mergeMaskedAIKeys 把请求里仍是掩码的密钥回填为库中原文（按"名称 → 下标 → 顶层"依次兜底）。
+func mergeMaskedAIKeys(in, old aiConfig) aiConfig {
+	if isMaskedSecret(in.APIKey) {
+		in.APIKey = old.APIKey
+	}
+	for i := range in.Models {
+		if !isMaskedSecret(in.Models[i].APIKey) {
+			continue
+		}
+		restored := ""
+		for _, om := range old.Models {
+			if om.Name != "" && om.Name == in.Models[i].Name {
+				restored = om.APIKey
+				break
+			}
+		}
+		if restored == "" && i < len(old.Models) {
+			restored = old.Models[i].APIKey
+		}
+		if restored == "" {
+			restored = old.APIKey
+		}
+		in.Models[i].APIKey = restored
+	}
+	return in
+}
+
 func aiSettingsGet(c *gin.Context) {
 	cfg, err := loadAIConfig(currentUserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 密钥只回掩码，原文永不出库到浏览器
+	cfg.APIKey = maskSecret(cfg.APIKey)
+	for i := range cfg.Models {
+		cfg.Models[i].APIKey = maskSecret(cfg.Models[i].APIKey)
+	}
 	c.JSON(http.StatusOK, cfg)
 }
 
 func aiSettingsPost(c *gin.Context) {
+	uid := currentUserID(c)
 	var b aiConfig
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
+	// 前端把掩码原样回传时，回填库中原文（否则一次保存就把密钥写成 ****abcd）
+	old, _ := loadAIConfig(uid)
+	b = mergeMaskedAIKeys(b, old)
 	if b.Model == "" {
 		b.Model = "deepseek-v4-pro"
 	}
@@ -125,7 +180,7 @@ func aiSettingsPost(c *gin.Context) {
 		b.BaseURL = "https://api.deepseek.com"
 	}
 	raw, _ := json.Marshal(b)
-	if err := db.SaveAIConfig(currentUserID(c), string(raw)); err != nil {
+	if err := db.SaveAIConfig(uid, string(raw)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -155,7 +210,8 @@ func aiSummary(c *gin.Context) {
 	// saved config key only when the client leaves the field blank. Model/base_url/
 	// template still fall back to saved values when the client leaves them blank.
 	cfg, cfgErr := loadAIConfig(uid)
-	if b.APIKey == "" {
+	// 前端拿到的是掩码（****末四位），回传时必须换回库中原文
+	if b.APIKey == "" || isMaskedSecret(b.APIKey) {
 		b.APIKey = cfg.APIKey
 	}
 	if b.Model == "" {

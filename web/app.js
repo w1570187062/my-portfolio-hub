@@ -173,11 +173,44 @@ function navigate(view) {
 }
 window.addEventListener('hashchange', applyRoute);
 
-const api = (path, opts = {}) => {
-  const uid = localStorage.getItem('pf_user');
-  const headers = { 'Content-Type': 'application/json' };
-  if (uid) headers['X-User-Id'] = uid;
-  return fetch(path, { ...opts, headers });
+// ---- 认证层（2026-10-28）：身份由 HttpOnly Cookie 决定，前端不再自报 X-User-Id ----
+// 401 → 弹出认领/配对闸门；403+pin_required → 弹操作 PIN 输入框并自动重试一次。
+let authState = { authed: false, mode: '', user: null, users: [], read_only: false, has_pin: false };
+let authReturnHash = '';   // 进闸门前所在路由，认证成功后回跳
+let pinCache = '';         // 本页会话内记住的操作 PIN（仅内存，退出登录即清）
+let authReady = false;     // 认证完成前不执行初始路由
+
+async function fetchSession() {
+  try {
+    const r = await fetch('/api/session', { credentials: 'same-origin' });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+const api = async (path, opts = {}) => {
+  const run = (pin) => {
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    if (pin) headers['X-Auth-Pin'] = pin;
+    return fetch(path, { ...opts, headers, credentials: 'same-origin' });
+  };
+  let r = await run(pinCache);
+  if (r.status === 401) {
+    showAuthGate(await fetchSession());
+    throw new Error('unauthenticated');
+  }
+  if (r.status === 403) {
+    let d = null;
+    try { d = await r.clone().json(); } catch (e) { /* 非 JSON 错误体 */ }
+    if (d && d.pin_required) {
+      const pin = await promptPIN();
+      if (!pin) throw new Error('已取消：该操作需要操作 PIN');
+      r = await run(pin);
+      if (r.status === 403) toast('操作 PIN 不正确', 'err');
+      else pinCache = pin;
+    }
+  }
+  return r;
 };
 
 const fmt = (n) => (n == null ? '' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }));
@@ -297,7 +330,8 @@ const ALL_MARKETS = [...CAT_MARKETS.stock, ...CAT_MARKETS.fund];
 const isFund = (h) => !!(h && (h.category === 'fund' || (h.linked_symbol && String(h.linked_symbol).trim())));
 
 // 投资页表头工具条状态（复用原型 holding-toolbar 的筛选 chips + 排序下拉）
-let holdingsSort = 'mv';        // 持仓排序：mv 市值 | pnl 收益率 | profit 盈亏 | days 持仓天数
+let holdingsSort = 'mv';        // 持仓排序：mv 市值 | profit 盈亏 | days 持仓天数（点击表头切换，见 renderHoldingsBySource）
+let holdingsSortDir = 'desc';   // 排序方向：desc 降序 | asc 升序（再次点击同一表头 toggle）
 let wealthCatFilter = '';       // 理财筛选：'' 全部 | nav 净值型 | other 其他
 let flowRangeDays = 30;         // 资产页流水区间：7 | 30 | 365
 let homeRangeDays = 30;         // 首页净资产走势区间：30 | 90 | 365 | 0(全部)
@@ -311,9 +345,22 @@ let homeRecentFlowsData = [];    // 首页最新流水全量缓存（近 45 天�
 let finFlowsCache = [];          // 财务页收支汇总明细缓存（全年流水，供分类折叠下钻）
 
 async function boot() {
-  // 解析当前用户（多用户：前端用 localStorage 记录选中的用户，请求头携带 X-User-Id）。
+  // 认证先行：无有效会话 → 认领/配对闸门（成功后由 onAuthed → enterApp 进入应用）
+  const st = await fetchSession();
+  if (!st || (!st.authed && st.mode !== 'readonly')) {
+    showAuthGate(st);
+    return;
+  }
+  await enterApp(st);
+}
+
+// 认证通过后的统一入口：解析账本 → 显示应用 → 按当前 hash 渲染视图
+async function enterApp(st) {
+  authState = st || authState;
+  authReady = true;
   try { await initUser(); } catch (e) { console.warn('[user] initUser 失败:', e); }
   showApp();
+  applyRoute();
 }
 
 function showApp() {
@@ -1010,22 +1057,15 @@ function renderInvestToolbar() {
       toolbarChip('bond', '债券', catFilter.has('bond')) +
     '</div>' +
     '<div class="toolbar-right">' +
-      '<select class="sort-select" id="holdSort">' +
-        toolbarOpt('mv', '按市值 ↓', holdingsSort === 'mv') +
-        toolbarOpt('pnl', '按收益率 ↓', holdingsSort === 'pnl') +
-        toolbarOpt('profit', '按盈亏 ↓', holdingsSort === 'profit') +
-        toolbarOpt('days', '按持仓天数 ↓', holdingsSort === 'days') +
-      '</select>' +
       '<div class="density-toggle" role="group" aria-label="行密度">' +
         '<button type="button" class="dt-btn' + (dens === 'compact' ? ' active' : '') + '" data-density="compact">紧凑</button>' +
         '<button type="button" class="dt-btn' + (dens === 'standard' ? ' active' : '') + '" data-density="standard">标准</button>' +
       '</div>' +
+      '<button type="button" class="inv-refresh-btn" id="invRefreshBtn" title="刷新行情（补刷漏更新的持仓数据）" aria-label="刷新行情"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>' +
     '</div>';
   bar.querySelectorAll('.filter-chip').forEach((b) => {
     b.onclick = () => { catFilter = new Set(b.dataset.cat ? [b.dataset.cat] : []); renderInvestToolbar(); renderFiltered(); };
   });
-  const sel = bar.querySelector('#holdSort');
-  if (sel) sel.onchange = () => { holdingsSort = sel.value; renderFiltered(); };
   // v3.4 行密度切换：记忆到 localStorage，仅切 body[data-density]，CSS 实时生效（无需重渲染）
   bar.querySelectorAll('.dt-btn').forEach((b) => {
     b.onclick = () => {
@@ -1035,7 +1075,65 @@ function renderInvestToolbar() {
       bar.querySelectorAll('.dt-btn').forEach((x) => x.classList.toggle('active', x === b));
     };
   });
+  // 持仓工具条「刷新行情」按钮：手动补刷漏更新的行情/当日盈亏（系统重启、断网等导致定时快照漏跑时）
+  const rfb = bar.querySelector('#invRefreshBtn');
+  if (rfb) rfb.onclick = () => refreshHoldingsQuotes(rfb);
 }
+
+// 投资页持仓工具条「刷新」按钮：手动触发行情刷新 + 当日盈亏快照。
+// 后端 /api/refresh 复用定时快照的 refreshAllQuotes：刷新全部持仓现价/汇率并重算当日 P&L。
+// 点击刷新按钮：先弹确认框（含 N 天回朔输入），确认后再真正拉取行情
+let refreshBtnRef = null; // 记住触发刷新的按钮，刷新完成后恢复其状态
+function refreshHoldingsQuotes(btn) {
+  refreshBtnRef = btn || null;
+  const input = document.getElementById('refreshDays');
+  if (input && !input.value) input.value = '20';
+  $('#refreshConfirmModal').hidden = false;
+}
+
+async function doRefresh() {
+  const modal = $('#refreshConfirmModal');
+  const input = document.getElementById('refreshDays');
+  let days = parseInt(input.value, 10);
+  if (!isFinite(days) || days < 1) days = 1;
+  if (days > 120) days = 120;
+  input.value = String(days);
+  modal.hidden = true;
+  const btn = refreshBtnRef;
+  if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
+  try {
+    const r = await api('/api/refresh', { method: 'POST', body: JSON.stringify({ days }) });
+    if (!r.ok) { toast('刷新失败 (HTTP ' + r.status + ')', 'err'); return; }
+    const d = await r.json().catch(() => ({}));
+    await load(); // 重新拉取 /api/home：刷新 allHoldings 与 KPI（含当日盈亏/快照日期），再原地重渲染投资页
+    const failed = d.failed || [];
+    const bf = d.backfill;
+    let msg = '';
+    if (failed.length) msg += failed.length + ' 只更新失败：' + failed.slice(0, 5).join('、') + (failed.length > 5 ? '…' : '');
+    if (bf && (bf.price_rows > 0 || bf.pnl_dates > 0)) {
+      const tail = (bf.errors && bf.errors.length) ? ('；' + bf.errors.length + ' 条失败') : '';
+      msg += (msg ? '；' : '') + '回朔 ' + bf.days + ' 天：补 ' + bf.price_rows + ' 条价、' + bf.pnl_dates + ' 天盈亏' + tail;
+    }
+    if (msg) toast(msg, failed.length ? 'err' : 'ok');
+    else toast('行情已刷新', 'ok');
+  } catch (e) {
+    toast('刷新异常：' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
+    refreshBtnRef = null;
+  }
+}
+
+// 刷新确认弹框：确定 / 取消 / 遮罩点击关闭
+(function bindRefreshConfirm() {
+  const modal = $('#refreshConfirmModal');
+  const ok = document.getElementById('refreshOk');
+  const cancel = document.getElementById('refreshCancel');
+  if (ok) ok.onclick = () => doRefresh();
+  if (cancel) cancel.onclick = () => { modal.hidden = true; refreshBtnRef = null; };
+  modal.addEventListener('click', (e) => { if (e.target === modal) { modal.hidden = true; refreshBtnRef = null; } });
+})();
+
 
 function toolbarChip(cat, label, active) {
   return '<button type="button" class="filter-chip' + (active ? ' active' : '') + '" data-cat="' + cat + '">' + label + '</button>';
@@ -1204,9 +1302,9 @@ function renderHoldingsBySource(hs) {
     if (holdingsSort === 'days') return holdingDaysOf(h);
     return toRmb(h, h.market_value || 0);
   };
-  // v3.4 排序列指示器：当前排序键映射到表头列，加 .sorted 三角标记
-  const sortedCls = (...keys) => (keys.includes(holdingsSort) ? ' sorted' : '');
-  groups.forEach((g) => { g.items.sort((a, b) => sortKey(b) - sortKey(a)); });
+  // v3.6 排序列指示器：当前排序键映射到表头列；带方向类 sorted-asc/sorted-desc（点击表头 toggle）
+  const sortedCls = (key) => (holdingsSort === key ? ' sorted ' + (holdingsSortDir === 'asc' ? 'sorted-asc' : 'sorted-desc') : '');
+  groups.forEach((g) => { g.items.sort((a, b) => { const d = sortKey(b) - sortKey(a); return holdingsSortDir === 'asc' ? -d : d; }); });
   const arr = [...groups.values()].sort((a, b) => b.mv - a.mv);
   // 每组内部持仓占比归一化的最大值（组内 max MV，防止极端值把 bar 撑爆）
   arr.forEach((g) => {
@@ -1243,16 +1341,29 @@ function renderHoldingsBySource(hs) {
       + `<div class="collapse-body source-group-body">`
       + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
       + `<thead><tr><th>名称</th><th class="num" title="近20日收盘价走势">近20日走势</th><th>代码</th><th class="num">现价</th><th class="num" title="今日涨跌幅：现价相对昨收（基金为昨日净值），行情口径；与「今日」列括号里的盈亏率不同——今日% 首日按买入成本计">涨跌幅</th><th class="num" title="成本价（每份）">成本价</th>`
-      + `<th class="num${sortedCls('mv')}" title="持仓市值（折人民币；悬停查看原币种市值）">市值</th>`
+      + `<th class="num sortable${sortedCls('mv')}" data-sort="mv" title="持仓市值（折人民币；悬停查看原币种市值）· 点击排序">市值</th>`
       + `<th class="num" title="占该账户同币种资金池比例：持仓市值 ÷ 持仓合计+现金子账户余额；无匹配现金子账户时显示 —">仓位</th>`
       + `<th class="num" title="今日盈亏金额">今日</th>`
-      + `<th class="num${sortedCls('pnl', 'profit')}" title="持有期总盈亏金额">盈亏</th>`
-      + `<th class="num${sortedCls('days')}">持仓</th>`
+      + `<th class="num sortable${sortedCls('profit')}" data-sort="profit" title="持有期总盈亏金额 · 点击排序">盈亏</th>`
+      + `<th class="num sortable${sortedCls('days')}" data-sort="days" title="持仓天数 · 点击排序">持仓</th>`
       + `<th>操作</th>`
       + `</tr></thead><tbody>${g.items.map((h, i) => renderGroupRow(h, i, g.maxItemMV || 1, poolOf(h))).join('')}</tbody>`
       + `</table></div></div></div>`;
   }
   box.innerHTML = html;
+  // v3.6 表头点击排序：同一列再次点击 toggle 升/降序；切换列则默认降序（与原下拉口径一致）
+  box.querySelectorAll('th.sortable').forEach((th) => {
+    th.onclick = () => {
+      const key = th.dataset.sort;
+      if (holdingsSort === key) {
+        holdingsSortDir = holdingsSortDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        holdingsSort = key;
+        holdingsSortDir = 'desc';
+      }
+      renderFiltered();
+    };
+  });
   // 绑定每组内行事件
   box.querySelectorAll('.holdings-group').forEach((gEl) => {
     gEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); editHolding(b.dataset.edit); });
@@ -2498,7 +2609,7 @@ $('#confirmOk').onclick = async () => {
 // 投资页原右侧按钮已按需求移除，对应入口改为：盈亏日历 / AI 助手在右上角操作区（act-group）。
 $('#dcaPlansClose').onclick = () => { $('#dcaPlansModal').hidden = true; };
 $('#dcaPlansNew').onclick = () => { $('#dcaPlansModal').hidden = true; openDCAModal(null); };
-// 右上角操作区按钮：AI 助手（盈亏日历 2026-10-27 已并入个人菜单，见 onAcctPopClick 的 pnl-cal）
+// 右上角操作区按钮：AI 助手（盈亏日历 2026-10-28 已提为顶栏图标按钮 #pnlCalTopBtn，窄屏仍走个人菜单 pnl-cal）
 const _aiTop = document.getElementById('aiChatTopBtn');
 if (_aiTop) _aiTop.onclick = () => aiChatToggle();
 function openAddPick() {
@@ -5484,6 +5595,7 @@ async function showSettingsView() {
   await loadNotifySettings();
   await loadAISettings(); // AI 页签的模型/模板/MCP 参数回填
   await loadFinCatSettings(); // 收支分类：自定义分类编辑
+  loadAuthDevices(); // 登录与设备（认证层）：设备列表 + PIN 状态
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 // 2026-10-18：设置页已改为语义分组常驻结构，旧 tab 转发逻辑移除。
@@ -9033,6 +9145,9 @@ function onAcctPopClick(e) {
   } else if (act === 'manage-users') {
     closeAcctMenu();
     openUserSheet();
+  } else if (act === 'logout') {
+    closeAcctMenu();
+    doLogout();
   }
 }
 function bindAcctMenu() {
@@ -9061,15 +9176,17 @@ async function fetchUsers() {
   } catch (e) { return []; }
 }
 
-// 启动 / 刷新时解析当前用户：优先用 localStorage 中记录的 pf_user，否则回退到首个用户。
+// 启动 / 刷新时解析当前账本：以服务端会话为准；pf_user 仅作展示镜像（旧脚本仍可读）。
 async function initUser() {
-  const users = await fetchUsers();
-  if (!users.length) { setUserText('默认'); return; }
-  allUsersCache = users;
-  const saved = localStorage.getItem('pf_user');
-  let cur = users.find((u) => String(u.id) === String(saved));
-  if (!cur) { cur = users[0]; localStorage.setItem('pf_user', String(cur.id)); }
-  setUserText(cur.name);
+  const st = (authState.authed || authState.mode) ? authState : (await fetchSession());
+  if (st) authState = st;
+  allUsersCache = (authState.users || []).map((u) => ({ id: u.id, name: u.name }));
+  if (authState.user) {
+    localStorage.setItem('pf_user', String(authState.user.id));
+    setUserText(authState.user.name);
+  } else {
+    setUserText('默认');
+  }
 }
 
 function closeUserSheet() {
@@ -9111,6 +9228,8 @@ function renderUserList(users, curId, statsMap) {
   list.innerHTML = users.map((u) => {
     const isCur = String(u.id) === String(curId);
     const cnt = (statsMap[u.id] != null ? statsMap[u.id] : 0);
+    // 认证层：只有本设备已授权的账本才可切换，其余只展示（避免误点了又吃 403）
+    const granted = allUsersCache.some((g) => String(g.id) === String(u.id));
     const delBtn = canDelete
       ? `<button class="btn danger ur-del" type="button" data-act="delete" data-id="${u.id}" data-name="${escapeHtml(u.name)}" title="删除用户" aria-label="删除用户">${actIcon('del')}</button>`
       : `<button class="btn danger ur-del" type="button" disabled title="至少保留一个用户" aria-label="至少保留一个用户">${actIcon('del')}</button>`;
@@ -9118,10 +9237,10 @@ function renderUserList(users, curId, statsMap) {
     <div class="user-row ${isCur ? 'active' : ''}" data-id="${u.id}">
       <div class="ur-main">
         <div class="ur-name">${escapeHtml(u.name)}${isCur ? ' <span class="ur-cur">当前</span>' : ''}</div>
-        <div class="ur-meta">${cnt} 条数据</div>
+        <div class="ur-meta">${cnt} 条数据${granted || isCur ? '' : ' · 本设备未接入'}</div>
       </div>
       <div class="ur-actions">
-        ${isCur ? '' : `<button class="btn ur-switch" type="button" data-act="switch" data-id="${u.id}" title="切换到此用户" aria-label="切换到此用户">${actIcon('toggle')}</button>`}
+        ${isCur || !granted ? '' : `<button class="btn ur-switch" type="button" data-act="switch" data-id="${u.id}" title="切换到此用户" aria-label="切换到此用户">${actIcon('toggle')}</button>`}
         ${delBtn}
       </div>
     </div>`;
@@ -9139,18 +9258,28 @@ function onUserListClick(e) {
 }
 
 async function switchUser(id) {
-  let u = allUsersCache.find((x) => String(x.id) === String(id));
-  if (!u) { const users = await fetchUsers(); u = users.find((x) => String(x.id) === String(id)); }
-  localStorage.setItem('pf_user', String(id));
-  setUserText(u ? u.name : '默认');
-  calData = {};  // 清空权益曲线(pnl/history)缓存，切换用户后重新拉取，否则复用上一用户数据导致近30日曲线不刷新
-  closeUserSheet();
+  // 认证层：切换 = 服务端把会话的激活账本换掉，仅限本设备已授权的账本
   try {
+    const r = await api('/api/session/switch', { method: 'POST', body: JSON.stringify({ user_id: Number(id) }) });
+    if (!r.ok) {
+      let m = '切换失败';
+      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (e) {}
+      toast(m, 'err');
+      return;
+    }
+    const st = await r.json();
+    authState = st;
+    localStorage.setItem('pf_user', String(st.user.id));
+    setUserText(st.user.name);
+    allUsersCache = (st.users || []).map((u) => ({ id: u.id, name: u.name }));
+    renderAcctUsers();
+    calData = {};  // 清空权益曲线(pnl/history)缓存，切换用户后重新拉取，否则复用上一用户数据导致近30日曲线不刷新
+    closeUserSheet();
     await load();
     await loadAsset();
     await loadAISettings();
-    toast('已切换到用户：' + (u ? u.name : id), 'ok');
-  } catch (e) { toast('切换用户失败：' + e.message, 'err'); }
+    toast('已切换到账本：' + st.user.name, 'ok');
+  } catch (e) { toast('切换账本失败：' + e.message, 'err'); }
 }
 
 async function addUser() {
@@ -9158,9 +9287,8 @@ async function addUser() {
   const name = (inp && inp.value || '').trim();
   if (!name) { toast('请输入用户名', 'err'); return; }
   try {
-    const r = await fetch('/api/users', {
+    const r = await api('/api/users', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     });
     if (!r.ok) {
@@ -9209,7 +9337,7 @@ async function onUserDeleteConfirm() {
   pendingDeleteUserId = null;
   if (!id) return;
   try {
-    const r = await fetch('/api/users/' + id, { method: 'DELETE' });
+    const r = await api('/api/users/' + id, { method: 'DELETE' });
     if (!r.ok) {
       let m = '删除失败';
       try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
@@ -9275,8 +9403,8 @@ document.addEventListener('click', (e) => {
   card.classList.toggle('collapsed');
 });
 
-// 初始路由：按 URL hash 恢复视图（刷新不退回首页；无 hash 默认持仓列表）
-applyRoute();
+// 初始路由：认证通过后才执行（见 boot → enterApp）；闸门期间不渲染任何视图。
+if (authReady) applyRoute();
 
 // ============================================================
 // 收支计划（月度待入账 / 待还款）：首页紧凑卡片 + 资产全景编辑入口 + 待还款提醒
@@ -11767,29 +11895,32 @@ function renderRbInsight() {
     box.innerHTML = '';
     return;
   }
+  // 点击最右侧关闭按钮即可临时收起该提示（不记忆状态，下次刷新仍会显示）
+  box.onclick = (e) => { if (e.target.closest('.rb-insight-close')) box.hidden = true; };
   const ex = Number(rt.excess_pct) || 0;
   const top = buckets.slice().sort((a, b) => Math.abs(b.contrib) - Math.abs(a.contrib))[0];
   const topWord = top ? (top.drift > 0 ? '超配' : '低配') : '';
   const icoCheck = '<svg class="rb-insight-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
   const icoUp = '<svg class="rb-insight-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l5-5 4 3 6-7"/><path d="M14 8h4v4"/></svg>';
   const icoWarn = '<svg class="rb-insight-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>';
+  const closeBtn = '<button class="rb-insight-close" type="button" aria-label="关闭提示" title="关闭提示">✕</button>';
 
   if (Math.abs(ex) < 0.05) {
     box.className = 'rb-insight';
-    box.innerHTML = icoCheck + `<div>当前配置与目标基本一致：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>（<b>${rbYuan(rt.cur_amt)}</b>/年），超额收益率 <b>${rbPP(ex)}</b>。按纪律定期复查即可，不必为收益调仓。</div>`;
+    box.innerHTML = icoCheck + `<div class="rb-insight-body">当前配置与目标基本一致：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>（<b>${rbYuan(rt.cur_amt)}</b>/年），超额收益率 <b>${rbPP(ex)}</b>。按纪律定期复查即可，不必为收益调仓。</div>` + closeBtn;
     box.hidden = false;
     return;
   }
   if (ex < 0) {
     box.className = 'rb-insight';
-    box.innerHTML = icoUp + `<div>当前配置比目标<b>保守 ${Math.abs(ex).toFixed(2)}pp</b>：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>，低于目标配置的 <b>${rbFixed(rt.ret_target)}%</b>，一年少 <b>${rbYuan(-rt.excess_amt)}</b>。
-      主因是 <b>${esc(top.label)}${topWord}</b>（${rbSignedYuan(top.contrib)}）。执行建议后收益补齐到 <b>${rbFixed(rt.ret_target)}%</b>，代价是波动敞口由 <b>${rbFixed(rt.vol_actual, 1)}%</b> 升至 <b>${rbFixed(rt.vol_target, 1)}%</b>。</div>`;
+    box.innerHTML = icoUp + `<div class="rb-insight-body">当前配置比目标<b>保守 ${Math.abs(ex).toFixed(2)}pp</b>：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>，低于目标配置的 <b>${rbFixed(rt.ret_target)}%</b>，一年少 <b>${rbYuan(-rt.excess_amt)}</b>。
+      主因是 <b>${esc(top.label)}${topWord}</b>（${rbSignedYuan(top.contrib)}）。执行建议后收益补齐到 <b>${rbFixed(rt.ret_target)}%</b>，代价是波动敞口由 <b>${rbFixed(rt.vol_actual, 1)}%</b> 升至 <b>${rbFixed(rt.vol_target, 1)}%</b>。</div>` + closeBtn;
     box.hidden = false;
     return;
   }
   box.className = 'rb-insight is-warn';
-  box.innerHTML = icoWarn + `<div>当前配置比目标<b>激进 ${ex.toFixed(2)}pp</b>：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>，高于目标配置 <b>${rbFixed(rt.ret_target)}%</b>，一年多 <b>${rbYuan(rt.excess_amt)}</b>。
-    这部分超额来自 <b>${esc(top.label)}${topWord}</b>（${rbSignedYuan(top.contrib)}）的权重漂移，不是选股能力。执行再平衡意味着<b>主动让出这部分收益</b>，把波动敞口从 <b>${rbFixed(rt.vol_actual, 1)}%</b> 降回 <b>${rbFixed(rt.vol_target, 1)}%</b>。</div>`;
+  box.innerHTML = icoWarn + `<div class="rb-insight-body">当前配置比目标<b>激进 ${ex.toFixed(2)}pp</b>：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>，高于目标配置 <b>${rbFixed(rt.ret_target)}%</b>，一年多 <b>${rbYuan(rt.excess_amt)}</b>。
+    这部分超额来自 <b>${esc(top.label)}${topWord}</b>（${rbSignedYuan(top.contrib)}）的权重漂移，不是选股能力。执行再平衡意味着<b>主动让出这部分收益</b>，把波动敞口从 <b>${rbFixed(rt.vol_actual, 1)}%</b> 降回 <b>${rbFixed(rt.vol_target, 1)}%</b>。</div>` + closeBtn;
   box.hidden = false;
 }
 
@@ -11803,11 +11934,9 @@ function renderRbDrift() {
   const buckets = rbData.buckets || [];
   const rt = rbData.returns || {};
   const total = Number(rbData.total_cny) || 0;
-  const btn = document.getElementById('rbLogBtn');
   if (!buckets.length || !(total > 0)) {
     body.innerHTML = '<tr><td colspan="6"><div class="rb-act-empty">暂无资产数据</div></td></tr>';
     if (foot) foot.innerHTML = '';
-    if (btn) btn.disabled = true;
     return;
   }
   // 横轴按最大占比归一（至少 50%），保证小占比类别也看得出条长差异
@@ -11851,10 +11980,8 @@ function renderRbDrift() {
       if (el.checked) rbPicked.add(k); else rbPicked.delete(k);
       const row = el.closest('.rb-act-pick');
       if (row) row.classList.toggle('off', !el.checked);
-      if (btn) btn.disabled = rbPicked.size === 0;
     };
   });
-  if (btn) btn.disabled = rbPicked.size === 0;
 
   if (foot) {
     // 合计行自解释：配置列给「实际合计 / 目标合计」、年化列给加权目标、建议列给要换手多少钱，
@@ -12075,6 +12202,8 @@ async function saveRbSettings() {
     toast('目标权重合计必须为 100%（当前 ' + (Math.round(sum * 100) / 100) + '%）', 'err');
     return;
   }
+  const btn = document.getElementById('rbSetSave');
+  if (btn) btn.disabled = true;
   try {
     const r = await api('/api/settings/rebalance_targets', {
       method: 'PUT',
@@ -12086,47 +12215,37 @@ async function saveRbSettings() {
       toast(m, 'err');
       return;
     }
+    // 合并原「记录」按钮语义：保存配置时一并落一份再平衡快照（勾选的偏离项，未勾选则记全部偏离项）。
+    // 记录失败不影响配置已保存——纯 best-effort，不阻塞保存主流程。
+    let logged = false;
+    try {
+      const drifted = (rbData.buckets || []).filter((b) => b.action !== 'none');
+      const chosen = drifted.filter((b) => rbPicked.has(b.key));
+      const acts = chosen.length ? chosen : drifted;
+      if (acts.length) {
+        await api('/api/rebalance/log', {
+          method: 'POST',
+          body: JSON.stringify({ actions: acts.map((b) => ({ key: b.key })) }),
+        });
+        logged = true;
+      }
+    } catch (_) { /* 记录失败不影响配置已保存 */ }
     document.getElementById('rbSettingsModal').hidden = true;
-    toast('目标与收益假设已保存', 'ok');
+    toast(logged ? '配置已保存并记录本次再平衡' : '目标与收益假设已保存', 'ok');
     rbData = null;
     await loadRebalance();
   } catch (e) { toast('保存失败：' + e.message, 'err'); }
-}
-
-async function submitRbLog() {
-  if (!rbData) return;
-  const pend = (rbData.buckets || []).filter((b) => b.action !== 'none');
-  const picked = pend.filter((b) => rbPicked.has(b.key));
-  if (!picked.length) { toast('请至少勾选一项调整', 'err'); return; }
-  const btn = document.getElementById('rbLogBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '记录中…'; }
-  try {
-    const r = await api('/api/rebalance/log', {
-      method: 'POST',
-      body: JSON.stringify({ actions: picked.map((b) => ({ key: b.key })) }),
-    });
-    if (!r.ok) {
-      let m = '记录失败';
-      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
-      toast(m, 'err');
-      return;
-    }
-    toast('已记录本次再平衡', 'ok');
-    await loadRebalance();
-  } catch (e) {
-    toast('记录失败：' + e.message, 'err');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '记录'; }
-  }
+  finally { if (btn) btn.disabled = false; }
 }
 
 (function bindRebalanceUI() {
   const s = document.getElementById('rbSettingsBtn');
   if (s) s.onclick = openRbSettings;
-  const l = document.getElementById('rbLogBtn');
-  if (l) l.onclick = submitRbLog;
   const close = () => { const m = document.getElementById('rbSettingsModal'); if (m) m.hidden = true; };
-  ['rbSetClose', 'rbSetCancel'].forEach((id) => { const b = document.getElementById(id); if (b) b.onclick = close; });
+  ['rbSetClose'].forEach((id) => { const b = document.getElementById(id); if (b) b.onclick = close; });
+  // 点击遮罩空白处关闭抽屉（卡片本身不触发）
+  const modal = document.getElementById('rbSettingsModal');
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
   const sv = document.getElementById('rbSetSave');
   if (sv) sv.onclick = saveRbSettings;
   const rs = document.getElementById('rbSetReset');
@@ -12161,4 +12280,285 @@ async function submitRbLog() {
   });
   const fq = document.getElementById('rbFreqSel');
   if (fq) fq.onchange = rbSyncSetForm;
+})();
+
+// ============================================================
+// 认证层（2026-10-28）：登录闸门 / 添加设备与邀请 / 操作 PIN
+// 后端口径见 internal/api/auth.go：会话 Cookie + 一次性配对码。
+// ============================================================
+
+// ---- 闸门 ----
+function showAuthGate(st) {
+  authReady = false;
+  if (!authReturnHash) authReturnHash = location.hash || '';
+  const gate = document.getElementById('authGate');
+  if (!gate) return;
+  gate.hidden = false;
+  document.getElementById('authClaim').hidden = true;
+  document.getElementById('authPair').hidden = true;
+  document.getElementById('authReadonly').hidden = true;
+  if (!st) {
+    document.getElementById('authSub').textContent = '无法连接服务器，请稍后刷新重试';
+    return;
+  }
+  if (st.mode === 'readonly') {
+    document.getElementById('authSub').textContent = '演示环境 · 只读';
+    document.getElementById('authReadonly').hidden = false;
+    return;
+  }
+  if (st.mode === 'claim') {
+    document.getElementById('authSub').textContent = '首次接入 · 认领已有账本';
+    renderAuthClaim(st);
+    document.getElementById('authClaim').hidden = false;
+    return;
+  }
+  document.getElementById('authSub').textContent = '本设备尚未接入';
+  document.getElementById('authCode').value = '';
+  document.getElementById('authPairErr').textContent = '';
+  document.getElementById('authPair').hidden = false;
+  // 邀请链接深链：/#/pair?t=<secret>，直接发起配对
+  const m = (location.hash || '').match(/[?&]t=([A-Za-z0-9_-]+)/);
+  if (m) doPair(m[1]);
+  else setTimeout(() => document.getElementById('authCode').focus(), 60);
+}
+
+function renderAuthClaim(st) {
+  const users = st.users || [];
+  // 预选：有数据的账本全选；全都为空则选第一个
+  const withData = users.filter((u) => u.count > 0);
+  const pre = new Set((withData.length ? withData : users.slice(0, 1)).map((u) => String(u.id)));
+  document.getElementById('authUserList').innerHTML = users.map((u) => `
+    <label class="auth-user-opt">
+      <input type="checkbox" data-id="${u.id}" ${pre.has(String(u.id)) ? 'checked' : ''}>
+      <span>${escapeHtml(u.name)}</span>
+      <span class="auth-user-cnt">${u.count || 0} 条数据</span>
+    </label>`).join('');
+  document.getElementById('authRename').value = '';
+  document.getElementById('authClaimErr').textContent = '';
+}
+
+async function doClaim() {
+  const ids = Array.from(document.querySelectorAll('#authUserList input:checked')).map((i) => Number(i.dataset.id));
+  if (!ids.length) { document.getElementById('authClaimErr').textContent = '请至少勾选一个账本'; return; }
+  const rename = (document.getElementById('authRename').value || '').trim();
+  const btn = document.getElementById('authClaimBtn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/session/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ user_ids: ids, rename_to: rename }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { document.getElementById('authClaimErr').textContent = d.error || ('认领失败 (HTTP ' + r.status + ')'); return; }
+    onAuthed(d);
+  } catch (e) {
+    document.getElementById('authClaimErr').textContent = '网络异常：' + e.message;
+  } finally { btn.disabled = false; }
+}
+
+async function doPair(code) {
+  code = (code || document.getElementById('authCode').value || '').trim();
+  if (!code) { document.getElementById('authPairErr').textContent = '请输入配对码'; return; }
+  const btn = document.getElementById('authPairBtn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/session/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ code }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { document.getElementById('authPairErr').textContent = d.error || '配对失败'; return; }
+    onAuthed(d);
+  } catch (e) {
+    document.getElementById('authPairErr').textContent = '网络异常：' + e.message;
+  } finally { btn.disabled = false; }
+}
+
+async function onAuthed(st) {
+  const back = authReturnHash && /^#\/(home|invest|holdings|asset|finance|rebalance|settings)$/.test(authReturnHash) ? authReturnHash : '';
+  authReturnHash = '';
+  document.getElementById('authGate').hidden = true;
+  if (back && location.hash !== back) location.hash = back;
+  else if ((location.hash || '').startsWith('#/pair')) location.hash = '#/home';
+  await enterApp(st);
+}
+
+async function doLogout() {
+  try { await api('/api/session/logout', { method: 'POST', body: '{}' }); } catch (e) { /* 会话可能已失效 */ }
+  pinCache = '';
+  authState = { authed: false, mode: '', user: null, users: [], read_only: false, has_pin: false };
+  document.getElementById('app').hidden = true;
+  localStorage.removeItem('pf_user');
+  showAuthGate(await fetchSession());
+}
+
+// ---- 设置页：登录与设备 ----
+function deviceLabel(ua) {
+  if (!ua) return '未知设备';
+  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
+  const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
+  return [br, os].filter(Boolean).join(' · ') || ua.slice(0, 40);
+}
+
+async function loadAuthDevices() {
+  const wrap = document.getElementById('deviceList');
+  if (!wrap) return;
+  try {
+    const st = await fetchSession();
+    if (st) authState = st;
+    if (!authState.authed) { wrap.innerHTML = '<div class="auth-hint">未登录</div>'; return; }
+    const r = await api('/api/session/devices');
+    if (!r.ok) { wrap.innerHTML = '<div class="auth-hint">读取失败</div>'; return; }
+    const d = await r.json();
+    const list = d.devices || [];
+    if (!list.length) { wrap.innerHTML = '<div class="auth-hint">暂无其他设备</div>'; }
+    else {
+      wrap.innerHTML = list.map((s) => `
+        <div class="device-row" data-id="${s.id}">
+          <span class="device-name">${escapeHtml(deviceLabel(s.ua))}</span>
+          ${s.current ? '<span class="device-badge">本机</span>' : ''}
+          <span class="device-ua" title="${escapeHtml(s.ua || '')}">${escapeHtml(s.ua || '')}</span>
+          <span class="device-seen">${escapeHtml((s.last_seen || '').slice(5, 16))}</span>
+          ${s.current ? '' : `<button class="btn btn-sm device-revoke" type="button" data-id="${s.id}">吊销</button>`}
+        </div>`).join('');
+      // 两段式确认：第一次点变「确认吊销」，再点才执行（免开确认弹框）
+      wrap.querySelectorAll('.device-revoke').forEach((btn) => {
+        btn.onclick = async () => {
+          if (btn.dataset.armed !== '1') {
+            btn.dataset.armed = '1';
+            btn.textContent = '确认吊销';
+            setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = '吊销'; } }, 4000);
+            return;
+          }
+          const r2 = await api('/api/session/devices/' + btn.dataset.id, { method: 'DELETE' });
+          if (r2.ok) { toast('已吊销该设备，其 Cookie 立即失效', 'ok'); loadAuthDevices(); }
+          else toast('吊销失败', 'err');
+        };
+      });
+    }
+    document.getElementById('authCurName').textContent = authState.user ? authState.user.name : '—';
+    updatePinState(!!authState.has_pin);
+  } catch (e) {
+    if (e.message !== 'unauthenticated') wrap.innerHTML = '<div class="auth-hint">读取失败</div>';
+  }
+}
+
+// ---- 出码：添加设备 / 邀请家人 ----
+async function genPairCode(scope, payload) {
+  const r = await api('/api/session/code', { method: 'POST', body: JSON.stringify({ scope, ...(payload || {}) }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { if (!(d && d.pin_required)) toast(d.error || '出码失败', 'err'); return null; }
+  return d;
+}
+
+function openPairCodeModal(info, isInvite) {
+  document.getElementById('pairCodeTitle').textContent = isInvite ? '邀请码' : '配对码';
+  document.getElementById('pairCodeValue').textContent = info.code || '······';
+  document.getElementById('pairCodeHint').textContent = isInvite
+    ? '把该码发给对方：在对方自己的设备上打开本站，输入此码即可接入。'
+    : '在要接入的新设备上打开本站，输入此码即可接入本账本。';
+  const sec = info.expires_in || 300;
+  const ttl = sec >= 3600 ? (sec / 3600) + ' 小时' : Math.max(1, Math.round(sec / 60)) + ' 分钟';
+  document.getElementById('pairCodeMeta').textContent = '有效期 ' + ttl + '，仅可使用一次';
+  document.getElementById('pairCodeModal').hidden = false;
+}
+
+function openInviteModal() {
+  const sel = document.getElementById('inviteUser');
+  sel.innerHTML = (authState.users || []).map((u) => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+  sel.disabled = true;
+  document.getElementById('inviteName').value = '';
+  document.getElementById('inviteErr').textContent = '';
+  document.getElementById('inviteModal').hidden = false;
+}
+
+function updatePinState(has) {
+  const el = document.getElementById('pinState');
+  if (el) el.textContent = has ? '已设置' : '未设置（建议设置）';
+}
+
+// ---- 操作 PIN 弹框（promise 化，api() 自动调用）----
+let pinResolve = null;
+function promptPIN() {
+  return new Promise((resolve) => {
+    pinResolve = resolve;
+    document.getElementById('pinPromptInput').value = '';
+    document.getElementById('pinPromptErr').textContent = '';
+    document.getElementById('pinPromptModal').hidden = false;
+    setTimeout(() => document.getElementById('pinPromptInput').focus(), 50);
+  });
+}
+function closePIN(val) {
+  const modal = document.getElementById('pinPromptModal');
+  if (modal) modal.hidden = true;
+  if (pinResolve) { const fn = pinResolve; pinResolve = null; fn(val); }
+}
+
+// ---- 绑定 ----
+(function wireAuthUI() {
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on('authClaimBtn', doClaim);
+  on('authPairBtn', () => doPair());
+  on('authRoBtn', () => { document.getElementById('authGate').hidden = true; enterApp(authState); });
+  const codeInput = document.getElementById('authCode');
+  if (codeInput) codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doPair(); });
+  on('authLogoutBtn', doLogout);
+  on('addDeviceBtn', async () => {
+    try { const d = await genPairCode('device', {}); if (d) openPairCodeModal(d, false); } catch (e) { /* 取消 PIN */ }
+  });
+  on('inviteMemberBtn', openInviteModal);
+  on('inviteCancel', () => { document.getElementById('inviteModal').hidden = true; });
+  on('inviteClose', () => { document.getElementById('inviteModal').hidden = true; });
+  document.querySelectorAll('input[name="inviteMode"]').forEach((rad) => {
+    rad.onchange = () => {
+      const isNew = document.querySelector('input[name="inviteMode"]:checked').value === 'new';
+      document.getElementById('inviteName').disabled = !isNew;
+      document.getElementById('inviteUser').disabled = isNew;
+    };
+  });
+  on('inviteOk', async () => {
+    const isNew = document.querySelector('input[name="inviteMode"]:checked').value === 'new';
+    const payload = isNew
+      ? { name: (document.getElementById('inviteName').value || '').trim() }
+      : { user_id: Number(document.getElementById('inviteUser').value) };
+    if (isNew && !payload.name) { document.getElementById('inviteErr').textContent = '请填写新账本名称'; return; }
+    try {
+      const d = await genPairCode('invite', payload);
+      if (d) { document.getElementById('inviteModal').hidden = true; openPairCodeModal(d, true); }
+    } catch (e) { document.getElementById('inviteErr').textContent = e.message; }
+  });
+  on('pairCodeClose', () => { document.getElementById('pairCodeModal').hidden = true; });
+  on('pairCodeDone', () => { document.getElementById('pairCodeModal').hidden = true; });
+  on('pairCodeCopy', () => {
+    const code = (document.getElementById('pairCodeValue').textContent || '').trim();
+    if (navigator.clipboard) navigator.clipboard.writeText(code).then(() => toast('已复制配对码', 'ok'));
+  });
+  on('pinPromptCancel', () => closePIN(null));
+  on('pinPromptClose', () => closePIN(null));
+  on('pinPromptOk', () => {
+    const v = (document.getElementById('pinPromptInput').value || '').trim();
+    if (!/^\d{4,6}$/.test(v)) { document.getElementById('pinPromptErr').textContent = 'PIN 需为 4–6 位数字'; return; }
+    closePIN(v);
+  });
+  const pinInput = document.getElementById('pinPromptInput');
+  if (pinInput) pinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('pinPromptOk').click(); });
+  on('pinSaveBtn', async () => {
+    const oldPin = (document.getElementById('pinOld').value || '').trim();
+    const newPin = (document.getElementById('pinNew').value || '').trim();
+    if (newPin && !/^\d{4,6}$/.test(newPin)) { toast('PIN 需为 4–6 位数字', 'err'); return; }
+    try {
+      const r = await api('/api/session/pin', { method: 'POST', body: JSON.stringify({ pin: newPin, old_pin: oldPin }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(d.error || '保存失败', 'err'); return; }
+      document.getElementById('pinOld').value = '';
+      document.getElementById('pinNew').value = '';
+      authState.has_pin = d.has_pin;
+      updatePinState(d.has_pin);
+      toast(d.has_pin ? '操作 PIN 已保存' : '操作 PIN 已关闭', 'ok');
+    } catch (e) { toast('保存失败：' + e.message, 'err'); }
+  });
 })();

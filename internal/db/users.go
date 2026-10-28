@@ -35,6 +35,10 @@ func EnsureUsers() error {
 	if err := initUsers(); err != nil {
 		return err
 	}
+	// 认证层：设备会话 / 授权账本 / 配对码 / PIN（表结构与业务表解耦，幂等）
+	if err := EnsureSessions(); err != nil {
+		return err
+	}
 	// 为子表补充 user_id 列（幂等，新库 Init 已包含 user_id 列时自动跳过）
 	for _, t := range []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
