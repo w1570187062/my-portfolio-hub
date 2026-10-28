@@ -50,9 +50,13 @@ DESIGN_SYSTEM.md
 .trae-html-share-packages/
 
 # ── 本地脚本与临时校验 ──────────────────────────────────────
-# 除 README 截图脚本外，scripts/ 下均为本机部署/调试脚本，不入库
+# scripts/ 全是本机脚本（部署、截图、调试），一律不入库；
+# 入库的只有它们产出的文档资产（docs/screenshots/*.png）。
 /scripts/*
-!/scripts/screenshot.mjs
+# 根 package.json / lock 只服务于 scripts/screenshot.mjs（playwright），
+# 该脚本不入库，清单随之本地保留；前端依赖清单在 web/package.json（入库）。
+/package.json
+/package-lock.json
 .verify/
 .screenshots/
 /shots/
