@@ -56,6 +56,22 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  // 截图识别资产（/ocr/v<版本>/…，引擎 + 中英字库约 39MB）：目录带引擎版本号、内容不可变，
+  // 所以纯缓存优先 —— 命中直接返回，不再多发一轮后台请求；首次由这里下载并落盘，
+  // 之后即使换网络/断网也只读本地，手机上只从自己服务器下一次。
+  if (url.pathname.startsWith('/ocr/')) {
+    e.respondWith(
+      caches.open(CACHE).then(async (c) => {
+        const cached = await c.match(req);
+        if (cached) return cached;
+        const res = await fetch(req);
+        if (res && res.status === 200) c.put(req, cacheable(res));
+        return res;
+      }).catch(() => caches.match(req))
+    );
+    return;
+  }
+
   // 静态资源（/app.js?v=…、/style.css?v=…、/favicon.svg 等）：缓存优先 + 后台更新
   e.respondWith(
     caches.open(CACHE).then(async (c) => {

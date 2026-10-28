@@ -106,6 +106,18 @@ func main() {
 			w.Header().Set("Cache-Control", "public, max-age=604800")
 			fileServer.ServeHTTP(w, r)
 			return
+		case strings.HasPrefix(r.URL.Path, "/ocr/"):
+			// 截图识别资产（tesseract.js 引擎 + 中英字库，约 39MB）：目录名带引擎版本号，
+			// 版本内内容不可变 → 给一年 immutable，否则每次刷新都要重下（局域网 http 下
+			// Service Worker 不生效，只能靠 HTTP 缓存兜）。文件不存在时保持 no-store，
+			// 避免把 404 也缓存一年（浏览器会记住）。
+			if f, err := fs.Stat(sub, strings.TrimPrefix(r.URL.Path, "/")); err == nil && !f.IsDir() {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "no-store")
+			}
+			fileServer.ServeHTTP(w, r)
+			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Pragma", "no-cache")
@@ -114,7 +126,9 @@ func main() {
 
 	r := gin.Default()
 	// 启用 HTTP 响应 gzip 压缩（JS/CSS/HTML/JSON 均受益；客户端未带 Accept-Encoding: gzip 时自动透传）。
-	r.Use(gzip.Gzip(gzip.DefaultCompression))
+	// 例外：/ocr/ 下的 *.traineddata.gz 本身已是 deflate 过的字库，再压一遍纯烧 CPU（20MB 级），
+	// 且 tesseract 要靠魔数判断是否需要解压，必须保持原始字节流。
+	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPathsRegexs([]string{`^/ocr/.*\.gz$`})))
 	api.RegisterRoutes(r)
 
 	// MCP：若配置启用且为 HTTP 传输，随 Web 服务一起在后台拉起，供远程 hermes 连接。
