@@ -113,22 +113,6 @@ func normalizeFlowCategories(defs []FlowCatDef) ([]FlowCatDef, error) {
 	return out, nil
 }
 
-// loadAssetTypeLabels 读取当前用户的资产类型标签定义；无记录时回退内置默认（不落库）。
-func loadAssetTypeLabels(uid int64) ([]string, error) {
-	payload, ok, err := db.GetSetting(settingAssetTypeLabels, uid)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return defaultAssetTypeLabels(), nil
-	}
-	var ls []string
-	if e := json.Unmarshal([]byte(payload), &ls); e != nil {
-		return defaultAssetTypeLabels(), nil
-	}
-	return ls, nil
-}
-
 // settingsGet 返回某类设置的 JSON payload；首次访问时落库默认值。
 func settingsGet(c *gin.Context) {
 	kind := c.Param("kind")

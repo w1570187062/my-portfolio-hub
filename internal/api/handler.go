@@ -1831,10 +1831,6 @@ func pnlHistory(c *gin.Context) {
 
 	// 叠加理财之前，保存一份纯持仓的 total_cny 给 equity_pnl_cny ——
 	// 前端权益曲线用它（去理财波动），盈亏日历/其他地方继续用叠加后的 total_cny。
-	type eqRow struct {
-		Date       string  `json:"date"`
-		EquityCNY  float64 `json:"equity_pnl_cny"` // 纯持仓每日盈亏（CNY）
-	}
 	eqByDate := map[string]float64{}
 	for _, r := range rows {
 		eqByDate[r.Date] = r.TotalCNY

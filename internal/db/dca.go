@@ -287,7 +287,7 @@ func EnsureDCARecords(uid int64) (int, error) {
 		}
 		var seq int
 		_ = DB.QueryRow(`SELECT COALESCE(MAX(seq),0) FROM dca_records WHERE plan_id=?`, p.ID).Scan(&seq)
-		for i := 0; i < 24; i++ {
+		for i := 0; i < 24; i++ { // 单轮上限 24 期（日频同样适用）
 			d := NextDCADate(p, last)
 			if d == "" || d > today {
 				break
@@ -313,9 +313,6 @@ func EnsureDCARecords(uid int64) (int, error) {
 			}
 			added++
 			last = d
-			if p.Interval == "daily" && i > 0 {
-				// 日频也允许补多期，但上限 24 期
-			}
 		}
 	}
 	return added, nil

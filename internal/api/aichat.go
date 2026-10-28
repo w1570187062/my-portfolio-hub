@@ -412,7 +412,7 @@ func chatToolAnalyzeHolding(uid int64, args map[string]interface{}) string {
 	sb.WriteString(fmt.Sprintf("MACD: DIF %.4f DEA %.4f 柱 %.4f（上日柱 %.4f）\n", ind.MACD.DIF, ind.MACD.DEA, ind.MACD.HIST, ind.MACD.HistPrev))
 	sb.WriteString(fmt.Sprintf("RSI %.2f | KDJ: K %.2f D %.2f J %.2f\n", ind.RSI, ind.KDJ.K, ind.KDJ.D, ind.KDJ.J))
 	sb.WriteString(fmt.Sprintf("BOLL: 上轨 %.4f 中轨 %.4f 下轨 %.4f 带宽 %.2f%%\n", ind.BOLL.Upper, ind.BOLL.Mid, ind.BOLL.Lower, ind.BOLL.Width))
-	if bars != nil && len(bars) > 0 {
+	if len(bars) > 0 {
 		sb.WriteString(fmt.Sprintf("K线区间：%s ~ %s（%d 根）\n", bars[0].Date, bars[len(bars)-1].Date, len(bars)))
 	}
 	if prob != nil {

@@ -145,12 +145,6 @@ func AppendAIChatMessage(chatID int64, role, content, toolName string) error {
 	return err
 }
 
-// ClearAIChatMessages 清空会话消息（保留会话本身）。
-func ClearAIChatMessages(chatID int64) error {
-	_, err := DB.Exec(`DELETE FROM ai_chat_messages WHERE chat_id=?`, chatID)
-	return err
-}
-
 // DeleteAIChatsByUser 清理某用户的全部会话（ClearUserData 用）。
 func DeleteAIChatsByUser(userID int64) error {
 	if _, err := DB.Exec(`DELETE FROM ai_chat_messages WHERE chat_id IN (SELECT id FROM ai_chats WHERE user_id=?)`, userID); err != nil {

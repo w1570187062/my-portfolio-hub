@@ -222,6 +222,10 @@ func DeleteUser(userID int64) error {
 	if err := ClearUserData(userID); err != nil {
 		return err
 	}
+	// 会话授权：删用户后必须清理，否则残留的 user_id 会在新用户复用同一 id 时继承旧授权
+	if _, err := DB.Exec(`DELETE FROM session_users WHERE user_id=?`, userID); err != nil {
+		return err
+	}
 	_, err = DB.Exec(`DELETE FROM users WHERE id=?`, userID)
 	return err
 }

@@ -282,23 +282,6 @@ func SessionHasUser(sessionID, userID int64) bool {
 	return n > 0
 }
 
-// SessionIDsForUser 该账本授权过的全部会话 id（删用户时清理授权用）。
-func SessionIDsForUser(userID int64) []int64 {
-	rows, err := DB.Query(`SELECT session_id FROM session_users WHERE user_id=?`, userID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	var out []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err == nil {
-			out = append(out, id)
-		}
-	}
-	return out
-}
-
 // ---- 配对码 ----
 
 // CreatePairCode 生成一次性配对码。scope=device 绑定本机；scope=invite 邀请家人。

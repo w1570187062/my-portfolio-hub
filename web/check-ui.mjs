@@ -166,20 +166,21 @@ const check = (name, detail, ok, extra = '') =>
 // 10. 工具类层存在性（方案 B 的产出，避免被误删）
 // ─────────────────────────────────────────────────────────────
 {
-  const REQUIRED = ['.u-row', '.u-col', '.u-gap-2', '.u-muted', '.u-num', '.u-ellipsis', '.cw-14', '.ta-right'];
+  const REQUIRED = ['.u-row', '.u-col', '.u-gap-2', '.u-muted'];
   const missing = REQUIRED.filter((c) => !cssBare.includes(c));
-  check('utility 层完整', '布局/间距/文字/列宽/对齐工具类', missing.length === 0, missing.join(', '));
+  check('utility 层完整', '布局/间距/文字工具类（未被引用的已随死样式清除）', missing.length === 0, missing.join(', '));
 }
 
 // ─────────────────────────────────────────────────────────────
 // 11. 响应式断点白名单：所有 (min|max)-width 取值必须来自核准集
 //     直接把《ui-design-spec.md》§3.13 的断点集变成机器强制，
 //     防止再出现孤立 639 / hero 768 未对齐 pano 880 这类漂移。
-//     2026-10-26 收敛（审计 §十一）：12 断点 → 3 档 4 值（640 手机 / 880 平板窄 / 1340 标准），
-//     641 与 881 是相邻档的 min-width 补位值，不是独立断点。
+//     2026-10-28 收敛（三档制）：只适配「手机 / 平板 / 电脑」三种形态 ——
+//       手机 ≤640 ｜ 平板 641–1340 ｜ 电脑 ≥1341
+//     641 与 1341 是相邻档的 min-width 补位值，不是独立断点。
 // ─────────────────────────────────────────────────────────────
 {
-  const ALLOWED = new Set([640, 641, 880, 881, 1340]);
+  const ALLOWED = new Set([640, 641, 1340, 1341]);
   const vals = [];
   // 只在 @media 条件段里取值，避开规则体里的 flex: min-width:0 等
   for (const seg of cssBare.split('@media').slice(1)) {
@@ -188,17 +189,19 @@ const check = (name, detail, ok, extra = '') =>
   }
   const bad = [...new Set(vals.filter((v) => !ALLOWED.has(v)))];
   const all = [...new Set(vals)].sort((a, b) => a - b);
-  check('响应式断点白名单', '所有 (min|max)-width 取值必须 ∈ 核准集', bad.length === 0,
+  check('响应式断点白名单', '三档制：手机640/平板1340/电脑1341', bad.length === 0,
     bad.length ? `越界断点：${bad.join(', ')}` : `已用断点：${all.join('/')}`);
 }
 
 // ─────────────────────────────────────────────────────────────
-// 12. 死 class 启发式（仅告警，不阻断）
-//     style.css 定义的类若从未在 app.js / index.html 以 class="..." /
-//     classList.x('...') / className= 出现，列出供人工复核
-//     （可能含 JS 动态拼接的类，仅供参考，故不 fail）
+// 12. 死 class：两层判定
+//     硬门 = 类名在 app.js / index.html 中「完全没出现过」（连字符串字面量都没有）→ 必然死；
+//     提示 = 严格 class 位置判定（class="…" / classList.x('…') / className=），
+//            变量中转（const c = 'lg-up1' → class="… " + c）会落进提示但不阻断。
+//     2026-10-28 清理前疑似未引用 251 个 → 硬门口径已归零。
 // ─────────────────────────────────────────────────────────────
 {
+  const BUDGET = 3;
   const defined = new Set();
   for (const rule of cssBare.split('}')) {
     const sel = rule.split('{', 1)[0];
@@ -212,10 +215,16 @@ const check = (name, detail, ok, extra = '') =>
     for (const m of src.matchAll(/\bclassName\s*=\s*["'`]([\s\S]*?)["'`]/g)) m[1].split(/\s+/).forEach((c) => c && used.add(c));
   };
   scan(jsBare); scan(htmlBare);
+  const has = (c) => new RegExp('(?<![\\w-])' + c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w-])').test(jsBare + htmlBare);
   const dead = [...defined].filter((c) => !used.has(c));
-  check('死 class 启发式（告警）', 'CSS 定义类应被引用（仅人工复核，不阻断）', true,
-    dead.length ? `疑似未引用 ${dead.length} 个，示例：${dead.slice(0, 8).join(', ')}` : '未发现明显未引用类');
+  const reallyDead = dead.filter((c) => !has(c));
+  check('死 class（硬门）', '类名必须至少在源码出现一次（≤ 3 例外）', reallyDead.length <= BUDGET,
+    reallyDead.length ? '完全未出现 ' + reallyDead.length + ' 个：' + reallyDead.slice(0, 6).join(', ') : '未发现完全未出现的类');
+  check('死 class（提示）', '严格 class 位置判定的未引用数（变量中转落此，不阻断）', true,
+    dead.length ? dead.length + ' 个：' + dead.slice(0, 6).join(', ') : '未发现明显未引用类');
 }
+
+
 
 // ─────────────────────────────────────────────────────────────
 // 13. 弹框表单行节奏：描述→控件 4px(--sp-1) / 行间距 12px(--sp-3)
