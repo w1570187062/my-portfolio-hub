@@ -251,6 +251,53 @@ func fundNAV(symbol string) (*Quote, error) {
 	return q, nil
 }
 
+// FetchFundNAVHistory returns the most recent `days` NAV records (date -> NAV) for a fund.
+// Used by snapshot backfill to reconstruct missing daily closes (price_daily) for past days.
+func FetchFundNAVHistory(symbol string, days int) (map[string]float64, error) {
+	if days < 1 {
+		days = 1
+	}
+	if days > 120 {
+		days = 120
+	}
+	url := fmt.Sprintf("https://api.fund.eastmoney.com/f10/lsjz?fundCode=%s&pageIndex=1&pageSize=%d", symbol, days)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("Referer", "https://fundf10.eastmoney.com/")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var out struct {
+		Data struct {
+			LSJZList []struct {
+				FSRQ string `json:"FSRQ"`
+				DWJZ string `json:"DWJZ"`
+			} `json:"LSJZList"`
+		} `json:"Data"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	m := map[string]float64{}
+	for _, it := range out.Data.LSJZList {
+		if it.FSRQ == "" || it.DWJZ == "" {
+			continue
+		}
+		nav, e := strconv.ParseFloat(it.DWJZ, 64)
+		if e != nil || nav == 0 {
+			continue
+		}
+		m[it.FSRQ] = nav
+	}
+	if len(m) == 0 {
+		return nil, fmt.Errorf("no NAV history for %s", symbol)
+	}
+	return m, nil
+}
+
 // fundName best-effort fetches the canonical fund name.
 // Primary: Eastmoney's search API — covers ALL open-end funds (equity, bond,
 // QDII, commodity); Tian Tian Fund's estimate JSON only returns a name for funds
