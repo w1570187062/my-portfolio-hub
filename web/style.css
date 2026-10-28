@@ -414,6 +414,16 @@
 /* 浅色主题：盈亏日历文字用深色（默认白色在亮底卡片上看不清） */
 :root[data-theme="light"] .cal-cell .cal-day { color: var(--cal-text-dark); }
 :root[data-theme="light"] .cal-cell .cal-val { color: var(--cal-text-dark); text-shadow: none; }
+/* 但最深的两档（up3/up4、down3/down4）底色接近纯色，深字看不见，必须反白。
+   同样属于「类名动态拼接、字面量搜不到」的一组，勿当死样式清理。 */
+:root[data-theme="light"] .cal-cell.lg-up3 .cal-day,
+:root[data-theme="light"] .cal-cell.lg-up4 .cal-day,
+:root[data-theme="light"] .cal-cell.lg-down3 .cal-day,
+:root[data-theme="light"] .cal-cell.lg-down4 .cal-day { color: var(--text-inverse); }
+:root[data-theme="light"] .cal-cell.lg-up3 .cal-val,
+:root[data-theme="light"] .cal-cell.lg-up4 .cal-val,
+:root[data-theme="light"] .cal-cell.lg-down3 .cal-val,
+:root[data-theme="light"] .cal-cell.lg-down4 .cal-val { color: var(--text-inverse); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
 
 /* ===== 统一按钮基类 ===== */
 /* ===== 通用按钮（取自保存按钮的幽灵样式） ===== */
@@ -2172,6 +2182,17 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .lg-zero { background: var(--cal-zero); }
 /* 日历格必须覆盖 .cal-cell 的默认背景（none/zero 也要显式覆盖，原先只在日间模式补过） */
 .cal-cell.lg-none { background: var(--cal-none); } .cal-cell.lg-zero { background: var(--cal-zero); }
+/* 8 档涨跌底色（唯一一处定义）。⚠️ 类名是 app.js 动态拼接的（`('lg-up'|'lg-down') + lvl`，
+   lvl 1–4），源码里搜不到 `lg-up1` 这样的字面量 —— 死样式脚本按字面量判定会把这 8 条
+   全部误删（2026-10-28 已踩过，表现为盈亏日历格子全变灰白）。check-ui 第 17 项为此设了锚点门。 */
+.cal-cell.lg-up1 { background: var(--cal-up-1); }
+.cal-cell.lg-up2 { background: var(--cal-up-2); }
+.cal-cell.lg-up3 { background: var(--cal-up-3); }
+.cal-cell.lg-up4 { background: var(--cal-up-4); }
+.cal-cell.lg-down1 { background: var(--cal-down-1); }
+.cal-cell.lg-down2 { background: var(--cal-down-2); }
+.cal-cell.lg-down3 { background: var(--cal-down-3); }
+.cal-cell.lg-down4 { background: var(--cal-down-4); }
 
 /* 盈亏日历：月/年 视图切换胶囊（复用 .view-toggle 滑块样式） */
 .cal-view-toggle { flex: 0 0 auto; }

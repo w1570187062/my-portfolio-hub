@@ -216,8 +216,17 @@ const check = (name, detail, ok, extra = '') =>
   };
   scan(jsBare); scan(htmlBare);
   const has = (c) => new RegExp('(?<![\\w-])' + c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w-])').test(jsBare + htmlBare);
+  // 动态拼接豁免：`color = ('lg-up' | 'lg-down') + lvl` 这类只有前缀是字面量，
+  // 拼出来的 `lg-up1` 在源码里永远搜不到。收集 app.js 里的短小写字符串作为前缀，
+  // 类名以它开头且只多出 4 个字符以内（档位/序号）→ 视为动态可达，不算死。
+  const dynPrefix = new Set();
+  for (const m of jsBare.matchAll(/['"]([a-z][a-z0-9-]{3,20})['"]/g)) dynPrefix.add(m[1]);
+  const isDyn = (c) => {
+    for (const p of dynPrefix) if (c.startsWith(p) && c.length - p.length <= 4) return true;
+    return false;
+  };
   const dead = [...defined].filter((c) => !used.has(c));
-  const reallyDead = dead.filter((c) => !has(c));
+  const reallyDead = dead.filter((c) => !has(c) && !isDyn(c));
   check('死 class（硬门）', '类名必须至少在源码出现一次（≤ 3 例外）', reallyDead.length <= BUDGET,
     reallyDead.length ? '完全未出现 ' + reallyDead.length + ' 个：' + reallyDead.slice(0, 6).join(', ') : '未发现完全未出现的类');
   check('死 class（提示）', '严格 class 位置判定的未引用数（变量中转落此，不阻断）', true,
@@ -305,6 +314,26 @@ const check = (name, detail, ok, extra = '') =>
   }
   check('弹框分离式描述', '须带 field-label / sr-label 类（否则 12px 会变成描述→控件距离）',
     bad.length === 0, bad.length ? bad.slice(0, 4).join(', ') + (bad.length > 4 ? ` … +${bad.length - 4}` : '') : '未发现');
+}
+
+// ─────────────────────────────────────────────────────────────
+// 17. 动态拼接类名的样式锚点（防误删）
+//     有一批类名是 JS 里拼出来的（`('lg-up' | 'lg-down') + lvl`，lvl 1–4），
+//     源码里搜不到 `lg-up1` 这样的字面量 → 死样式脚本按字面量判定会整组删掉；
+//     而第 12 项（CSS 有、源码无 → 死）也发现不了，因为 CSS 里已经没了。
+//     这类样式只能靠锚点守住：2026-10-28 盈亏日历 8 档底色就是这样被删空的。
+// ─────────────────────────────────────────────────────────────
+{
+  const dyn = [];
+  for (const kind of ['up', 'down']) {
+    for (const lvl of [1, 2, 3, 4]) {
+      const sel = `.cal-cell.lg-${kind}${lvl}`;
+      const re = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{[^}]*background\\s*:\\s*var\\(--cal-' + kind + '-' + lvl + '\\)');
+      if (!re.test(cssBare)) dyn.push(sel);
+    }
+  }
+  check('动态类名样式锚点', '日历 8 档涨跌底色必须存在（类名由 JS 拼接）', dyn.length === 0,
+    dyn.length ? '缺失 ' + dyn.length + ' 条：' + dyn.join(', ') : '8/8 在位');
 }
 
 // ─────────────────────────────────────────────────────────────
