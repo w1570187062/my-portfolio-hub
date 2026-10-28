@@ -82,14 +82,17 @@
   --cum-line: #a78bfa;
   --cum-line-rgb: 167, 139, 250;
 
-  /* ===== 盈亏日历色阶（v3 新增 token）=====
-     此前 8 档背景色以字面量散落在 .lg-* / .cal-cell.lg-* 两组规则里，日间模式再写 20 行
-     `:root[data-theme="light"] .lg-up1 { background: #ffe1e1 }` 覆盖。改为 token 后：
-     日间只需覆盖这 10 个变量，20 行选择器级覆盖全部删除（改主题不会漏） */
+  /* ===== 盈亏日历配色（支付宝式两态，v4 收敛）=====
+     旧方案按盈亏绝对值分 4 档深浅（up1..4 / down1..4），实际读起来像热力图，颜色抢了
+     数字的注意力，同一个月里只要有一天大额盈亏、其余日子全被压成最浅档。
+     v4 只保留「方向 + 选中」两个维度：
+       soft   = 有数据但未选中 → 一律浅色（涨浅红 / 跌浅绿），幅度只由数字表达
+       strong = 选中日（默认今天）→ 重色高亮 + 反白文字，视觉焦点只有一个
+     text 是该档对应的文字色（浅底上用同色系深字，避免浅底白字看不清）。 */
   --cal-none: #2a3441;
   --cal-zero: #3d4a5c;
-  --cal-up-1: #ef4444; --cal-up-2: #dc2626; --cal-up-3: #b91c1c; --cal-up-4: #7f1d1d;
-  --cal-down-1: #4ade80; --cal-down-2: #22c55e; --cal-down-3: #16a34a; --cal-down-4: #14532d;
+  --cal-up-soft: rgba(239, 68, 68, .18); --cal-up-strong: #ef4444; --cal-up-text: #ff8f8f;
+  --cal-down-soft: rgba(74, 222, 128, .16); --cal-down-strong: #22c55e; --cal-down-text: #7ee2a8;
 
   /* 资产分类色（RGB 三元组，用 rgb(var(--cat-x)) / rgba(var(--cat-x),.a) 引用；
      圆环/堆叠条/饼图/图例/徽标全站统一，亮暗两套在 [data-theme="light"] 覆盖）
@@ -354,11 +357,11 @@
   /* Tier-2 高光线：亮色下改用底部发丝线（暗色为顶部受光） */
   --card-inset-line: var(--card-inset-line-light);
 
-  /* 盈亏日历色阶（日间用浅色系；此处是唯一定义处，选择器不再逐条覆盖） */
+  /* 盈亏日历配色（日间：浅色系；与暗色共用 soft/strong/text 三组语义） */
   --cal-none: #ebedf0;
   --cal-zero: #d9d9d9;
-  --cal-up-1: #ffe1e1; --cal-up-2: #ffa39e; --cal-up-3: #ff7875; --cal-up-4: #f5222d;
-  --cal-down-1: #e6f7e6; --cal-down-2: #b7eb8f; --cal-down-3: #73d13d; --cal-down-4: #00a854;
+  --cal-up-soft: #ffe1e1; --cal-up-strong: #f5222d; --cal-up-text: #cf1322;
+  --cal-down-soft: #e6f7e6; --cal-down-strong: #00a854; --cal-down-text: #237804;
 
   --card-shadow: var(--sh-1);
   --card-shadow-hover: var(--sh-2);
@@ -411,19 +414,10 @@
 :root[data-theme="light"] .cal-cell.lg-zero .cal-val,
 :root[data-theme="light"] .cal-cell.cal-future .cal-val { color: var(--cal-text-dim); text-shadow: none; }
 
-/* 浅色主题：盈亏日历文字用深色（默认白色在亮底卡片上看不清） */
+/* 浅色主题：盈亏日历文字用深色（默认白色在亮底卡片上看不清）。
+   有盈亏的格子再用 `--cal-*-text`（红/绿深字）覆盖，见下方的 .lg-up / .lg-down 系列。 */
 :root[data-theme="light"] .cal-cell .cal-day { color: var(--cal-text-dark); }
 :root[data-theme="light"] .cal-cell .cal-val { color: var(--cal-text-dark); text-shadow: none; }
-/* 但最深的两档（up3/up4、down3/down4）底色接近纯色，深字看不见，必须反白。
-   同样属于「类名动态拼接、字面量搜不到」的一组，勿当死样式清理。 */
-:root[data-theme="light"] .cal-cell.lg-up3 .cal-day,
-:root[data-theme="light"] .cal-cell.lg-up4 .cal-day,
-:root[data-theme="light"] .cal-cell.lg-down3 .cal-day,
-:root[data-theme="light"] .cal-cell.lg-down4 .cal-day { color: var(--text-inverse); }
-:root[data-theme="light"] .cal-cell.lg-up3 .cal-val,
-:root[data-theme="light"] .cal-cell.lg-up4 .cal-val,
-:root[data-theme="light"] .cal-cell.lg-down3 .cal-val,
-:root[data-theme="light"] .cal-cell.lg-down4 .cal-val { color: var(--text-inverse); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
 
 /* ===== 统一按钮基类 ===== */
 /* ===== 通用按钮（取自保存按钮的幽灵样式） ===== */
@@ -2182,17 +2176,24 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .lg-zero { background: var(--cal-zero); }
 /* 日历格必须覆盖 .cal-cell 的默认背景（none/zero 也要显式覆盖，原先只在日间模式补过） */
 .cal-cell.lg-none { background: var(--cal-none); } .cal-cell.lg-zero { background: var(--cal-zero); }
-/* 8 档涨跌底色（唯一一处定义）。⚠️ 类名是 app.js 动态拼接的（`('lg-up'|'lg-down') + lvl`，
-   lvl 1–4），源码里搜不到 `lg-up1` 这样的字面量 —— 死样式脚本按字面量判定会把这 8 条
-   全部误删（2026-10-28 已踩过，表现为盈亏日历格子全变灰白）。check-ui 第 17 项为此设了锚点门。 */
-.cal-cell.lg-up1 { background: var(--cal-up-1); }
-.cal-cell.lg-up2 { background: var(--cal-up-2); }
-.cal-cell.lg-up3 { background: var(--cal-up-3); }
-.cal-cell.lg-up4 { background: var(--cal-up-4); }
-.cal-cell.lg-down1 { background: var(--cal-down-1); }
-.cal-cell.lg-down2 { background: var(--cal-down-2); }
-.cal-cell.lg-down3 { background: var(--cal-down-3); }
-.cal-cell.lg-down4 { background: var(--cal-down-4); }
+/* 盈亏日历：有数据一律浅色（方向靠红/绿，幅度靠数字），选中日才用重色。
+   ⚠️ 类名由 app.js 动态拼接（`'lg-' + (v > 0 ? 'up' : 'down')` + 选中时的 `is-sel`），
+   源码里没有 `lg-up1` 这类字面量 —— 死样式脚本按字面量判定会把整组误删
+   （2026-10-28 踩过，格子全变灰白）。check-ui 第 17 项为此设了锚点门。 */
+.cal-cell.lg-up { background: var(--cal-up-soft); }
+.cal-cell.lg-down { background: var(--cal-down-soft); }
+.cal-cell.lg-up .cal-day, .cal-cell.lg-up .cal-val { color: var(--cal-up-text); }
+.cal-cell.lg-down .cal-day, .cal-cell.lg-down .cal-val { color: var(--cal-down-text); }
+/* 浅底上不能用默认的白色投影（会把红/绿字糊成灰边） */
+.cal-cell.lg-up .cal-val, .cal-cell.lg-down .cal-val { text-shadow: none; }
+/* 选中日（默认今天，点任意日期即转移）：重色高亮 + 反白，整月唯一视觉焦点 */
+.cal-cell.lg-up.is-sel { background: var(--cal-up-strong); }
+.cal-cell.lg-down.is-sel { background: var(--cal-down-strong); }
+.cal-cell.lg-up.is-sel .cal-day, .cal-cell.lg-up.is-sel .cal-val,
+.cal-cell.lg-down.is-sel .cal-day, .cal-cell.lg-down.is-sel .cal-val {
+  color: var(--text-inverse);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
 
 /* 盈亏日历：月/年 视图切换胶囊（复用 .view-toggle 滑块样式） */
 .cal-view-toggle { flex: 0 0 auto; }
@@ -2249,6 +2250,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   outline-offset: -2px;
   box-shadow: 0 0 12px var(--primary-glow);
 }
+/* 今天同时是选中日时，底色已是深红/深绿，主色描边+辉光在深底上发脏 → 换白色细描边 */
+.cal-cell.cal-today.is-sel { outline-color: rgba(255, 255, 255, .7); box-shadow: none; }
 /* 日期与金额上下居中成一组（原为日期 flex:1 撑满上区、金额贴底，格子一大两者就隔了半格） */
 .cal-day {
   flex: 0 0 auto;
@@ -4408,7 +4411,7 @@ textarea::placeholder {
    ----------------------------------------------------------------------------
    为什么手写而不是引入 Tailwind（详见 docs/ui-design-spec.md）：
    ① DOM 由 app.js 的模板字符串生成（779 处 class），其中 64 处类名是运行时拼出来
-      的（如 (v > 0 ? 'lg-up' : 'lg-down') + lvl），Tailwind JIT 的静态扫描看不到；
+      的（如 'lg-' + (v > 0 ? 'up' : 'down')），Tailwind JIT 的静态扫描看不到；
    ② 主题色由用户运行时取色（任意 hex），必须保留 CSS 变量间接层；
    ③ 现有 CSS 体积 143KB，而标记体积会随原子类膨胀数倍，与「单二进制/低内存」定位相悖。
    本层只收敛「高频重复、无业务语义」的原子声明，且一律映射 --sp-* / --fs-* 档位，

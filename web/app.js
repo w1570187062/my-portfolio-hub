@@ -3263,6 +3263,7 @@ async function openPnlModal() {
   const title = document.getElementById('pnlModalTitle');
   if (title) title.textContent = '盈亏日历';
   calViewDate = new Date(); // 打开时回到当月
+  calSelDate = ymd(new Date()); // 每次打开都把「重色高亮」复位到今天（点其他日期可在本次会话内转移）
   await renderCalendar();
   syncCalViewToggle();
 }
@@ -4175,7 +4176,11 @@ $('#calModal').addEventListener('click', (e) => {
 const CAL_NAV_HTML = '<span class="cal-nav-wrap"><button type="button" id="calModalPrev" class="btn cal-nav-btn" title="前一天">‹</button><button type="button" id="calModalNext" class="btn cal-nav-btn" title="后一天">›</button></span>';
 $('#calGrid').addEventListener('click', (e) => {
   const cell = e.target.closest('.cal-cell');
-  if (cell && cell.dataset.date) openCalDay(cell.dataset.date);
+  if (!cell || !cell.dataset.date) return;
+  // 选中态转移：整月只有这一格用重色（默认今天是选中日），点哪天就高亮哪天
+  calSelDate = cell.dataset.date;
+  if (calView === 'month') drawCalMonth();
+  openCalDay(cell.dataset.date);
 });
 
 // 当前日历弹框打开的日期
@@ -4218,7 +4223,10 @@ function restoreCalMonth() {
   calViewDate = new Date();
 }
 restoreCalMonth();
-let calMaxAbs = 1;              // 盈亏着色归一化最大值（金额口径，供走势图使用）
+// 选中日：整月唯一用「重色」高亮的格子（其余有数据日期一律浅色）。
+// 默认今天；点任意日期即转移过去 —— 与支付宝盈亏日历的读法一致：
+// 颜色只表达红/绿方向，幅度看数字，焦点只有一个。
+let calSelDate = ymd(new Date());
 let calMetric = 'amount';       // 日历展示口径：'amount' 盈亏金额 / 'rate' 真实日收益率
 
 // 日历某日「当前口径」下的数值：金额=total_cny；收益率=total_cny / base_cny * 100
@@ -4246,16 +4254,6 @@ function calCellFmt(v) {
   }
   return fmt(v);
 }
-// 当前口径下着色归一化最大值（仅遍历当月以外的全量，保证切月时色阶稳定）
-function calCellMax() {
-  let mx = 1;
-  for (const ds in calData) {
-    const a = Math.abs(calActiveVal(calData[ds]));
-    if (a > mx) mx = a;
-  }
-  return mx;
-}
-
 async function renderCalendar() {
   const r = await api('/api/pnl/history');
   if (!r.ok) { toast('加载盈亏历史失败 (HTTP ' + r.status + ')', 'err'); return; }
@@ -4319,7 +4317,6 @@ function drawCalMonth() {
   const end = saturdayOf(last);                        // 该月最后一天所在周的周六
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const cellMax = calCellMax();                         // 当前口径下着色归一化最大值
 
   const cur = new Date(start);
   let cells = '';
@@ -4337,23 +4334,24 @@ function drawCalMonth() {
         const v = calActiveVal(rec);
         // 零盈亏与无快照统一显示「—」（底色区分：lg-zero=有记录但平盘，lg-none=无记录）
         const isZero = !!rec && Math.abs(v) < 1e-9;
+        // 有盈亏的格子不再按幅度分档：一律浅色（lg-up / lg-down 只有方向语义），
+        // 选中日靠 is-sel 单独升为重色 —— 见 style.css「盈亏日历配色」段。
         let color, pnlTxt = '', showVal = false;
         if (!rec) color = 'lg-none';
         else if (isZero) { color = 'lg-zero'; pnlTxt = '—'; showVal = true; }
         else {
-          const t = Math.min(1, Math.abs(v) / cellMax);
-          const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
-          color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
+          color = v > 0 ? 'lg-up' : 'lg-down';
           pnlTxt = calCellFmt(v);
           showVal = true;
         }
         const isToday = cur.getTime() === today.getTime();
+        const isSel = ds === calSelDate;
         const unit = calMetric === 'rate' ? '收益率' : '盈亏';
         const title = ds + (rec ? (': ' + unit + ' ' + calActiveFmt(v)) : '：无快照数据');
         const dayNum = cur.getDate();
         // 日期居中显示；盈亏金额贴底（仅在有记录的日期显示，未更新的只显示日期）
         const valHtml = showVal ? '<span class="cal-val">' + pnlTxt + '</span>' : '';
-        cells += '<div class="cal-cell ' + color + (isToday ? ' cal-today' : '') + '" data-date="' + ds + '" title="' + title + '"><span class="cal-day">' + dayNum + '</span>' + valHtml + '</div>';
+        cells += '<div class="cal-cell ' + color + (isToday ? ' cal-today' : '') + (isSel ? ' is-sel' : '') + '" data-date="' + ds + '" title="' + title + '"><span class="cal-day">' + dayNum + '</span>' + valHtml + '</div>';
       }
       cur.setDate(cur.getDate() + 1);
     }
@@ -4384,12 +4382,9 @@ function drawCalYear() {
     }
     monthAgg.push({ m, pnl, days, avgBase: baseDays ? baseSum / baseDays : 0 });
   }
-  // 着色归一化：取各月汇总绝对值最大
-  let mx = 1;
-  monthAgg.forEach((a) => {
-    const v = calMetric === 'rate' ? (a.avgBase > 0 ? Math.abs(a.pnl / a.avgBase * 100) : 0) : Math.abs(a.pnl);
-    if (v > mx) mx = v;
-  });
+  // 着色：与月视图同一套两态（浅色表方向，重色只给「当前」那一格），不再按绝对值分档
+  const curMonth = new Date().getMonth() + 1;
+  const curYear = new Date().getFullYear();
   let cells = '';
   for (let m = 1; m <= 12; m++) {
     const a = monthAgg[m - 1];
@@ -4398,14 +4393,12 @@ function drawCalYear() {
     const isZero = a.days > 0 && Math.abs(v) < 1e-9;
     if (a.days === 0) color = 'lg-none';
     else if (isZero) color = 'lg-zero';
-    else {
-      const t = Math.min(1, Math.abs(v) / mx);
-      const lvl = t < 0.25 ? 1 : t < 0.5 ? 2 : t < 0.75 ? 3 : 4;
-      color = (v > 0 ? 'lg-up' : 'lg-down') + lvl;
-    }
+    else color = v > 0 ? 'lg-up' : 'lg-down';
+    // 当年的当前月 = 年视图里的「今天」，用重色（其它月份一律浅色）
+    const isSel = color !== 'lg-none' && color !== 'lg-zero' && y === curYear && m === curMonth;
     // 与日格口径统一：无记录 / 零盈亏都显示「—」
     const valTxt = (a.days === 0 || isZero) ? '—' : calActiveFmt(v);
-    cells += `<div class="cal-cell cal-year-cell ${color}" data-month="${m}">
+    cells += `<div class="cal-cell cal-year-cell ${color}${isSel ? ' is-sel' : ''}" data-month="${m}">
       <span class="cal-day">${m}月</span>
       <span class="cal-val">${valTxt}</span>
     </div>`;

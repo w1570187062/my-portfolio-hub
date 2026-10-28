@@ -153,7 +153,7 @@ const check = (name, detail, ok, extra = '') =>
     '--fs-xs', '--fs-sm', '--fs-md', '--fs-base', '--fs-lg', '--fs-xl', '--fs-2xl',
     '--r-xs', '--r-sm', '--r', '--r-lg',
     '--up', '--down', '--up-rgb', '--down-rgb', '--danger-rgb', '--warning-rgb',
-    '--cal-none', '--cal-up-1', '--cal-down-4',
+    '--cal-none', '--cal-up-soft', '--cal-down-text',
     '--cat-fund', '--cat-debt', '--cat-equity', '--cat-wealth', '--cat-cash', '--cat-other', '--cat-hk', '--cat-us',
     '--ma-1', '--ma-2', '--ma-3', '--kl-res', '--kl-sup',
     '--on-primary', '--blur', '--sat', '--row-h', '--card-bg-sticky',
@@ -318,22 +318,25 @@ const check = (name, detail, ok, extra = '') =>
 
 // ─────────────────────────────────────────────────────────────
 // 17. 动态拼接类名的样式锚点（防误删）
-//     有一批类名是 JS 里拼出来的（`('lg-up' | 'lg-down') + lvl`，lvl 1–4），
-//     源码里搜不到 `lg-up1` 这样的字面量 → 死样式脚本按字面量判定会整组删掉；
+//     日历格子的类名是 JS 拼出来的（`'lg-' + (v > 0 ? 'up' : 'down')` + 选中时的 `is-sel`），
+//     源码里没有 `lg-up` 这种独立字面量而是拼装片段 → 死样式脚本容易整组删掉；
 //     而第 12 项（CSS 有、源码无 → 死）也发现不了，因为 CSS 里已经没了。
 //     这类样式只能靠锚点守住：2026-10-28 盈亏日历 8 档底色就是这样被删空的。
+//     v4 起收敛为「浅色表方向 + 重色表选中」，锚点相应改为 4 条。
 // ─────────────────────────────────────────────────────────────
 {
-  const dyn = [];
-  for (const kind of ['up', 'down']) {
-    for (const lvl of [1, 2, 3, 4]) {
-      const sel = `.cal-cell.lg-${kind}${lvl}`;
-      const re = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{[^}]*background\\s*:\\s*var\\(--cal-' + kind + '-' + lvl + '\\)');
-      if (!re.test(cssBare)) dyn.push(sel);
-    }
-  }
-  check('动态类名样式锚点', '日历 8 档涨跌底色必须存在（类名由 JS 拼接）', dyn.length === 0,
-    dyn.length ? '缺失 ' + dyn.length + ' 条：' + dyn.join(', ') : '8/8 在位');
+  const ANCHORS = [
+    ['.cal-cell.lg-up', '--cal-up-soft'],
+    ['.cal-cell.lg-down', '--cal-down-soft'],
+    ['.cal-cell.lg-up.is-sel', '--cal-up-strong'],
+    ['.cal-cell.lg-down.is-sel', '--cal-down-strong'],
+  ];
+  const missing = ANCHORS.filter(([sel, tok]) => {
+    const re = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{[^}]*background\\s*:\\s*var\\((' + tok + ')\\)');
+    return !re.test(cssBare);
+  }).map(([sel]) => sel);
+  check('动态类名样式锚点', '日历浅色/选中重色 4 条底色必须存在（类名由 JS 拼接）', missing.length === 0,
+    missing.length ? '缺失 ' + missing.length + ' 条：' + missing.join(', ') : '4/4 在位');
 }
 
 // ─────────────────────────────────────────────────────────────
