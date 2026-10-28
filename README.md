@@ -11,7 +11,7 @@
 | :---: | :---: |
 | **首页 Dashboard**<br /><img src="docs/screenshots/home.png" width="520" alt="首页"> | **投资 · 持仓**<br /><img src="docs/screenshots/invest.png" width="520" alt="持仓"> |
 | **资产全景**<br /><img src="docs/screenshots/asset.png" width="520" alt="资产"> | **财务分析**<br /><img src="docs/screenshots/finance.png" width="520" alt="财务"> |
-| **设置**<br /><img src="docs/screenshots/settings.png" width="520" alt="设置"> | **盈亏日历**<br /><img src="docs/screenshots/calendar-pnl.png" width="520" alt="盈亏日历"> |
+| **复盘 · 再平衡**<br /><img src="docs/screenshots/rebalance.png" width="520" alt="复盘"> | **盈亏日历**<br /><img src="docs/screenshots/calendar-pnl.png" width="520" alt="盈亏日历"> |
 | **技术分析**<br /><img src="docs/screenshots/analysis.png" width="520" alt="技术分析"> | **AI 助手**<br /><img src="docs/screenshots/ai-assistant.png" width="520" alt="AI 助手"> |
 
 ## 功能一览
