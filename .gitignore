@@ -108,3 +108,6 @@ Desktop.ini
 /rebalance-prototype/
 /.verify/
 /.commit-tmp/
+
+# Go 本地构建缓存（go build 生成，勿入库）
+.gocache/
