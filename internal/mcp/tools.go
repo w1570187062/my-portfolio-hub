@@ -44,8 +44,8 @@ func (s *Server) registerDefaultTools() {
 				"per_share": map[string]interface{}{"type": "number", "description": "持仓分红每股金额（action=dividend 时使用）。"},
 				"amount":    map[string]interface{}{"type": "number", "description": "金额（取绝对值，方向完全由 action 决定）：现金存取额或理财申赎额。action=withdraw/redeem 记为流出、deposit/subscribe 记为流入；传入负数会按绝对值处理（如 withdraw + amount=-17 与 amount=17 等价，均记取出 17）。"},
 				"note":      map[string]interface{}{"type": "string", "description": "附加说明，会写入账本备注。"},
-				"username":  map[string]interface{}{"type": "string", "description": "归属用户名：指定后流水记录到该用户账本，必须与系统用户名精确匹配；省略则使用默认（首个）用户。"},
-				"user_id":   map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一，必须与系统中的用户 id 匹配；省略则使用默认用户。"},
+				"username":  map[string]interface{}{"type": "string", "description": "归属账本名：指定后流水记录到该账本，必须与账本名称精确匹配；省略则使用默认（首个）账本。"},
+				"user_id":   map[string]interface{}{"type": "integer", "description": "归属账本 id：与 username 二选一，必须与系统中的账本 id 匹配；省略则使用默认账本。"},
 			},
 			"required": []string{"name", "action"},
 		},
@@ -58,11 +58,11 @@ func (s *Server) registerDefaultTools() {
 	s.registerRebalanceTools()
 }
 
-// resolveUserID 解析 MCP 操作归属的用户：
-//  1. 优先使用调用方通过 MCP 参数传入的用户标识（username 或 user_id），必须与系统用户名/id 匹配；
-//  2. 否则回退到配置 user_id（0 表示默认首个用户）。
+// resolveUserID 解析 MCP 操作归属的账本：
+//  1. 优先使用调用方通过 MCP 参数传入的账本标识（username 或 user_id），必须与账本名/id 匹配；
+//  2. 否则回退到配置 user_id（0 表示默认首个账本）。
 //
-// 这样既可在前端「MCP 参数」页不设置归属用户，又能在客户端按调用传入具体用户。
+// 这样既可在前端「MCP 参数」页不设置归属账本，又能在客户端按调用传入具体账本。
 func resolveUserID(args map[string]interface{}) (int64, error) {
 	if args == nil {
 		args = map[string]interface{}{}
@@ -70,7 +70,7 @@ func resolveUserID(args map[string]interface{}) (int64, error) {
 	if name, ok := args["username"].(string); ok && strings.TrimSpace(name) != "" {
 		u, err := db.GetUserByName(strings.TrimSpace(name))
 		if err != nil {
-			return 0, fmt.Errorf("未找到用户名为「%s」的用户", name)
+			return 0, fmt.Errorf("未找到账本名为「%s」的账本", name)
 		}
 		return u.ID, nil
 	}
@@ -78,7 +78,7 @@ func resolveUserID(args map[string]interface{}) (int64, error) {
 		if id := toInt64(vid); id > 0 {
 			u, err := db.GetUser(id)
 			if err != nil {
-				return 0, fmt.Errorf("未找到 id=%d 的用户", id)
+				return 0, fmt.Errorf("未找到 id=%d 的账本", id)
 			}
 			return u.ID, nil
 		}
@@ -88,10 +88,10 @@ func resolveUserID(args map[string]interface{}) (int64, error) {
 	}
 	users, err := db.ListUsers()
 	if err != nil {
-		return 0, fmt.Errorf("列举用户失败: %w", err)
+		return 0, fmt.Errorf("列举账本失败: %w", err)
 	}
 	if len(users) == 0 {
-		return 0, fmt.Errorf("系统内没有任何用户，请先在前端创建用户")
+		return 0, fmt.Errorf("系统内没有任何账本，请先创建账本")
 	}
 	return users[0].ID, nil
 }

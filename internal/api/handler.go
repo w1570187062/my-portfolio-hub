@@ -168,7 +168,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.DELETE("/session/devices/:id", sessionDeviceRevoke)
 		g.POST("/session/code", PinGuard(), sessionCode) // 出码是新的"加设备"入口，必须 PIN
 
-		// 多用户：用户列表/新增/删除/统计/清空
+		// 多账本：账本列表/新增/删除/统计/清空（路径与字段沿用 users）
 		g.GET("/users", listUsers)
 		g.POST("/users", createUserHandler)
 		g.DELETE("/users/:id", PinGuard(), deleteUserHandler)
@@ -341,7 +341,7 @@ func allUsers() []db.User {
 	return us
 }
 
-// ---- 多用户管理 ----
+// ---- 多账本管理（DB 表与 JSON 字段仍是 users / user_id）----
 
 func listUsers(c *gin.Context) {
 	users, err := db.ListUsers()
@@ -357,7 +357,7 @@ func createUserHandler(c *gin.Context) {
 		Name string `json:"name"`
 	}
 	if err := c.ShouldBindJSON(&b); err != nil || strings.TrimSpace(b.Name) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "用户名不能为空"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账本名称不能为空"})
 		return
 	}
 	name := strings.TrimSpace(b.Name)
@@ -573,7 +573,7 @@ func updateHolding(c *gin.Context) {
 	h := req.Holding
 		h.ID = id
 		uid := currentUserID(c)
-		// 编辑时表单不回传 buy_plan / user_id：先取旧行保留，避免保存时被清空（#修复：编辑持仓导致所属用户被重置为 0、从当前用户列表消失）
+		// 编辑时表单不回传 buy_plan / user_id：先取旧行保留，避免保存时被清空（#修复：编辑持仓导致所属账本被重置为 0、从当前账本列表消失）
 		ex, e := db.Get(id)
 		if e == nil {
 			h.BuyPlan = ex.BuyPlan

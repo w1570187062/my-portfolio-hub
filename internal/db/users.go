@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// User 表示一个独立的账户（多用户体系）。账户数据通过 user_id 与各类数据表关联。
+// User 表示一本独立的账本（多账本体系，底层表名仍为 users）。账本数据通过 user_id 与各类数据表关联。
 // 移除原 auth 登录逻辑后，当前用户由前端在请求头 X-User-Id 中携带，后端按此隔离数据。
 type User struct {
 	ID        int64  `json:"id"`
@@ -24,13 +24,13 @@ func initUsers() error {
 	return err
 }
 
-// EnsureUsers 在启动时保证多用户体系就绪：
+// EnsureUsers 在启动时保证多账本体系就绪：
 //  1. 创建 users 表；
 //  2. 为所有现存数据表补充 user_id 列（幂等）；
 //  3. 若 users 表为空，创建默认用户"默认"。
 //
 // 注：pnl_daily / price_daily / calc_inputs / ai_settings 的表结构已由 db.Init 按最新
-// 多用户复合主键直接创建，无需再执行重建迁移。
+// 多账本复合主键直接创建，无需再执行重建迁移。
 func EnsureUsers() error {
 	if err := initUsers(); err != nil {
 		return err
@@ -64,7 +64,7 @@ func EnsureUsers() error {
 // ---- users CRUD ----
 
 func CreateUser(name string) (int64, error) {
-	// 用户总数上限：右上角可切换的用户最多 MaxUsers 个。
+	// 账本总数上限：右上角可切换的账本最多 MaxUsers 个。
 	var n int
 	if err := DB.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
 		return 0, err
@@ -108,7 +108,8 @@ func GetUser(id int64) (*User, error) {
 	return &u, nil
 }
 
-// GetUserByName 按用户名（精确匹配）查询单个用户；不存在返回 sql.ErrNoRows。
+// GetUserByName 按账本名（精确匹配）查询单本账本；不存在返回 sql.ErrNoRows。
+// 注：列名沿用 users.name，语义即账本名（MCP 侧对外仍叫 username 参数，属契约遗留）。
 func GetUserByName(name string) (*User, error) {
 	var u User
 	err := DB.QueryRow(`SELECT id,name,created_at FROM users WHERE name=?`, name).
@@ -119,7 +120,7 @@ func GetUserByName(name string) (*User, error) {
 	return &u, nil
 }
 
-// CountUserData 统计某用户名下各维度的数据条数，用于设置面板展示。
+// CountUserData 统计单本账本下各维度的数据条数，用于账本管理面板展示。
 func CountUserData(userID int64) (map[string]int, error) {
 	out := map[string]int{}
 	tables := []string{
@@ -217,7 +218,7 @@ func DeleteUser(userID int64) error {
 		return err
 	}
 	if len(users) <= 1 {
-		return fmt.Errorf("至少需保留一个用户，无法删除最后一个用户")
+		return fmt.Errorf("至少需保留一个账本，无法删除最后一个账本")
 	}
 	if err := ClearUserData(userID); err != nil {
 		return err

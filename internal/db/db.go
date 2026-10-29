@@ -1488,11 +1488,11 @@ func ListSources(userID int64) ([]AssetSource, error) {
 	return out, rows.Err()
 }
 
-// 数量上限：可切换的用户总数 5 个；账户/子账户/持仓/理财/负债/消费等数据每用户 200 条。
+// 数量上限：可切换的账本总数 5 个；账户/子账户/持仓/理财/负债/消费等数据每账本 200 条。
 const MaxUsers = 5
 const MaxEntities = 200
 
-var ErrUserLimit = fmt.Errorf("最多只能创建 %d 个用户", MaxUsers)
+var ErrUserLimit = fmt.Errorf("最多只能创建 %d 个账本", MaxUsers)
 var ErrEntityLimit = fmt.Errorf("该类型数据最多只能添加 %d 条", MaxEntities)
 
 // checkEntityLimit 统计某用户在指定表的记录数，达到 MaxEntities 时返回错误。

@@ -98,7 +98,7 @@ func AuthGuard() gin.HandlerFunc {
 			if isSafeMethod(c.Request.Method) {
 				uid := firstUserID()
 				if uid == 0 {
-					c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "尚无用户"})
+					c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "尚无账本"})
 					return
 				}
 				c.Set(ctxUID, uid)

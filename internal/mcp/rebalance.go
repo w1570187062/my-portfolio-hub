@@ -16,7 +16,7 @@ var RebalanceProvider func(uid int64) (map[string]interface{}, error)
 func (s *Server) registerRebalanceTools() {
 	s.tools = append(s.tools, &Tool{
 		Name: "get_rebalance",
-		Description: "查询当前用户的资产再平衡状态（股票/基金/理财/现金四大类口径，与页面「再平衡」完全一致）。" +
+		Description: "查询当前账本的资产再平衡状态（股票/基金/理财/现金四大类口径，与页面「再平衡」完全一致）。" +
 			"返回：总市值、四类的市值/实际占比/目标占比/偏离(pp)/应买应卖金额/收益影响、" +
 			"组合的目标年化与实际年化、超额收益率与超额收益金额、波动率、待调整金额、" +
 			"距上次再平衡天数与是否超期，以及被剔除的日常开销子账户规模。" +
@@ -24,8 +24,8 @@ func (s *Server) registerRebalanceTools() {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"username": map[string]interface{}{"type": "string", "description": "归属用户名：省略则使用默认（首个）用户。"},
-				"user_id":  map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一；省略使用默认用户。"},
+				"username": map[string]interface{}{"type": "string", "description": "归属账本名：省略则使用默认（首个）账本。"},
+				"user_id":  map[string]interface{}{"type": "integer", "description": "归属账本 id：与 username 二选一；省略使用默认账本。"},
 			},
 		},
 		Handler: getRebalance,

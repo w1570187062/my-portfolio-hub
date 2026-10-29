@@ -82,15 +82,15 @@ Authorization: Bearer <token>
 
 ---
 
-## 4. 归属用户（多用户隔离）
+## 4. 归属账本（多账本隔离）
 
-本应用为多用户体系，MCP 操作的归属用户按以下顺序解析：
+本应用为多账本体系（一个账本 = 一整套持仓/资产/现金/负债数据，底层 `users` 表的一行即一本账本），MCP 操作的归属账本按以下顺序解析：
 
-1. 优先取工具入参里的 `username` —— 必须与系统内已有用户名**精确匹配**，否则报错；
-2. 其次取工具入参里的 `user_id` —— 必须与系统内已有用户 id 匹配，否则报错；
-3. 都未传 —— 回退到默认用户（首个用户）。
+1. 优先取工具入参里的 `username` —— 必须与已有**账本名**精确匹配，否则报错（参数名沿用 `username` 属历史契约，语义为账本名）；
+2. 其次取工具入参里的 `user_id` —— 必须与已有**账本 id** 匹配，否则报错；
+3. 都未传 —— 回退到默认账本（首个账本，通常为 `默认`）。
 
-因此前端「归属用户 ID」无需配置，客户端可在每次调用时按需指定用户。所有工具都支持 `username` / `user_id` 两个可选参数。
+因此前端「归属账本 ID」无需配置，客户端可在每次调用时按需指定账本。所有工具都支持 `username` / `user_id` 两个可选参数。
 
 ---
 
@@ -133,7 +133,7 @@ Authorization: Bearer <token>
 | `per_share` | number | 否 | 分红每股金额 |
 | `amount` | number | 否 | 现金存取 / 理财申赎金额（**取绝对值，方向由 `action` 决定**：`withdraw`/`redeem` 记流出、`deposit`/`subscribe` 记流入；传负数按绝对值处理） |
 | `note` | string | 否 | 附加说明，写入账本备注 |
-| `username` / `user_id` | string / int | 否 | 归属用户 |
+| `username` / `user_id` | string / int | 否 | 归属账本 |
 
 `name` 命中 0 个返回错误、命中 1 个直接执行、**命中多个返回候选列表**（含 `type`/`id`/`name`/`extra`），需更精确或指定 `entity_type` 后重试。
 
@@ -163,7 +163,7 @@ Authorization: Bearer <token>
 | --- | --- | --- |
 | `source_id` | int | 只返回该来源；省略返回全部 |
 | `include_cash` | bool | 是否内联该来源下的现金子账户，默认 `true` |
-| `username` / `user_id` | string / int | 归属用户 |
+| `username` / `user_id` | string / int | 归属账本 |
 
 返回示例：
 
@@ -191,7 +191,7 @@ Authorization: Bearer <token>
 | --- | --- | --- |
 | `source_id` | int | 只返回该来源下的子账户 |
 | `currency` | string | 按币种过滤（如 `CNY`/`USD`），不分大小写 |
-| `username` / `user_id` | string / int | 归属用户 |
+| `username` / `user_id` | string / int | 归属账本 |
 
 返回：`count`、`total_by_currency`（各币种合计）、`cash_accounts[]`（含 `source`、`is_default`、`note`）。
 
@@ -205,7 +205,7 @@ Authorization: Bearer <token>
 | `symbol` | string | 按代码过滤（不分大小写） |
 | `category` | string | `stock` | `fund` |
 | `include_closed` | bool | 是否包含份额为 0 的清仓持仓，默认 `false` |
-| `username` / `user_id` | string / int | 归属用户 |
+| `username` / `user_id` | string / int | 归属账本 |
 
 返回：`count`、`market_value_by_currency`、`pnl_by_currency`、`holdings[]`。
 单条持仓含：`quantity`、`cost_price`、`current_price`、`market_value`、`pnl`、`pnl_pct`（百分比）、`asset_type`、`buy_date`、`note` 等。
@@ -217,14 +217,14 @@ Authorization: Bearer <token>
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | `source_id` | int | 按来源过滤 |
-| `username` / `user_id` | string / int | 归属用户 |
+| `username` / `user_id` | string / int | 归属账本 |
 
 返回：`count`、`amount_by_currency`、`wealth[]`。
 单条含：`code`、`currency`、`source`、`latest_amount`（最新快照金额）、`latest_date`（快照日期）、`cum_pnl`（累计收益）、`note`。
 
 ### 6.6 list_amount_modifiable（可改金额的实体）
 
-列出当前用户所有**金额可被 MCP 修改**的实体，即持仓（holding）、现金子账户（cash）、理财（wealth）三类；供 AI 先定位可改金额的目标，再选 `record_transaction` 的 `action`。
+列出当前账本所有**金额可被 MCP 修改**的实体，即持仓（holding）、现金子账户（cash）、理财（wealth）三类；供 AI 先定位可改金额的目标，再选 `record_transaction` 的 `action`。
 
 > 负债（liability）与账户来源（source）**不支持** MCP 改金额，故不包含在内。
 
@@ -233,7 +233,7 @@ Authorization: Bearer <token>
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | `entity_type` | string | 只返回该类型：`holding` | `cash` | `wealth`；省略返回全部三类 |
-| `username` / `user_id` | string / int | 归属用户 |
+| `username` / `user_id` | string / int | 归属账本 |
 
 返回：`count`、`amount_modifiable[]`。单条含 `type`、`id`、`name`、`note`、`currency`、`current_amount`（当前金额：持仓=份额×现价、现金=余额、理财=最新快照金额）、`supported_actions`。
 
@@ -311,6 +311,6 @@ stdio 模式：
 ## 8. 错误处理
 
 - 未知方法：返回 JSON-RPC 错误 `-32601 method not found`
-- 工具内部出错：返回 `result.isError = true`，`content[0].text` 为可读错误原因（例如未找到该名称、归属用户名不存在、必填参数缺失等）
+- 工具内部出错：返回 `result.isError = true`，`content[0].text` 为可读错误原因（例如未找到该名称、归属账本不存在、必填参数缺失等）
 - HTTP 层：方法不允许 `405`，鉴权失败 `401`，请求体非法 JSON `400`
 

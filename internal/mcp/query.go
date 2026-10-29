@@ -13,15 +13,15 @@ import (
 func (s *Server) registerQueryTools() {
 	s.tools = append(s.tools, &Tool{
 		Name: "list_accounts",
-		Description: "列出当前用户的账户来源（平台/银行/券商等），默认内联其下的现金子账户（id/名称/币种/类型/余额/是否默认/备注）。" +
+		Description: "列出当前账本的账户来源（平台/银行/券商等），默认内联其下的现金子账户（id/名称/币种/类型/余额/是否默认/备注）。" +
 			"可用 source_id 只查某个来源；include_cash=false 可只返回来源列表。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"source_id":    map[string]interface{}{"type": "integer", "description": "只返回该 id 的账户来源；省略返回全部。"},
 				"include_cash": map[string]interface{}{"type": "boolean", "description": "是否内联该来源下的现金子账户，默认 true。"},
-				"username":     map[string]interface{}{"type": "string", "description": "归属用户名：省略则使用默认（首个）用户。"},
-				"user_id":      map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一；省略则使用默认用户。"},
+				"username":     map[string]interface{}{"type": "string", "description": "归属账本名：省略则使用默认（首个）账本。"},
+				"user_id":      map[string]interface{}{"type": "integer", "description": "归属账本 id：与 username 二选一；省略则使用默认账本。"},
 			},
 		},
 		Handler: listAccounts,
@@ -29,15 +29,15 @@ func (s *Server) registerQueryTools() {
 
 	s.tools = append(s.tools, &Tool{
 		Name: "list_cash_accounts",
-		Description: "列出当前用户的现金子账户（扁平列表），含所属来源名称、id、币种、类型、余额、是否默认账户、备注。" +
+		Description: "列出当前账本的现金子账户（扁平列表），含所属来源名称、id、币种、类型、余额、是否默认账户、备注。" +
 			"可用 source_id / currency 过滤，并给出各币种余额合计。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"source_id": map[string]interface{}{"type": "integer", "description": "只返回该账户来源下的现金子账户；省略返回全部。"},
 				"currency":  map[string]interface{}{"type": "string", "description": "只返回该币种（如 CNY/USD/HKD）的子账户；省略返回全部。"},
-				"username":  map[string]interface{}{"type": "string", "description": "归属用户名：省略则使用默认（首个）用户。"},
-				"user_id":   map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一；省略则使用默认用户。"},
+				"username":  map[string]interface{}{"type": "string", "description": "归属账本名：省略则使用默认（首个）账本。"},
+				"user_id":   map[string]interface{}{"type": "integer", "description": "归属账本 id：与 username 二选一；省略则使用默认账本。"},
 			},
 		},
 		Handler: listCashAccounts,
@@ -45,7 +45,7 @@ func (s *Server) registerQueryTools() {
 
 	s.tools = append(s.tools, &Tool{
 		Name: "list_holdings",
-		Description: "列出当前用户的持仓：id、名称、代码、类别、市场、币种、所属来源、份额、成本价、现价、市值、浮动盈亏及盈亏百分比、资产类型、买入日期、备注。" +
+		Description: "列出当前账本的持仓：id、名称、代码、类别、市场、币种、所属来源、份额、成本价、现价、市值、浮动盈亏及盈亏百分比、资产类型、买入日期、备注。" +
 			"默认过滤已清仓（份额为 0）的持仓，可设 include_closed=true 一并返回；可用 source_id / symbol / category 过滤，并给出各币种市值与盈亏合计。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -54,8 +54,8 @@ func (s *Server) registerQueryTools() {
 				"symbol":         map[string]interface{}{"type": "string", "description": "按代码过滤（不分大小写，如 AAPL / 600519）；省略返回全部。"},
 				"category":       map[string]interface{}{"type": "string", "description": "按类别过滤：stock | fund；省略返回全部。"},
 				"include_closed": map[string]interface{}{"type": "boolean", "description": "是否包含份额为 0 的已清仓持仓，默认 false。"},
-				"username":       map[string]interface{}{"type": "string", "description": "归属用户名：省略则使用默认（首个）用户。"},
-				"user_id":        map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一；省略则使用默认用户。"},
+				"username":       map[string]interface{}{"type": "string", "description": "归属账本名：省略则使用默认（首个）账本。"},
+				"user_id":        map[string]interface{}{"type": "integer", "description": "归属账本 id：与 username 二选一；省略则使用默认账本。"},
 			},
 		},
 		Handler: listHoldings,
@@ -63,14 +63,14 @@ func (s *Server) registerQueryTools() {
 
 	s.tools = append(s.tools, &Tool{
 		Name: "list_wealth",
-		Description: "列出当前用户的理财产品：id、名称、代码、币种、所属来源、最新持仓金额及快照日期、累计收益、备注。" +
+		Description: "列出当前账本的理财产品：id、名称、代码、币种、所属来源、最新持仓金额及快照日期、累计收益、备注。" +
 			"可用 source_id 过滤，并给出各币种最新金额合计。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"source_id": map[string]interface{}{"type": "integer", "description": "只返回该账户来源下的理财产品；省略返回全部。"},
-				"username":  map[string]interface{}{"type": "string", "description": "归属用户名：省略则使用默认（首个）用户。"},
-				"user_id":   map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一；省略则使用默认用户。"},
+				"username":  map[string]interface{}{"type": "string", "description": "归属账本名：省略则使用默认（首个）账本。"},
+				"user_id":   map[string]interface{}{"type": "integer", "description": "归属账本 id：与 username 二选一；省略则使用默认账本。"},
 			},
 		},
 		Handler: listWealth,
@@ -78,15 +78,15 @@ func (s *Server) registerQueryTools() {
 
 	s.tools = append(s.tools, &Tool{
 		Name: "list_amount_modifiable",
-		Description: "列出当前用户所有「金额可被 MCP 修改」的实体，即持仓(holding)、现金子账户(cash)、理财(wealth) 三类（加仓/减仓/分红、存入/取出、申购/赎回均走 record_transaction）。" +
+		Description: "列出当前账本所有「金额可被 MCP 修改」的实体，即持仓(holding)、现金子账户(cash)、理财(wealth) 三类（加仓/减仓/分红、存入/取出、申购/赎回均走 record_transaction）。" +
 			"返回每个实体的类型、id、名称、备注、币种、当前金额，以及支持的 mcp 动作列表，便于 AI 找到可改金额的目标并选择 action。" +
 			"注意：负债(liability)与账户来源(source) 不支持 MCP 改金额，故不包含在内。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"entity_type": map[string]interface{}{"type": "string", "enum": []string{"holding", "cash", "wealth"}, "description": "只返回该类型的实体；省略返回全部三类。"},
-				"username":    map[string]interface{}{"type": "string", "description": "归属用户名：省略则使用默认（首个）用户。"},
-				"user_id":     map[string]interface{}{"type": "integer", "description": "归属用户 id：与 username 二选一；省略则使用默认用户。"},
+				"username":    map[string]interface{}{"type": "string", "description": "归属账本名：省略则使用默认（首个）账本。"},
+				"user_id":     map[string]interface{}{"type": "integer", "description": "归属账本 id：与 username 二选一；省略则使用默认账本。"},
 			},
 		},
 		Handler: listAmountModifiable,
@@ -354,7 +354,7 @@ func listWealth(args map[string]interface{}) (string, error) {
 	out := []row{}
 	total := map[string]float64{}
 	for _, w := range ws {
-		// ListWealthBySource 不过滤用户，这里兜底排除不属于当前用户的数据。
+		// ListWealthBySource 不过滤账本，这里兜底排除不属于当前账本的数据。
 		if w.UserID != 0 && w.UserID != uid {
 			continue
 		}

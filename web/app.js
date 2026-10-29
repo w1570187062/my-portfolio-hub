@@ -2560,7 +2560,7 @@ $('#confirmOk').onclick = async () => {
     try {
       const r = await api('/api/users/' + id + '/clear', { method: 'POST' });
       if (!r.ok) { let m = '清空失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m + ' (HTTP ' + r.status + ')', 'err'); return; }
-      toast('已清空当前用户数据', 'ok');
+      toast('已清空当前账本数据', 'ok');
       await load();
       await loadAsset();
       await loadAISettings();
@@ -5017,11 +5017,11 @@ $('#ai_toggleKey').onclick = () => {
   else { inp.type = 'password'; $('#ai_toggleKey').textContent = '显示'; }
 };
 $('#ai_tpl_sel').onchange = (e) => selectTpl(parseInt(e.target.value, 10));
-// ai_export_json 已迁至用户抽屉（见 wireUserUI 中绑定）
+// ai_export_json 已迁至「账本管理」抽屉（见 wireUserUI 中绑定）
 
-// ---- 数据导入（格式与导出一致，入库当前用户）----
+// ---- 数据导入（格式与导出一致，入库当前账本）----
 let pendingImport = null;
-// ai_import_json 已迁至用户抽屉（见 wireUserUI 中绑定）
+// ai_import_json 已迁至「账本管理」抽屉（见 wireUserUI 中绑定）
 $('#importFile').onchange = async (e) => {
   const f = e.target.files && e.target.files[0];
   e.target.value = ''; // 允许重复选择同一文件
@@ -6234,7 +6234,8 @@ function renderAssetTab() {
   }).join('');
 
   // === 区域对比（CN / HK / US）===
-  const regionNames = { cn: '内地', hk: '香港', us: '美股' };
+  // 地域标签与 REGION_META 同口径：港澳台一律带国家名（中国香港），不与「中国」并列成两个地区。
+  const regionNames = { cn: '中国', hk: '中国香港', us: '美股' };
   const regionKeys = ['cn', 'hk', 'us'].filter((k) => (regA[k] || 0) > 0 || (regL[k] || 0) > 0)
     .concat(Object.keys(regA).filter((k) => !['cn', 'hk', 'us'].includes(k) && (regA[k] || 0) > 0));
   const regionMax = Math.max(1, ...regionKeys.map((k) => Math.max(regA[k] || 0, regL[k] || 0)));
@@ -6304,7 +6305,7 @@ function renderAssetTab() {
         <div class="kpi-icon kpi-ico-cash"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg></div>
         <div class="kpi-label">资产区域</div>
         <div class="kpi-main"><div class="kpi-value">${pctOf(hkA + usA, totalA)}</div></div>
-        <div class="kpi-sub">海外占比 · 内地 <span class="hl">${pctOf(cnA, totalA)}</span></div>
+        <div class="kpi-sub">海外占比 · 中国 <span class="hl">${pctOf(cnA, totalA)}</span></div>
         <div class="kpi-extra asset-cmp-body">${regionBars}</div>
         <div class="asset-cmp-legend-2"><span><i class="lg-sq lg-asset"></i>资产</span><span><i class="lg-sq lg-liab"></i>负债</span></div>
       </div>
@@ -9617,7 +9618,7 @@ if (authReady) applyRoute();
 // ============================================================
 // 收支计划（月度待入账 / 待还款）：首页紧凑卡片 + 资产全景编辑入口 + 待还款提醒
 // ============================================================
-let cashflowPlans = [];        // 当前用户全部计划
+let cashflowPlans = [];        // 当前账本全部计划
 let cashflowDone = {};         // { plan_id: {done_at, actual_amount} }，key 为数字 id
 let cashflowMonth = '';        // 当前展示的月份 YYYY-MM
 // 当前月份 YYYY-MM（用于「截止日期」到期判断）
@@ -10488,7 +10489,7 @@ if (depositModalEl) depositModalEl.addEventListener('click', (e) => { if (e.targ
 // ============================================================================
 // AI 助手：聊天面板（入口 = 顶栏「AI 助手」按钮 #aiChatTopBtn）
 // ----------------------------------------------------------------------------
-// 会话落在后端（/api/ai/chats，按用户隔离），消息走 /api/ai/chat：
+// 会话落在后端（/api/ai/chats，按账本隔离），消息走 /api/ai/chat：
 // 后端按 OpenAI function-calling 协议把「MCP 已对接的账本工具」与「持仓分析工具」
 // 交给模型调用，因此助手既能查账本、记流水，也能做技术分析 / 买卖判断 / 持仓总结。
 // ============================================================================

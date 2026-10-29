@@ -29,12 +29,12 @@ type Config struct {
 	Transport     string `json:"transport"`       // stdio | http，默认 http
 	HTTPAddr      string `json:"http_addr"`       // HTTP(SSE) 监听地址，默认 :9988
 	Token         string `json:"token"`           // 可选：HTTP 模式下的 Bearer 鉴权令牌
-	UserID        int64  `json:"user_id"`         // MCP 操作归属的用户；0 表示默认（首个）用户
+	UserID        int64  `json:"user_id"`         // MCP 操作归属的账本；0 表示默认（首个）账本
 	ServerName    string `json:"server_name"`     // 暴露给客户端的服务名
 	ServerVersion string `json:"server_version"`  // 版本号
 }
 
-// cfgUserID 记录 MCP 操作归属的用户（由配置 user_id 决定，0=默认首个用户）。
+// cfgUserID 记录 MCP 操作归属的账本（由配置 user_id 决定，0=默认首个账本）。
 var cfgUserID int64
 
 // Tool 是一个 MCP 工具的静态描述 + 处理函数。

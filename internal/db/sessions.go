@@ -421,7 +421,7 @@ func ClearPIN() error { return SetAuthMeta("pin_hash", "") }
 func RenameUser(id int64, name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return errors.New("用户名不能为空")
+		return errors.New("账本名称不能为空")
 	}
 	_, err := DB.Exec(`UPDATE users SET name=? WHERE id=?`, clip(name, 32), id)
 	return err
