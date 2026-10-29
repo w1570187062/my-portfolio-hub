@@ -34,7 +34,7 @@
     </div>
 
     <div id="authPair" hidden>
-      <p class="auth-hint">在已登录的设备上打开：右上角头像 → 设置 → 「登录与设备」→ 添加设备，获取 6 位配对码。</p>
+      <p class="auth-hint">在已登录的设备上打开：右上角头像 → 绑定设备 → 添加设备，获取 6 位配对码。</p>
       <label class="auth-field">配对码
         <input id="authCode" class="auth-code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">
       </label>
@@ -116,9 +116,19 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
             <span>盈亏日历</span>
           </button>
+          <!-- 2026-10-29：绑定设备 / 通知推送从设置页抽出为独立页，入口放这里 ——
+               换设备、邀请家人、切钉钉推送都是常切项，不该埋在设置页第 5 屏 -->
+          <button class="acct-item" type="button" data-act="devices">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="13" height="10" rx="1.6"/><path d="M6.5 18.5h6M9.5 14.5v4"/><rect x="17.5" y="8" width="4" height="10" rx="1.4"/></svg>
+            <span>绑定设备</span>
+          </button>
+          <button class="acct-item" type="button" data-act="notify">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 4 1 5.5 2 6.5H4c1-1 2-2.5 2-6.5"/><path d="M10.5 19a1.5 1.5 0 0 0 3 0"/></svg>
+            <span>通知推送</span>
+          </button>
           <button class="acct-item" type="button" data-act="settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            <span>设置</span>
+            <span>系统设置</span>
           </button>
           <div class="acct-sep"></div>
           <div class="acct-foot"><span>持仓侠</span><span class="acct-ver">v3.6</span></div>
@@ -517,72 +527,6 @@
         </div>
       </section>
 
-      <!-- ① 通知与推送 -->
-      <section class="settings-group">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 4 1 5.5 2 6.5H4c1-1 2-2.5 2-6.5"/><path d="M10.5 19a1.5 1.5 0 0 0 3 0"/></svg>通知与推送</span></h3>
-        <p class="settings-group-desc">控制净值更新后何时推送，以及钉钉 / 邮箱渠道。</p>
-        <div class="settings-group-body">
-          <div id="ntPanelPolicy">
-                  <label>推送频率
-                    <select id="ntfPolicy">
-                      <option value="every">每次净值更新都推送</option>
-                      <option value="only_close">仅收盘后（定时快照）</option>
-                    </select>
-                  </label>
-                  <p class="tool-hint">控制净值更新后何时推送通知，避免频繁打扰。</p>
-                  <hr class="set-sep" />
-                  <p class="tool-hint">待还款提醒</p>
-                  <div class="cf-remind-row">
-                    <span class="cf-remind-label">待还款提醒</span>
-                    <label class="switch"><input type="checkbox" id="cfReminderEnabled"><span class="switch-knob"></span></label>
-                    <span class="cf-remind-time">提前一天的
-                      <input type="number" id="cfReminderHour" min="0" max="23" value="7" class="num-sm" /> 时
-                      <input type="number" id="cfReminderMinute" min="0" max="59" value="0" class="num-sm" /> 分推送
-                    </span>
-                  </div>
-
-                  <hr class="set-sep" />
-                  <div class="nt-channel" id="dtChannel" data-chan="dt">
-                    <div class="nt-chan-head">
-                      <span class="nt-chan-title">钉钉通知</span>
-                      <span class="nt-chan-right">
-                        <label class="switch"><input type="checkbox" id="dtEnabled"><span class="switch-knob"></span></label>
-                        <span class="chevron" aria-hidden="true">▾</span>
-                      </span>
-                    </div>
-                    <div class="nt-chan-body">
-                      <label>Webhook 地址<span class="input-eye"><input type="text" id="dtWebhook" readonly placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."><button type="button" class="eye-toggle" data-eye-for="dtWebhook" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
-                      <label>加签密钥（可选）<span class="input-eye"><input type="text" id="dtSecret" readonly placeholder="机器人安全设置中的加签密钥，不填则无需加签"><button type="button" class="eye-toggle" data-eye-for="dtSecret" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
-                    </div>
-                  </div>
-
-                  <div class="nt-channel" id="emChannel" data-chan="em">
-                    <div class="nt-chan-head">
-                      <span class="nt-chan-title">邮箱通知</span>
-                      <span class="nt-chan-right">
-                        <label class="switch"><input type="checkbox" id="emEnabled"><span class="switch-knob"></span></label>
-                        <span class="chevron" aria-hidden="true">▾</span>
-                      </span>
-                    </div>
-                    <div class="nt-chan-body">
-                      <label>SMTP 服务器<input type="text" id="emHost" placeholder="smtp.qq.com"></label>
-                      <label>端口<input type="number" id="emPort" value="465" step="1"></label>
-                      <label>账号<input type="text" id="emUser" placeholder="1570187062@qq.com"></label>
-                      <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）"></label>
-                      <label>发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com"></label>
-                      <label>收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com"></label>
-                    </div>
-                  </div>
-
-                  <div id="notifyErr" class="err"></div>
-                  <div class="modal-actions">
-                    <button class="btn" type="button" id="notifyTestBtn">测试通知</button>
-                    <button class="btn primary" type="button" id="notifySaveBtn">保存配置</button>
-                  </div>
-                </div>
-        </div>
-      </section>
-
       <!-- ② 风险偏好分组已移除（2026-10-22）：资产类型标签设置保留后端 /api/settings/asset_type_labels，仍供持仓编辑多选 chip 使用，仅不再在设置页暴露 -->
 
       <!-- ⑥ 收支分类（常驻展开，不再可折叠）：自定义分类与内置分类合并进「记收入/记支出」与「收支计划」选择器 -->
@@ -701,41 +645,10 @@
         </div>
       </section>
 
-      <!-- 登录与设备（认证层，2026-10-28）：本机凭 Cookie 记身份；加设备/邀请走一次性码。
-           id 供 scripts/auth-check.mjs / auth-shot.mjs 定位，勿删。 -->
-      <section class="settings-group" id="authSettingsGroup">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.6"/></svg>登录与设备</span></h3>
-        <p class="settings-group-desc">本机凭 Cookie 记住身份，换设备用一次性配对码接入；出码 / 清空 / 删用户 / 导入等敏感操作由操作 PIN 保护。</p>
-        <div class="settings-group-body">
-          <div class="auth-cur-row">
-            <div>
-              <div class="grp-label">当前账本</div>
-              <div class="auth-cur-name" id="authCurName">—</div>
-            </div>
-            <button class="btn btn-sm" id="authLogoutBtn" type="button">退出登录</button>
-          </div>
-          <hr class="set-sep" />
-          <div class="grp-label">本账本已接入的设备</div>
-          <div id="deviceList" class="device-list"><div class="auth-hint">加载中…</div></div>
-          <div class="modal-actions">
-            <button class="btn" type="button" id="addDeviceBtn">＋ 添加设备</button>
-            <button class="btn" type="button" id="inviteMemberBtn">邀请家人</button>
-          </div>
-          <hr class="set-sep" />
-          <div class="grp-label">操作 PIN<span class="pin-state" id="pinState"></span></div>
-          <div class="pin-row">
-            <input id="pinOld" type="password" inputmode="numeric" maxlength="6" placeholder="原 PIN（未设可留空）">
-            <input id="pinNew" type="password" inputmode="numeric" maxlength="6" placeholder="新 PIN，4–6 位数字">
-            <button class="btn btn-sm" type="button" id="pinSaveBtn">保存</button>
-          </div>
-          <p class="tool-hint">PIN 是这台浏览器上的记忆口令：别人拿到你的已登录浏览器时，没有 PIN 就无法把新设备接入你的账本。</p>
-        </div>
-      </section>
-
-      <!-- 数据管理（原「用户切换」相关设置，按原型布局移至此） -->
+      <!-- 数据管理（原「账本切换」相关设置，按原型布局移至此） -->
       <section class="settings-group">
         <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M10 11v6M14 11v6"/></svg>数据管理</span></h3>
-        <p class="settings-group-desc">导出 / 导入全部数据，或清空当前用户数据。</p>
+        <p class="settings-group-desc">导出 / 导入全部数据，或清空当前账本数据。</p>
         <div class="settings-group-body">
           <label class="full-migrate"><input type="checkbox" id="fullMigrateChk"> 完整迁移（含收支计划 / 来源 / AI配置 / 设置 / 净值历史）</label>
           <div class="data-mgmt-grid">
@@ -761,9 +674,117 @@
     </div>
   </div><!-- /settingsView -->
 
+  <!-- ===== 绑定设备（2026-10-29 从设置页抽出为独立页） =====
+       换设备 / 邀请家人 / 设操作 PIN 是高频操作，原先埋在设置页第 5 屏，现由右上角个人菜单直达 #/devices。
+       id="authSettingsGroup" 供 scripts/auth-check.mjs / auth-shot.mjs 定位，勿删。 -->
+  <div id="devicesView" class="page-view settings-page pano-open" hidden>
+    <div class="settings-layout">
+        <!-- 登录与设备（认证层，2026-10-28）：本机凭 Cookie 记身份；加设备/邀请走一次性码。
+             id 供 scripts/auth-check.mjs / auth-shot.mjs 定位，勿删。 -->
+        <section class="settings-group" id="authSettingsGroup">
+          <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.6"/></svg>登录与设备</span></h3>
+          <p class="settings-group-desc">本机凭 Cookie 记住身份，换设备用一次性配对码接入；出码 / 清空 / 删账本 / 导入等敏感操作由操作 PIN 保护。</p>
+          <div class="settings-group-body">
+            <div class="auth-cur-row">
+              <div>
+                <div class="grp-label">当前账本</div>
+                <div class="auth-cur-name" id="authCurName">—</div>
+              </div>
+              <button class="btn btn-sm" id="authLogoutBtn" type="button">退出登录</button>
+            </div>
+            <hr class="set-sep" />
+            <div class="grp-label">本账本已接入的设备</div>
+            <div id="deviceList" class="device-list"><div class="auth-hint">加载中…</div></div>
+            <div class="modal-actions">
+              <button class="btn" type="button" id="addDeviceBtn">＋ 添加设备</button>
+              <button class="btn" type="button" id="inviteMemberBtn">邀请家人</button>
+            </div>
+            <hr class="set-sep" />
+            <div class="grp-label">操作 PIN<span class="pin-state" id="pinState"></span></div>
+            <div class="pin-row">
+              <input id="pinOld" type="password" inputmode="numeric" maxlength="6" placeholder="原 PIN（未设可留空）">
+              <input id="pinNew" type="password" inputmode="numeric" maxlength="6" placeholder="新 PIN，4–6 位数字">
+              <button class="btn btn-sm" type="button" id="pinSaveBtn">保存</button>
+            </div>
+            <p class="tool-hint">PIN 是这台浏览器上的记忆口令：别人拿到你的已登录浏览器时，没有 PIN 就无法把新设备接入你的账本。</p>
+          </div>
+        </section>
+    </div>
+  </div><!-- /devicesView -->
+
+  <!-- ===== 通知推送（2026-10-29 从设置页抽出为独立页） =====
+       钉钉 / 邮箱开关属常切项，入口在个人菜单 #/notify。 -->
+  <div id="notifyView" class="page-view settings-page pano-open" hidden>
+    <div class="settings-layout">
+        <!-- ① 通知推送 -->
+        <section class="settings-group">
+          <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 4 1 5.5 2 6.5H4c1-1 2-2.5 2-6.5"/><path d="M10.5 19a1.5 1.5 0 0 0 3 0"/></svg>通知推送</span></h3>
+          <p class="settings-group-desc">控制净值更新后何时推送，以及钉钉 / 邮箱渠道。</p>
+          <div class="settings-group-body">
+            <div id="ntPanelPolicy">
+                    <label>推送频率
+                      <select id="ntfPolicy">
+                        <option value="every">每次净值更新都推送</option>
+                        <option value="only_close">仅收盘后（定时快照）</option>
+                      </select>
+                    </label>
+                    <p class="tool-hint">控制净值更新后何时推送通知，避免频繁打扰。</p>
+                    <hr class="set-sep" />
+                    <!-- 「待还款提醒」标题由 .cf-remind-label 自己带，这里原有一行 tool-hint 是重复的（独立成页后格外显眼），已删 -->
+                    <div class="cf-remind-row">
+                      <span class="cf-remind-label">待还款提醒</span>
+                      <label class="switch"><input type="checkbox" id="cfReminderEnabled"><span class="switch-knob"></span></label>
+                      <span class="cf-remind-time">提前一天的
+                        <input type="number" id="cfReminderHour" min="0" max="23" value="7" class="num-sm" /> 时
+                        <input type="number" id="cfReminderMinute" min="0" max="59" value="0" class="num-sm" /> 分推送
+                      </span>
+                    </div>
+
+                    <hr class="set-sep" />
+                    <div class="nt-channel" id="dtChannel" data-chan="dt">
+                      <div class="nt-chan-head">
+                        <span class="nt-chan-title">钉钉通知</span>
+                        <span class="nt-chan-right">
+                          <label class="switch"><input type="checkbox" id="dtEnabled"><span class="switch-knob"></span></label>
+                          <span class="chevron" aria-hidden="true">▾</span>
+                        </span>
+                      </div>
+                      <div class="nt-chan-body">
+                        <label>Webhook 地址<span class="input-eye"><input type="text" id="dtWebhook" readonly placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."><button type="button" class="eye-toggle" data-eye-for="dtWebhook" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+                        <label>加签密钥（可选）<span class="input-eye"><input type="text" id="dtSecret" readonly placeholder="机器人安全设置中的加签密钥，不填则无需加签"><button type="button" class="eye-toggle" data-eye-for="dtSecret" aria-label="显示明文"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+                      </div>
+                    </div>
+
+                    <div class="nt-channel" id="emChannel" data-chan="em">
+                      <div class="nt-chan-head">
+                        <span class="nt-chan-title">邮箱通知</span>
+                        <span class="nt-chan-right">
+                          <label class="switch"><input type="checkbox" id="emEnabled"><span class="switch-knob"></span></label>
+                          <span class="chevron" aria-hidden="true">▾</span>
+                        </span>
+                      </div>
+                      <div class="nt-chan-body">
+                        <label>SMTP 服务器<input type="text" id="emHost" placeholder="smtp.qq.com"></label>
+                        <label>端口<input type="number" id="emPort" value="465" step="1"></label>
+                        <label>账号<input type="text" id="emUser" placeholder="1570187062@qq.com"></label>
+                        <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）"></label>
+                        <label>发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com"></label>
+                        <label>收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com"></label>
+                      </div>
+                    </div>
+
+                    <div id="notifyErr" class="err"></div>
+                    <div class="modal-actions">
+                      <button class="btn" type="button" id="notifyTestBtn">测试通知</button>
+                      <button class="btn primary" type="button" id="notifySaveBtn">保存配置</button>
+                    </div>
+                  </div>
+          </div>
+        </section>
+    </div>
+  </div><!-- /notifyView -->
 
   </div><!-- /toolsView -->
-
 
   <!-- 盈亏日历弹框（原「日历 + 走势」双 Tab 已移除走势视图） -->
   <div id="pnlModal" class="modal" hidden>
@@ -1229,7 +1250,6 @@
       <!-- 前一天/后一天按钮：由 openCalDay 每次渲染时重建拼入统计行（静态元素 append 进 innerHTML 内容区会被销毁，故改重建+事件委托） -->
     </div>
   </div>
-
 
   <!-- ===== 持仓历史盈亏弹框（3 段切换：盈亏走势曲线 / 历史净值表格 / 交易记录表格）===== -->
   <div id="histModal" class="modal" hidden>

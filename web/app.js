@@ -116,7 +116,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // ---- 视图路由（hash）：每个常驻视图都有后缀 URL，刷新保持当前路径 ----
 // 2026-10-27：新增 rebalance（再平衡）独立页；settings 仍在 VIEWS 内可直达 #/settings，
 // 只是不再占据主导航——入口已迁到右上角个人菜单。
-const VIEWS = ['home', 'invest', 'asset', 'finance', 'rebalance', 'settings'];
+// 2026-10-29：设置页过载，把两块高频内容拆成独立页 devices（绑定设备）/ notify（通知推送），
+// 同样只在个人菜单里有入口，不占主导航。
+const VIEWS = ['home', 'invest', 'asset', 'finance', 'rebalance', 'settings', 'devices', 'notify'];
 
 // ==== 再平衡页状态与配色（声明必须早于下方同步执行的 applyRoute()，否则 TDZ 报错）====
 const RB_CLASS_LABEL = { stock: '股票', fund: '基金', wealth: '理财', cash: '现金' };
@@ -152,9 +154,9 @@ function setActiveNav(view) {
     b.classList.toggle('active', b.dataset.view === view);
   });
 }
-// 隐藏全部常驻视图（含已废弃的 notifyView，避免残留显示）
+// 隐藏全部常驻视图（列表必须与 VIEWS 一一对应，漏一个就会两页叠着显示）
 function hideAllViews() {
-  ['homeView', 'holdingsView', 'assetView', 'financeView', 'rebalanceView', 'settingsView'].forEach((id) => {
+  ['homeView', 'holdingsView', 'assetView', 'financeView', 'rebalanceView', 'settingsView', 'devicesView', 'notifyView'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
@@ -170,6 +172,8 @@ function applyRoute() {
   else if (v === 'finance') showFinanceView();
   else if (v === 'rebalance') showRebalanceView();
   else if (v === 'settings') showSettingsView();
+  else if (v === 'devices') showDevicesView();
+  else if (v === 'notify') showNotifyView();
   else showHoldingsView();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -3426,6 +3430,8 @@ async function openPnlModal() {
 function showHoldingsView() {
   $('#assetView').hidden = true;
   $('#settingsView').hidden = true;
+  $('#devicesView').hidden = true;
+  $('#notifyView').hidden = true;
   $('#holdingsView').hidden = false;
   syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
 }
@@ -4247,7 +4253,8 @@ document.addEventListener('keydown', (e) => {
     hideTrendTip();   // 关闭任意弹框时收起可能残留的悬停浮框（如持仓盈亏曲线的 pinned tooltip）
     return;
   }
-  const inSubView = !$('#homeView').hidden || !$('#holdingsView').hidden || !$('#assetView').hidden || !$('#financeView').hidden || !$('#settingsView').hidden;
+  const inSubView = !$('#homeView').hidden || !$('#holdingsView').hidden || !$('#assetView').hidden || !$('#financeView').hidden
+    || !$('#settingsView').hidden || !$('#devicesView').hidden || !$('#notifyView').hidden;
   if (inSubView) {
     navigate('home');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -5709,15 +5716,28 @@ async function showAssetView() {
   await loadAsset();
 }
 
-// 设置页面：通知渠道 / 风险偏好 / AI（AI 设置已迁入本页的「AI」页签）
+// 设置页面（2026-10-29 瘦身）：只剩外观主题 / 收支分类 / AI 配置 / 数据管理。
+// 绑定设备 → #/devices，通知推送 → #/notify，两块高频内容由右上角个人菜单直达。
 async function showSettingsView() {
   $('#holdingsView').hidden = true;
   $('#assetView').hidden = true;
   $('#settingsView').hidden = false;
-  await loadNotifySettings();
   await loadAISettings(); // AI 页签的模型/模板/MCP 参数回填
   await loadFinCatSettings(); // 收支分类：自定义分类编辑
-  loadAuthDevices(); // 登录与设备（认证层）：设备列表 + PIN 状态
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 绑定设备（高频）：当前账本 / 设备列表 / 加设备 / 邀请家人 / 操作 PIN
+async function showDevicesView() {
+  $('#devicesView').hidden = false;
+  await loadAuthDevices();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 通知推送（高频常切）：推送频率 / 待还款提醒 / 钉钉 / 邮箱渠道
+async function showNotifyView() {
+  $('#notifyView').hidden = false;
+  await loadNotifySettings();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 // 2026-10-18：设置页已改为语义分组常驻结构，旧 tab 转发逻辑移除。
@@ -8037,7 +8057,7 @@ async function openLiabilityModal(id, presetSourceId) {
 
 // ---- 通知渠道 / 设置页 ----
 // 2026-10-18 重构：原「通知」卡片内「风险偏好 / 推送策略 / AI」三 tab 已拆为
-// 设置页的语义分组（通知与推送 / AI 配置 / 外观主题 / 收支分类），各面板常驻可见，
+// 系统设置页的语义分组（通知推送 / AI 配置 / 外观主题 / 收支分类），各面板常驻可见，
 // 不再需要 tab 切换。风险偏好（资产类型标签）已移除设置页 UI（2026-10-22），
 // 后端 /api/settings/asset_type_labels 仍保留并供持仓编辑多选 chip 使用。
 // ---- 收支分类（自定义，P3）：与内置分类合并进选择器与统计 ----
@@ -9178,6 +9198,12 @@ function onAcctPopClick(e) {
   } else if (act === 'settings') {
     closeAcctMenu();
     navigate('settings');
+  } else if (act === 'devices') {
+    closeAcctMenu();
+    navigate('devices');
+  } else if (act === 'notify') {
+    closeAcctMenu();
+    navigate('notify');
   } else if (act === 'pnl-cal') {
     closeAcctMenu();
     openPnlModal();
@@ -13160,7 +13186,9 @@ function closePIN(val) {
   on('pairCodeDone', () => { document.getElementById('pairCodeModal').hidden = true; });
   on('pairCodeCopy', () => {
     const code = (document.getElementById('pairCodeValue').textContent || '').trim();
-    if (navigator.clipboard) navigator.clipboard.writeText(code).then(() => toast('已复制配对码', 'ok'));
+    if (!code || code === '······') { toast('没有可复制的配对码', 'err'); return; }
+    // 复用通用复制：secure context 走 clipboard，否则降级 execCommand（局域网 IP 非 https 时仍能复制）
+    copyText(code, '已复制配对码');
   });
   on('pinPromptCancel', () => closePIN(null));
   on('pinPromptClose', () => closePIN(null));
