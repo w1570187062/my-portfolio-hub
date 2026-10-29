@@ -365,6 +365,11 @@ func createUserHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	} else {
+		// 新账本对本机也开放（与 auth.go 邀请流程里 CreateUser 后 GrantSessionUser 的行为对齐）：
+		// 否则刚建好的账本在本设备上「未接入」，切不过去，只能再配对一次，等于白建。
+		if sid := currentSessionID(c); sid > 0 {
+			db.GrantSessionUser(sid, id)
+		}
 		c.JSON(http.StatusOK, gin.H{"id": id, "name": name})
 	}
 }
