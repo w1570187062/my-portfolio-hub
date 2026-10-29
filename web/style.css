@@ -2809,13 +2809,9 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .closed-empty { padding: var(--sp-10) var(--sp-5); text-align: center; }
 .closed-empty-icon { opacity: .55; width: 96px; height: 96px; }
 
-.closed-table-card { padding: 0; overflow: hidden; margin-bottom: var(--sp-4); }
-.closed-table-card:last-child { margin-bottom: 0; }
-
-/* 已平仓表格：自包含固定布局，不依赖 .holdings-group / .wealth-group 父容器。
-   min-width = 912 固定列 + 260 名称保底：容器不足时 .closed-table-scroll 横向滚动，名称不被压成省略号。
-   盈亏金额 / 盈亏% / 年化% 三列是数字主力（含 ¥ 符号、千分位、+/- 号），列宽给足，避免被 ellipsis 截断 */
-.closed-table { table-layout: fixed; width: 100%; min-width: 1172px; border-collapse: collapse; }
+/* 已平仓分组子表：复用 .closed-table 列宽（名称 auto / 代码 96 / 类型 76 / 盈亏金额 132 / 盈亏% 100 / 天数 100 / 操作 120）。
+   容器不足时 .subtable-wrap 横向滚动，名称不被压成省略号。来源即分组账户，故不再单列。 */
+.closed-table { table-layout: fixed; width: 100%; min-width: 760px; border-collapse: collapse; }
 .closed-table th { font-size: var(--fs-xs); font-weight: 600; color: var(--text-faint); padding: var(--sp-2) var(--sp-3); text-align: left; border-bottom: 1px solid var(--sub-divider); }
 .closed-table td { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-md); border-bottom: 1px solid var(--sub-divider); font-family: var(--font-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .closed-table tbody tr:last-child td { border-bottom: none; }
@@ -2824,27 +2820,21 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .closed-table td.ct-num.down { color: var(--down); }
 .closed-table td.ct-num.flat { color: var(--text-muted); }
 
-/* 10 列布局：名称 auto / 代码 96 / 类型 76 / 盈亏金额 132 / 盈亏% 100 / 年化% 100 / 来源 120 / 清仓 104 / 天数 64 / 操作 120 */
+/* 7 列布局：名称 auto / 代码 96 / 类型 76 / 盈亏金额 132 / 盈亏% 100 / 天数 100 / 操作 120 */
 .closed-table th:nth-child(1), .closed-table td.ct-name { width: auto; }
 .closed-table th:nth-child(2), .closed-table td.ct-code-col { width: 96px; }
-.closed-table th:nth-child(3), .closed-table td.ct-type-col { width: 76px; }
+.closed-table th:nth-child(3) { width: 76px; }
 .closed-table th:nth-child(4), .closed-table td:nth-child(4) { width: 132px; text-align: right; font-family: var(--font-mono); }
 .closed-table th:nth-child(5), .closed-table td:nth-child(5) { width: 100px; text-align: right; font-family: var(--font-mono); }
 .closed-table th:nth-child(6), .closed-table td:nth-child(6) { width: 100px; text-align: right; font-family: var(--font-mono); }
 .closed-table th:nth-child(7), .closed-table td:nth-child(7) { width: 120px; }
-.closed-table th:nth-child(8), .closed-table td:nth-child(8) { width: 104px; text-align: right; font-family: var(--font-mono); }
-.closed-table th:nth-child(9), .closed-table td:nth-child(9) { width: 64px; text-align: right; font-family: var(--font-mono); }
-.closed-table th:nth-child(10), .closed-table td:nth-child(10) { width: 120px; position: sticky; right: 0; background: var(--card-bg-sticky); z-index: 3; } /* 操作列：吸右常驻，不透明底盖住滚动内容 */
 
-/* 来源（账户名）/ 操作列：操作列不被裁剪、按钮常显 */
-.closed-table td.ct-src { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 操作列不被裁剪、按钮常显 */
 .closed-table td.ct-ops { white-space: nowrap; overflow: visible; text-overflow: clip; }
 .closed-table td.ct-ops .row-act { opacity: 1; }
 
-/* 类型列（股票 / 基金 / 理财）：统一中性底 + 6px 语义色圆点。
-   原先三种高饱和大色块并排（主题金 / 亮天蓝 / 灰）在密集表格里噪声过大、看着晃眼；
+/* 类型单元格：中性底 + 6px 语义色圆点（股票橙 / 基金靛 / 理财蓝绿），与资产页构成图一致。
    改为「颜色只做点睛、文字一律中性」，类型差异仍可一眼分辨但不再抢主体数字。 */
-.closed-table td.ct-type-col { font-size: var(--fs-sm); }
 .ct-type {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 1px 8px; border-radius: 999px;
@@ -2858,21 +2848,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .ct-type-fund::before { background: rgb(var(--cat-fund)); }
 .ct-type-wealth::before { background: rgb(var(--cat-wealth)); }
 
-/* 类型列表头 = 筛选入口：点击弹出下拉勾选（弹层复用 .src-pop）；生效/展开时表头与漏斗图标着色 */
-.closed-table th.ct-type-col { cursor: pointer; user-select: none; white-space: nowrap; transition: color .15s var(--e); }
-.closed-table th.ct-type-col:hover { color: var(--text-secondary); }
-/* 漏斗（filter）图标：上宽下窄带柄，即「倒立的铲子」；小尺寸描边加粗到 2.4 保证可辨 */
-.closed-table th.ct-type-col .ct-th-caret { display: inline-block; width: 12px; height: 12px; margin-left: var(--sp-1); vertical-align: middle; color: var(--text-faint); transition: color .15s var(--e); }
-.closed-table th.ct-type-col.is-on { color: rgb(var(--tint)); }
-.closed-table th.ct-type-col.is-on .ct-th-caret { color: rgb(var(--tint)); }
-.closed-table th.ct-type-col.is-open .ct-th-caret { color: rgb(var(--tint)); }
-#closedTypePop .src-item input { accent-color: rgb(var(--tint)); }
-
 .closed-table tbody tr.is-hidden { display: none; }
-
-/* 已平仓页：表格在窄屏横向滚动（body 为 overflow-x:clip，须自带滚动容器） */
-.closed-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.closed-table-scroll .closed-table { width: 100%; }
 
 /* 已平仓记录弹框（#closedRecordModal）：.f-row 的两列栅格规则挂在 #modal 作用域下，
    本弹框是独立 id 拿不到，需单独声明 —— 否则每个字段各占一整行，弹框被拉高一倍。 */
@@ -2885,15 +2861,34 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
    与栅格内其他字段的 fs-sm 不一致，单独压回 fs-sm。 */
 #closedRecordModal #crSourceCustomRow { font-size: var(--fs-sm); }
 
-/* 已平仓页工具条：左标题 + 最右「新增平仓记录」按钮 */
-/* flex:1 —— 外层 .holding-toolbar 是 space-between 的 flex 容器，子项若不撑满，
-   内部的 .ct-spacer 无处可伸，右侧「统计区间」会紧贴标题 */
-/* 平仓工具条：标题已上移到 #closedHero 眉标，这里只剩右侧统计区间。
-   min-height 与持仓工具条的 chips 行共用 --toolbar-row-h —— 两态行高不一致时，
-   切 tab 下方表格会跟着上下窜。 */
-.closed-toolbar { display: flex; align-items: center; gap: var(--sp-3); flex: 1 1 auto; min-height: var(--toolbar-row-h); }
-.closed-toolbar .ct-spacer { flex: 1 1 auto; }
-.closed-toolbar .ct-hint { font-size: var(--fs-xs); color: var(--text-faint); }
+/* 平仓工具条：类型下拉与统计区间已移除（2026-10-28），此处仅保留一行占位，
+   与持仓工具条共用 --toolbar-row-h，保证切 tab 时顶部高度恒定、下方表格不上下窜。 */
+.closed-toolbar { min-height: var(--toolbar-row-h); }
+
+/* 批量新增已平仓：首行「账户 / 类型」栅格 + 竖排 label（复用弹框栅格口径） */
+#closedBatchModal .f-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-3); }
+#closedBatchModal .f-row > label { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-muted); min-width: 0; }
+#closedBatchModal .f-row > label select { width: 100%; min-width: 0; margin-top: var(--sp-1); }
+#closedBatchModal #crbSourceCustomRow { font-size: var(--fs-sm); margin-bottom: var(--sp-3); }
+
+/* 批量录入网格：表头 + 数据行共用同一栅格；窄屏整体横向滚动 */
+.batch-grid { display: flex; flex-direction: column; gap: var(--sp-2); overflow-x: auto; margin-bottom: var(--sp-3); }
+.batch-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 116px 76px 34px; gap: var(--sp-2); align-items: center; min-width: 440px; }
+.batch-row.head { font-size: var(--fs-xs); font-weight: 600; color: var(--text-faint); }
+.batch-row.head > span:not(:last-child) { padding: 0 var(--sp-1); }
+.batch-row input { width: 100%; min-width: 0; margin-top: 0; }
+/* 名称单元格：相对定位容器，承载 .f-suggest 联想浮层（与新增持仓弹框一致） */
+.crb-name-wrap { position: relative; min-width: 0; }
+.batch-row .crb-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg-input); color: var(--text-muted);
+  font-size: var(--fs-lg); line-height: 1; cursor: pointer;
+  transition: var(--btn-transition);
+}
+.batch-row .crb-del:hover { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+#crbAddRow { margin-bottom: var(--sp-3); }
 
 /* 历史净值表（历史盈亏弹框内） */
 .hist-nav-table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
@@ -3821,6 +3816,10 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
   margin-left: auto; flex: 0 0 auto; padding: 1px var(--sp-2); border-radius: 999px;
   font-size: var(--fs-sm); color: var(--primary); background: var(--primary-soft);
 }
+/* 批量平仓弹框的联想浮层：改为 fixed 定位（按输入框视口坐标定位），
+   摆脱 .batch-grid 的 overflow:auto 裁剪（这是下拉被父对话框挡住的根因）；
+   层级高于弹框卡片，避免被遮挡。left/top/width 由 JS 按输入框实时计算。 */
+.crb-suggest.f-suggest { position: fixed; z-index: 200; }
 /* 市场胶囊行：标签 + 一组小胶囊（沿用 .at-chip-toggle 的胶囊外观） */
 .f-pills-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
 .f-pill-cap { flex: 0 0 auto; min-width: 28px; font-size: var(--fs-sm); color: var(--text-muted); }

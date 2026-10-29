@@ -293,7 +293,6 @@ function clampDecimals(el, max) {
 
 let allHoldings = [];
 let manualClosedRecords = []; // 已平仓页「手动补录」纯记录（不入账），按 kind 归并进持仓/理财表
-let closedTypeFilter = new Set(); // 已平仓表「类型」筛选：空=全部；'stock' 股票 / 'fund' 基金 / 'wealth' 理财（多选）
 let sparkCache = {}; // symbol -> 近30个交易日收盘价序列（时间正序），供表格迷你走势线使用；展示时取最近20个（近20日走势）
 let cashBalMap = {}; // "sourceID:currency"(小写、存量 rmb 归一为 cny) -> 该(来源,币种)现金子账户余额合计，供「仓位」列算分母；来自 /api/home 的 cash 字段
 // 币种归一：存量数据里人民币有 rmb/cny 两种写法，匹配前统一成 cny（前后端 key 必须一致；全站 2026-10-16 起统一 cny/usd/hkd）
@@ -719,8 +718,6 @@ function renderClosed(box, closedHoldings, closedWealth) {
   const dayList = ctRows.map((r) => r.days).filter((d) => d > 0);
   const avgDays = dayList.length ? Math.round(dayList.reduce((a, b) => a + b, 0) / dayList.length) : 0;
   const manN = mHold.length + mWealth.length;
-  const cMonths = ctRows.map((r) => String(r.date || '').slice(0, 7)).filter(Boolean).sort();
-  const rangeHint = cMonths.length ? `统计区间 ${cMonths[0]} ~ ${cMonths[cMonths.length - 1]}` : '';
 
   // 汇总卡：走项目统一 KPI 体系（锚点卡承载主数字，其余三张为卫星指标）。
   // 渲染目标是顶部 #closedKpiBody（与持仓 KPI 同一块区域互换显示），眉标在
@@ -757,9 +754,6 @@ function renderClosed(box, closedHoldings, closedWealth) {
   // 保证在「平仓 ↔ 持仓」之间切换时顶部高度恒定，不产生跳变。
   const kpiEl = document.getElementById('closedKpiBody');
   if (kpiEl) kpiEl.innerHTML = summaryRow;
-  // 统计区间回填到工具条右侧（工具条先于本函数渲染，故此处单独写回）
-  const rangeEl = document.getElementById('closedRangeHint');
-  if (rangeEl) rangeEl.textContent = rangeHint;
 
   if (totalCount === 0) {
     box.innerHTML = `<div class="closed-empty">
@@ -770,205 +764,99 @@ function renderClosed(box, closedHoldings, closedWealth) {
     return;
   }
 
-  // 表头：名称 / 代码 / 类型(可点开下拉勾选筛选) / 盈亏金额 / 盈亏% / 年化% / 来源(账户名) / 清仓时间 / 天数 / 操作
-  const H = `<thead><tr>
-    <th class="ct-name">名称</th>
-    <th class="ct-code-col">代码</th>
-    <th class="ct-type-col${closedTypeFilter.size ? ' is-on' : ''}" id="closedTypeTh" title="点击按类型筛选">类型<svg class="ct-th-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></th>
-    <th class="ct-num">盈亏金额</th>
-    <th class="ct-num">盈亏%</th>
-    <th class="ct-num" title="单利年化 = 收益率 × 365 ÷ 持有天数；持有不足 ${ANN_MIN_DAYS} 天不给年化（短期外推无参考意义）">年化%</th>
-    <th>来源</th>
-    <th>清仓时间</th>
-    <th class="ct-num">天数</th>
-    <th class="ct-ops">操作</th>
-  </tr></thead>`;
-
-  let html = '';
-
-  // 合并表：系统持仓 + 手动持仓 + 系统理财 + 手动理财（同套列，行内类型徽标区分类型）
-  const sysHRows = closedHoldings.map((h) => {
+  // —— 按账户(来源)分组折叠展示（效果同持仓表）：取消「年化% / 清仓时间 / 来源」列，
+  // 来源即分组账户；盈亏率由组头汇总（本金缺失的账户不展示盈亏率）。——
+  const rows = [];
+  closedHoldings.forEach((h) => {
     const principal = Number(h.invested_cost) || Number(h.cost_value) || 0;
     const realized = Number(h.realized_pnl) || 0;
-    const closeDate = h.closed_date || '—';
     const days = (h.closed_date && h.buy_date) ? daysBetween(h.buy_date, h.closed_date) : (h.holding_days || 0);
     const pct = principal > 0 ? realized / principal * 100 : null;
-    const a = annOf(pct, days);
-    const ann = a.val;
-    const pctTxt = pct != null ? (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%' : '—';
-    const annTxt = annText(ann);
-    const pctCls = pct != null ? clsPnl(pct) : 'flat';
-    const canReopen = !!h.closed;
-    const isF = isFund(h);
-    const op = canReopen ? actBtn('undo', `data-reopen-hold="${h.id}"`, '撤销清仓（重开持仓）') : '<span class="u-muted">—</span>';
-    return `<tr class="ct-row ${isF ? 'ct-row-f' : 'ct-row-h'}" data-ct-type="${isF ? 'fund' : 'stock'}">
-      <td class="ct-name"><span class="name-clickable" title="${esc(h.name)}（已清仓）">${esc(h.name)}</span></td>
-      <td class="ct-code-col">${h.symbol ? esc(h.symbol) : '—'}</td>
-      <td class="ct-type-col"><span class="ct-type ${isF ? 'ct-type-fund' : 'ct-type-stock'}">${isF ? '基金' : '股票'}</span></td>
-      <td class="ct-num ${clsPnl(realized)}">${signedCur(realized, h.currency)}</td>
-      <td class="ct-num ${pctCls}">${pctTxt}</td>
-      <td class="ct-num ${clsPnl(ann)}" title="${a.short ? annHint(true) : annHint(false)}">${annTxt}</td>
-      <td class="ct-src">${esc(h.source_name || '—')}</td>
-      <td class="ct-num">${esc(closeDate)}</td>
-      <td class="ct-num">${days}</td>
-      <td class="ct-ops">${op}</td>
-    </tr>`;
-  }).join('');
-  const manHRows = mHold.map((m) => {
+    rows.push({ ctType: isFund(h) ? 'fund' : 'stock', sys: true, sysKind: 'hold', id: h.id, name: h.name, code: h.symbol || '', source: (h.source_name || '').trim() || '未指定', amount: realized, currency: normCurJS(h.currency), principal, pct, days, op: (h.closed ? actBtn('undo', `data-reopen-hold="${h.id}"`, '撤销清仓（重开持仓）') : '<span class="u-muted">—</span>') });
+  });
+  mHold.forEach((m) => {
     const amt = Number(m.amount) || 0;
+    const principal = m.principal != null ? Number(m.principal) : 0;
     const days = Number(m.holding_days) || 0;
-    const closeDate = m.realized_at || '—';
-    const mk = normManKind(m.kind);
-    const rt = manClosedRates(m, amt);
-    const op = actBtn('edit', `data-edit-manual="${m.id}"`, '编辑') + actBtn('del', `data-del-manual="${m.id}"`, '删除', { danger: true });
-    return `<tr class="ct-row ct-row-m" data-ct-type="${mk}">
-      <td class="ct-name"><span class="name-clickable" title="${esc(m.name)}（手动补录）">${esc(m.name)}</span></td>
-      <td class="ct-code-col">${m.code ? esc(m.code) : '—'}</td>
-      <td class="ct-type-col"><span class="ct-type ct-type-${mk}">${mk === 'fund' ? '基金' : '股票'}</span></td>
-      <td class="ct-num ${clsPnl(amt)}">${signedCur(amt, normCurJS(m.currency))}</td>
-      <td class="ct-num ${rt.pctCls}">${rt.pctTxt}</td>
-      <td class="ct-num ${rt.annCls}" title="${rt.annHint}">${rt.annTxt}</td>
-      <td class="ct-src">${esc(m.source || '—')}</td>
-      <td class="ct-num">${esc(closeDate)}</td>
-      <td class="ct-num">${days}</td>
-      <td class="ct-ops">${op}</td>
-    </tr>`;
-  }).join('');
-  const sysWRows = closedWealth.map((w) => {
+    const pct = m.return_rate != null ? Number(m.return_rate) : (principal > 0 ? amt / principal * 100 : null);
+    rows.push({ ctType: normManKind(m.kind), sys: false, id: m.id, name: m.name, code: m.code || '', source: (m.source || '').trim() || '未指定', amount: amt, currency: normCurJS(m.currency), principal, pct, days, op: actBtn('edit', `data-edit-manual="${m.id}"`, '编辑') + actBtn('del', `data-del-manual="${m.id}"`, '删除', { danger: true }) });
+  });
+  closedWealth.forEach((w) => {
     const cumPnl = Number(w.cum_pnl) || 0;
-    const cumRate = w.cum_return_rate;
     const days = w.holding_days || 0;
-    // 后端给的 annualized_return_rate 与这里同口径（单利 ×365÷天数），前端重算只为叠加「短期不外推」这道闸
-    const aw = annOf(cumRate, days);
-    const annRate = aw.val;
-    const closeDate = w.snap_date || '—';
-    const ratePct = cumRate != null ? (cumRate >= 0 ? '+' : '') + cumRate.toFixed(2) + '%' : '—';
-    const annPct = annText(annRate);
-    const rateCls = cumRate != null ? clsPnl(cumRate) : 'flat';
-    const op = actBtn('undo', `data-reopen-wealth="${w.id}"`, '重开理财');
-    return `<tr class="ct-row ct-row-w" data-ct-type="wealth">
-      <td class="ct-name"><span class="name-clickable" title="${esc(w.name)}（已清仓）">${esc(w.name)}</span></td>
-      <td class="ct-code-col">${w.code ? esc(w.code) : '—'}</td>
-      <td class="ct-type-col"><span class="ct-type ct-type-wealth">理财</span></td>
-      <td class="ct-num ${clsPnl(cumPnl)}">${signedCur(cumPnl, w.currency)}</td>
-      <td class="ct-num ${rateCls}">${ratePct}</td>
-      <td class="ct-num ${clsPnl(annRate)}" title="${aw.short ? annHint(true) : annHint(false)}">${annPct}</td>
-      <td class="ct-src">${esc(w.source_name || '—')}</td>
-      <td class="ct-num">${esc(closeDate)}</td>
-      <td class="ct-num">${days}</td>
-      <td class="ct-ops">${op}</td>
-    </tr>`;
-  }).join('');
-  const manWRows = mWealth.map((m) => {
+    const pct = w.cum_return_rate != null ? w.cum_return_rate : null;
+    rows.push({ ctType: 'wealth', sys: true, sysKind: 'wealth', id: w.id, name: w.name, code: w.code || '', source: (w.source_name || '').trim() || '未指定', amount: cumPnl, currency: normCurJS(w.currency), principal: null, pct, days, op: actBtn('undo', `data-reopen-wealth="${w.id}"`, '重开理财') });
+  });
+  mWealth.forEach((m) => {
     const amt = Number(m.amount) || 0;
+    const principal = m.principal != null ? Number(m.principal) : 0;
     const days = Number(m.holding_days) || 0;
-    const closeDate = m.realized_at || '—';
-    const rt = manClosedRates(m, amt);
-    const op = actBtn('edit', `data-edit-manual="${m.id}"`, '编辑') + actBtn('del', `data-del-manual="${m.id}"`, '删除', { danger: true });
-    return `<tr class="ct-row ct-row-m" data-ct-type="wealth">
-      <td class="ct-name"><span class="name-clickable" title="${esc(m.name)}（手动补录）">${esc(m.name)}</span></td>
-      <td class="ct-code-col">${m.code ? esc(m.code) : '—'}</td>
-      <td class="ct-type-col"><span class="ct-type ct-type-wealth">理财</span></td>
-      <td class="ct-num ${clsPnl(amt)}">${signedCur(amt, normCurJS(m.currency))}</td>
-      <td class="ct-num ${rt.pctCls}">${rt.pctTxt}</td>
-      <td class="ct-num ${rt.annCls}" title="${rt.annHint}">${rt.annTxt}</td>
-      <td class="ct-src">${esc(m.source || '—')}</td>
-      <td class="ct-num">${esc(closeDate)}</td>
-      <td class="ct-num">${days}</td>
-      <td class="ct-ops">${op}</td>
-    </tr>`;
-  }).join('');
-  const allRows = sysHRows + manHRows + sysWRows + manWRows;
-  html += `<div class="card closed-table-card"><div class="closed-table-scroll"><table class="closed-table">${H}<tbody>${allRows}</tbody></table></div></div>`;
+    const pct = m.return_rate != null ? Number(m.return_rate) : (principal > 0 ? amt / principal * 100 : null);
+    rows.push({ ctType: 'wealth', sys: false, id: m.id, name: m.name, code: m.code || '', source: (m.source || '').trim() || '未指定', amount: amt, currency: normCurJS(m.currency), principal, pct, days, op: actBtn('edit', `data-edit-manual="${m.id}"`, '编辑') + actBtn('del', `data-del-manual="${m.id}"`, '删除', { danger: true }) });
+  });
+
+  const groups = new Map();
+  for (const r of rows) {
+    if (!groups.has(r.source)) groups.set(r.source, { name: r.source, items: [], pnlCny: 0, principalCny: 0, daySum: 0, dayN: 0 });
+    const g = groups.get(r.source);
+    g.items.push(r);
+    g.pnlCny += cnyOf(r.amount, r.currency);
+    if (r.principal) g.principalCny += cnyOf(r.principal, r.currency);
+    if (r.days > 0) { g.daySum += r.days; g.dayN++; }
+  }
+  const arr = [...groups.values()].sort((a, b) => b.pnlCny - a.pnlCny);
+
+  let html = '';
+  for (const g of arr) {
+    const gpct = g.principalCny > 0 ? g.pnlCny / g.principalCny * 100 : null;
+    html += `<div class="collapsible source-group closed-group" data-src="${esc(g.name)}">
+      <div class="collapse-hat holdings-group-head">
+        <span class="hat-title">${accountLogo(g.name)} ${esc(g.name)} <span class="hat-count">${g.items.length} 笔</span></span>
+        <span class="hat-side">
+          <span class="hat-stat hat-stat-mv" title="该账户落袋盈亏（折合人民币）"><span class="hat-stat-lbl">落袋</span><b class="${clsPnl(g.pnlCny)}"${wanTitle(g.pnlCny, '¥')}>${g.pnlCny >= 0 ? '+' : ''}¥${fmtWan(g.pnlCny)}</b></span>
+          ${gpct != null ? `<span class="hat-side-extra" title="该账户盈亏率（落袋 ÷ 本金）"><span class="hat-stat" title="该账户盈亏率"><span class="hat-stat-lbl">盈亏率</span><b class="${clsPnl(gpct)}"${wanTitle(gpct, '%')}>${gpct >= 0 ? '+' : ''}${gpct.toFixed(2)}%</b></span></span>` : ''}
+          <span class="hat-chevron">▾</span>
+        </span>
+      </div>
+      <div class="collapse-body source-group-body">
+        <div class="subtable-wrap"><table class="closed-table">
+          <thead><tr>
+            <th class="ct-name">名称</th>
+            <th class="ct-code-col">代码</th>
+            <th>类型</th>
+            <th class="num">盈亏金额</th>
+            <th class="num">盈亏%</th>
+            <th class="num">天数</th>
+            <th class="ct-ops">操作</th>
+          </tr></thead>
+          <tbody>${g.items.map(rowClosed).join('')}</tbody>
+        </table></div>
+      </div></div>`;
+  }
 
   box.innerHTML = html;
   bindClosedActions(box);
-  applyClosedTypeFilter(box);
 }
 
-// 已平仓表「类型」筛选：空集合=全部；勾选集合中的类型才显示
-function applyClosedTypeFilter(box) {
-  if (!box) return;
-  box.querySelectorAll('.closed-table tbody tr').forEach((tr) => {
-    const t = tr.dataset.ctType;
-    const show = closedTypeFilter.size === 0 || closedTypeFilter.has(t);
-    tr.classList.toggle('is-hidden', !show);
-  });
+// 已平仓分组子表行模板：名称 / 代码 / 类型 / 盈亏金额 / 盈亏% / 天数 / 操作
+// （已取消 年化% / 清仓时间 / 来源 列 —— 来源即分组账户，盈亏率由组头汇总）
+function rowClosed(r) {
+  const pctTxt = r.pct != null ? (r.pct >= 0 ? '+' : '') + r.pct.toFixed(2) + '%' : '—';
+  const pctCls = r.pct != null ? clsPnl(r.pct) : 'flat';
+  const labelMap = { stock: '股票', fund: '基金', wealth: '理财' };
+  const typeCls = { stock: 'ct-type-stock', fund: 'ct-type-fund', wealth: 'ct-type-wealth' }[r.ctType];
+  return `<tr class="ct-row ${r.sys ? (r.sysKind === 'wealth' ? 'ct-row-w' : 'ct-row-h') : 'ct-row-m'}" data-ct-type="${r.ctType}">
+    <td class="ct-name"><span class="name-clickable" title="${esc(r.name)}（${r.sys ? '已清仓' : '手动补录'}）">${esc(r.name)}</span></td>
+    <td class="ct-code-col">${r.code ? esc(r.code) : '—'}</td>
+    <td><span class="ct-type ${typeCls}">${labelMap[r.ctType]}</span></td>
+    <td class="ct-num ${clsPnl(r.amount)}">${signedCur(r.amount, r.currency)}</td>
+    <td class="ct-num ${pctCls}">${pctTxt}</td>
+    <td class="ct-num">${r.days || '—'}</td>
+    <td class="ct-ops">${r.op}</td>
+  </tr>`;
 }
 
-// 类型下拉勾选：项定义 + 弹层开合 + 勾选即时生效
-// 类型口径已统一为资产类别（股票 / 基金 / 理财），与新增/编辑弹框的类型下拉一致；
-// 原「持仓 / 补录」是记录来源口径，不是类型，已随表头徽标一并下线。
-const CT_TYPE_OPTS = [
-  { k: 'stock', label: '股票' },
-  { k: 'fund', label: '基金' },
-  { k: 'wealth', label: '理财' },
-];
-
-function renderClosedTypeList() {
-  const list = document.getElementById('closedTypeList');
-  if (!list) return;
-  list.innerHTML = CT_TYPE_OPTS.map((t) =>
-    `<label class="src-item"><input type="checkbox" value="${t.k}"${closedTypeFilter.has(t.k) ? ' checked' : ''}><span>${t.label}</span></label>`
-  ).join('');
-}
-
-function closedTypeBox() { return document.getElementById('closedView'); }
-
-function syncClosedTypeTh() {
-  const th = document.getElementById('closedTypeTh');
-  if (th) th.classList.toggle('is-on', closedTypeFilter.size > 0);
-}
-
-function onClosedTypeChange() {
-  closedTypeFilter = new Set([...document.querySelectorAll('#closedTypeList input:checked')].map((i) => i.value));
-  applyClosedTypeFilter(closedTypeBox());
-  syncClosedTypeTh();
-}
-
-// force=true/false 强制开合；省略则切换。弹层 fixed 定位到表头左下角，并夹在视口内。
-function toggleClosedTypePop(force) {
-  const pop = document.getElementById('closedTypePop');
-  if (!pop) return;
-  const th = document.getElementById('closedTypeTh');
-  const show = (force === undefined) ? pop.hidden : force;
-  if (show) {
-    if (!th) return;
-    renderClosedTypeList();
-    const r = th.getBoundingClientRect();
-    pop.style.top = (r.bottom + 6) + 'px';
-    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 232)) + 'px';
-    pop.hidden = false;
-    th.classList.add('is-open');
-  } else {
-    pop.hidden = true;
-    if (th) th.classList.remove('is-open');
-  }
-}
-
-// 表头点击走 document 委托（#closedTypeTh 每次 renderClosed 重建，直接绑定会失效）
-// 其余（重置/确定/勾选/外部点击/Esc）绑在静态弹层与其内部元素上。
-(function wireClosedTypeFilter() {
-  const pop = document.getElementById('closedTypePop');
-  if (!pop) return;
-  const apply = document.getElementById('ctPopApply');
-  const reset = document.getElementById('ctPopReset');
-  if (apply) apply.onclick = () => toggleClosedTypePop(false);
-  if (reset) reset.onclick = () => {
-    document.querySelectorAll('#closedTypeList input').forEach((i) => { i.checked = false; });
-    onClosedTypeChange();
-  };
-  pop.addEventListener('change', (e) => {
-    if (e.target instanceof HTMLInputElement && e.target.type === 'checkbox') onClosedTypeChange();
-  });
-  document.addEventListener('click', (e) => {
-    if (e.target.closest('#closedTypeTh')) { toggleClosedTypePop(); return; }
-    if (!pop.hidden && !pop.contains(e.target)) toggleClosedTypePop(false);
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !pop.hidden) toggleClosedTypePop(false);
-  });
-})();
+// 已平仓「类型」筛选与统计区间已于 2026-10-28 移除（类型筛选按钮、统计区间提示均下线）。
 
 // 已平仓表格行内操作（事件委托，重渲染后按钮仍生效）
 function bindClosedActions(box) {
@@ -1012,10 +900,6 @@ function bindClosedActions(box) {
       });
     };
   });
-
-  // 表格横向滚动时关闭类型弹层（弹层是 fixed 定位，不跟随表头移动）
-  const scroller = box.querySelector('.closed-table-scroll');
-  if (scroller) scroller.addEventListener('scroll', () => toggleClosedTypePop(false));
 }
 
 function renderInvestToolbar() {
@@ -1137,16 +1021,10 @@ function toolbarChip(cat, label, active) {
   return '<button type="button" class="filter-chip' + (active ? ' active' : '') + '" data-cat="' + cat + '">' + label + '</button>';
 }
 
-// 已平仓视图工具条：左侧标题（新增入口已收归首页「快捷功能 · 新增平仓」）。
-// 平仓工具条：标题已上移到顶部 KPI 眉标（#closedHero），此处只留统计区间提示。
-// 行高由 CSS 的 min-height 兜住，与持仓工具条的 chips 行等高 —— 否则切 tab 时
-// 这一行会矮一截，下方表格跟着上移，同样是跳变。
+// 已平仓视图工具条：类型下拉与统计区间已移除（2026-10-28），此处仅保留一行占位，
+// 高度由 CSS .closed-toolbar 的 --toolbar-row-h 兜住，与持仓工具条等高，避免切 tab 时表格上下窜。
 function renderClosedToolbar(bar) {
-  bar.innerHTML =
-    '<div class="closed-toolbar">' +
-      '<span class="ct-spacer"></span>' +
-      '<span class="ct-hint" id="closedRangeHint"></span>' +
-    '</div>';
+  bar.innerHTML = '<div class="closed-toolbar"></div>';
 }
 
 // 打开「新增 / 编辑已平仓记录」弹框（纯记录，不入账）。record 为空表示新增。
@@ -3191,6 +3069,180 @@ $('#crSave').addEventListener('click', async () => {
   } catch (e) { $('#crErr').textContent = '异常：' + e.message; }
   $('#crSave').disabled = false;
 });
+// —— 批量新增已平仓（纯记录，不入账）——
+// 账户 + 类型 为全局（作用于本批所有行）；下方逐行填 名称 / 代码（名称联想）/ 盈亏金额 / 天数(可选)。
+// 本金不在批量录入里填（数据库该字段保留，可留空）；故批量记录的「盈亏率」不予推算。
+function fillCrbSourceSelect(current) {
+  const sel = $('#crb_source');
+  if (!sel) return;
+  const cur = String(current || '').trim();
+  const names = [];
+  (assetSources || []).forEach((s) => {
+    const n = String(s.name || '').trim();
+    if (n && names.indexOf(n) < 0) names.push(n);
+  });
+  let html = names.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  html += `<option value="${CR_SRC_CUSTOM}">其他（自定义）</option>`;
+  sel.innerHTML = html;
+  const known = cur && names.indexOf(cur) >= 0;
+  sel.value = known ? cur : (cur ? CR_SRC_CUSTOM : '');
+  $('#crb_source_custom').value = cur && !known ? cur : '';
+  syncCrbSourceCustom();
+}
+function syncCrbSourceCustom() {
+  const sel = $('#crb_source');
+  const row = $('#crbSourceCustomRow');
+  if (!sel || !row) return;
+  const isCustom = sel.value === CR_SRC_CUSTOM;
+  row.hidden = !isCustom;
+  if (!isCustom) $('#crb_source_custom').value = '';
+}
+function openBatchClosedModal() {
+  fillCrbSourceSelect('');
+  $('#crb_kind').value = 'stock';
+  $('#crbErr').textContent = '';
+  renderBatchRows(3);
+  $('#closedBatchModal').hidden = false;
+}
+function renderBatchRows(n) {
+  const grid = $('#crbGrid');
+  if (!grid) return;
+  let html = '<div class="batch-row head"><span>名称</span><span>代码</span><span>盈亏金额</span><span>天数</span><span></span></div>';
+  for (let i = 0; i < n; i++) {
+    html += `<div class="batch-row" data-idx="${i}">
+      <div class="crb-name-wrap">
+        <input class="crb-name" placeholder="名称 / 代码" autocomplete="off">
+        <div class="crb-suggest f-suggest" hidden></div>
+      </div>
+      <input class="crb-code" placeholder="代码" autocomplete="off">
+      <input class="crb-amount" type="number" step="0.01" placeholder="正赚负亏" autocomplete="off">
+      <input class="crb-days" type="number" step="1" min="0" placeholder="天数" autocomplete="off">
+      <button type="button" class="crb-del" title="删除此行">×</button>
+    </div>`;
+  }
+  grid.innerHTML = html;
+}
+$('#closedBatchModal').addEventListener('click', (e) => { if (e.target === $('#closedBatchModal')) $('#closedBatchModal').hidden = true; });
+$('#crb_source').addEventListener('change', syncCrbSourceCustom);
+$('#crbCancel').addEventListener('click', () => { $('#closedBatchModal').hidden = true; });
+$('#crbAddRow').addEventListener('click', () => {
+  const grid = $('#crbGrid');
+  const div = document.createElement('div');
+  div.className = 'batch-row';
+  div.dataset.idx = grid.querySelectorAll('.batch-row:not(.head)').length;
+  div.innerHTML = '<div class="crb-name-wrap">'
+    + '<input class="crb-name" placeholder="名称 / 代码" autocomplete="off">'
+    + '<div class="crb-suggest f-suggest" hidden></div></div>'
+    + '<input class="crb-code" placeholder="代码" autocomplete="off">'
+    + '<input class="crb-amount" type="number" step="0.01" placeholder="正赚负亏" autocomplete="off">'
+    + '<input class="crb-days" type="number" step="1" min="0" placeholder="天数" autocomplete="off">'
+    + '<button type="button" class="crb-del" title="删除此行">×</button>';
+  grid.appendChild(div);
+});
+// 名称联想：与新增持仓弹框一致 —— 输入防抖 220ms 请求 /api/search（全市场），
+// 浮层（复用 .f-suggest 视觉）列出结果，点击即回填名称与代码。
+$('#crbGrid').addEventListener('input', (e) => {
+  const t = e.target;
+  if (!t.classList.contains('crb-name')) return;
+  const wrap = t.closest('.crb-name-wrap');
+  const pop = wrap && wrap.querySelector('.crb-suggest');
+  if (!pop) return;
+  const q = t.value.trim();
+  if (!q) { pop.hidden = true; pop.innerHTML = ''; return; }
+  clearTimeout(t._crbTimer);
+  t._crbTimer = setTimeout(async () => {
+    try {
+      const r = await api('/api/search?q=' + encodeURIComponent(q));
+      if (!r.ok) { pop.hidden = true; return; }
+      const d = await r.json();
+      const items = (d.results || []).slice(0, 12);
+      if (!items.length) { pop.hidden = true; pop.innerHTML = ''; return; }
+      pop.innerHTML = items.map((it, i) =>
+        `<button type="button" class="f-suggest-item" data-i="${i}">`
+        + `<span class="f-si-name">${esc(it.name)}</span>`
+        + `<span class="f-si-code">${esc(it.symbol)}</span>`
+        + `<span class="f-si-mkt">${esc(SEARCH_MKT_TO_PF[it.market] || it.market || '')}</span>`
+        + '</button>'
+      ).join('');
+      // fixed 定位：按输入框视口坐标对齐（摆脱 .batch-grid overflow 裁剪）
+      const rect = t.getBoundingClientRect();
+      pop.style.left = rect.left + 'px';
+      pop.style.width = rect.width + 'px';
+      pop.style.right = 'auto';
+      pop.hidden = false;
+      const ph = pop.offsetHeight;
+      let top = rect.bottom + 6;
+      if (top + ph > window.innerHeight - 8 && rect.top - ph - 6 > 8) top = rect.top - ph - 6;
+      pop.style.top = top + 'px';
+      pop.querySelectorAll('.f-suggest-item').forEach((b) => {
+        b.onclick = (ev) => {
+          ev.preventDefault();
+          const it = items[Number(b.dataset.i)];
+          t.value = it.name;
+          const row = t.closest('.batch-row');
+          const codeEl = row && row.querySelector('.crb-code');
+          if (codeEl) codeEl.value = it.symbol;
+          pop.hidden = true; pop.innerHTML = '';
+        };
+      });
+    } catch (_) { pop.hidden = true; }
+  }, 220);
+});
+// 点击批量弹框联想浮层之外时收起所有浮层（点输入框/浮层内不收起）
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.crb-name-wrap')) {
+    document.querySelectorAll('#crbGrid .crb-suggest').forEach((p) => { if (!p.hidden) p.hidden = true; });
+  }
+});
+// fixed 浮层在滚动时会与输入框错位，故滚动即收起
+window.addEventListener('scroll', () => {
+  document.querySelectorAll('#crbGrid .crb-suggest').forEach((p) => { if (!p.hidden) p.hidden = true; });
+}, true);
+$('#crbGrid').addEventListener('click', (e) => {
+  if (e.target.classList.contains('crb-del')) {
+    const grid = $('#crbGrid');
+    if (grid.querySelectorAll('.batch-row:not(.head)').length <= 1) return;
+    e.target.closest('.batch-row').remove();
+  }
+});
+$('#crbSave').addEventListener('click', async () => {
+  const srcSel = $('#crb_source').value;
+  const source = srcSel === CR_SRC_CUSTOM ? ($('#crb_source_custom').value || '').trim() : String(srcSel || '').trim();
+  if (srcSel === CR_SRC_CUSTOM && !source) { $('#crbErr').textContent = '请填写自定义账户名'; return; }
+  const kind = $('#crb_kind').value;
+  const rows = [...$('#crbGrid').querySelectorAll('.batch-row:not(.head)')];
+  const payloads = [];
+  for (const row of rows) {
+    const name = (row.querySelector('.crb-name').value || '').trim();
+    if (!name) continue;
+    payloads.push({
+      kind,
+      name,
+      code: (row.querySelector('.crb-code').value || '').trim(),
+      amount: parseFloat(row.querySelector('.crb-amount').value) || 0,
+      currency: 'cny',
+      principal: null,
+      return_rate: null,
+      holding_days: parseInt(row.querySelector('.crb-days').value, 10) || 0,
+      source,
+      realized_at: '',
+    });
+  }
+  if (!payloads.length) { $('#crbErr').textContent = '请至少填写一行名称'; return; }
+  $('#crbSave').disabled = true;
+  try {
+    for (const p of payloads) {
+      const r = await api('/api/manual-closed', { method: 'POST', body: JSON.stringify(p) });
+      if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#crbErr').textContent = m; $('#crbSave').disabled = false; return; }
+    }
+    await loadManualClosed();
+    $('#closedBatchModal').hidden = true;
+    if (homeSection === 'closed') renderFiltered();
+    toast('已批量保存 ' + payloads.length + ' 条', 'ok');
+  } catch (e) { $('#crbErr').textContent = '异常：' + e.message; }
+  $('#crbSave').disabled = false;
+});
+
 // 资金变动方向切换：选中段置 active（CSS 负责主题色/灰色），方向由 data-sign 决定
 const cashSignToggle = document.getElementById('c_sign_toggle');
 if (cashSignToggle) {
@@ -3426,7 +3478,7 @@ async function renderHomeDashboard() {
       { ico: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', label: '记收入', fn: async () => { await openFlowModal('in'); } },
       { ico: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>', label: '记支出', fn: async () => { await openFlowModal('out'); } },
       { ico: '<rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 9.5h16"/><path d="M8 3.2v3M16 3.2v3"/><path d="M12 11.6v4.2"/>', label: '基金定投', fn: () => openDCAPlans() },
-      { ico: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>', label: '新增平仓', fn: () => openClosedRecordModal(null) },
+      { ico: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>', label: '新增平仓', fn: () => openBatchClosedModal() },
       // 「截图导入」入口已删除（2026-10-27）：该能力后续并入 AI 助手弹框，暂不实现，
       // 快捷区只保留已落地的操作，避免占位项点了只弹 toast。
     ];
