@@ -3500,6 +3500,8 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
    抽屉是移动端范式：桌面端点右上角头像后视线要跑到屏幕下缘，面板还从底部顶出来盖住当前页面。
    改居中后与「删除账本」等弹框同一套语言，Esc / 点遮罩 / 右上角 ✕ 三种关法都成立。 */
 .book-modal { width: 460px; }
+/* 弹框底部留白：.m-body 上下默认只有 --sp-1，「新增账本」那条 input+按钮贴着卡片底边显得被切断 */
+.book-modal > .m-body { padding-bottom: var(--sp-6); }
 .book-hint { margin: 0 0 var(--sp-3); font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; }
 
 /* 列表行：整行即「切换」热区（旧版要靠行内小图标按钮，命中率低、还得猜图标含义） */
@@ -5333,10 +5335,35 @@ textarea::placeholder {
   flex: none;
 }
 
-/* 首页 / 资产 / 投资 / 设置（含设备、通知两个子页）/ 财务 / 再平衡：统一占满可用宽度
+/* 主题色选择：色板色值 = 各预设主色，选中态双层描边（内圈卡片底色隔开、外圈当前主色）
+   2026-10-29 修复：这段曾被「.user-add 规则重写」的变更块连带删掉，导致色板元素退化成
+   浏览器默认 button（圆形变横条）。改主题值时记得同步 app.js 的 ACCENTS 数组。 */
+.accent-swatches { display: flex; align-items: center; gap: var(--sp-2); }
+.accent-swatch {
+  width: var(--h-1); height: var(--h-1); padding: 0; cursor: pointer;
+  border-radius: 50%; border: 2px solid transparent;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
+  transition: transform .15s cubic-bezier(.32,.72,0,1), box-shadow .15s cubic-bezier(.32,.72,0,1);
+}
+.accent-swatch:hover { transform: scale(1.12); }
+.accent-swatch[data-accent="gold"]  { background: #d9a52b; }
+.accent-swatch[data-accent="green"] { background: #6f9e5e; }
+.accent-swatch[data-accent="blue"]  { background: #0a84ff; }
+/* 铅笔按钮：自定义主题色入口（虚线框 + 铅笔图标，点击弹系统取色器） */
+.accent-swatch.accent-custom {
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--fs-md); line-height: 1;
+  background: var(--bg-input);
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+}
+.accent-swatch.accent-custom:hover { color: var(--primary); border-color: var(--primary); }
+.accent-swatch.active { box-shadow: 0 0 0 2px var(--bg-card-solid), 0 0 0 4px var(--primary); }
+
+/* 首页 / 资产 / 投资 / 设置（含 AI / 设备 / 通知三个子页）/ 财务 / 再平衡：统一占满可用宽度
    （2026-10-23 起与财务页一致，超宽屏不再 1920 收边）
    页级 padding 也在这里统一，漏加会让该页卡片顶到屏幕边缘、顶部紧贴顶栏（2026-10-27 再平衡页踩过） */
-#homeView, #assetView, #holdingsView, #settingsView, #devicesView, #notifyView, #financeView, #rebalanceView {
+#homeView, #assetView, #holdingsView, #settingsView, #aiView, #devicesView, #notifyView, #financeView, #rebalanceView {
   max-width: none;
   margin: 0 auto;
   padding: var(--sp-4) var(--sp-5) var(--sp-8);
@@ -5811,6 +5838,7 @@ textarea::placeholder {
 #app:has(#holdingsView:not([hidden])),
 #app:has(#assetView:not([hidden])),
 #app:has(#settingsView:not([hidden])),
+#app:has(#aiView:not([hidden])),
 #app:has(#devicesView:not([hidden])),
 #app:has(#notifyView:not([hidden])),
 #app:has(#financeView:not([hidden])),

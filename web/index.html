@@ -118,6 +118,10 @@
           </button>
           <!-- 2026-10-29：绑定设备 / 通知推送从设置页抽出为独立页，入口放这里 ——
                换设备、邀请家人、切钉钉推送都是常切项，不该埋在设置页第 5 屏 -->
+          <button class="acct-item" type="button" data-act="ai">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.6L18.4 9.4l-4.6 1.8L12 15.8l-1.8-4.6L5.6 9.4l4.6-1.8L12 3Z"/><path d="M18.5 14.5l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"/></svg>
+            <span>AI 设置</span>
+          </button>
           <button class="acct-item" type="button" data-act="devices">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="13" height="10" rx="1.6"/><path d="M6.5 18.5h6M9.5 14.5v4"/><rect x="17.5" y="8" width="4" height="10" rx="1.4"/></svg>
             <span>绑定设备</span>
@@ -513,7 +517,7 @@
       <!-- ④ 外观主题（已置顶） -->
       <section class="settings-group">
         <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 2-2 0-1.4 1-2 2.3-2H18a3.5 3.5 0 0 0 3.5-3.5C21.5 7 17 3 12 3Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16.5" cy="11" r="1"/></svg>外观主题</span></h3>
-        <p class="settings-group-desc">设置网站主题色，及时生效。</p>
+        <p class="settings-group-desc">设置网站主题色，选中即时生效；深色 / 浅色模式在右上角个人菜单切换。</p>
 		<div class="settings-group-body">
           <div class="grp-label">主题色</div>
           <div class="accent-swatches" id="accentSwatches">
@@ -523,7 +527,6 @@
                   <button class="accent-swatch accent-custom" type="button" id="accentCustomBtn" title="自定义主题色（铅笔挑选任意颜色）" aria-label="自定义主题色"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;margin:auto"><path d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"/><path d="M14.5 6.5 17.5 9.5"/></svg></button>
                   <input type="color" id="accentCustom" value="#d9a52b" style="position:absolute;opacity:0;width:0;height:0;border:0;padding:0" tabindex="-1" aria-hidden="true">
                 </div>
-          <label class="switch-row" style="margin-top:var(--sp-4);">深色模式<span class="switch"><input type="checkbox" id="themeSwitch"><span class="switch-knob"></span></span></label>
         </div>
       </section>
 
@@ -546,102 +549,6 @@
           <div class="modal-actions">
             <button class="btn primary" type="button" id="finCatSaveBtn">保存</button>
           </div>
-        </div>
-      </section>
-
-      <!-- ③ AI 配置（可折叠，默认收起） -->
-      <section class="settings-group">
-        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.4 9.4l-4.6 1.8L12 15.8l-1.8-4.6L5.6 9.4l4.6-1.8L12 3Z"/><path d="M18.5 14.5l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"/></svg>AI 配置</span></h3>
-        <p class="settings-group-desc">模型与提示词模板；MCP 等开发者参数在「MCP 参数」子页签。</p>
-        <div class="settings-group-body">
-          <div id="stPanelAi">
-                    <div class="ana-tabs mcp-sub-tabs">
-                      <button id="aiSubTabModel" class="ana-tab-btn active" type="button">模型与提示词</button>
-                      <button id="aiSubTabMcp" class="ana-tab-btn" type="button">MCP 参数</button>
-                    </div>
-
-                    <!-- 子面板 ③-1：模型与提示词 -->
-                    <div id="aiSubPanelModel">
-                    <label class="span2">模型配置（可保存多个）
-                      <span class="ai-tpl-row">
-                        <select id="ai_model_sel"></select>
-                        <button type="button" id="ai_model_new" class="btn btn-sm">新增</button>
-                        <button type="button" id="ai_model_del" class="btn btn-sm">删除</button>
-                      </span>
-                    </label>
-                    <label>配置名称 <input id="ai_cfg_name" placeholder="如 默认 / DeepSeek / 备用"></label>
-                    <label>模型名称 <input id="ai_model" placeholder="deepseek-v4-pro"></label>
-                    <label class="span2">API Key
-                      <span class="ai-key-row">
-                        <input id="ai_apikey" type="password" placeholder="sk-...">
-                        <button type="button" id="ai_toggleKey" class="btn btn-sm">显示</button>
-                      </span>
-                    </label>
-                    <label class="span2">模型地址 <input id="ai_baseurl" placeholder="https://api.deepseek.com"></label>
-                    <label class="span2">提示词模板
-                      <span class="ai-tpl-row">
-                        <select id="ai_tpl_sel"></select>
-                        <button type="button" id="ai_tpl_new" class="btn btn-sm">新增</button>
-                        <button type="button" id="ai_tpl_del" class="btn btn-sm">删除</button>
-                      </span>
-                    </label>
-                    <label class="span2">模板名称 <input id="ai_tpl_name" placeholder="模板名称"></label>
-                    <label class="span2">模板内容（用 {{DATA}} 插入持仓统计）
-                      <textarea id="ai_tpl_content" rows="11" placeholder="在此编写提示词，用 {{DATA}} 占位符插入实时持仓统计"></textarea>
-                    </label>
-                    <label class="switch-row">每日收盘后自动生成 AI 总结（复用 21:00 基金快照）
-                      <label class="switch"><input type="checkbox" id="aiAutoDaily"><span class="switch-knob"></span></label>
-                    </label>
-                    <label class="switch-row">生成后随净值推送发送
-                      <label class="switch"><input type="checkbox" id="aiAutoSend"><span class="switch-knob"></span></label>
-                    </label>
-                    <div id="aiErr" class="err"></div>
-                    <div class="modal-actions"><button class="btn primary" type="button" id="ai_save">保存设置</button></div>
-                    </div><!-- /aiSubPanelModel -->
-
-                    <!-- 子面板 ③-2：MCP 参数设置 -->
-                    <div id="aiSubPanelMcp" class="ac-panel" hidden>
-                      <div class="mcp-status-row">
-                        <span class="mcp-status-dot off" id="mcpStatusDot"></span>
-                        <span class="mcp-status-text" id="mcpStatusText">检测中…</span>
-                      </div>
-                      <p class="tool-hint">MCP 服务允许 AI 客户端（支持 MCP 协议）连接本应用，按实体名称/代码定位并记录流水。填写并保存后：HTTP 模式请点击「重启 MCP 服务」生效；stdio 模式用命令 <code>portfolio mcp</code> 启动。</p>
-
-                      <label class="switch-row">启用 MCP 服务
-                        <label class="switch"><input type="checkbox" id="mcp_enabled"><span class="switch-knob"></span></label>
-                      </label>
-                      <label>传输方式
-                        <select id="mcp_transport">
-                          <option value="http">HTTP（远程：客户端通过 URL 连接）</option>
-                          <option value="stdio">stdio（本地：客户端拉起子进程）</option>
-                        </select>
-                      </label>
-                      <label>HTTP 监听地址 <input id="mcp_http_addr" placeholder=":9988"></label>
-                      <label>鉴权令牌（可选）
-                        <span class="mcp-token-row">
-                          <input id="mcp_token" type="password" placeholder="留空则不鉴权">
-                          <button type="button" id="mcp_token_toggle" class="btn btn-sm mcp-eye" title="显示/隐藏令牌" aria-label="显示或隐藏令牌">
-                            <svg class="eye-open" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
-                            <svg class="eye-closed" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
-                          </button>
-                          <button type="button" id="mcp_gen_token" class="btn btn-sm">生成</button>
-                        </span>
-                      </label>
-                      <label>服务名 <input id="mcp_server_name" placeholder="portfolio-mcp"></label>
-                      <label>版本 <input id="mcp_server_version" placeholder="1.0.0"></label>
-
-                      <h4 class="mcp-subtitle">客户端配置（粘贴到 AI 客户端）</h4>
-                      <label>可执行文件路径（stdio 用） <input id="mcp_exe_path" placeholder="portfolio"></label>
-                      <label>连接主机 / 地址（HTTP 用） <input id="mcp_host" placeholder="127.0.0.1"></label>
-                      <pre id="mcp_client_json" class="mcp-json"></pre>
-                      <div class="modal-actions">
-                        <button class="btn" type="button" id="mcp_copy_client">复制客户端配置</button>
-                        <button class="btn" type="button" id="mcp_restart">重启 MCP 服务</button>
-                        <button class="btn primary" type="button" id="mcp_save">保存 MCP 设置</button>
-                      </div>
-                      <div id="mcpErr" class="err"></div>
-                    </div><!-- /aiSubPanelMcp -->
-                </div>
         </div>
       </section>
 
@@ -783,6 +690,109 @@
         </section>
     </div>
   </div><!-- /notifyView -->
+
+  <!-- ===== AI 设置（2026-10-29 从设置页抽出为独立页）=====
+       API Key / 模型 / 提示词模板 / MCP 参数属于低频配置，原先占了设置页近两屏，
+       现由右上角个人菜单直达 #/ai；「模型与提示词」「MCP 参数」两个子页签保持原样。 -->
+  <div id="aiView" class="page-view settings-page pano-open" hidden>
+    <div class="settings-layout">
+      <section class="settings-group">
+        <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.4 9.4l-4.6 1.8L12 15.8l-1.8-4.6L5.6 9.4l4.6-1.8L12 3Z"/><path d="M18.5 14.5l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"/></svg>AI 设置</span></h3>
+        <p class="settings-group-desc">模型与提示词模板；MCP 等开发者参数在本页「MCP 参数」页签。</p>
+        <div class="settings-group-body">
+          <div id="stPanelAi">
+                    <div class="ana-tabs mcp-sub-tabs">
+                      <button id="aiSubTabModel" class="ana-tab-btn active" type="button">模型与提示词</button>
+                      <button id="aiSubTabMcp" class="ana-tab-btn" type="button">MCP 参数</button>
+                    </div>
+
+                    <!-- 子面板 ③-1：模型与提示词 -->
+                    <div id="aiSubPanelModel">
+                    <label class="span2">模型配置（可保存多个）
+                      <span class="ai-tpl-row">
+                        <select id="ai_model_sel"></select>
+                        <button type="button" id="ai_model_new" class="btn btn-sm">新增</button>
+                        <button type="button" id="ai_model_del" class="btn btn-sm">删除</button>
+                      </span>
+                    </label>
+                    <label>配置名称 <input id="ai_cfg_name" placeholder="如 默认 / DeepSeek / 备用"></label>
+                    <label>模型名称 <input id="ai_model" placeholder="deepseek-v4-pro"></label>
+                    <label class="span2">API Key
+                      <span class="ai-key-row">
+                        <input id="ai_apikey" type="password" placeholder="sk-...">
+                        <button type="button" id="ai_toggleKey" class="btn btn-sm">显示</button>
+                      </span>
+                    </label>
+                    <label class="span2">模型地址 <input id="ai_baseurl" placeholder="https://api.deepseek.com"></label>
+                    <label class="span2">提示词模板
+                      <span class="ai-tpl-row">
+                        <select id="ai_tpl_sel"></select>
+                        <button type="button" id="ai_tpl_new" class="btn btn-sm">新增</button>
+                        <button type="button" id="ai_tpl_del" class="btn btn-sm">删除</button>
+                      </span>
+                    </label>
+                    <label class="span2">模板名称 <input id="ai_tpl_name" placeholder="模板名称"></label>
+                    <label class="span2">模板内容（用 {{DATA}} 插入持仓统计）
+                      <textarea id="ai_tpl_content" rows="11" placeholder="在此编写提示词，用 {{DATA}} 占位符插入实时持仓统计"></textarea>
+                    </label>
+                    <label class="switch-row">每日收盘后自动生成 AI 总结（复用 21:00 基金快照）
+                      <label class="switch"><input type="checkbox" id="aiAutoDaily"><span class="switch-knob"></span></label>
+                    </label>
+                    <label class="switch-row">生成后随净值推送发送
+                      <label class="switch"><input type="checkbox" id="aiAutoSend"><span class="switch-knob"></span></label>
+                    </label>
+                    <div id="aiErr" class="err"></div>
+                    <div class="modal-actions"><button class="btn primary" type="button" id="ai_save">保存设置</button></div>
+                    </div><!-- /aiSubPanelModel -->
+
+                    <!-- 子面板 ③-2：MCP 参数设置 -->
+                    <div id="aiSubPanelMcp" class="ac-panel" hidden>
+                      <div class="mcp-status-row">
+                        <span class="mcp-status-dot off" id="mcpStatusDot"></span>
+                        <span class="mcp-status-text" id="mcpStatusText">检测中…</span>
+                      </div>
+                      <p class="tool-hint">MCP 服务允许 AI 客户端（支持 MCP 协议）连接本应用，按实体名称/代码定位并记录流水。填写并保存后：HTTP 模式请点击「重启 MCP 服务」生效；stdio 模式用命令 <code>portfolio mcp</code> 启动。</p>
+
+                      <label class="switch-row">启用 MCP 服务
+                        <label class="switch"><input type="checkbox" id="mcp_enabled"><span class="switch-knob"></span></label>
+                      </label>
+                      <label>传输方式
+                        <select id="mcp_transport">
+                          <option value="http">HTTP（远程：客户端通过 URL 连接）</option>
+                          <option value="stdio">stdio（本地：客户端拉起子进程）</option>
+                        </select>
+                      </label>
+                      <label>HTTP 监听地址 <input id="mcp_http_addr" placeholder=":9988"></label>
+                      <label>鉴权令牌（可选）
+                        <span class="mcp-token-row">
+                          <input id="mcp_token" type="password" placeholder="留空则不鉴权">
+                          <button type="button" id="mcp_token_toggle" class="btn btn-sm mcp-eye" title="显示/隐藏令牌" aria-label="显示或隐藏令牌">
+                            <svg class="eye-open" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                            <svg class="eye-closed" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                          </button>
+                          <button type="button" id="mcp_gen_token" class="btn btn-sm">生成</button>
+                        </span>
+                      </label>
+                      <label>服务名 <input id="mcp_server_name" placeholder="portfolio-mcp"></label>
+                      <label>版本 <input id="mcp_server_version" placeholder="1.0.0"></label>
+
+                      <h4 class="mcp-subtitle">客户端配置（粘贴到 AI 客户端）</h4>
+                      <label>可执行文件路径（stdio 用） <input id="mcp_exe_path" placeholder="portfolio"></label>
+                      <label>连接主机 / 地址（HTTP 用） <input id="mcp_host" placeholder="127.0.0.1"></label>
+                      <pre id="mcp_client_json" class="mcp-json"></pre>
+                      <div class="modal-actions">
+                        <button class="btn" type="button" id="mcp_copy_client">复制客户端配置</button>
+                        <button class="btn" type="button" id="mcp_restart">重启 MCP 服务</button>
+                        <button class="btn primary" type="button" id="mcp_save">保存 MCP 设置</button>
+                      </div>
+                      <div id="mcpErr" class="err"></div>
+                    </div><!-- /aiSubPanelMcp -->
+                </div>
+        </div>
+      </section>
+    </div>
+  </div><!-- /aiView -->
+
 
   </div><!-- /toolsView -->
 

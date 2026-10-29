@@ -81,16 +81,8 @@ document.addEventListener('DOMContentLoaded', () => {
   applyTheme(localStorage.getItem('pf_theme') || 'dark');
   // v3.4 行密度：恢复上次选择（仅 compact 对 CSS 生效，standard 为默认）
   document.body.dataset.density = localStorage.getItem('pf_row_density') || 'standard';
-  // 设置页「外观主题」的明暗开关（顶栏快捷按钮已下线，主题入口在个人菜单与设置页两处）
-  const themeSw = document.getElementById('themeSwitch');
-  if (themeSw) {
-    themeSw.checked = (document.documentElement.dataset.theme === 'dark');
-    themeSw.onchange = () => {
-      const next = themeSw.checked ? 'dark' : 'light';
-      localStorage.setItem('pf_theme', next);
-      applyTheme(next);
-    };
-  }
+  // 明暗主题入口统一在右上角个人菜单（浅色 / 夜间两项）；设置页的「深色模式」开关已于 2026-10-29 移除，
+  // 同一功能留两套控件只会让两处状态不同步，故只保留菜单一处。
 
   applyAccent(localStorage.getItem('pf_accent') || 'blue');
   document.querySelectorAll('#accentSwatches .accent-swatch').forEach((b) => {
@@ -116,9 +108,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // ---- 视图路由（hash）：每个常驻视图都有后缀 URL，刷新保持当前路径 ----
 // 2026-10-27：新增 rebalance（再平衡）独立页；settings 仍在 VIEWS 内可直达 #/settings，
 // 只是不再占据主导航——入口已迁到右上角个人菜单。
-// 2026-10-29：设置页过载，把两块高频内容拆成独立页 devices（绑定设备）/ notify（通知推送），
-// 同样只在个人菜单里有入口，不占主导航。
-const VIEWS = ['home', 'invest', 'asset', 'finance', 'rebalance', 'settings', 'devices', 'notify'];
+// 2026-10-29：设置页过载，把高频内容拆成独立页 devices（绑定设备）/ notify（通知推送），
+// 低频的 AI 配置（模型/提示词/MCP）也独立成 ai 页，同样只在个人菜单里有入口，不占主导航。
+const VIEWS = ['home', 'invest', 'asset', 'finance', 'rebalance', 'settings', 'ai', 'devices', 'notify'];
 
 // ==== 再平衡页状态与配色（声明必须早于下方同步执行的 applyRoute()，否则 TDZ 报错）====
 const RB_CLASS_LABEL = { stock: '股票', fund: '基金', wealth: '理财', cash: '现金' };
@@ -156,7 +148,7 @@ function setActiveNav(view) {
 }
 // 隐藏全部常驻视图（列表必须与 VIEWS 一一对应，漏一个就会两页叠着显示）
 function hideAllViews() {
-  ['homeView', 'holdingsView', 'assetView', 'financeView', 'rebalanceView', 'settingsView', 'devicesView', 'notifyView'].forEach((id) => {
+  ['homeView', 'holdingsView', 'assetView', 'financeView', 'rebalanceView', 'settingsView', 'aiView', 'devicesView', 'notifyView'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
@@ -172,6 +164,7 @@ function applyRoute() {
   else if (v === 'finance') showFinanceView();
   else if (v === 'rebalance') showRebalanceView();
   else if (v === 'settings') showSettingsView();
+  else if (v === 'ai') showAiView();
   else if (v === 'devices') showDevicesView();
   else if (v === 'notify') showNotifyView();
   else showHoldingsView();
@@ -3436,6 +3429,7 @@ async function openPnlModal() {
 function showHoldingsView() {
   $('#assetView').hidden = true;
   $('#settingsView').hidden = true;
+  $('#aiView').hidden = true;
   $('#devicesView').hidden = true;
   $('#notifyView').hidden = true;
   $('#holdingsView').hidden = false;
@@ -4265,7 +4259,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   const inSubView = !$('#homeView').hidden || !$('#holdingsView').hidden || !$('#assetView').hidden || !$('#financeView').hidden
-    || !$('#settingsView').hidden || !$('#devicesView').hidden || !$('#notifyView').hidden;
+    || !$('#settingsView').hidden || !$('#aiView').hidden || !$('#devicesView').hidden || !$('#notifyView').hidden;
   if (inSubView) {
     navigate('home');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -5727,14 +5721,20 @@ async function showAssetView() {
   await loadAsset();
 }
 
-// 设置页面（2026-10-29 瘦身）：只剩外观主题 / 收支分类 / AI 配置 / 数据管理。
-// 绑定设备 → #/devices，通知推送 → #/notify，两块高频内容由右上角个人菜单直达。
+// 设置页面（2026-10-29 两次瘦身）：只剩外观主题 / 收支分类 / 数据管理。
+// 绑定设备 → #/devices，通知推送 → #/notify，AI 设置 → #/ai，三块由右上角个人菜单直达。
 async function showSettingsView() {
   $('#holdingsView').hidden = true;
   $('#assetView').hidden = true;
   $('#settingsView').hidden = false;
-  await loadAISettings(); // AI 页签的模型/模板/MCP 参数回填
   await loadFinCatSettings(); // 收支分类：自定义分类编辑
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// AI 设置（低频）：模型与提示词 / MCP 参数两个子页签，原「设置页第 ③ 组」整块搬来
+async function showAiView() {
+  $('#aiView').hidden = false;
+  await loadAISettings(); // 模型 / 模板 / MCP 参数回填
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -9322,12 +9322,13 @@ function onAcctPopClick(e) {
     const next = item.dataset.theme === 'light' ? 'light' : 'dark';
     localStorage.setItem('pf_theme', next);
     applyTheme(next);
-    const sw = document.getElementById('themeSwitch');
-    if (sw) sw.checked = (next === 'dark');
-    syncAcctTheme();
+    syncAcctTheme(); // 菜单里的「浅色 / 夜间」勾选态与当前主题对齐
   } else if (act === 'settings') {
     closeAcctMenu();
     navigate('settings');
+  } else if (act === 'ai') {
+    closeAcctMenu();
+    navigate('ai');
   } else if (act === 'devices') {
     closeAcctMenu();
     navigate('devices');
