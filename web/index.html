@@ -381,31 +381,40 @@
     <!-- 收益结论：一句话说清「偏保守还是偏激进、差多少钱、主因是哪类、执行后怎么变」 -->
     <div class="rb-insight" id="rbInsight" hidden></div>
 
-    <!-- 主卡：单栏一张表（2026-10-27 由左右两栏合并）
-         原来左栏画条形图、右栏画明细表，两栏其实是同一份四类数据画两遍，行节奏又不同
-         （左边 space-between 撑满、右边紧凑表格），眼睛要在两栏间来回对照，所以有割裂感。
-         现在一行 = 一个判断：类别 → 配置条（实际条 + 目标刻度 + 实际/目标数值）→ 偏离 → 年化
-         → 收益影响 → 建议（可勾选，决定「记录」时存进快照哪些动作）。 -->
+    <!-- 主卡：左圆环 + 右表（2026-10-29 由单表拆回两栏）
+         原来六列挤一张表，左栏的配置条要跟右边的偏离/建议横向对照，眼睛来回跳。
+         现在左侧只讲「占比长什么样」：一个圆环，段 = 实际占比，实色 = 目标以内、浅色 = 超配部分，
+         段间留缝当分割线；右侧只讲「要做什么」：偏离 → 年化 → 收益影响 → 建议（可勾选，
+         决定「记录」时存进快照哪些动作）。表里不再画条，占比退成「实际 / 目标」两个数字。 -->
     <section class="card rb-main-card">
       <div class="rb-sub-head">
         <span class="rb-sub-title">目标 vs 实际 · 偏离与建议</span>
         <span class="rb-sub-hint">占比 = 占组合总市值 · 收益影响 = 偏离 × 该类年化</span>
       </div>
-      <div class="rb-tbl-wrap">
-        <table class="rb-tbl rb-tbl-alloc">
-          <thead>
-            <tr>
-              <th>类别</th>
-              <th>配置 · 实际 / 目标</th>
-              <th class="num">偏离</th>
-              <th class="num">年化</th>
-              <th class="num">收益影响</th>
-              <th class="num">建议</th>
-            </tr>
-          </thead>
-          <tbody id="rbDriftBody"></tbody>
-          <tfoot id="rbDriftFoot"></tfoot>
-        </table>
+      <div class="rb-main-split">
+        <div class="rb-ring-pane">
+          <div class="rb-ring-wrap" id="rbRing"></div>
+          <div class="rb-ring-key">
+            <span class="k"><i class="sw"></i>目标以内</span>
+            <span class="k"><i class="sw lite"></i>超配部分</span>
+          </div>
+        </div>
+        <div class="rb-tbl-wrap">
+          <table class="rb-tbl rb-tbl-alloc">
+            <thead>
+              <tr>
+                <th>类别</th>
+                <th class="num">实际 / 目标</th>
+                <th class="num">偏离</th>
+                <th class="num">年化</th>
+                <th class="num">收益影响</th>
+                <th class="num">建议</th>
+              </tr>
+            </thead>
+            <tbody id="rbDriftBody"></tbody>
+            <tfoot id="rbDriftFoot"></tfoot>
+          </table>
+        </div>
       </div>
       <p class="rb-note" id="rbNote"></p>
     </section>

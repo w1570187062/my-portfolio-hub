@@ -5979,31 +5979,57 @@ textarea::placeholder {
 .rb-sub-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
 .rb-sub-hint { font-size: var(--fs-xs); color: var(--text-muted); }
 
-/* —— 主表：一行 = 一个判断（2026-10-27 由「左条形图 + 右明细表」两栏合并）——
-   列宽只写在 th 上：table-layout:fixed 以首行定宽，行与行才严格同宽；
-   写 td 的话（且手机要把 thead 藏掉）到处都要 !important 去压。
-   配置列吃剩余宽度，四行的条尾因此对齐。 */
-.rb-tbl-alloc { table-layout: fixed; }
-.rb-tbl-alloc th:nth-child(1) { width: 72px; }
-.rb-tbl-alloc th:nth-child(3) { width: 88px; }
-.rb-tbl-alloc th:nth-child(4) { width: 72px; }
-.rb-tbl-alloc th:nth-child(5) { width: 92px; }
-.rb-tbl-alloc th:nth-child(6) { width: 160px; }
+/* —— 主卡：左占比圆环 + 右偏离建议表（2026-10-29 由单表拆回两栏）——
+   左栏只负责「长什么样」，右栏只负责「要做什么」，中间不再有条形图跟表格抢同一份数据。
+   ≥1341 两栏；≤1340 单栏堆叠（圆环居中，表格沿用下面的块状排法）。 */
+.rb-main-split {
+  display: grid;
+  grid-template-columns: minmax(0, 224px) minmax(0, 1fr);
+  gap: var(--sp-5);
+  align-items: start;
+  margin-top: var(--sp-3);
+}
+.rb-ring-pane { min-width: 0; }
+.rb-ring-wrap { position: relative; width: 100%; max-width: 196px; margin: 0 auto; }
+.rb-ring-svg { display: block; width: 100%; height: auto; }
+/* 圆心：只放一个数（要动多少钱）。圆环回答占比，圆心回答动作量，两者读一次就闭环 */
+.rb-ring-mid {
+  position: absolute; inset: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+}
+.rb-ring-mid .k { font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-ring-mid .v { font-size: var(--fs-lg); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+/* 图例讲的是编码（实色/浅色），不是类别 —— 类别靠下方表里的圆点认，避免同一份数据说两遍 */
+.rb-ring-key {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: 4px var(--sp-3); margin-top: var(--sp-3);
+  font-size: var(--fs-xs); color: var(--text-muted);
+}
+.rb-ring-key .k { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+/* 实色块图例：圆环实色段跟类别色走，图例只表达「实色 vs 浅色」编码，故用中性灰 —— 不要用 --text-secondary（会随文字层级变） */
+.rb-ring-key .sw { display: inline-block; width: 14px; height: 6px; border-radius: 2px; background: var(--text-muted); }
+/* 浅色块的图例：圆环里「超配那截」是白底压色 → 偏白，所以图例也用偏白，
+   再加一圈描边，否则浅色主题下白底白卡几乎看不见这块 */
+.rb-ring-key .sw.lite { background: rgba(255, 255, 255, .8); box-shadow: inset 0 0 0 1px var(--border-strong); }
 
-/* 配置单元格：轨道吃满剩余，数值列固定 104px —— 固定宽度是关键，
-   否则「100.0% / 15%」与「4.0% / 15%」会让条尾落在不同 x 上，看着就是没对齐。 */
-.rb-alloc-in { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
-.rb-alloc-in .rb-bar-track { flex: 1 1 auto; min-width: 32px; }
-.rb-alloc-in .rb-bar-vals { flex: 0 0 auto; width: 104px; }
+/* 列宽走百分比而不是「固定几列 + 一列吃剩余」：拆成两栏后表格区窄了一截，
+   若让某列吃剩余，右对齐的数字会被钉在列尾、左边留出一大片空白，看着像少画了一条。
+   百分比把余量摊到每列，六列都只是「数字 + 一点呼吸位」。 */
+.rb-tbl-alloc { table-layout: fixed; }
+.rb-tbl-alloc th:nth-child(1) { width: 16%; }
+.rb-tbl-alloc th:nth-child(2) { width: 22%; }
+.rb-tbl-alloc th:nth-child(3) { width: 16%; }
+.rb-tbl-alloc th:nth-child(4) { width: 14%; }
+.rb-tbl-alloc th:nth-child(5) { width: 16%; }
+.rb-tbl-alloc th:nth-child(6) { width: 16%; }
+.rb-tbl-alloc .rb-alloc { text-align: right; }
+
+/* 实际/目标：实色给当前值、浅色给目标基准（条不在表里了，这列退成纯数字） */
+.rb-alloc-vals { display: inline-flex; align-items: baseline; gap: 5px; font-variant-numeric: tabular-nums; }
+.rb-alloc-vals b { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.rb-alloc-vals i { font-style: normal; font-size: var(--fs-xs); color: var(--text-muted); }
 /* 类别色与几何值都由 JS 以自定义属性注入（app.js 内联样式只允许 --x: v 形式），CSS 侧兜底 */
 .rb-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--rb-c, var(--text-faint)); }
-.rb-bar-track { position: relative; height: 12px; border-radius: 2px; background: var(--bg-soft); overflow: visible; }
-.rb-bar-fill { width: var(--rb-w, 0%); height: 100%; border-radius: 2px; background: var(--rb-c, var(--primary)); transition: width .3s ease; }
-/* 目标刻度：细竖线，位置由 JS 用 --rb-t 注入；条长于线=超配，短于线=低配 */
-.rb-bar-marker { position: absolute; top: -3px; bottom: -3px; left: var(--rb-t, 0%); width: 2px; border-radius: 2px; background: var(--text-muted); transform: translateX(-1px); }
-.rb-bar-vals { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; font-variant-numeric: tabular-nums; }
-.rb-bar-vals b { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
-.rb-bar-vals span { font-size: var(--fs-xs); color: var(--text-muted); }
 
 /* —— 偏离建议表 —— */
 .rb-tbl-wrap { overflow-x: auto; }
@@ -6217,46 +6243,46 @@ textarea::placeholder {
 .rb-pv-s { margin-top: 1px; font-size: var(--fs-xs); color: var(--text-faint); }
 .rb-thr-hint { margin-top: var(--sp-2); }
 
-/* 断点：≤880 主表改「每类一块」的竖排（既有白名单值，不新增）。
-   原因：六列固定宽（72+88+72+92+160）在 880 以下会把「配置」列压到 100px 内，
-   641px 时条形只剩 32px 的一小截，等于把主要的视觉信息废掉；再往下横滚一张带条形的表更难读。
-   改成 grid 后每类四排：类别 · 偏离 → 条 + 实际/目标 → 年化 · 收益影响 → 建议勾选。
+/* 断点 ≤1340：主卡单栏堆叠（圆环居中在上、表格在下），表格改「每类一块」的竖排。
+   原因：六列固定宽（72+88+72+92+160）在 1340 以下再被圆环切掉 224px 就挤没了；
+   改成 grid 后每类三排：类别 · 实际/目标 · 偏离 → 年化 · 收益影响 → 建议勾选。
    表头藏掉后靠 td[data-l] 的 ::before 补标签，几个数字才不会被读成孤立的百分比。 */
 @media (max-width: 1340px) {
   .rb-main-card, .rb-hist-card { padding: var(--sp-3) var(--sp-4); }
   .rb-hist-row { grid-template-columns: 78px minmax(0, 1fr) 84px 76px; }
   .rb-hist-drift { display: none; }
 
+  .rb-main-split { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+  .rb-ring-wrap { max-width: 156px; }
+  .rb-ring-key { margin-top: var(--sp-2); }
+
   .rb-tbl.rb-tbl-alloc, .rb-tbl.rb-tbl-alloc tbody, .rb-tbl.rb-tbl-alloc tfoot { display: block; }
   .rb-tbl.rb-tbl-alloc thead { display: none; }
   .rb-tbl.rb-tbl-alloc tbody tr {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 6px var(--sp-2);
     padding: var(--sp-3) 0;
     border-bottom: 1px solid var(--border);
   }
   /* 全局 th,td 带 height: var(--row-h)（40px）；进了 grid 之后它会变成每格 40px 的硬高度，
-     四排叠起来每类 200px。必须归零，让每类按内容排。 */
+     三排叠起来每类 120px。必须归零，让每类按内容排。 */
   .rb-tbl.rb-tbl-alloc tbody td { display: block; height: auto; padding: 0; border: 0; text-align: left; }
-  /* 标签只补在纯数字列上；类别/配置/建议自带语义，加了反而啰嗦 */
+  /* 标签只补在纯数字列上；类别/实际目标/建议自带语义，加了反而啰嗦 */
   .rb-tbl.rb-tbl-alloc tbody td[data-l]::before {
     content: attr(data-l);
     margin-right: var(--sp-1);
     font-size: var(--fs-xs); color: var(--text-muted);
   }
   .rb-tbl.rb-tbl-alloc tbody td[data-l="类别"]::before,
-  .rb-tbl.rb-tbl-alloc tbody td[data-l="配置"]::before,
+  .rb-tbl.rb-tbl-alloc tbody td[data-l="实际 / 目标"]::before,
   .rb-tbl.rb-tbl-alloc tbody td[data-l="建议"]::before { content: none; }
   .rb-tbl.rb-tbl-alloc tbody td:nth-child(1) { grid-column: 1; grid-row: 1; }
-  .rb-tbl.rb-tbl-alloc tbody td:nth-child(3) { grid-column: 2; grid-row: 1; text-align: right; }
-  .rb-tbl.rb-tbl-alloc tbody td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
-  .rb-tbl.rb-tbl-alloc tbody td:nth-child(4) { grid-column: 1; grid-row: 3; }
-  .rb-tbl.rb-tbl-alloc tbody td:nth-child(5) { grid-column: 2; grid-row: 3; text-align: right; }
-  .rb-tbl.rb-tbl-alloc tbody td:nth-child(6) { grid-column: 1 / -1; grid-row: 4; }
-  /* 条与数值同排、数值紧跟条尾，不再右对齐到固定 104px 栏 */
-  .rb-alloc-in { justify-content: flex-start; }
-  .rb-alloc-in .rb-bar-vals { width: auto; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(2) { grid-column: 2; grid-row: 1; text-align: right; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(3) { grid-column: 3; grid-row: 1; text-align: right; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(4) { grid-column: 1; grid-row: 2; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(5) { grid-column: 2 / -1; grid-row: 2; text-align: right; }
+  .rb-tbl.rb-tbl-alloc tbody td:nth-child(6) { grid-column: 1 / -1; grid-row: 3; }
   .rb-act-pick { justify-content: flex-start; }
   /* 合计行：横排折行（一屏内放不下一行六列） */
   .rb-tbl.rb-tbl-alloc tfoot tr {

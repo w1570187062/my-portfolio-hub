@@ -128,6 +128,10 @@ const RB_CLASS_COLOR = {
   wealth: 'rgba(var(--cat-wealth), 1)',
   cash: 'rgba(var(--cat-cash), 1)',
 };
+// 圆环「超配那截」的浅色做法：白底 + 55% 类别色两层叠出不透明浅色，
+// 而不是给类别色降 alpha —— 降 alpha 在暗色主题下是往背景偏（变暗，看着像缺口），
+// 这里要的恰恰是「变浅」。
+const RB_LITE_ALPHA = 0.55;
 let rbData = null;         // /api/rebalance 最近一次结果
 let rbPicked = new Set();  // 本次勾选要执行的类别 key
 let rbHistoryLogs = [];
@@ -12245,6 +12249,58 @@ function renderRbInsight() {
   box.hidden = false;
 }
 
+// —— 主卡左：占比圆环（2026-10-29 取代原来的配置条）——
+// 段 = 该类实际占比（合计 100%），段内再分两截：实色 = 目标以内的部分，浅色 = 超出的部分。
+// 于是「有没有超配」不用读数字 —— 段尾出现浅色就是超配，整段实色就是低配或达标。
+// 段间留 2° 空隙当分割线（不描边：描边颜色浅了看不见、深了像多出一条数据）。
+function rbArcPath(cx, cy, r, a0, a1) {
+  const pt = (a) => {
+    const rad = (a - 90) * Math.PI / 180;
+    return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
+  };
+  const [x0, y0] = pt(a0);
+  const [x1, y1] = pt(a1);
+  const big = a1 - a0 > 180 ? 1 : 0;
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${big} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+}
+
+function renderRbRing(buckets) {
+  const box = document.getElementById('rbRing');
+  if (!box) return;
+  const S = 200, C = S / 2, R = 78, W = 26, GAP = 2;
+  const arcs = [];
+  let cur = 0;
+  buckets.forEach((b) => {
+    const w = Math.max(0, Number(b.weight) || 0);
+    const t = Math.max(0, Number(b.target) || 0);
+    const span = w * 3.6;
+    const g = Math.min(GAP, span / 4);       // 极细小类不留缝，否则整段被吃掉
+    const a0 = cur + g;
+    const a1 = cur + span - g;
+    cur += span;
+    if (a1 <= a0) return;
+    const c = RB_CLASS_COLOR[b.key] || 'var(--text-faint)';
+    // 实色截到「目标占比」为止；实际 < 目标时整段实色（没有超配那截）
+    const solid = a0 + (a1 - a0) * (w > 0 ? Math.min(w, t) / w : 0);
+    arcs.push(`<path d="${rbArcPath(C, C, R, a0, solid)}" stroke="${c}" stroke-width="${W}" fill="none"/>`);
+    if (a1 - solid > 0.05) {
+      const d = rbArcPath(C, C, R, solid, a1);
+      arcs.push(`<path d="${d}" stroke="#fff" stroke-width="${W}" fill="none"/>`);
+      arcs.push(`<path d="${d}" stroke="${c}" stroke-opacity="${RB_LITE_ALPHA}" stroke-width="${W}" fill="none"/>`);
+    }
+  });
+  const need = Number(rbData.need_cny) || 0;
+  box.innerHTML = `<svg class="rb-ring-svg" viewBox="0 0 ${S} ${S}" role="img"
+      aria-label="四类资产实际占比圆环，段尾浅色表示超配">
+      <circle cx="${C}" cy="${C}" r="${R}" stroke="var(--bg-soft)" stroke-width="${W}" fill="none"/>
+      ${arcs.join('')}
+    </svg>
+    <div class="rb-ring-mid">
+      <span class="k">待调整</span>
+      <b class="v">${need > 0 ? rbYuan(need) : '—'}</b>
+    </div>`;
+}
+
 // —— 主表：一行 = 一个判断（2026-10-27 由「左条形图 + 右明细表」两栏合并）——
 // 原来两栏把同一份四类数据画了两遍，行节奏也不同，来回对照很累；现在条形嵌进「配置」列，
 // 「建议」列就地勾选（勾选集合决定「记录」时写进快照的 actions）。
@@ -12258,15 +12314,12 @@ function renderRbDrift() {
   if (!buckets.length || !(total > 0)) {
     body.innerHTML = '<tr><td colspan="6"><div class="rb-act-empty">暂无资产数据</div></td></tr>';
     if (foot) foot.innerHTML = '';
+    renderRbRing([]);
     return;
   }
-  // 横轴按最大占比归一（至少 50%），保证小占比类别也看得出条长差异
-  const scale = Math.max(50, ...buckets.map((b) => Math.max(Number(b.weight) || 0, Number(b.target) || 0)));
-  const clamp = (v) => Math.max(0, Math.min(100, v));
+  renderRbRing(buckets);
   const pend = buckets.filter((b) => b.action !== 'none');
   body.innerHTML = buckets.map((b) => {
-    const w = clamp((Number(b.weight) || 0) / scale * 100);
-    const t = clamp((Number(b.target) || 0) / scale * 100);
     const d = Number(b.drift) || 0;
     const none = b.action === 'none';
     const cls = none ? 'ok' : (d > 0 ? 'over' : 'under');
@@ -12281,13 +12334,7 @@ function renderRbDrift() {
          </label>`;
     return `<tr>
       <td data-l="类别"><span class="rb-cat"><span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[b.key]}"></span>${esc(b.label)}</span></td>
-      <td class="rb-alloc" data-l="配置"><div class="rb-alloc-in">
-        <div class="rb-bar-track" title="实际 ${rbFixed(b.weight, 1)}% · 目标 ${b.target}%">
-          <div class="rb-bar-fill" style="--rb-w:${w}%;--rb-c:${RB_CLASS_COLOR[b.key]}"></div>
-          <div class="rb-bar-marker" style="--rb-t:${t}%"></div>
-        </div>
-        <span class="rb-bar-vals"><b>${rbFixed(b.weight, 1)}%</b><span>/ ${b.target}%</span></span>
-      </div></td>
+      <td class="rb-alloc" data-l="实际 / 目标" title="实际 ${rbFixed(b.weight, 1)}% · 目标 ${b.target}%"><span class="rb-alloc-vals"><b>${rbFixed(b.weight, 1)}%</b><i>/ ${b.target}%</i></span></td>
       <td class="num" data-l="偏离"><span class="rb-drift ${cls}">${none ? '容差内' : (d > 0 ? '+' : '−') + Math.abs(d).toFixed(1) + '%'}</span></td>
       <td class="num" data-l="年化">${rbFixed(b.exp, 1)}%</td>
       <td class="num rb-imp" data-l="收益影响">${rbSignedYuan(b.contrib)}</td>
@@ -12311,7 +12358,7 @@ function renderRbDrift() {
     const need = Number(rbData.need_cny) || 0;
     foot.innerHTML = `<tr>
       <td>合计</td>
-      <td class="rb-alloc"><div class="rb-alloc-in"><span class="rb-bar-vals"><b>${rbFixed(sumW, 1)}%</b><span>/ 100%</span></span></div></td>
+      <td class="rb-alloc"><span class="rb-alloc-vals"><b>${rbFixed(sumW, 1)}%</b><i>/ 100%</i></span></td>
       <td class="num">—</td>
       <td class="num">加权 ${rbFixed(rt.ret_target)}%</td>
       <td class="num rb-imp">${rbSignedYuan(rt.excess_amt)}</td>
