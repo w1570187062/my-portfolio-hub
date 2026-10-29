@@ -6206,6 +6206,8 @@ function renderAssetTab() {
   const body = $('#assetTabBody');
   if (!body) return;
   const acctCount = (assetSources || []).length;
+  // 「现金」tab 计数 = 有余额的现金账户数（账户常年有一批 0 余额占位，计数只数真有钱的）
+  const cashLiveCount = (assetData?.cash?.items || []).filter((it) => Number(it.amount || 0) !== 0).length;
 
   // 从 assetData 取数（全部折算 CNY 比较）
   const eqMV = Number(assetData?.equity?.market_value || 0);
@@ -6323,15 +6325,18 @@ function renderAssetTab() {
     </div>
     <div class="sub-tabs asset-subtabs" id="assetSubTabs">
       <button class="sub-tab active" data-sub="accounts" type="button">账户<span class="sub-tab-count" id="assetAcctCount">${acctCount}</span></button>
+      <button class="sub-tab" data-sub="cash" type="button">现金<span class="sub-tab-count">${cashLiveCount}</span></button>
       <button class="sub-tab" data-sub="flows" type="button">流水</button>
       <button class="sub-tab" data-sub="cashflow" type="button">收支</button>
     </div>
     <div class="asset-subpanel active" data-sub="accounts" id="assetPanelAccounts"></div>
+    <div class="asset-subpanel" data-sub="cash" id="assetPanelCash"></div>
     <div class="asset-subpanel" data-sub="flows" id="assetPanelFlows"></div>
     <div class="asset-subpanel" data-sub="cashflow" id="assetPanelCashflow"></div>`;
 
-  // 账户面板、流水/收支面板
+  // 账户面板、现金 / 流水 / 收支面板
   renderSources($('#assetPanelAccounts'));
+  renderAssetCashPanel($('#assetPanelCash'));
   renderAssetFlowsPanel($('#assetPanelFlows'));
   renderAssetCashflowPanel($('#assetPanelCashflow'));
 
@@ -6361,6 +6366,79 @@ function donutSvg(segs, total, centerLabel, centerVal, r, sw) {
 // 资产页「流水」子面板：复用 /api/asset/flows（近 180 天），表格沿用现金流样式；
 // 行内「回退」复用后端 rollback，回退后原地刷新本面板（不与理财历史弹框耦合）。
 // 资产页「流水」子面板：首次加载全量（近 180 天）入 assetFlowsCache，之后用 paintFlows 按工具条筛选/区间重渲染。
+// 资产页「现金」子面板（2026-10-29）：回答「现金都散落在哪儿」。
+// 只读展示 —— 增删改仍在「账户」tab，这里不重复做管理入口。
+// 排序与占比统一按折 CNY（港币/美元账户不能拿原币直接跟人民币比大小），
+// 条形按「相对最大账户」归一（同资产区域卡的 cmp-bar），满格=最集中的那一处。
+let cashShowZero = false;   // 零余额账户默认收起（17 个账户里常年有 6 个是 0）
+// 三个子 tab 共用的合计条：{ k 标签, v 数值, s 说明, tone 语义色类(up/down) }。
+// tone 交给全局 .up/.down（涨红跌绿），别在这里写颜色字面量。
+function assetSumHTML(items) {
+  return '<div class="asset-sum">' + items.filter(Boolean).map((it) =>
+    '<div class="asset-sum-item"><span class="asset-sum-k">' + it.k + '</span>' +
+    '<span class="asset-sum-v' + (it.tone ? ' ' + it.tone : '') + '">' + it.v + '</span>' +
+    (it.s ? '<span class="asset-sum-s">' + it.s + '</span>' : '') + '</div>').join('') + '</div>';
+}
+// 带符号金额：正数 +¥x，负数 −¥x（流水行同一套符号，和 yuanOfW 的 '-¥' 区分开）
+const signedYuanW = (n) => (n >= 0 ? '+' : '−') + yuanOfW(Math.abs(Number(n) || 0));
+function renderAssetCashPanel(body) {
+  if (!body) return;
+  const items = (assetData?.cash?.items || []).map((it) => {
+    const cur = String(it.currency || 'cny').toLowerCase();
+    return { ...it, cur, cny: cnyOf(Number(it.amount || 0), cur) };
+  });
+  if (!items.length) {
+    body.innerHTML = '<p class="u-muted">还没有现金账户。到「账户」tab 给银行 / 券商添加子账户后，这里会按机构列出余额分布。</p>';
+    return;
+  }
+  const total = Number(assetData?.cash?.total || 0) || items.reduce((a, x) => a + x.cny, 0);
+  const live = items.filter((x) => Math.abs(x.cny) > 0.005).sort((a, b) => Math.abs(b.cny) - Math.abs(a.cny));
+  const zero = items.filter((x) => Math.abs(x.cny) <= 0.005);
+  const maxCny = Math.max(1, ...live.map((x) => Math.abs(x.cny)));
+  const srcCount = new Set(live.map((x) => x.source_id)).size;
+  const fxCny = items.filter((x) => x.cur !== 'cny' && x.cur !== 'rmb').reduce((a, x) => a + x.cny, 0);
+  const top = live[0];
+  const topPct = top && total > 0 ? Math.abs(top.cny) / total * 100 : 0;
+
+  let html = assetSumHTML([
+    { k: '现金合计', v: yuanOfW(total), s: '折 CNY' },
+    { k: '分布', v: srcCount + ' 家机构', s: live.length + ' / ' + items.length + ' 个账户有余额' },
+    top ? { k: '最集中的一处', v: topPct.toFixed(1) + '%', s: esc(top.source_name || '') } : null,
+    { k: '外币占比', v: (total > 0 ? fxCny / total * 100 : 0).toFixed(1) + '%', s: 'HKD / USD 折 CNY' },
+  ]);
+
+  // 「RMB账户」「…子账户」「余额」这类名字只是占位，后面再挂一遍反而把机构名挤走
+  const genericName = (n) => !n || n === '余额' || /账户$/.test(n);
+  const rowOf = (x) => {
+    const isFx = x.cur !== 'cny' && x.cur !== 'rmb';
+    const pct = total > 0 ? Math.abs(x.cny) / total * 100 : 0;
+    const w = Math.min(100, Math.abs(x.cny) / maxCny * 100).toFixed(1);
+    const sub = (!genericName(x.name) && x.name !== x.source_name) ? '<span class="cash-sub">· ' + esc(x.name) + '</span>' : '';
+    return '<tr' + (Math.abs(x.cny) <= 0.005 ? ' class="is-zero"' : '') + '>' +
+      '<td><div class="cash-acct"><span class="cash-src">' + esc(x.source_name || '未分类') + '</span>' + sub + '</div></td>' +
+      '<td><span class="cash-cur">' + x.cur.toUpperCase() + '</span></td>' +
+      '<td class="num">' + moneyCur(x.amount || 0, x.cur) + '</td>' +
+      '<td class="num">' + (isFx ? money(x.cny) : '<span class="u-muted">—</span>') + '</td>' +
+      '<td class="num"><div class="cash-share"><span class="cash-share-bar"><i style="--w:' + w + '%"></i></span>' +
+        '<span class="cash-pct">' + pct.toFixed(1) + '%</span></div></td>' +
+      '</tr>';
+  };
+  const rows = live.concat(cashShowZero ? zero : []).map(rowOf).join('');
+
+  html += '<div class="card asset-flow-card cash-card"><table class="asset-table cash-tbl">' +
+    '<thead><tr><th>账户</th><th>币种</th><th class="num">余额</th><th class="num">折 CNY</th><th class="num">占现金</th></tr></thead>' +
+    '<tbody>' + rows + '</tbody></table></div>';
+
+  if (zero.length) {
+    html += '<div class="cash-zero"><button class="cash-zero-toggle" type="button" id="cashZeroBtn">' +
+      (cashShowZero ? '收起' : '另有') + ' ' + zero.length + ' 个零余额账户' + (cashShowZero ? '' : '，点此展开') +
+      '</button></div>';
+  }
+  body.innerHTML = html;
+  const zb = body.querySelector('#cashZeroBtn');
+  if (zb) zb.onclick = () => { cashShowZero = !cashShowZero; renderAssetCashPanel(body); };
+}
+
 async function renderAssetFlowsPanel(body) {
   if (!body) return;
   if (!assetFlowsCache.length) {
@@ -6388,7 +6466,24 @@ function paintFlows(body) {
   }
   if (flowTypeFilter !== 'all') list = list.filter((f) => flowMatch(f, flowTypeFilter));
 
-  let html = '<div class="holding-toolbar"><div class="filter-group" id="flowChips">' +
+  // 合计跟随当前筛选（类型 chips + 区间），与表格里的行严格同源：
+  // 多币种统一折 CNY（cnyOf），否则美元流水会被当人民币直接相加。
+  let inSum = 0, outSum = 0, inCnt = 0, outCnt = 0;
+  list.forEach((f) => {
+    const v = cnyOf(Number(f.amount) || 0, normCurJS(f.currency));
+    if (v >= 0) { inSum += v; inCnt += 1; } else { outSum += -v; outCnt += 1; }
+  });
+  const net = inSum - outSum;
+  const rangeLabel = flowRangeDays === 7 ? '近 7 天' : flowRangeDays === 365 ? '近 1 年' : '近 30 天';
+
+  let html = assetSumHTML([
+    { k: '笔数', v: list.length + ' 笔', s: rangeLabel },
+    { k: '入账合计', v: yuanOfW(inSum), s: inCnt + ' 笔', tone: 'up' },
+    { k: '支出合计', v: yuanOfW(outSum), s: outCnt + ' 笔', tone: 'down' },
+    { k: '净额', v: signedYuanW(net), s: '入账 − 支出', tone: clsPnl(net) },
+  ]);
+
+  html += '<div class="holding-toolbar"><div class="filter-group" id="flowChips">' +
     toolbarChip('all', '全部', flowTypeFilter === 'all') +
     toolbarChip('in', '入账', flowTypeFilter === 'in') +
     toolbarChip('out', '支出', flowTypeFilter === 'out') +
@@ -6447,8 +6542,26 @@ async function renderAssetCashflowPanel(body) {
   // 统一查看月份：所有循环计划一起翻；并预填当前月完成态缓存，避免卡片先显示成铅笔
   cfViewYm = cashflowMonth || cfNowYm;
   _planDoneCache[cashflowMonth || cfNowYm] = cashflowDone;
+  const plans = cashflowPlans || [];
+  // 合计只算「循环」计划：一次性计划挂在具体日期上，混进「每月收入」会把单月总额抬高。
+  // 金额统一折 CNY（计划可设港币/美元），与表格里的原币显示互不影响。
+  const rec = plans.filter((p) => p.pattern !== 'one_time');
+  const one = plans.filter((p) => p.pattern === 'one_time');
+  const sumOf = (type) => rec.filter((p) => p.type === type)
+    .reduce((a, p) => a + cnyOf(Math.abs(Number(p.amount) || 0), normCurJS(p.currency)), 0);
+  const incSum = sumOf('income');
+  const expSum = sumOf('expense');
+  const netSum = incSum - expSum;
+  const cntOf = (type) => rec.filter((p) => p.type === type).length;
+  const sumHTML = plans.length ? assetSumHTML([
+    { k: '每月收入', v: yuanOfW(incSum), s: cntOf('income') + ' 项循环', tone: 'up' },
+    { k: '每月支出', v: yuanOfW(expSum), s: cntOf('expense') + ' 项循环', tone: 'down' },
+    { k: '每月结余', v: signedYuanW(netSum), s: incSum > 0 ? '留存 ' + (netSum / incSum * 100).toFixed(0) + '%' : '收入 − 支出', tone: clsPnl(netSum) },
+    { k: '计划', v: plans.length + ' 项', s: '循环 ' + rec.length + ' / 一次性 ' + one.length },
+  ]) : '';
   body.innerHTML = `
     <div class="asset-cashflow">
+      ${sumHTML}
       <div class="section-title">收支计划</div>
       <button class="plan-add-btn plan-add-btn-block" id="assetPlanAddBtn" type="button"><span class="plan-add-plus">+</span> 新增收支计划</button>
       <div class="plan-list" id="assetPlanList"></div>

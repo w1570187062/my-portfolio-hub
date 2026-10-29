@@ -3312,6 +3312,75 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .asset-flow-card { padding: 0; overflow: hidden; }
 .asset-table th:first-child { text-align: left; }
 
+/* ===== 资产页「现金」子面板（2026-10-29）=====
+   回答一个问题：现金都散落在哪儿。所以不做编辑表（增删改仍在「账户」tab），
+   只按「折 CNY」降序把现金账户排出来，右侧条形给出占比 —— 币种不同不能直接比原币。
+   条形按相对最大账户归一（同资产区域卡的 cmp-bar）：满格 = 最集中的那个账户，
+   真实占比以右侧数字为准，这样几千块的小账户之间也看得出差异。 */
+/* 资产页三个子 tab（现金 / 流水 / 收支）共用的一条合计：k 标签 + v 数值 + s 说明 */
+.asset-sum {
+  display: flex; flex-wrap: wrap; align-items: flex-end;
+  gap: var(--sp-2) var(--sp-6);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.asset-sum-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.asset-sum-k { font-size: var(--fs-xs); color: var(--text-muted); letter-spacing: .4px; }
+.asset-sum-v { font-size: var(--fs-xl); font-weight: 650; line-height: 1.1; font-variant-numeric: tabular-nums; }
+/* 说明另起一行：挤在数字右边时「¥7.24万折 CNY」「23.7%HKD / USD 折 CNY」会连成一串读不出边界 */
+.asset-sum-s { display: block; margin-top: 2px; font-size: var(--fs-xs); font-weight: 500; color: var(--text-muted); }
+/* 固定布局 + 首行定宽：auto 布局下「币种」列会被摊到 170px 宽，CNY 飘到半个屏外，
+   和账户名之间空出一大片。fixed 后账户名拿大头，币种列就是标签宽度。 */
+.cash-tbl { table-layout: fixed; }
+/* 手机上 5 列会被压到「占现金」整列挤没（条形 72px 直接顶穿单元格），
+   与流水/历史表同样处理：给表格一个地板宽，超出部分在卡片内横向滚动。
+   body 是 overflow-x:clip，卡片自己不滚就会把内容裁掉。 */
+.cash-card { overflow-x: auto; }
+.cash-tbl { min-width: 520px; }
+.cash-tbl th:nth-child(1) { width: 42%; }
+.cash-tbl th:nth-child(2) { width: 72px; }
+.cash-tbl th:nth-child(3) { width: 18%; }
+.cash-tbl th:nth-child(4) { width: 16%; }
+.cash-tbl th:nth-child(5) { width: 18%; }
+/* 上面那条 width:1% 是给「操作」列（只有一个图标）用的，会压过 .cash-tbl 的列宽；
+   现金表最后一列是「占现金」（条形 + 百分比），必须显式争回宽度，否则 fixed 布局下真压成 1%。 */
+#assetTabBody .cash-tbl th:last-child,
+#assetTabBody .cash-tbl td:last-child { width: 18%; }
+.cash-tbl .cash-acct { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.cash-tbl .cash-src { font-weight: 600; color: var(--text); white-space: nowrap; }
+.cash-tbl .cash-sub { font-size: var(--fs-sm); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cash-tbl .cash-cur { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: .5px; color: var(--text-muted); }
+.cash-tbl .cash-share { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+.cash-share-bar {
+  display: block; position: relative; flex: 0 0 auto;
+  width: 72px; height: 6px;
+  border-radius: 2px; background: var(--border); overflow: hidden;
+}
+.cash-share-bar i {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: var(--w, 0); border-radius: 2px;
+  background: rgb(var(--cat-cash));
+}
+.cash-tbl .cash-pct { min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+/* 零余额账户默认收起：17 个账户里常年有 6 个是 0，全列出来只是噪声 */
+/* 手机：flex 换行会落成「3 + 1」的孤项，改成 2×2 网格 */
+@media (max-width: 640px) {
+  .asset-sum { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3) var(--sp-4); }
+}
+.cash-zero { margin-top: var(--sp-3); }
+.cash-zero-toggle {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 0; border: 0; background: none; font-family: inherit;
+  font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer;
+}
+.cash-zero-toggle:hover { color: var(--text); }
+.cash-tbl tr.is-zero td { color: var(--text-faint); }
+/* 机构名有自己的前景色，不跟着 td 变淡，零余额行会显得半亮半暗 */
+.cash-tbl tr.is-zero .cash-src { color: var(--text-muted); }
+
 /* 投资页 / 资产页流水 表头工具条：复用原型 holding-toolbar（筛选 chips + 排序下拉） */
 .holding-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-4); }
 /* 存款视图的工具条内容为空（无筛选/排序），若不占位会比其他 tab 矮一行，
