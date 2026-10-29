@@ -40,6 +40,13 @@ func main() {
 	}
 	// 认证层：清理过期配对码；无认证设备时给出认领提示或救援码。
 	api.EnsureBootstrapAccess()
+	// 主设备迁移（2026-10-29）：老库所有会话都是 member，这里把最早接入的那台升为 owner，
+	// 保证「吊销他机 / 出码 / 改 PIN / 删清账本 / 导入」这些危险操作始终有且只有一台设备可执行。
+	if id, err := db.EnsureOwnerSession(); err != nil {
+		log.Printf("[auth] 主设备迁移失败：%v", err)
+	} else if id > 0 {
+		log.Printf("[auth] 已将会话 %d 设为主设备（owner），其余设备为普通设备（member）", id)
+	}
 
 	// FX rates: warm cache from DB and refresh in background (handlers no longer block on upstream).
 	market.StartFXUpdater()

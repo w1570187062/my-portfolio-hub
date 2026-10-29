@@ -161,19 +161,24 @@ func RegisterRoutes(r *gin.Engine) {
 	g.Use(AuthGuard())
 	{
 		// 会话自助：退出 / 切换账本 / PIN / 设备管理 / 出码
+		// 2026-10-29 权限分层：管理类操作先过 OwnerGuard（只有主设备），再过 PinGuard（口令）。
 		g.POST("/session/logout", sessionLogout)
 		g.POST("/session/switch", sessionSwitch)
-		g.POST("/session/pin", sessionPIN)
+		g.POST("/session/pin", OwnerGuard(), sessionPIN)              // 改/关卡 PIN 只属主设备
+		g.POST("/session/pin/reset", sessionPINReset)                 // 忘记 PIN：用恢复码重置（需已登录，不需旧 PIN）
+		g.POST("/session/recovery/rotate", OwnerGuard(), PinGuard(), sessionRecoveryRotate) // 重新生成恢复码
+		g.POST("/session/transfer", OwnerGuard(), sessionTransfer)    // 把主设备身份转移给指定设备
 		g.GET("/session/devices", sessionDevices)
-		g.DELETE("/session/devices/:id", sessionDeviceRevoke)
-		g.POST("/session/code", PinGuard(), sessionCode) // 出码是新的"加设备"入口，必须 PIN
+		g.PATCH("/session/devices/:id", sessionDeviceRename)  // 改自己：所有设备；改他机：主设备
+		g.DELETE("/session/devices/:id", sessionDeviceRevoke) // 吊销自己：所有设备；吊销他机：主设备 + PIN
+		g.POST("/session/code", OwnerGuard(), PinGuard(), sessionCode) // 出码是新的"加设备"入口
 
 		// 多账本：账本列表/新增/删除/统计/清空（路径与字段沿用 users）
 		g.GET("/users", listUsers)
 		g.POST("/users", createUserHandler)
-		g.DELETE("/users/:id", PinGuard(), deleteUserHandler)
+		g.DELETE("/users/:id", OwnerGuard(), PinGuard(), deleteUserHandler)
 		g.GET("/users/:id/stats", userStats)
-		g.POST("/users/:id/clear", PinGuard(), clearUserHandler)
+		g.POST("/users/:id/clear", OwnerGuard(), PinGuard(), clearUserHandler)
 
 		// 证券联想：名称/代码模糊匹配（添加/编辑持仓弹框的自动填充数据源）
 		g.GET("/search", searchSecuritiesHandler)
@@ -239,7 +244,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/notify/test", notifyTest)
 
 		// 数据导入（格式与「导出数据」一致）
-		g.POST("/import", PinGuard(), importData)
+		g.POST("/import", OwnerGuard(), PinGuard(), importData)
 
 		// 资产全景：来源 / 理财 / 负债 / 汇总 / AI 总结
 		g.GET("/asset/overview", assetOverview)

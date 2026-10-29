@@ -33,6 +33,8 @@ const (
 	ctxUID = "pf_uid"
 	ctxSID = "pf_sid"
 	ctxRO  = "pf_readonly"
+	// ctxRole 设备角色（owner/member），由 AuthGuard 从 sessions.role 写入
+	ctxRole = "pf_role"
 )
 
 var pinPattern = regexp.MustCompile(`^\d{4,6}$`)
@@ -138,6 +140,7 @@ func AuthGuard() gin.HandlerFunc {
 		db.TouchSession(s.ID)
 		c.Set(ctxUID, uid)
 		c.Set(ctxSID, s.ID)
+		c.Set(ctxRole, s.Role)
 		c.Next()
 	}
 }
@@ -145,12 +148,40 @@ func AuthGuard() gin.HandlerFunc {
 // PinGuard 危险操作的第二道锁；未设置 PIN 时直接放行（首次使用引导在设置页）。
 func PinGuard() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if authModeOff() || readOnlyMode() || !db.HasPIN() {
+		if !pinSatisfied(c) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "需要操作 PIN", "pin_required": true})
+			return
+		}
+		c.Next()
+	}
+}
+
+// pinSatisfied 危险操作的口令判定：免认证 / 只读 / 未设 PIN 都视为通过。
+// 抽成函数是因为「吊销他机」这类按目标对象区分危险级的操作要在 handler 里自己判。
+func pinSatisfied(c *gin.Context) bool { return pinValueOK(c.GetHeader(pinHeader)) }
+
+// pinValueOK 同 pinSatisfied，但口令由调用方传入（PIN 放在 body 里的接口用）。
+func pinValueOK(pin string) bool {
+	if authModeOff() || readOnlyMode() || !db.HasPIN() {
+		return true
+	}
+	return db.CheckPIN(pin)
+}
+
+// OwnerGuard 主设备专属操作（2026-10-29）：出码 / 改操作 PIN / 删清账本 / 导入 / 转移管理员。
+// member 设备请求时直接 403 + owner_required，前端据此提示「该操作只有主设备可以执行」，
+// 不再弹 PIN 输入框（免得让用户白输一遍口令）。
+func OwnerGuard() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if authModeOff() || readOnlyMode() {
 			c.Next()
 			return
 		}
-		if !db.CheckPIN(c.GetHeader(pinHeader)) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "需要操作 PIN", "pin_required": true})
+		if currentSessionRole(c) != db.RoleOwner {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":          "该操作只有主设备可以执行",
+				"owner_required": true,
+			})
 			return
 		}
 		c.Next()
@@ -241,10 +272,27 @@ type sessionStateResp struct {
 	ReadOnly bool              `json:"read_only"`
 	HasPIN   bool              `json:"has_pin"`
 	Devices  int               `json:"devices"`
+	// Role 本设备角色（owner=主设备 / member=普通设备）；前端据此显示或隐藏管理入口。
+	Role string `json:"role"`
+	// HasRecovery 是否已生成过恢复码（只表态，不回传明文）。
+	HasRecovery bool `json:"has_recovery"`
+	// Recovery 明文恢复码：仅认领响应里出现一次，之后永远拿不到。
+	Recovery string `json:"recovery,omitempty"`
 }
 
 func buildState(s *db.Session) sessionStateResp {
-	out := sessionStateResp{Authed: true, Mode: "ok", HasPIN: db.HasPIN()}
+	out := sessionStateResp{Authed: true, Mode: "ok", HasPIN: db.HasPIN(), HasRecovery: db.HasRecovery()}
+	if s == nil {
+		out.Role = db.RoleMember
+		if authModeOff() || readOnlyMode() {
+			out.Role = db.RoleOwner
+		}
+		return out
+	}
+	out.Role = s.Role
+	if out.Role == "" {
+		out.Role = db.RoleMember
+	}
 	us, _ := db.SessionUsers(s.ID)
 	uid := s.ActiveUserID
 	for _, u := range us {
@@ -274,6 +322,23 @@ func currentSessionID(c *gin.Context) int64 {
 	}
 	return 0
 }
+
+// currentSessionRole 当前请求所用设备的角色。免认证模式下没有会话，按主设备对待
+// （否则 dev 环境的出码 / 删账本全会 403，跟以前的体验不一致）。
+func currentSessionRole(c *gin.Context) string {
+	if v, ok := c.Get(ctxRole); ok {
+		if r, ok := v.(string); ok && r != "" {
+			return r
+		}
+	}
+	if authModeOff() || readOnlyMode() {
+		return db.RoleOwner
+	}
+	return db.RoleMember
+}
+
+// isOwnerSession 当前设备是否主设备。
+func isOwnerSession(c *gin.Context) bool { return currentSessionRole(c) == db.RoleOwner }
 
 // sessionState GET /api/session —— 前端首屏判据（未认证时告知走认领还是配对）。
 func sessionState(c *gin.Context) {
@@ -325,11 +390,16 @@ func sessionState(c *gin.Context) {
 // ---- 首启认领 ----
 
 type claimReq struct {
-	UserIDs  []int64 `json:"user_ids"`
-	RenameTo string  `json:"rename_to"`
+	UserIDs     []int64 `json:"user_ids"`
+	RenameTo    string  `json:"rename_to"`
+	DeviceLabel string  `json:"device_label"` // 可选：这台设备在列表里的名字（如「书房台式机」）
+	PIN         string  `json:"pin"`          // 可选：认领时顺手设置操作 PIN（4–6 位数字）
 }
 
 // sessionClaim POST /api/session/claim —— 首台设备认领已有账本（不改 user_id，数据零迁移）。
+//
+// 首台设备直接成为主设备（owner）：之后「吊销他机 / 出码加设备 / 改 PIN / 删清账本 / 导入」
+// 只有它能做。响应里带一份一次性明文恢复码，前端弹框要求用户抄下来（库里只存 bcrypt）。
 func sessionClaim(c *gin.Context) {
 	if !bootstrapAllowed() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "该实例不接受直接认领，请用配对码登录"})
@@ -342,6 +412,11 @@ func sessionClaim(c *gin.Context) {
 	var b claimReq
 	if err := c.ShouldBindJSON(&b); err != nil || len(b.UserIDs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请至少选择一个账本"})
+		return
+	}
+	pin := strings.TrimSpace(b.PIN)
+	if pin != "" && !pinPattern.MatchString(pin) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PIN 需为 4–6 位数字"})
 		return
 	}
 	uids := make([]int64, 0, len(b.UserIDs))
@@ -358,7 +433,13 @@ func sessionClaim(c *gin.Context) {
 			return
 		}
 	}
-	tok, s, err := db.CreateSession(uids[0], c.Request.UserAgent(), "device")
+	// 理论上认领前没有任何有效设备，直接就是 owner；若库里已有 owner（人工造的数据），
+	// 降级为 member，避免出现两个管理员。
+	role := db.RoleOwner
+	if db.CountOwners() > 0 {
+		role = db.RoleMember
+	}
+	tok, s, err := db.CreateSession(uids[0], c.Request.UserAgent(), "device", role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -366,9 +447,31 @@ func sessionClaim(c *gin.Context) {
 	for _, id := range uids {
 		db.GrantSessionUser(s.ID, id)
 	}
+	// 首台设备也能顺手起名：留空则沿用 UA 自动识别（Edge 141 · Windows）。
+	if strings.TrimSpace(b.DeviceLabel) != "" {
+		db.SetSessionLabel(s.ID, b.DeviceLabel)
+	}
+	if pin != "" {
+		if err := db.SetPIN(pin); err != nil {
+			log.Printf("[auth] 认领时设置 PIN 失败：%v", err)
+		}
+	}
+	st := buildState(s)
+	// 恢复码：只给主设备、只在认领时生成一次。失败不阻断认领（用户还能在设备页重新生成）。
+	if role == db.RoleOwner {
+		if code, err := db.NewRecoveryCode(); err == nil {
+			if err := db.SetRecovery(code); err == nil {
+				st.Recovery = code
+				st.HasRecovery = true
+			} else {
+				log.Printf("[auth] 恢复码写入失败：%v", err)
+			}
+		}
+	}
 	setSessionCookie(c, tok)
-	log.Printf("[auth] 首台设备已认领账本 %v（UA=%s）", uids, s.UA)
-	c.JSON(http.StatusOK, buildState(s))
+	log.Printf("[auth] 首台设备已认领账本 %v（role=%s PIN=%v 恢复码=%v UA=%s）",
+		uids, role, pin != "", st.Recovery != "", s.UA)
+	c.JSON(http.StatusOK, st)
 }
 
 // ---- 配对 ----
@@ -435,14 +538,23 @@ func sessionPair(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "配对码对应的账本已不存在"})
 		return
 	}
-	tok, s, err := db.CreateSession(pc.UserID, c.Request.UserAgent(), "device")
+	// 配对码接入的设备一律是普通设备（member）：管理类操作仍归主设备，
+	// 需要时由主设备在设备页输 PIN 把身份转移过来。
+	tok, s, err := db.CreateSession(pc.UserID, c.Request.UserAgent(), "device", db.RoleMember)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 出码时填的设备名（可选）此时落库：新设备开场就带着「客厅台式机」这种名字，
+	// 不必接入后再去设备列表改一次。留空则沿用 UA 自动识别。
+	// 只认 scope=device —— invite 的 label 是账本侧备注（「新账本」），不是设备名。
+	if pc.Scope == "device" && pc.Label != "" {
+		db.SetSessionLabel(s.ID, pc.Label)
+		s.Label = pc.Label
+	}
 	db.GrantSessionUser(s.ID, pc.UserID)
 	setSessionCookie(c, tok)
-	log.Printf("[auth] 设备配对成功：uid=%d scope=%s（UA=%s）", pc.UserID, pc.Scope, s.UA)
+	log.Printf("[auth] 设备配对成功：uid=%d scope=%s label=%q（UA=%s）", pc.UserID, pc.Scope, pc.Label, s.UA)
 	c.JSON(http.StatusOK, buildState(s))
 }
 
@@ -473,9 +585,8 @@ func sessionCode(c *gin.Context) {
 	label := b.Label
 	switch scope {
 	case "device":
-		if label == "" {
-			label = "新设备"
-		}
+		// label 是「给新设备起的名字」，留空就用 UA 自动识别，不再塞「新设备」这种占位文案
+		label = strings.TrimSpace(label)
 	case "invite":
 		ttl = db.InviteCodeTTL
 		if strings.TrimSpace(b.Name) != "" {
@@ -514,6 +625,7 @@ func sessionCode(c *gin.Context) {
 		"code":       pc.Code,
 		"secret":     pc.Secret,
 		"url":        "/#/pair?t=" + pc.Secret,
+		"label":      pc.Label,
 		"expires_at": pc.ExpiresAt,
 		"expires_in": int(ttl.Seconds()),
 	})
@@ -539,6 +651,7 @@ func sessionDevices(c *gin.Context) {
 
 func sessionDeviceRevoke(c *gin.Context) {
 	uid := currentUserID(c)
+	sid := currentSessionID(c)
 	id := parseID(c.Param("id"))
 	if id <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
@@ -549,7 +662,59 @@ func sessionDeviceRevoke(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "设备不存在"})
 		return
 	}
+	// 2026-10-29 权限收紧：吊销「别的设备」是管理操作，只有主设备能做，且要操作 PIN
+	// （与删账本 / 清空同等级）。吊销自己等价于退出登录，任何设备都可以，不需要口令。
+	if id != sid {
+		if !isOwnerSession(c) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":          "只有主设备可以吊销其他设备",
+				"owner_required": true,
+			})
+			return
+		}
+		if !pinSatisfied(c) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "需要操作 PIN", "pin_required": true})
+			return
+		}
+	}
 	if err := db.RevokeSession(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// sessionDeviceRename PATCH /api/session/devices/:id —— 改设备显示名。
+// 浏览器拿不到计算机名/系统账户名（无此 Web API，且属指纹信息），只能让用户自己命名；
+// 传空串表示恢复「按 UA 自动识别」。只允许改自己账本授权范围内的会话；
+// 改「别的设备」的名字需要主设备身份（改名不涉及凭据，故不额外要 PIN）。
+func sessionDeviceRename(c *gin.Context) {
+	uid := currentUserID(c)
+	sid := currentSessionID(c)
+	id := parseID(c.Param("id"))
+	if id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	var b struct {
+		Label string `json:"label"`
+	}
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if !db.SessionHasUser(id, uid) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "设备不存在"})
+		return
+	}
+	if id != sid && !isOwnerSession(c) {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"error":          "只有主设备可以重命名其他设备",
+			"owner_required": true,
+		})
+		return
+	}
+	if err := db.SetSessionLabel(id, b.Label); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -628,4 +793,110 @@ func sessionPIN(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "has_pin": true})
+}
+
+// ---- 忘记 PIN：恢复码重置 ----
+
+type pinResetReq struct {
+	Recovery string `json:"recovery"`
+	PIN      string `json:"pin"`
+}
+
+// sessionPINReset POST /api/session/pin/reset —— 用恢复码重置操作 PIN。
+//
+// 解决的场景很具体：人在**已登录的主设备**前，但忘了 PIN。此时出码、改 PIN 全被自己锁死。
+// 恢复码不能用来加设备（那需要浏览器里没有的 Cookie），只换一个改 PIN 的机会，
+// 所以泄漏面很窄；成功即焚，前端随即提示重新生成一份。
+func sessionPINReset(c *gin.Context) {
+	if !isOwnerSession(c) {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"error":          "只有主设备可以重置操作 PIN",
+			"owner_required": true,
+		})
+		return
+	}
+	var b pinResetReq
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if !db.HasRecovery() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "恢复码已作废或尚未生成，请在下方「重新生成恢复码」后再试"})
+		return
+	}
+	pin := strings.TrimSpace(b.PIN)
+	if !pinPattern.MatchString(pin) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PIN 需为 4–6 位数字"})
+		return
+	}
+	if !db.CheckRecovery(b.Recovery) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "恢复码不正确"})
+		return
+	}
+	if err := db.SetPIN(pin); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	db.ClearRecovery() // 用过即焚
+	log.Printf("[auth] 主设备用恢复码重置了操作 PIN（sid=%d）", currentSessionID(c))
+	c.JSON(http.StatusOK, gin.H{"ok": true, "has_pin": true, "has_recovery": false})
+}
+
+// sessionRecoveryRotate POST /api/session/recovery/rotate —— 重新生成恢复码（明文只回一次）。
+// 加 PinGuard：能出码/删账本的人才能换钥匙，避免 member 拿到登录态就覆盖掉主设备手里的码。
+func sessionRecoveryRotate(c *gin.Context) {
+	code, err := db.NewRecoveryCode()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := db.SetRecovery(code); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	log.Printf("[auth] 重新生成恢复码（sid=%d，旧码立即失效）", currentSessionID(c))
+	c.JSON(http.StatusOK, gin.H{"ok": true, "recovery": code})
+}
+
+// ---- 主设备转移 ----
+
+type transferReq struct {
+	DeviceID int64  `json:"device_id"`
+	PIN      string `json:"pin"`
+}
+
+// sessionTransfer POST /api/session/transfer —— 把主设备身份转给另一台已接入设备。
+// 转移等于交出管理权，所以：① 发起方必须是当前主设备；② 必须验证操作 PIN；③ 目标必须
+// 仍在本账本的授权范围内且未下线。转移后本机降为 member，前端立即隐藏管理入口。
+func sessionTransfer(c *gin.Context) {
+	sid := currentSessionID(c)
+	uid := currentUserID(c)
+	var b transferReq
+	if err := c.ShouldBindJSON(&b); err != nil || b.DeviceID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要转移到的设备"})
+		return
+	}
+	if b.DeviceID == sid {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "本机已经是主设备"})
+		return
+	}
+	if !db.SessionHasUser(b.DeviceID, uid) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "设备不存在"})
+		return
+	}
+	target, err := db.ActiveSessionByID(b.DeviceID)
+	if err != nil || target == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "设备已下线，请刷新列表"})
+		return
+	}
+	if !pinValueOK(strings.TrimSpace(b.PIN)) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "需要操作 PIN", "pin_required": true})
+		return
+	}
+	if err := db.TransferOwnership(sid, b.DeviceID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	log.Printf("[auth] 主设备转移：sid=%d → sid=%d（uid=%d label=%q）", sid, b.DeviceID, uid, target.Label)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "role": db.RoleMember, "device_id": b.DeviceID})
 }

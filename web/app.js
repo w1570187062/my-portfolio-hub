@@ -178,8 +178,10 @@ function navigate(view) {
 window.addEventListener('hashchange', applyRoute);
 
 // ---- 认证层（2026-10-28）：身份由 HttpOnly Cookie 决定，前端不再自报 X-User-Id ----
-// 401 → 弹出认领/配对闸门；403+pin_required → 弹操作 PIN 输入框并自动重试一次。
-let authState = { authed: false, mode: '', user: null, users: [], read_only: false, has_pin: false };
+// 401 → 弹出认领/配对闸门；403+pin_required → 弹操作 PIN 输入框并自动重试一次；
+// 403+owner_required → 该操作只属主设备，前端按角色提前隐藏入口，这里只兜异常。
+// role: owner=主设备（管理员）/ member=普通设备；has_recovery=是否已有恢复码（不回传明文）。
+let authState = { authed: false, mode: '', user: null, users: [], read_only: false, has_pin: false, role: 'member', has_recovery: false };
 let authReturnHash = '';   // 进闸门前所在路由，认证成功后回跳
 let pinCache = '';         // 本页会话内记住的操作 PIN（仅内存，退出登录即清）
 let authReady = false;     // 认证完成前不执行初始路由
@@ -13146,6 +13148,8 @@ function renderAuthClaim(st) {
       <span class="auth-user-cnt">${u.count || 0} 条数据</span>
     </label>`).join('');
   document.getElementById('authRename').value = '';
+  document.getElementById('authDevice').value = '';
+  document.getElementById('authPin').value = '';
   document.getElementById('authClaimErr').textContent = '';
 }
 
@@ -13153,6 +13157,9 @@ async function doClaim() {
   const ids = Array.from(document.querySelectorAll('#authUserList input:checked')).map((i) => Number(i.dataset.id));
   if (!ids.length) { document.getElementById('authClaimErr').textContent = '请至少勾选一个账本'; return; }
   const rename = (document.getElementById('authRename').value || '').trim();
+  const deviceLabel = (document.getElementById('authDevice').value || '').trim();
+  const pin = (document.getElementById('authPin').value || '').trim();
+  if (pin && !/^\d{4,6}$/.test(pin)) { document.getElementById('authClaimErr').textContent = '操作 PIN 需为 4–6 位数字'; return; }
   const btn = document.getElementById('authClaimBtn');
   btn.disabled = true;
   try {
@@ -13160,7 +13167,7 @@ async function doClaim() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ user_ids: ids, rename_to: rename }),
+      body: JSON.stringify({ user_ids: ids, rename_to: rename, device_label: deviceLabel, pin }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { document.getElementById('authClaimErr').textContent = d.error || ('认领失败 (HTTP ' + r.status + ')'); return; }
@@ -13197,23 +13204,90 @@ async function onAuthed(st) {
   if (back && location.hash !== back) location.hash = back;
   else if ((location.hash || '').startsWith('#/pair')) location.hash = '#/home';
   await enterApp(st);
+  // 认领（主设备）响应里带一次性明文恢复码：PIN 存的是哈希，忘了只能靠它重置，
+  // 所以必须让用户当场抄走。还没设 PIN 的话顺带敲一次警钟。
+  if (st && st.recovery) showRecovery(st.recovery, !st.has_pin);
 }
 
 async function doLogout() {
   try { await api('/api/session/logout', { method: 'POST', body: '{}' }); } catch (e) { /* 会话可能已失效 */ }
   pinCache = '';
-  authState = { authed: false, mode: '', user: null, users: [], read_only: false, has_pin: false };
+  authState = { authed: false, mode: '', user: null, users: [], read_only: false, has_pin: false, role: 'member', has_recovery: false };
   document.getElementById('app').hidden = true;
   localStorage.removeItem('pf_user');
   showAuthGate(await fetchSession());
 }
 
 // ---- 设置页：登录与设备 ----
+// 浏览器不提供「计算机名 / 系统账户名」：这类信息属指纹数据，Web 平台没有任何 API 暴露，
+// navigator.platform 只给 "Win32" 这种，UA-CH 也只到平台/架构/机型（Android 才有 model）。
+// 所以这里只从 UA 摘出「浏览器 大版本 · 系统」，想区分具体机器就让用户自己改名（sessions.label）。
 function deviceLabel(ua) {
   if (!ua) return '未知设备';
-  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
-  const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
-  return [br, os].filter(Boolean).join(' · ') || ua.slice(0, 40);
+  const os = /Windows/.test(ua) ? 'Windows'
+    : /Android/.test(ua) ? 'Android'
+      : /iPhone|iPad|iPod/.test(ua) ? 'iOS'
+        : /Mac OS X/.test(ua) ? 'macOS'
+          : /CrOS/.test(ua) ? 'ChromeOS'
+            : /Linux/.test(ua) ? 'Linux' : '';
+  // 顺序有讲究：Edge/Opera 的 UA 里也含 Chrome/，必须先匹配自己的标记再退回 Chrome
+  const m = ua.match(/Edg\/(\d+)/) || ua.match(/OPR\/(\d+)/) || ua.match(/Firefox\/(\d+)/)
+    || ua.match(/Chrome\/(\d+)/) || ua.match(/Version\/(\d+)[.\d]* (?:Mobile\/\S+ )?Safari/);
+  let br = '';
+  if (m) {
+    const name = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox'
+      : /Chrome\//.test(ua) ? 'Chrome' : 'Safari';
+    br = name + ' ' + m[1];
+  }
+  return [br, os].filter(Boolean).join(' · ') || '未知设备';
+}
+
+// 设备类型：安卓平板 UA 里没有 Mobile 标记，据此区分手机/平板
+function deviceKind(ua) {
+  if (!ua) return '';
+  if (/iPad/.test(ua)) return '平板';
+  if (/iPhone|iPod/.test(ua)) return '手机';
+  if (/Android/.test(ua)) return /Mobile/.test(ua) ? '手机' : '平板';
+  if (/Tablet/.test(ua)) return '平板';
+  return '电脑';
+}
+
+let devRenameId = 0;
+
+function openDeviceRename(id, label) {
+  devRenameId = id;
+  const input = document.getElementById('devNameInput');
+  input.value = label || '';
+  document.getElementById('devNameModal').hidden = false;
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+
+async function saveDeviceRename() {
+  const v = (document.getElementById('devNameInput').value || '').trim();
+  if (v.length > 20) { toast('名称最长 20 个字', 'err'); return; }
+  const r = await api('/api/session/devices/' + devRenameId, { method: 'PATCH', body: JSON.stringify({ label: v }) });
+  if (!r.ok) { toast('改名失败', 'err'); return; }
+  document.getElementById('devNameModal').hidden = true;
+  toast(v ? `已改名为「${v}」` : '已恢复自动识别名称', 'ok');
+  loadAuthDevices();
+}
+
+// 当前设备是否主设备（管理员）。用函数而非变量，避免顶层初始化顺序踩 TDZ。
+const isOwnerDevice = () => authState.role === 'owner';
+
+// 按角色显示 / 隐藏管理入口：普通设备（member）只能看业务数据，管理类操作一律藏起来
+// （后端也拦，双重保证；藏起来是为了不让用户白点一次再吃 403）。
+function applyRoleUI() {
+  const owner = isOwnerDevice();
+  // 普通设备看不到任何管理入口：加设备 / 邀请家人 / 改 PIN / 恢复码，连标题与说明一起收掉
+  ['deviceActions', 'pinTitle', 'pinRow', 'pinTools', 'pinTip'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !owner;
+  });
+  const hint = document.getElementById('memberHint');
+  if (hint) hint.hidden = owner;
+  const note = document.getElementById('devRoleNote');
+  if (note) note.textContent = owner ? '主设备' : '普通设备';
 }
 
 async function loadAuthDevices() {
@@ -13227,18 +13301,48 @@ async function loadAuthDevices() {
     if (!r.ok) { wrap.innerHTML = '<div class="auth-hint">读取失败</div>'; return; }
     const d = await r.json();
     const list = d.devices || [];
+    const owner = isOwnerDevice();
     if (!list.length) { wrap.innerHTML = '<div class="auth-hint">暂无其他设备</div>'; }
     else {
-      wrap.innerHTML = list.map((s) => `
+      // 两行结构：首行「名称 + 本机 / 主设备」，次行「浏览器·系统 …… 最近活跃」。
+      // 次行拆两段：描述可省略号、时间 flex:none 永远完整——手机上先压描述，别把时间吃掉。
+      // 描述只在改过名时才重复「浏览器·系统」（未改名时它就是标题），手机/平板才追加设备类型。
+      // 按钮按角色出：改名=改自己或主设备改他机；吊销/转移=只有主设备看得到他机那一行。
+      wrap.innerHTML = list.map((s) => {
+        const auto = deviceLabel(s.ua);
+        const kind = deviceKind(s.ua);
+        const desc = s.label
+          ? [auto, (kind === '手机' || kind === '平板') ? kind : ''].filter(Boolean).join(' · ')
+          : kind;
+        const seen = s.last_seen ? s.last_seen.slice(5, 16) : '';
+        const canRename = s.current || owner;
+        const canRevoke = owner && !s.current;
+        const canTransfer = owner && !s.current && s.role !== 'owner';
+        return `
         <div class="device-row" data-id="${s.id}">
-          <span class="device-name">${escapeHtml(deviceLabel(s.ua))}</span>
-          ${s.current ? '<span class="device-badge">本机</span>' : ''}
-          <span class="device-ua" title="${escapeHtml(s.ua || '')}">${escapeHtml(s.ua || '')}</span>
-          <span class="device-seen">${escapeHtml((s.last_seen || '').slice(5, 16))}</span>
-          ${s.current ? '' : `<button class="btn btn-sm device-revoke" type="button" data-id="${s.id}">吊销</button>`}
-        </div>`).join('');
-      // 两段式确认：第一次点变「确认吊销」，再点才执行（免开确认弹框）
-      wrap.querySelectorAll('.device-revoke').forEach((btn) => {
+          <div class="device-main">
+            <div class="device-head">
+              <span class="device-name">${escapeHtml(s.label || auto)}</span>
+              ${s.current ? '<span class="device-badge">本机</span>' : ''}
+              ${s.role === 'owner' ? '<span class="device-badge role">主设备</span>' : ''}
+            </div>
+            <span class="device-meta" title="${escapeHtml(s.ua || '')}">
+              <span class="device-meta-desc">${escapeHtml(desc)}</span>
+              ${seen ? `<span class="device-meta-seen">${escapeHtml(seen)}</span>` : ''}
+            </span>
+          </div>
+          <div class="device-acts">
+            ${canTransfer ? `<button class="dev-act" type="button" data-act="transfer" data-id="${s.id}">设为主设备</button>` : ''}
+            ${canRename ? `<button class="dev-act" type="button" data-act="rename" data-id="${s.id}" data-label="${escapeHtml(s.label || '')}">改名</button>` : ''}
+            ${canRevoke ? `<button class="dev-act danger" type="button" data-act="revoke" data-id="${s.id}">吊销</button>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+      wrap.querySelectorAll('[data-act="rename"]').forEach((btn) => {
+        btn.onclick = () => openDeviceRename(Number(btn.dataset.id), btn.dataset.label || '');
+      });
+      // 两段式确认：第一次点变「确认吊销」，再点才执行（免开确认弹框）；他机吊销额外要 PIN
+      wrap.querySelectorAll('[data-act="revoke"]').forEach((btn) => {
         btn.onclick = async () => {
           if (btn.dataset.armed !== '1') {
             btn.dataset.armed = '1';
@@ -13248,12 +13352,31 @@ async function loadAuthDevices() {
           }
           const r2 = await api('/api/session/devices/' + btn.dataset.id, { method: 'DELETE' });
           if (r2.ok) { toast('已吊销该设备，其 Cookie 立即失效', 'ok'); loadAuthDevices(); }
-          else toast('吊销失败', 'err');
+          else {
+            const d2 = await r2.json().catch(() => ({}));
+            toast(d2.error || '吊销失败', 'err');
+            loadAuthDevices(); // 恢复按钮文案
+          }
+        };
+      });
+      // 转移主设备：身份一交出去本机就变普通设备，必须输 PIN 二次确认
+      wrap.querySelectorAll('[data-act="transfer"]').forEach((btn) => {
+        btn.onclick = async () => {
+          const pin = await promptPIN();
+          if (!pin) return;
+          const r2 = await api('/api/session/transfer', { method: 'POST', body: JSON.stringify({ device_id: Number(btn.dataset.id), pin }) });
+          const d2 = await r2.json().catch(() => ({}));
+          if (!r2.ok) { toast(d2.error || '转移失败', 'err'); return; }
+          const st2 = await fetchSession();
+          if (st2) authState = st2;
+          toast('已把主设备转给该设备，本机现在是普通设备', 'ok');
+          loadAuthDevices();
         };
       });
     }
     document.getElementById('authCurName').textContent = authState.user ? authState.user.name : '—';
     updatePinState(!!authState.has_pin);
+    applyRoleUI();
   } catch (e) {
     if (e.message !== 'unauthenticated') wrap.innerHTML = '<div class="auth-hint">读取失败</div>';
   }
@@ -13270,9 +13393,13 @@ async function genPairCode(scope, payload) {
 function openPairCodeModal(info, isInvite) {
   document.getElementById('pairCodeTitle').textContent = isInvite ? '邀请码' : '配对码';
   document.getElementById('pairCodeValue').textContent = info.code || '······';
+  // 出码时给设备起过名就带上，对方一看就知道这台机器要挂什么名字
+  const nm = (info.label || '').trim();
   document.getElementById('pairCodeHint').textContent = isInvite
     ? '把该码发给对方：在对方自己的设备上打开本站，输入此码即可接入。'
-    : '在要接入的新设备上打开本站，输入此码即可接入本账本。';
+    : (nm
+      ? `在「${nm}」这台设备上打开本站，输入此码即可接入；接入后设备列表里就叫这个名字。`
+      : '在要接入的新设备上打开本站，输入此码即可接入本账本。');
   const sec = info.expires_in || 300;
   const ttl = sec >= 3600 ? (sec / 3600) + ' 小时' : Math.max(1, Math.round(sec / 60)) + ' 分钟';
   document.getElementById('pairCodeMeta').textContent = '有效期 ' + ttl + '，仅可使用一次';
@@ -13291,6 +13418,40 @@ function openInviteModal() {
 function updatePinState(has) {
   const el = document.getElementById('pinState');
   if (el) el.textContent = has ? '已设置' : '未设置（建议设置）';
+}
+
+// ---- 恢复码（2026-10-29）----
+// 明文只在两个时机拿得到：认领成功的响应、主动「重新生成」。库里存 bcrypt，服务端也拿不回来，
+// 所以弹框必须让用户确认「我已抄下」。它只能在已登录的主设备上重置 PIN，不能用来加设备。
+function showRecovery(code, warnNoPin) {
+  document.getElementById('recoveryCode').textContent = code;
+  document.getElementById('recoveryPinWarn').hidden = !warnNoPin;
+  document.getElementById('recoveryModal').hidden = false;
+}
+
+async function rotateRecovery() {
+  const r = await api('/api/session/recovery/rotate', { method: 'POST', body: '{}' });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { toast(d.error || '生成失败', 'err'); return; }
+  authState.has_recovery = true;
+  showRecovery(d.recovery, false);
+}
+
+async function submitPinReset() {
+  const code = (document.getElementById('pinResetCode').value || '').trim();
+  const pin = (document.getElementById('pinResetNew').value || '').trim();
+  const err = document.getElementById('pinResetErr');
+  if (!code) { err.textContent = '请输入恢复码'; return; }
+  if (!/^\d{4,6}$/.test(pin)) { err.textContent = 'PIN 需为 4–6 位数字'; return; }
+  const r = await api('/api/session/pin/reset', { method: 'POST', body: JSON.stringify({ recovery: code, pin }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { err.textContent = d.error || '重置失败'; return; }
+  document.getElementById('pinResetModal').hidden = true;
+  authState.has_pin = true;
+  authState.has_recovery = false;
+  pinCache = pin; // 刚设好的 PIN 先记住，省得下一次危险操作又要输一遍
+  updatePinState(true);
+  toast('PIN 已重置；这份恢复码已作废，记得重新生成一份', 'ok');
 }
 
 // ---- 操作 PIN 弹框（promise 化，api() 自动调用）----
@@ -13318,11 +13479,45 @@ function closePIN(val) {
   on('authRoBtn', () => { document.getElementById('authGate').hidden = true; enterApp(authState); });
   const codeInput = document.getElementById('authCode');
   if (codeInput) codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doPair(); });
+  // 认领屏三个可选输入框都能回车提交
+  ['authRename', 'authDevice', 'authPin'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') doClaim(); });
+  });
   on('authLogoutBtn', doLogout);
-  on('addDeviceBtn', async () => {
-    try { const d = await genPairCode('device', {}); if (d) openPairCodeModal(d, false); } catch (e) { /* 取消 PIN */ }
+  // 「添加设备」先问名字再出码（名字可选，留空就走 UA 自动识别）
+  on('addDeviceBtn', () => {
+    const inp = document.getElementById('addDeviceName');
+    inp.value = '';
+    document.getElementById('addDeviceModal').hidden = false;
+    setTimeout(() => inp.focus(), 50);
+  });
+  const addDeviceModal = document.getElementById('addDeviceModal');
+  if (addDeviceModal) addDeviceModal.onclick = (e) => { if (e.target === addDeviceModal) addDeviceModal.hidden = true; };
+  on('addDeviceCancel', () => { document.getElementById('addDeviceModal').hidden = true; });
+  on('addDeviceOk', async () => {
+    const label = (document.getElementById('addDeviceName').value || '').trim();
+    const modal = document.getElementById('addDeviceModal');
+    // 出码前先藏起本弹框：它 DOM 顺序靠后、z-index 同级，会盖住内部弹出的操作 PIN 框 / 配对码结果框
+    modal.hidden = true;
+    try {
+      const d = await genPairCode('device', label ? { label } : {});
+      if (!d) { modal.hidden = false; return; }   // 取消 PIN / PIN 错误：恢复，不吞掉已输入的名称
+      openPairCodeModal(d, false);
+    } catch (e) { modal.hidden = false; }          // PIN 弹框取消：恢复
+  });
+  const addDeviceName = document.getElementById('addDeviceName');
+  if (addDeviceName) addDeviceName.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('addDeviceOk').click();
   });
   on('inviteMemberBtn', openInviteModal);
+  // 设备改名（.modal 的 Esc / ✕ 由全局逻辑处理，遮罩点击沿用各弹框自行绑定的惯例）
+  const devNameModal = document.getElementById('devNameModal');
+  if (devNameModal) devNameModal.onclick = (e) => { if (e.target === devNameModal) devNameModal.hidden = true; };
+  on('devNameCancel', () => { document.getElementById('devNameModal').hidden = true; });
+  on('devNameSave', saveDeviceRename);
+  const devNameInput = document.getElementById('devNameInput');
+  if (devNameInput) devNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveDeviceRename(); });
   on('inviteCancel', () => { document.getElementById('inviteModal').hidden = true; });
   on('inviteClose', () => { document.getElementById('inviteModal').hidden = true; });
   document.querySelectorAll('input[name="inviteMode"]').forEach((rad) => {
@@ -13372,7 +13567,27 @@ function closePIN(val) {
       document.getElementById('pinNew').value = '';
       authState.has_pin = d.has_pin;
       updatePinState(d.has_pin);
-      toast(d.has_pin ? '操作 PIN 已保存' : '操作 PIN 已关闭', 'ok');
+      if (d.has_pin && !authState.has_recovery) toast('操作 PIN 已保存；建议顺手「重新生成恢复码」抄一份备用', 'ok');
+      else toast(d.has_pin ? '操作 PIN 已保存' : '操作 PIN 已关闭', 'ok');
     } catch (e) { toast('保存失败：' + e.message, 'err'); }
   });
+  // ---- 恢复码 / 忘记 PIN ----
+  const recModal = document.getElementById('recoveryModal');
+  if (recModal) recModal.onclick = (e) => { if (e.target === recModal) recModal.hidden = true; };
+  on('recoveryClose', () => { document.getElementById('recoveryModal').hidden = true; });
+  on('recoveryOk', () => { document.getElementById('recoveryModal').hidden = true; });
+  on('recoveryCopy', () => copyText(document.getElementById('recoveryCode').textContent, '已复制恢复码'));
+  on('pinForgotBtn', () => {
+    document.getElementById('pinResetCode').value = '';
+    document.getElementById('pinResetNew').value = '';
+    document.getElementById('pinResetErr').textContent = '';
+    document.getElementById('pinResetModal').hidden = false;
+    setTimeout(() => document.getElementById('pinResetCode').focus(), 50);
+  });
+  const pinResetEl = document.getElementById('pinResetModal');
+  if (pinResetEl) pinResetEl.onclick = (e) => { if (e.target === pinResetEl) pinResetEl.hidden = true; };
+  on('pinResetCancel', () => { document.getElementById('pinResetModal').hidden = true; });
+  on('pinResetClose', () => { document.getElementById('pinResetModal').hidden = true; });
+  on('pinResetOk', submitPinReset);
+  on('recoveryRotateBtn', rotateRecovery);
 })();

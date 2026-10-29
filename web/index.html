@@ -29,6 +29,13 @@
       <label class="auth-field">第一本账改名（可选）
         <input id="authRename" maxlength="12" placeholder="如 萧晨">
       </label>
+      <label class="auth-field">这台设备叫什么（可选）
+        <input id="authDevice" maxlength="20" placeholder="如 书房台式机" autocomplete="off">
+      </label>
+      <label class="auth-field">设置操作 PIN（推荐）
+        <input id="authPin" type="password" inputmode="numeric" maxlength="6" placeholder="4–6 位数字，可留空" autocomplete="off">
+      </label>
+      <p class="auth-hint auth-hint-sm">这是第一台设备，将成为<b>主设备</b>：之后加设备、删账本等操作只有它能做。PIN 用于这些危险操作的二次确认，设了更安全。</p>
       <div class="auth-err" id="authClaimErr"></div>
       <button class="btn primary auth-submit" id="authClaimBtn" type="button">接入这台设备</button>
     </div>
@@ -600,20 +607,25 @@
               <button class="btn btn-sm" id="authLogoutBtn" type="button">退出登录</button>
             </div>
             <hr class="set-sep" />
-            <div class="grp-label">本账本已接入的设备</div>
+            <div class="grp-label">本账本已接入的设备<span class="pin-state" id="devRoleNote"></span></div>
+            <p class="tool-hint" id="memberHint" hidden>本机是<strong>普通设备</strong>：只能使用账本数据。吊销其他设备、添加新设备、修改 PIN 需要到主设备上操作。</p>
             <div id="deviceList" class="device-list"><div class="auth-hint">加载中…</div></div>
-            <div class="modal-actions">
+            <div class="modal-actions" id="deviceActions">
               <button class="btn" type="button" id="addDeviceBtn">＋ 添加设备</button>
               <button class="btn" type="button" id="inviteMemberBtn">邀请家人</button>
             </div>
             <hr class="set-sep" />
-            <div class="grp-label">操作 PIN<span class="pin-state" id="pinState"></span></div>
-            <div class="pin-row">
+            <div class="grp-label" id="pinTitle">操作 PIN<span class="pin-state" id="pinState"></span></div>
+            <div class="pin-row" id="pinRow">
               <input id="pinOld" type="password" inputmode="numeric" maxlength="6" placeholder="原 PIN（未设可留空）">
               <input id="pinNew" type="password" inputmode="numeric" maxlength="6" placeholder="新 PIN，4–6 位数字">
               <button class="btn btn-sm" type="button" id="pinSaveBtn">保存</button>
             </div>
-            <p class="tool-hint">PIN 是这台浏览器上的记忆口令：别人拿到你的已登录浏览器时，没有 PIN 就无法把新设备接入你的账本。</p>
+            <div class="pin-tools" id="pinTools">
+              <button class="btn btn-sm" type="button" id="pinForgotBtn">忘记 PIN</button>
+              <button class="btn btn-sm" type="button" id="recoveryRotateBtn">重新生成恢复码</button>
+            </div>
+            <p class="tool-hint" id="pinTip">PIN 存的是不可逆哈希，忘了只能用<b>恢复码</b>重置；恢复码只在认领时显示一次，没抄下就点「重新生成」再抄一份。</p>
           </div>
         </section>
     </div>
@@ -1902,6 +1914,90 @@
         <button type="button" class="btn" id="pinPromptCancel">取消</button>
         <button type="button" class="btn primary" id="pinPromptOk">确认</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 添加设备（2026-10-29）：出码前先给新设备起个名（可选），配对成功时写进 sessions.label，
+     省得接进来再去列表改一次。留空就用 UA 自动识别。 -->
+<div class="modal" id="addDeviceModal" hidden>
+  <div class="modal-card dev-name-card">
+    <h2 data-icon="plus">添加设备</h2>
+    <div class="m-body">
+      <label class="dev-name-label">设备名称（可选）
+        <input id="addDeviceName" type="text" maxlength="20" placeholder="如：客厅台式机 / 妈妈的手机" autocomplete="off" spellcheck="false">
+      </label>
+      <p class="tool-hint">在新设备上打开本站、输入配对码即可接入。名称留空也能用，之后在设备列表里随时能改。</p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="addDeviceCancel">取消</button>
+      <button type="button" class="btn primary" id="addDeviceOk">生成配对码</button>
+    </div>
+  </div>
+</div>
+
+<!-- 设备改名（2026-10-29）：浏览器沙箱没有暴露计算机名/系统账户名的 API（这类信息属指纹数据，
+     任何网站都拿不到），所以给设备起名这事交给用户：默认按 UA 识别成「Chrome 130 · Windows」，
+     改了之后设备列表认得出是哪台机器。留空即恢复自动识别名。Esc / 点遮罩 / 右上角 ✕ 均可关。 -->
+<div class="modal" id="devNameModal" hidden>
+  <div class="modal-card dev-name-card">
+    <h2 data-icon="user">设备名称</h2>
+    <div class="m-body">
+      <label class="dev-name-label">名称
+        <input id="devNameInput" type="text" maxlength="20" placeholder="如：客厅台式机 / 我的 MacBook" autocomplete="off" spellcheck="false">
+      </label>
+      <p class="tool-hint">只影响列表里的显示；留空则恢复浏览器自动识别的名称。</p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="devNameCancel">取消</button>
+      <button type="button" class="btn primary" id="devNameSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 恢复码（2026-10-29）：明文只此一次机会，所以做成需要用户确认「我已抄下」的卡片。
+     用途收得很窄——只在已登录的主设备上重置操作 PIN，不能用来在别处加设备。 -->
+<div class="modal" id="recoveryModal" hidden>
+  <div class="modal-card rec-card">
+    <h2 data-icon="warn">主设备的恢复码</h2>
+    <button class="card-close" type="button" id="recoveryClose" title="关闭" aria-label="关闭">✕</button>
+    <div class="m-body">
+      <p class="rec-lead">忘记<b>操作 PIN</b>时用这串码重置。它<b>只显示这一次</b>，请现在抄到手机备忘录或密码管理器里。</p>
+      <div class="rec-code" id="recoveryCode">····-····</div>
+      <div class="rec-copy-row">
+        <button class="btn btn-sm" type="button" id="recoveryCopy">复制恢复码</button>
+      </div>
+      <ul class="rec-notes">
+        <li>只能重置 PIN，<b>不能</b>在别的设备上接入账本；</li>
+        <li>用过即作废，之后可在「绑定设备 → 重新生成恢复码」再取一份；</li>
+        <li>换了设备或清了浏览器 Cookie，这串码也不管用——那时需要在服务器日志里找救援配对码。</li>
+      </ul>
+      <p class="rec-warn" id="recoveryPinWarn" hidden>你还没设置操作 PIN：没有 PIN 时，任何人拿到这台已登录的浏览器都能添加设备、删账本。</p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn primary" id="recoveryOk">我已抄下</button>
+    </div>
+  </div>
+</div>
+
+<!-- 忘记 PIN：用恢复码重置（2026-10-29）。成功即焚，提示再生成一份。 -->
+<div class="modal" id="pinResetModal" hidden>
+  <div class="modal-card pin-card">
+    <h2 data-icon="warn">用恢复码重置 PIN</h2>
+    <button class="card-close" type="button" id="pinResetClose" title="关闭" aria-label="关闭">✕</button>
+    <div class="m-body">
+      <label class="dev-name-label">恢复码
+        <input id="pinResetCode" type="text" maxlength="12" placeholder="XXXX-XXXX" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="dev-name-label">新的操作 PIN
+        <input id="pinResetNew" type="password" inputmode="numeric" maxlength="6" placeholder="4–6 位数字" autocomplete="off">
+      </label>
+      <p class="tool-hint">重置成功后这份恢复码立即作废，记得回到设备页再生成一份新的。</p>
+      <div class="auth-err" id="pinResetErr"></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="pinResetCancel">取消</button>
+      <button type="button" class="btn primary" id="pinResetOk">重置</button>
     </div>
   </div>
 </div>

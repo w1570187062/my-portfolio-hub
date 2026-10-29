@@ -1753,6 +1753,9 @@ th.sorted-asc::after { border-bottom: 5px solid var(--primary); }
   z-index: 100;
 }
 .modal[hidden] { display: none; }
+/* 危险操作触发的 PIN 输入框：必须压过任何「DOM 顺序靠后、z-index 同级」的来源弹框
+   （如添加设备框），否则会被盖住导致无法输入 PIN（2026-10-29 修） */
+#pinPromptModal { z-index: 200; }
 /* 清空用户数据等确认弹框需显示在底部抽屉(z-index:200)之上，否则会被遮罩盖住 */
 #confirmModal { z-index: 1000; }
 .modal-card {
@@ -6540,18 +6543,39 @@ textarea::placeholder {
 .auth-cur-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
 .auth-cur-name { font-size: var(--fs-base); font-weight: 600; margin-top: 2px; }
 .device-list { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-3); }
+/* 2026-10-29：原先整行铺原始 UA（Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/…），
+   既认不出是哪台机器、又把视线全抢走。改成「名称 + 一行短摘要」，原始 UA 只留在 title 里；
+   名称默认识别为「Chrome 130 · Windows」，可在行内「改名」成「客厅台式机」这类人话。 */
 .device-row {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border: var(--card-border);
   border-radius: var(--r-sm);
   font-size: var(--fs-sm);
 }
-.device-name { font-weight: 600; color: var(--text); }
-.device-ua { color: var(--text-muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.device-seen { color: var(--text-faint); flex: none; }
+.device-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.device-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.device-name { font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 次行：描述可压缩出省略号，时间 flex:none 永远完整（窄屏先压描述） */
+.device-meta { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; color: var(--text-muted); font-size: var(--fs-xs); }
+.device-meta-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-meta-seen { flex: none; color: var(--text-faint); }
+.device-acts { flex: none; display: flex; align-items: center; gap: var(--sp-1); }
+.dev-act {
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 18px;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dev-act:hover { color: var(--text); background: var(--bg-soft); border-color: var(--border); }
+.dev-act.danger:hover { color: var(--danger); border-color: var(--danger); }
 .device-badge {
   flex: none;
   font-size: var(--fs-sm);
@@ -6564,10 +6588,61 @@ textarea::placeholder {
 .pin-row { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0; flex-wrap: wrap; }
 .pin-row input { width: 192px; }
 .pin-state { margin-left: var(--sp-2); font-size: var(--fs-sm); color: var(--text-faint); font-weight: 400; }
+/* 忘记 PIN / 重新生成恢复码：与 pin-row 同宽但只有按钮，不套 input 的 192px 宽度 */
+.pin-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin: var(--sp-2) 0; }
+/* 角色权限（2026-10-29）：这些元素都是 flex，会压过 UA 的 [hidden]{display:none}，
+   设备页要按 owner/member 隐藏管理入口，必须显式兜底 */
+.btn[hidden],
+.modal-actions[hidden],
+.pin-row[hidden],
+.pin-tools[hidden],
+.grp-label[hidden] { display: none; }
+/* 主设备标记：与管理权限同色（warning），与「本机」用的 primary 区分开 */
+.device-badge.role { color: var(--warning); border-color: var(--warning); }
+/* 手机上设备行有三个操作（设为主设备 / 改名 / 吊销）时会横挤到把名称与描述压成「Edge…」，
+   故让按钮独占第二行右对齐，描述恢复完整显示 */
+@media (max-width: 640px) {
+  .device-row { flex-wrap: wrap; align-items: flex-start; }
+  .device-acts { width: 100%; justify-content: flex-end; }
+}
+/* 认领屏的补充说明：紧跟在输入框下方，比正文字号再小一档 */
+.auth-hint-sm { font-size: var(--fs-xs); margin: 0 0 var(--sp-3); line-height: 1.6; }
 
-/* 出码 / 邀请 / PIN 弹框：子项平铺，自带 28px 横缩（.modal-card 本体 padding:0） */
-.pair-card, .invite-card, .pin-card { width: 380px; }
-.pair-card > h2, .invite-card > h2, .pin-card > h2 { padding-left: 28px; }
+/* 出码 / 邀请 / PIN / 设备改名 弹框：子项平铺，自带 28px 横缩（.modal-card 本体 padding:0） */
+.pair-card, .invite-card, .pin-card, .dev-name-card { width: 380px; }
+.pair-card > h2, .invite-card > h2, .pin-card > h2, .dev-name-card > h2 { padding-left: 28px; }
+/* 设备改名输入框 */
+.dev-name-label { display: block; font-size: var(--fs-sm); color: var(--text-secondary); }
+.dev-name-label input { width: 100%; margin-top: var(--sp-1); }
+
+/* 恢复码卡片（2026-10-29）：明文只出现一次，字号放大、等宽、可整段选中 */
+.rec-card { width: 420px; }
+.rec-card > h2 { padding-left: 28px; }
+.rec-lead { margin: 0 0 var(--sp-3); font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.7; }
+.rec-code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xl);
+  letter-spacing: 2px;
+  text-align: center;
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
+  border: var(--card-border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text);
+  user-select: all;
+}
+.rec-copy-row { display: flex; justify-content: center; margin-bottom: var(--sp-3); }
+.rec-notes { margin: 0 0 var(--sp-3); padding-left: 16px; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.7; }
+.rec-warn {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
 /* 底部留白交由内部 .modal-actions 自带的 padding 兜底（var(--sp-5)），此处不重复加底部 padding，
    否则按钮到卡片边的距离会比标准对话框（modal-actions 直接作 modal-card 子元素）多一层 var(--sp-6) */
 .pair-code-wrap, .invite-wrap, .pin-prompt-wrap { padding: var(--sp-2) 28px 0; }
