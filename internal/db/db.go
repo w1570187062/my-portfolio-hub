@@ -1319,9 +1319,9 @@ func initAssetTables() error {
 				end_date TEXT NOT NULL DEFAULT '',
 				pattern TEXT NOT NULL DEFAULT 'recurring_fixed',
 				one_time_date TEXT NOT NULL DEFAULT '',
-				liability_mode TEXT NOT NULL DEFAULT 'repay',
-				created_at TEXT NOT NULL DEFAULT ''
-			)`,
+			liability_mode TEXT NOT NULL DEFAULT 'repay',
+			created_at TEXT NOT NULL DEFAULT ''
+		)`,
 		// 完成记录：某计划在某一月份(ym)被勾选完成后落库一条，保证幂等（同 plan+ym 唯一）。
 		// ref_type/ref_id 指向完成时所记的真实资金流水（cash_flow.id / liability_flows.id），供撤销时反向记账。
 		`CREATE TABLE IF NOT EXISTS cashflow_plan_done (
@@ -1365,6 +1365,8 @@ func initAssetTables() error {
 	// is_default：已废弃的「默认子账户」标记（2026-10-16 移除该概念）。列保留兼容存量数据，
 	// 新代码不再读写；如无历史包袱可择机 DROP。
 	addColumnIfMissing("cash_accounts", "is_default", "INTEGER NOT NULL DEFAULT 0")
+	// notify：收支计划是否推送到期提醒（1=推送，0=不推送）；默认推送，兼容旧库
+	addColumnIfMissing("cashflow_plans", "notify", "INTEGER NOT NULL DEFAULT 1")
 	addColumnIfMissing("cash_accounts", "type", "TEXT NOT NULL DEFAULT ''")
 	// excluded：日常开销账户标记（2026-10-27）。1 = 不参与再平衡口径：既不计入现金类市值，
 	// 也不计入再平衡的总市值分母（生活费不是「可配置资产」）。记账、转账、流水、兜底选账户
@@ -2629,6 +2631,7 @@ type CashflowPlan struct {
 	OneTimeDate   string  `json:"one_time_date"`  // 一次性计划归属具体日期 YYYY-MM-DD
 	LiabilityMode string  `json:"liability_mode"` // repay(还款已有) | incur(产生新负债)，仅 expense
 	Category      string  `json:"category"`       // 收支语义分类（完成入账时落到现金流水；空=按方向兜底 other_in/other_out）
+	Notify        int     `json:"notify"`         // 是否推送到期提醒（1=推送，0=不推送）；默认 1
 	CreatedAt     string  `json:"created_at"`
 }
 
@@ -2645,7 +2648,7 @@ type CashflowDone struct {
 }
 
 func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
-	rows, err := DB.Query(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),created_at FROM cashflow_plans WHERE user_id=? ORDER BY (CASE WHEN pattern='one_time' THEN 1 ELSE 0 END), day_of_month ASC, id ASC`, uid)
+	rows, err := DB.Query(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),notify,created_at FROM cashflow_plans WHERE user_id=? ORDER BY (CASE WHEN pattern='one_time' THEN 1 ELSE 0 END), day_of_month ASC, id ASC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -2654,7 +2657,7 @@ func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
 	for rows.Next() {
 		var p CashflowPlan
 		var typ, title, cur, note, pat, otd, lmode, cat string
-		if err := rows.Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.Notify, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		p.Type, p.Title, p.Currency, p.Note, p.Pattern, p.OneTimeDate, p.LiabilityMode, p.Category = typ, title, cur, note, pat, otd, lmode, cat
@@ -2666,8 +2669,8 @@ func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
 func GetCashflowPlan(id int64) (*CashflowPlan, error) {
 	var p CashflowPlan
 	var typ, title, cur, note, pat, otd, lmode, cat string
-	err := DB.QueryRow(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),created_at FROM cashflow_plans WHERE id=?`, id).
-		Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.CreatedAt)
+	err := DB.QueryRow(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),notify,created_at FROM cashflow_plans WHERE id=?`, id).
+		Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.Notify, &p.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -2693,8 +2696,8 @@ func CreateCashflowPlan(p *CashflowPlan) (int64, error) {
 		p.LiabilityMode = "repay"
 	}
 	p.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO cashflow_plans(user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,category,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		p.UserID, p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO cashflow_plans(user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,category,notify,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		p.UserID, p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.Notify, p.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -2712,8 +2715,8 @@ func UpdateCashflowPlan(p *CashflowPlan) error {
 	if p.LiabilityMode == "" {
 		p.LiabilityMode = "repay"
 	}
-	_, err := DB.Exec(`UPDATE cashflow_plans SET type=?,title=?,day_of_month=?,amount=?,currency=?,account_id=?,liability_id=?,note=?,end_date=?,pattern=?,one_time_date=?,liability_mode=?,category=? WHERE id=? AND user_id=?`,
-		p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.ID, p.UserID)
+	_, err := DB.Exec(`UPDATE cashflow_plans SET type=?,title=?,day_of_month=?,amount=?,currency=?,account_id=?,liability_id=?,note=?,end_date=?,pattern=?,one_time_date=?,liability_mode=?,category=?,notify=? WHERE id=? AND user_id=?`,
+		p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.Notify, p.ID, p.UserID)
 	return err
 }
 

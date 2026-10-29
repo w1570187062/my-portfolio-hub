@@ -606,6 +606,9 @@ func checkCashflowReminders() {
 			if p.Type != "expense" { // 仅待还款参与提醒
 				continue
 			}
+			if p.Notify == 0 { // 该计划关闭了到期提醒
+				continue
+			}
 			if p.Pattern == "one_time" {
 				// 一次性计划以具体日期判定是否次日到期
 				if p.OneTimeDate == tomorrowStr {
@@ -620,8 +623,22 @@ func checkCashflowReminders() {
 		if len(due) == 0 {
 			continue
 		}
+		// 批量取各计划对应月份的完成态，跳过已「标记完成」的计划（已完成不必再提醒）
+		ymSet := map[string]bool{}
+		for _, p := range due {
+			ymSet[planDueYm(p, tomorrow)] = true
+		}
+		doneByYm := map[string]map[int64]*db.CashflowDone{}
+		for ymk := range ymSet {
+			if m, e := db.ListCashflowDoneMonth(u.ID, ymk); e == nil {
+				doneByYm[ymk] = m
+			}
+		}
 		var tosend []db.CashflowPlan
 		for _, p := range due {
+			if _, ok := doneByYm[planDueYm(p, tomorrow)][p.ID]; ok {
+				continue // 当月已标记完成
+			}
 			has, e := db.HasReminderLog(p.ID, u.ID, ym)
 			if e != nil {
 				log.Printf("[cashflow-reminder] 查询提醒日志失败(plan=%d): %v", p.ID, e)
@@ -642,6 +659,15 @@ func checkCashflowReminders() {
 		}
 		log.Printf("[cashflow-reminder] 已推送 %d 条待还款提醒（到期日 %s）", len(tosend), tomorrow.Format("2006-01-02"))
 	}
+}
+
+// planDueYm 返回某计划「到期日所在月份」(ym=2006-01)，用于匹配其完成记录。
+// 循环计划取到期日(次日)所在月；一次性计划取归属日期所在月（与前端 cfDoneYmOf 对齐）。
+func planDueYm(p db.CashflowPlan, due time.Time) string {
+	if p.Pattern == "one_time" && p.OneTimeDate != "" {
+		return p.OneTimeDate[:7]
+	}
+	return due.Format("2006-01")
 }
 
 // buildCashflowReminderText 构造待还款提醒正文（钉钉 markdown）。
