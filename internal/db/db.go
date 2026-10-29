@@ -2094,6 +2094,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		out = append(out, f)
 	}
 	// 按日期倒序，日期相同按 id 倒序
+	out = DedupRepayFlows(out)
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Date != out[j].Date {
 			return out[i].Date > out[j].Date
@@ -2101,6 +2102,35 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		return out[i].ID > out[j].ID
 	})
 	return out, nil
+}
+
+// DedupRepayFlows 剔除与现金还款流水重复的负债 repay 流水（同日同币种同额）。
+// 一次性还款（/api/asset/cash/repay-liability、现金流计划到期还款）会同时写两条：
+// cash_flow（type=repay_liability，category=负债偿还）与 liability_flows（type=repay）。
+// 两条都进列表时，首页「最新流水」、资产页「流水」、财务「分类明细」会把同一笔还款显示两次；
+// 这里在合并层去重（保留现金那条：它带子账户名与余额，也是支出口径的实际出账）。
+// 只处理 kind=liability & type=repay & category=负债偿还 的记录，loan 等融资流水不受影响。
+func DedupRepayFlows(flows []AggFlow) []AggFlow {
+	cashKeys := make(map[string]bool)
+	for _, f := range flows {
+		if f.Kind == "cash" && f.Category == CatDebt && f.Amount < 0 {
+			cashKeys[f.Date+"|"+f.Currency+"|"+strconv.FormatFloat(math.Abs(f.Amount), 'f', 2, 64)] = true
+		}
+	}
+	if len(cashKeys) == 0 {
+		return flows
+	}
+	out := make([]AggFlow, 0, len(flows))
+	for _, f := range flows {
+		if f.Kind == "liability" && f.Type == "repay" && f.Category == CatDebt {
+			k := f.Date + "|" + f.Currency + "|" + strconv.FormatFloat(math.Abs(f.Amount), 'f', 2, 64)
+			if cashKeys[k] {
+				continue // 同日同额已有现金出账，跳过这条负债 repay，避免同一笔还款列两次
+			}
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 func dirOf(amt float64) string {

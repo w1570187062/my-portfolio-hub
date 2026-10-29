@@ -7241,6 +7241,11 @@ function cashFlowTypeTag(f) {
     case 'fee': return '<span class="flow-tag manual">费用</span>';
     case 'loan': return '<span class="flow-tag in">借入</span>';
     case 'repay': return '<span class="flow-tag out">还款</span>';
+    // 一次性还款（/api/asset/cash/repay-liability）：现金侧出账 + 负债侧减记各一条，
+    // 列表层已在 db.ListFlows 去重，只剩现金这条，类型标签也补齐在这里。
+    case 'repay_liability': return '<span class="flow-tag out">还款</span>';
+    case 'repay_rollback': return '<span class="flow-tag manual">还款冲正</span>';
+    case 'dca_buy': return '<span class="flow-tag out">定投扣款</span>';
     // 收支计划完成/撤销所记的真实流水（见 internal/api/cashflow.go recordPlanTransaction / reversePlanTransaction）
     case 'cf_income': return '<span class="flow-tag in">计划入账</span>';
     case 'cf_repay': return '<span class="flow-tag out">计划还款</span>';

@@ -1036,9 +1036,8 @@ func financeSummary(c *gin.Context) {
 		}
 	}
 	var divYear, intYear float64 // 被动收入：分红 / 利息（现金流部分）
-	// 兜底去重：同一笔还款可能产生两条流水（现金 debt outflow + 负债 repay），
-	// 同日同金额同时存在时只计入现金那条（expense 口径一致），剔除负债 repay 以避免支出翻倍。
-	flows = dedupRepayFlows(flows)
+	// 同一笔还款会同时写 cash_flow（现金出账）与 liability_flows（负债减记）两条流水，
+	// 去重已在 db.ListFlows 合并层完成（DedupRepayFlows），这里拿到的 flows 已无重复。
 	for _, f := range flows {
 		cny := toCNY(f.Amount, f.Currency)
 		// 符号归一：现金流水 amount 自带方向（入账正/出账负）；负债流水 amount 恒为正，
@@ -1201,34 +1200,6 @@ func (s *finScope) breakdownAdd(cat, dir string, amount float64) {
 		}
 	}
 	s.Breakdown = append(s.Breakdown, finCatRow{Category: cat, Type: dir, Amount: amount})
-}
-
-// dedupRepayFlows 剔除与现金还款流水重复的负债 repay 流水（同日同额），
-// 避免「分两步操作（记支出 + 改负债）」或「原子还款 endpoint 同时写双流水」导致支出翻倍。
-// 只剔除 kind=liability & type=repay & category=CatDebt 的记录，保留其他负债流水（loan 等）。
-func dedupRepayFlows(flows []db.AggFlow) []db.AggFlow {
-	// 先收集所有现金 debt outflow：key = date|currency|abs(amount)
-	cashKeys := make(map[string]bool)
-	for _, f := range flows {
-		if f.Kind == "cash" && f.Category == db.CatDebt && f.Amount < 0 {
-			k := f.Date + "|" + f.Currency + "|" + fmt.Sprintf("%.2f", math.Abs(f.Amount))
-			cashKeys[k] = true
-		}
-	}
-	if len(cashKeys) == 0 {
-		return flows
-	}
-	out := make([]db.AggFlow, 0, len(flows))
-	for _, f := range flows {
-		if f.Kind == "liability" && f.Type == "repay" && f.Category == db.CatDebt {
-			k := f.Date + "|" + f.Currency + "|" + fmt.Sprintf("%.2f", math.Abs(f.Amount))
-			if cashKeys[k] {
-				continue // 同日同额已有现金 debt 出账，跳过这条 repay 流水，避免 double count
-			}
-		}
-		out = append(out, f)
-	}
-	return out
 }
 
 func (s *finScope) out() finScope {
