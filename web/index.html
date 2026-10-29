@@ -104,10 +104,6 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6 20.4 8 12 12.4 3.6 8Z"/><path d="M3.6 12.4 12 16.8l8.4-4.4"/><path d="M3.6 16.6 12 21l8.4-4.4"/></svg>
             <span>管理账本</span>
           </button>
-          <button class="acct-item" type="button" data-act="logout">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg>
-            <span>退出登录</span>
-          </button>
           <div class="acct-sep"></div>
           <div class="acct-sec">外观主题</div>
           <button class="acct-item" type="button" data-act="theme" data-theme="light">
@@ -117,6 +113,11 @@
           <button class="acct-item" type="button" data-act="theme" data-theme="dark">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3A7 7 0 0 0 21 12.79Z"/></svg>
             <span>夜间</span><span class="acct-check" aria-hidden="true">✓</span>
+          </button>
+          <!-- 跟随系统：pf_theme 存的是「模式」而非具体主题，system 时监听 prefers-color-scheme 实时切换 -->
+          <button class="acct-item" type="button" data-act="theme" data-theme="system">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.8" y="4.2" width="18.4" height="12.2" rx="1.8"/><path d="M8.4 20.2h7.2M12 16.4v3.8"/></svg>
+            <span>跟随系统</span><span class="acct-check" aria-hidden="true">✓</span>
           </button>
           <div class="acct-sep"></div>
           <button class="acct-item" type="button" data-act="pnl-cal">
@@ -140,6 +141,13 @@
           <button class="acct-item" type="button" data-act="settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             <span>系统设置</span>
+          </button>
+          <!-- 退出登录是破坏性操作（会吊销本机会话、本机从「已接入设备」消失），
+               故沉到菜单最底部 + 危险色 + 二次确认，避免误点。 -->
+          <div class="acct-sep"></div>
+          <button class="acct-item acct-danger" type="button" data-act="logout">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg>
+            <span>退出登录</span>
           </button>
           <div class="acct-sep"></div>
           <div class="acct-foot"><span>持仓侠</span><span class="acct-ver">v3.6</span></div>
@@ -596,36 +604,34 @@
         <!-- 登录与设备（认证层，2026-10-28）：本机凭 Cookie 记身份；加设备/邀请走一次性码。
              id 供 scripts/auth-check.mjs / auth-shot.mjs 定位，勿删。 -->
         <section class="settings-group" id="authSettingsGroup">
-          <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.6"/></svg>登录与设备</span></h3>
+          <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.6"/></svg>绑定设备</span></h3>
           <p class="settings-group-desc">本机凭 Cookie 记住身份，换设备用一次性配对码接入；出码 / 清空 / 删账本 / 导入等敏感操作由操作 PIN 保护。</p>
           <div class="settings-group-body">
-            <div class="auth-cur-row">
-              <div>
-                <div class="grp-label">当前账本</div>
-                <div class="auth-cur-name" id="authCurName">—</div>
+            <!-- 2026-10-29：「当前账本 + 退出登录」整块移除——账本名在个人菜单顶部已有回显，
+                 退出登录已下沉到个人菜单最底部（带二次确认），此处重复摆放既占地又容易误触。
+                 剩下「设备」「操作 PIN」两组用 .dev-sec 分区 + 全宽实线衔接，不再用虚线分割。 -->
+            <section class="dev-sec">
+              <div class="grp-label">本账本已接入的设备<span class="pin-state" id="devRoleNote"></span></div>
+              <p class="tool-hint" id="memberHint" hidden>本机是<strong>普通设备</strong>：只能使用账本数据。吊销其他设备、添加新设备、修改 PIN 需要到主设备上操作。</p>
+              <div id="deviceList" class="device-list"><div class="auth-hint">加载中…</div></div>
+              <div class="modal-actions" id="deviceActions">
+                <button class="btn" type="button" id="addDeviceBtn">＋ 添加设备</button>
+                <button class="btn" type="button" id="inviteMemberBtn">邀请家人</button>
               </div>
-              <button class="btn btn-sm" id="authLogoutBtn" type="button">退出登录</button>
-            </div>
-            <hr class="set-sep" />
-            <div class="grp-label">本账本已接入的设备<span class="pin-state" id="devRoleNote"></span></div>
-            <p class="tool-hint" id="memberHint" hidden>本机是<strong>普通设备</strong>：只能使用账本数据。吊销其他设备、添加新设备、修改 PIN 需要到主设备上操作。</p>
-            <div id="deviceList" class="device-list"><div class="auth-hint">加载中…</div></div>
-            <div class="modal-actions" id="deviceActions">
-              <button class="btn" type="button" id="addDeviceBtn">＋ 添加设备</button>
-              <button class="btn" type="button" id="inviteMemberBtn">邀请家人</button>
-            </div>
-            <hr class="set-sep" />
-            <div class="grp-label" id="pinTitle">操作 PIN<span class="pin-state" id="pinState"></span></div>
-            <div class="pin-row" id="pinRow">
-              <input id="pinOld" type="password" inputmode="numeric" maxlength="6" placeholder="原 PIN（未设可留空）">
-              <input id="pinNew" type="password" inputmode="numeric" maxlength="6" placeholder="新 PIN，4–6 位数字">
-              <button class="btn btn-sm" type="button" id="pinSaveBtn">保存</button>
-            </div>
-            <div class="pin-tools" id="pinTools">
-              <button class="btn btn-sm" type="button" id="pinForgotBtn">忘记 PIN</button>
-              <button class="btn btn-sm" type="button" id="recoveryRotateBtn">重新生成恢复码</button>
-            </div>
-            <p class="tool-hint" id="pinTip">PIN 存的是不可逆哈希，忘了只能用<b>恢复码</b>重置；恢复码只在认领时显示一次，没抄下就点「重新生成」再抄一份。</p>
+            </section>
+            <section class="dev-sec" id="pinSection">
+              <div class="grp-label" id="pinTitle">操作 PIN<span class="pin-state" id="pinState"></span></div>
+              <div class="pin-row" id="pinRow">
+                <input id="pinOld" type="password" inputmode="numeric" maxlength="6" placeholder="原 PIN（未设可留空）">
+                <input id="pinNew" type="password" inputmode="numeric" maxlength="6" placeholder="新 PIN，4–6 位数字">
+                <button class="btn btn-sm" type="button" id="pinSaveBtn">保存</button>
+              </div>
+              <div class="pin-tools" id="pinTools">
+                <button class="btn btn-sm" type="button" id="pinForgotBtn">忘记 PIN</button>
+                <button class="btn btn-sm" type="button" id="recoveryRotateBtn">重新生成恢复码</button>
+              </div>
+              <p class="tool-hint" id="pinTip">PIN 存的是不可逆哈希，忘了只能用<b>恢复码</b>重置；恢复码只在认领时显示一次，没抄下就点「重新生成」再抄一份。</p>
+            </section>
           </div>
         </section>
     </div>
@@ -1103,34 +1109,36 @@
           <div class="f-pills" id="cfCatPills"></div>
           <input type="hidden" id="cf_category" value="">
         </div>
+        <label class="cf-toggle-row"><input type="checkbox" id="cf_notify" checked /> 到期前一天推送提醒</label>
         <label>名称
           <input id="cf_title" placeholder="名称" maxlength="40" />
         </label>
-        <label id="cfDayWrap">每月日期
-          <input id="cf_day" type="number" min="1" max="31" step="1" value="1" />
-        </label>
-        <label id="cfDateWrap" hidden>具体日期
-          <input id="cf_one_time_date" type="date" />
-        </label>
-        <label>金额<input id="cf_amount" type="number" step="0.01" min="0" placeholder="0.00" /></label>
-        <label><span id="cfCashCap">还款账户</span>
-          <div class="ac-picker" id="cfCashPicker">
-            <button type="button" class="ac-picker-btn" id="cfCashBtn">请选择子账户</button>
-            <div class="ac-picker-panel" id="cfCashPanel" hidden></div>
-          </div>
-          <input type="hidden" id="cf_account_id" value="0" />
-        </label>
-        <label id="cfLiabilityWrap">关联负债
-          <div class="ac-picker" id="cfLiabilityPicker">
-            <button type="button" class="ac-picker-btn" id="cfLiabilityBtn">不关联</button>
-            <div class="ac-picker-panel" id="cfLiabilityPanel" hidden></div>
-          </div>
-        </label>
+        <div class="cf-row2">
+          <label id="cfDayWrap">每月日期
+            <input id="cf_day" type="number" min="1" max="31" step="1" value="1" />
+          </label>
+          <label id="cfDateWrap" hidden>具体日期
+            <input id="cf_one_time_date" type="date" />
+          </label>
+          <label>金额<input id="cf_amount" type="number" step="0.01" min="0" placeholder="0.00" /></label>
+        </div>
+        <div class="cf-row2">
+          <label><span id="cfCashCap">还款账户</span>
+            <div class="ac-picker" id="cfCashPicker">
+              <button type="button" class="ac-picker-btn" id="cfCashBtn">请选择子账户</button>
+              <div class="ac-picker-panel" id="cfCashPanel" hidden></div>
+            </div>
+            <input type="hidden" id="cf_account_id" value="0" />
+          </label>
+          <label id="cfLiabilityWrap">关联负债
+            <div class="ac-picker" id="cfLiabilityPicker">
+              <button type="button" class="ac-picker-btn" id="cfLiabilityBtn">不关联</button>
+              <div class="ac-picker-panel" id="cfLiabilityPanel" hidden></div>
+            </div>
+          </label>
+        </div>
         <label id="cfEndWrap">截止日期
           <input id="cf_end_date" type="date" />
-        </label>
-        <label>备注
-          <input id="cf_note" placeholder="可选" maxlength="120" />
         </label>
         <div id="cfErr" class="err"></div>
         <div class="modal-actions">
@@ -1185,7 +1193,6 @@
           </div>
           <input type="hidden" id="dcaCash" value="0">
         </div>
-        <label>备注<input id="dcaNote" type="text" placeholder="可空" autocomplete="off" /></label>
       </div>
       <div id="dcaErr" class="err"></div>
       <div class="modal-actions">

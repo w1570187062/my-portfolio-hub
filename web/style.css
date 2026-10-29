@@ -1028,6 +1028,9 @@ h2 > svg { color: var(--primary); }
 }
 .acct-item:hover { background: rgba(var(--tint), .12); color: var(--text); }
 .acct-item.active { background: rgba(var(--tint), .16); color: var(--primary); }
+/* 破坏性菜单项（退出登录）：常驻危险色，hover 用危险底，和普通项区分开，防误点 */
+.acct-item.acct-danger { color: var(--danger); }
+.acct-item.acct-danger:hover { background: var(--danger-soft); color: var(--danger-hover); }
 .acct-item svg { width: 15px; height: 15px; flex: 0 0 auto; }
 .acct-check {
   margin-left: auto;
@@ -3036,14 +3039,14 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 }
 
 /* ===== 技术分析弹框 ===== */
-.analysis-body { padding: var(--sp-2) 0; max-height: 70vh; overflow-y: auto; }
+.analysis-body { padding: var(--sp-2) 0; max-height: 80vh; overflow-y: auto; }
 .analysis-loading { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); padding: 40px; color: var(--text-muted); font-size: var(--fs-base); }
 .analysis-err { text-align: center; padding: 28px; color: var(--danger); font-size: var(--fs-base); }
 .analysis-time { font-size: var(--fs-sm); color: var(--text-faint); margin: -4px 0 10px; letter-spacing: .3px; }
 
 /* 迷你K线（纯SVG蜡烛图，涨红跌绿） */
 .kline-mini { background: var(--bg-card); border: var(--card-border); border-radius: var(--r-sm); padding: var(--sp-2) var(--sp-2) var(--sp-1); margin-bottom: var(--sp-3); }
-.kline-mini svg { width: 100%; height: 156px; display: block; }
+.kline-mini svg { width: 100%; height: 208px; display: block; }
 .kline-mini-meta { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .kline-mini-meta .up { color: var(--up); }
 .kline-mini-meta .down { color: var(--down); }
@@ -3064,7 +3067,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .kline-mini .kl-ind-sel option { background: var(--bg-card); color: var(--text); }
 /* 副图指标区（下拉已上移到头部，此处只放标签+svg）：与主图共享x轴 */
 .kl-sub { position: relative; margin-top: var(--sp-3); padding-top: var(--sp-3); }
-.kl-sub svg { width: 100%; height: 56px; display: block; }
+.kl-sub svg { width: 100%; height: 76px; display: block; }
 .kl-sub-label { position: absolute; left: 0; top: 0; font-size: var(--fs-xs); line-height: 1; color: var(--text-muted); opacity: .75; pointer-events: none; font-variant-numeric: tabular-nums; }
 /* K线左上角描述 + MA图例（缩放/切换按钮已删，标签行独占图表上方一行） */
 .kl-label { position: static; display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); line-height: 1; font-variant-numeric: tabular-nums; pointer-events: none; opacity: .85; }
@@ -3596,6 +3599,16 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
 .user-add .btn { flex: 0 0 auto; }
 .full-migrate { display: flex; align-items: center; gap: var(--sp-1); width: 100%; font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; user-select: none; }
 .full-migrate input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+/* 收支计划弹框：到期提醒开关（与 .full-migrate 同画法） */
+.cf-toggle-row { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; user-select: none; margin-bottom: var(--sp-1); }
+.cf-toggle-row input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+/* 收支计划弹框：窄字段两列合并（日期+金额 / 还款账户+关联负债），压缩竖向高度；
+   某侧 label 按 hidden 或 display:none 切掉时，另一侧 flex:1 自动占满整行 */
+.cf-row2 { display: flex; gap: var(--sp-3); margin-bottom: var(--sp-3); align-items: flex-start; }
+.cf-row2 > label { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
+.cf-row2 > label input,
+.cf-row2 > label .ac-picker { width: 100%; }
+@media (max-width: 640px) { .cf-row2 { flex-direction: column; } .cf-row2 > label { width: 100%; } }
 
 .ud-confirm-label {
   display: block;
@@ -6539,9 +6552,36 @@ textarea::placeholder {
 .auth-err { color: var(--danger); font-size: var(--fs-sm); min-height: 18px; margin: var(--sp-1) 0; }
 .auth-submit { width: 100%; }
 
-/* 设置页：登录与设备 */
-.auth-cur-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
-.auth-cur-name { font-size: var(--fs-base); font-weight: 600; margin-top: 2px; }
+/* 设置页：绑定设备 */
+/* 2026-10-29：删掉「当前账本 / 退出登录」（账本名在个人菜单已有回显，退出登录已下沉到菜单底部），
+   页面只剩「设备」「操作 PIN」两块。旧版式是 hr.set-sep 虚线 + body gap(16) + 元素自带 margin 三重叠加，
+   块间空档 40px 以上、虚线又短又碎，读起来像几段不相干的碎片。改为「分区 + 贯通整卡实线」：
+   卡片左右内边距交给 .dev-sec（与标题/描述同为 24px，保证左边缘对齐），body 自身 padding/gap 归零，
+   块间 1px 实线分隔，块内统一 8px 节奏。 */
+#devicesView .settings-group-body { padding: 0; gap: 0; }
+.dev-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-6);
+}
+/* .dev-sec 是 flex，会压过 UA 的 [hidden]{display:none}，普通设备收掉 PIN 整块必须显式兜底 */
+.dev-sec[hidden] { display: none; }
+.dev-sec + .dev-sec { border-top: 1px solid var(--border); }
+.dev-sec:last-child { padding-bottom: var(--sp-5); }
+/* 块内元素自带的 margin 会与 .dev-sec 的 gap 叠加，统一清零，只留 gap 一层节奏 */
+.dev-sec > .grp-label,
+.dev-sec > .tool-hint,
+.dev-sec > .device-list,
+.dev-sec > .modal-actions { margin: 0; }
+.dev-sec > .pin-row,
+.dev-sec > .pin-tools { margin: 0; }
+/* 平板/手机：标题与描述的内边距在该断点收到 16px（见 .pano-open 那组规则），
+   分区必须同步收，否则内容左边缘会比标题多缩 8px。注意本条必须排在上面的基础规则之后才生效 */
+@media (max-width: 1340px) {
+  .dev-sec { padding: var(--sp-3) var(--sp-4); }
+  .dev-sec:last-child { padding-bottom: var(--sp-4); }
+}
 .device-list { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-3); }
 /* 2026-10-29：原先整行铺原始 UA（Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/…），
    既认不出是哪台机器、又把视线全抢走。改成「名称 + 一行短摘要」，原始 UA 只留在 title 里；
@@ -6587,6 +6627,10 @@ textarea::placeholder {
 }
 .pin-row { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0; flex-wrap: wrap; }
 .pin-row input { width: 192px; }
+/* 2026-10-29：`.settings-page .settings-group-body input{width:100%}`(0,2,1) 与上面的
+   `.pin-row input`(0,1,1) 打架，全宽规则胜出 → 两个 PIN 框各自独占一整行、保存按钮被挤到第三行，
+   卡片拉得又长又散。用 ID 提权（0,3,1）压回 192px，三个控件回到同一行。 */
+#devicesView .pin-row input { width: 192px; flex: 0 0 auto; }
 .pin-state { margin-left: var(--sp-2); font-size: var(--fs-sm); color: var(--text-faint); font-weight: 400; }
 /* 忘记 PIN / 重新生成恢复码：与 pin-row 同宽但只有按钮，不套 input 的 192px 宽度 */
 .pin-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin: var(--sp-2) 0; }
@@ -6604,6 +6648,9 @@ textarea::placeholder {
 @media (max-width: 640px) {
   .device-row { flex-wrap: wrap; align-items: flex-start; }
   .device-acts { width: 100%; justify-content: flex-end; }
+  /* 两个 192px 输入框 + 保存放不进 390 宽，会错落成「1 个框 / 框+按钮」两行。
+     改为两框各占一半同排、保存按钮换到下一行；必须排在上面的 #devicesView .pin-row input 之后才生效 */
+  #devicesView .pin-row input { width: auto; flex: 1 1 120px; min-width: 0; }
 }
 /* 认领屏的补充说明：紧跟在输入框下方，比正文字号再小一档 */
 .auth-hint-sm { font-size: var(--fs-xs); margin: 0 0 var(--sp-3); line-height: 1.6; }

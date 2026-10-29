@@ -1,14 +1,34 @@
 ﻿const $ = (s) => document.querySelector(s);
 
-// ===== 主题切换（日间/夜间） =====
-// 默认夜间模式；读取 localStorage 持久化偏好。
+// ===== 主题切换（日间 / 夜间 / 跟随系统） =====
+// pf_theme 存的是「模式」而不是最终主题：light | dark | system。
+// system 由 prefers-color-scheme 解析成 light/dark，并在系统切换时实时跟随（做法同 PanWatch 的 useTheme）。
+// 默认 dark：保持既有观感，没存过偏好的老用户不会突然变浅色。
 // 2026-10-27：顶栏的日/夜快捷切换按钮已删除，入口统一收进右上角个人菜单。
-function applyTheme(theme) {
+const THEME_MODES = ['light', 'dark', 'system'];
+const darkMq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+let themeMode = 'dark'; // 用户选择的模式（记忆态，事实源仍是 localStorage + dataset.theme）
+function systemTheme() {
+  return darkMq && darkMq.matches ? 'dark' : 'light';
+}
+function applyTheme(mode) {
+  themeMode = THEME_MODES.includes(mode) ? mode : 'dark';
+  const theme = themeMode === 'system' ? systemTheme() : themeMode; // 实际生效的主题
   document.documentElement.dataset.theme = theme;
-  // 个人菜单里的「日间/夜间」勾选态与主题事实源同步（函数声明已提升，首屏调用时查不到节点也无害）
+  // 移动端地址栏 / 状态栏配色随实际主题走，否则选了日间仍是深色标题栏
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', theme === 'light' ? '#f4f6f9' : '#0a0e14');
+  // 个人菜单里的勾选态与主题模式同步（函数声明已提升，首屏调用时查不到节点也无害）
   syncAcctTheme();
 }
 applyTheme(localStorage.getItem('pf_theme') || 'dark');
+
+// 跟随系统：仅在 system 模式下响应 OS 主题变化（显式 light/dark 时忽略，不覆盖用户选择）
+if (darkMq) {
+  const onSchemeChange = () => { if (themeMode === 'system') applyTheme('system'); };
+  if (darkMq.addEventListener) darkMq.addEventListener('change', onSchemeChange);
+  else if (darkMq.addListener) darkMq.addListener(onSchemeChange); // 旧版 Safari
+}
 
 // ===== 主题色（后期可调）：给 <html> 挂 data-accent，具体色值见 style.css 的预设块 =====
 // 预设主题：在 style.css 追加一对 :root[data-accent="x"] 规则并把色名加进 ACCENTS；
@@ -81,8 +101,9 @@ document.addEventListener('DOMContentLoaded', () => {
   applyTheme(localStorage.getItem('pf_theme') || 'dark');
   // v3.4 行密度：恢复上次选择（仅 compact 对 CSS 生效，standard 为默认）
   document.body.dataset.density = localStorage.getItem('pf_row_density') || 'standard';
-  // 明暗主题入口统一在右上角个人菜单（浅色 / 夜间两项）；设置页的「深色模式」开关已于 2026-10-29 移除，
+  // 明暗主题入口统一在右上角个人菜单（日间 / 夜间 / 跟随系统三项）；设置页的「深色模式」开关已于 2026-10-29 移除，
   // 同一功能留两套控件只会让两处状态不同步，故只保留菜单一处。
+  // 这里再调一次是为了 DOM 就绪后重排勾选态（首屏那次调用时菜单节点还没解析出来）。
 
   applyAccent(localStorage.getItem('pf_accent') || 'blue');
   document.querySelectorAll('#accentSwatches .accent-swatch').forEach((b) => {
@@ -1127,9 +1148,12 @@ function holdingDaysOf(h) {
   return Math.max(0, Math.floor((Date.now() - t) / 864e5));
 }
 
-// 判断某持仓是否支持技术分析（股票始终支持；基金需关联股票代码）
+// 是否展示「技术分析」入口：判据必须与后端 analysis.go 一致，
+// 否则点了只会弹出「该基金未设置关联股票代码，不支持技术分析」。
+// 基金（category=fund）：必须有 linked_symbol（关联代码）才有 K 线可画；其余按 symbol 判断。
 function supportsAnalysis(h) {
-  if (isFund(h)) return true;
+  if (!h) return false;
+  if (h.category === 'fund') return !!(h.linked_symbol && String(h.linked_symbol).trim());
   return !!(h.symbol && String(h.symbol).trim());
 }
 
@@ -8605,7 +8629,7 @@ async function openAnalysis(id) {
 // 缩放：zoom 越大可见根数越少、蜡烛越大（1×=全部；上限约 12 根），拖拽平移翻页（右拖看更早 / 左拖看更近）
 let klState = null; // { bars, patMap, name, zoom, zoomMax, win, pages, page }
 const KL_W = 600;   // 主图 viewBox 宽（klRenderWindow / crosshair 定位共用）
-const KL_SUB_H = 44; // 副图指标 viewBox 高（MACD/KDJ/BOLL/RSI 共用）
+const KL_SUB_H = 60; // 副图指标 viewBox 高（MACD/KDJ/BOLL/RSI 共用；与 CSS .kl-sub svg 高度同比例）
 // 副图指标下拉切换（默认 MACD）：KDJ(9,3,3)/BOLL(20,2)/RSI(14)/VOL 均由窗口内日K线前端实时计算。
 // VOL 原为独立成交量块（2026-10-18 合并进本下拉，副图区只保留一个指标位）。
 const KL_SUB_INDS = [
@@ -8638,7 +8662,7 @@ function klWinGeo() {
   const end = bars.length - page * win;
   const data = bars.slice(Math.max(0, end - win), end);
   const n = data.length;
-  const W = KL_W, H = 168, OX = 2, AXW = 0; // 取消右侧 Y 轴占位带，主图与副图共享全宽 x 轴（等宽对齐）
+  const W = KL_W, H = 224, OX = 2, AXW = 0; // 取消右侧 Y 轴占位带，主图与副图共享全宽 x 轴（等宽对齐）；H 与 CSS .kline-mini svg 高度 208px 同比例（208/224≈156/168），加高不变形
   const PW = W - OX - AXW;
   const step = PW / n;
   return { data, n, W, H, OX, AXW, PW, step, cw: Math.max(1.5, step * 0.62) };
@@ -9283,11 +9307,12 @@ function renderAcctUsers() {
       + '<span class="acct-check" aria-hidden="true">✓</span></button>';
   }).join('');
 }
-// 主题勾选态与 <html data-theme> 同步（头部快捷按钮、设置页开关、菜单三处共用一个事实源）
+// 主题勾选态与「模式」同步：日间/夜间/跟随系统三项互斥，只有当前模式打勾。
+// 注意判据是 themeMode（模式）而非 dataset.theme（实际主题）—— 跟随系统时 dataset.theme 是解析结果，
+// 拿它比对会把勾打到「日间/夜间」上。
 function syncAcctTheme() {
-  const cur = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
   document.querySelectorAll('#acctPop .acct-item[data-act="theme"]').forEach((b) => {
-    b.classList.toggle('active', b.dataset.theme === cur);
+    b.classList.toggle('active', b.dataset.theme === themeMode);
   });
 }
 async function openAcctMenu() {
@@ -9321,10 +9346,9 @@ function onAcctPopClick(e) {
     const curId = localStorage.getItem('pf_user');
     if (String(item.dataset.id) !== String(curId)) switchUser(item.dataset.id);
   } else if (act === 'theme') {
-    const next = item.dataset.theme === 'light' ? 'light' : 'dark';
+    const next = THEME_MODES.includes(item.dataset.theme) ? item.dataset.theme : 'dark';
     localStorage.setItem('pf_theme', next);
-    applyTheme(next);
-    syncAcctTheme(); // 菜单里的「浅色 / 夜间」勾选态与当前主题对齐
+    applyTheme(next); // 内部已同步菜单勾选态，无需再调 syncAcctTheme
   } else if (act === 'settings') {
     closeAcctMenu();
     navigate('settings');
@@ -9345,8 +9369,23 @@ function onAcctPopClick(e) {
     openUserSheet();
   } else if (act === 'logout') {
     closeAcctMenu();
-    doLogout();
+    askLogout();
   }
+}
+// 退出登录二次确认（2026-10-29）：本工程没有「PIN 直接登录」通道，点错的代价不是重新输密码，
+// 而是本机 session 被吊销、从「已接入设备」消失，只能靠另一台主设备出配对码再接回来（或走首启认领）。
+// 所以必须显式确认，并把后果写在弹框里。
+function askLogout() {
+  const owner = authState && authState.role === 'owner';
+  openConfirm({
+    title: '退出登录',
+    msg: owner
+      ? '退出后本机会从「已接入设备」中移除，主设备身份会转给其他在线设备；本机将无法再用 PIN 登录，需要配对码才能接回。确定退出？'
+      : '退出后本机会从「已接入设备」中移除，需要主设备出配对码才能重新接回。确定退出？',
+    okText: '退出登录',
+    danger: true,
+    onOk: doLogout,
+  });
 }
 function bindAcctMenu() {
   const { btn, pop, menu } = acctMenuEls();
@@ -10029,8 +10068,8 @@ async function openCashflowModal(p) {
   document.getElementById('cf_amount').value = isEdit ? round4(p.amount) : '';
   const edEl = document.getElementById('cf_end_date');
   if (edEl) { edEl.value = isEdit ? (p.end_date || '') : ''; syncDateHint(edEl); }
-  document.getElementById('cf_note').value = isEdit ? (p.note || '') : '';
   document.getElementById('cf_account_id').value = isEdit ? (p.account_id || 0) : 0;
+  document.getElementById('cf_notify').checked = isEdit ? (p.notify !== 0) : true;
   document.getElementById('cf_liability_mode').value = isEdit ? (p.liability_mode || (p.type === 'expense' ? 'repay' : '')) : (type === 'expense' ? 'repay' : '');
   document.getElementById('cfModalTitle').textContent = isEdit ? '编辑收支计划' : '新建收支计划';
   document.getElementById('cfErr').textContent = '';
@@ -10242,7 +10281,7 @@ if (cashflowForm) cashflowForm.onsubmit = async (e) => {
     liability_mode: cfType === 'expense' ? liabMode : '',
     category: document.getElementById('cf_category').value || '',
     end_date: normDateInput(document.getElementById('cf_end_date')) || '',
-    note: document.getElementById('cf_note').value.trim(),
+    notify: document.getElementById('cf_notify').checked ? 1 : 0,
   };
   if (!payload.title) { document.getElementById('cfErr').textContent = '名称不能为空'; return; }
   if (cfPat === 'one_time' && !oneTimeDate) { document.getElementById('cfErr').textContent = '一次性计划需填写具体日期'; return; }
@@ -11789,7 +11828,6 @@ async function openDCAModal(p) {
   document.getElementById('dcaDay').value = p ? (p.day_of_month || 1) : 1;
   document.getElementById('dcaStart').value = p ? (p.start_date || '') : todayStr();
   document.getElementById('dcaEnd').value = p ? (p.end_date || '') : '';
-  document.getElementById('dcaNote').value = p ? (p.note || '') : '';
   document.getElementById('dcaFeeRate').value = p && p.fee_rate > 0 ? round4(p.fee_rate) : '';
   renderDCAInterval();
   fillDCACash(p);
@@ -11950,7 +11988,6 @@ async function saveDCAPlan() {
     max_amount: max,
     fee_rate: parseFloat(document.getElementById('dcaFeeRate').value) || 0,
     cash_account_id: Number(document.getElementById('dcaCash').value) || 0,
-    note: document.getElementById('dcaNote').value.trim(),
   };
   if (!holdingID) {
     payload.create_holding = {
@@ -13279,8 +13316,10 @@ const isOwnerDevice = () => authState.role === 'owner';
 // （后端也拦，双重保证；藏起来是为了不让用户白点一次再吃 403）。
 function applyRoleUI() {
   const owner = isOwnerDevice();
-  // 普通设备看不到任何管理入口：加设备 / 邀请家人 / 改 PIN / 恢复码，连标题与说明一起收掉
-  ['deviceActions', 'pinTitle', 'pinRow', 'pinTools', 'pinTip'].forEach((id) => {
+  // 普通设备看不到任何管理入口：加设备 / 邀请家人 / 改 PIN / 恢复码，连标题与说明一起收掉。
+  // 「操作 PIN」整块是 .dev-sec（靠 border-top 与上一块衔接），只藏子项会留下一条空的分隔线，
+  // 所以整块 #pinSection 一起藏；子项仍逐个处理，防止以后有人单独反显某一项时漏掉。
+  ['pinSection', 'deviceActions', 'pinTitle', 'pinRow', 'pinTools', 'pinTip'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = !owner;
   });
@@ -13374,7 +13413,6 @@ async function loadAuthDevices() {
         };
       });
     }
-    document.getElementById('authCurName').textContent = authState.user ? authState.user.name : '—';
     updatePinState(!!authState.has_pin);
     applyRoleUI();
   } catch (e) {
@@ -13484,7 +13522,7 @@ function closePIN(val) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') doClaim(); });
   });
-  on('authLogoutBtn', doLogout);
+  // 退出登录按钮已从本页移除（下沉到个人菜单最底部，带二次确认），这里不再绑定
   // 「添加设备」先问名字再出码（名字可选，留空就走 UA 自动识别）
   on('addDeviceBtn', () => {
     const inp = document.getElementById('addDeviceName');
