@@ -298,6 +298,8 @@ let sparkCache = {}; // symbol -> 近30个交易日收盘价序列（时间正�
 let cashBalMap = {}; // "sourceID:currency"(小写、存量 rmb 归一为 cny) -> 该(来源,币种)现金子账户余额合计，供「仓位」列算分母；来自 /api/home 的 cash 字段
 // 币种归一：存量数据里人民币有 rmb/cny 两种写法，匹配前统一成 cny（前后端 key 必须一致；全站 2026-10-16 起统一 cny/usd/hkd）
 const normCur = (c) => { const s = String(c || '').toLowerCase(); return s === 'rmb' ? 'cny' : s; };
+// 金额折人民币：usd/hkd 按汇率，其余（cny/rmb）按原值。usdRate/hkdRate 在模块初始化后赋值。
+const cnyOf = (v, cur) => (cur === 'usd' ? v * usdRate : cur === 'hkd' ? v * hkdRate : v);
 let catFilter = new Set(); // selected categories; empty = all
 let mktFilter = new Set(); // selected markets; empty = all
 let textFilter = '';        // 文本搜索（名称/代码/备注），配合「/」快捷聚焦
@@ -330,7 +332,11 @@ let wealthCatFilter = '';       // 理财筛选：'' 全部 | nav 净值型 | ot
 let flowRangeDays = 30;         // 资产页流水区间：7 | 30 | 365
 let homeRangeDays = 30;         // 首页净资产走势区间：30 | 90 | 365 | 0(全部)
 let homeNetVal = 0;             // 首页净资产走势区间收益率基准（= 净资产）
-let homeRateSparkState = null;  // 首页权益曲线 hover 弹框所用序列（日期 / 累计盈亏 / 净值 / 基准）
+let homeRateSparkState = null;  // 首页权益曲线 hover 弹框所用序列（日期 / 单日盈亏 / 日均 / 累计 / 成本 / 基准）
+// 首页权益曲线主序列：avg 日均（默认）| day 单日原始 | cum 累计。
+// 默认给 avg 是因为单日序列正负天天翻（实测 75 天里翻 39 次），画出来就是一条心电图；
+// 日均把锯齿压掉，才看得出「这一段整体在赚还是在亏」。
+let homeRateMode = 'avg';
 let flowTypeFilter = 'all';     // 资产页流水类型：all | in | out | dividend | trade
 let assetFlowsCache = [];       // 资产页流水全量缓存（供筛选/区间重渲染，避免重复请求）
 let homeRecentFilter = 'all';    // 首页最新流水类型过滤：all | in | out | neutral
@@ -1567,46 +1573,81 @@ async function renderRateSpark(rangeDays, netVal) {
       (d.history || []).forEach((h) => { calData[h.date] = h; });
     }
     const sortedDates = Object.keys(calData).sort();
-    // 每日盈亏增量（CNY）：用 equity_pnl_cny — 纯持仓，去理财波动
-    const dailyPnl = sortedDates.map((ds) => calData[ds].equity_pnl_cny || calData[ds].total_cny || 0);
+    // 每日盈亏增量（CNY）：只用 equity_pnl_cny —— 后端叠加理财之前存的纯持仓盈亏。
+    // 不能写成 `|| total_cny` 兜底：equity_pnl_cny 为 0 有两种正常情况（周末全市场休市、
+    // 或当天只有理财快照的补行），一旦兜底就取到含理财的 total_cny，理财收益会漏进权益曲线，
+    // 分母（= 权益市值 − 区间累计盈亏）也跟着虚高。字段后端每行都输出，不存在缺键。
+    const dailyPnl = sortedDates.map((ds) => {
+      const v = calData[ds].equity_pnl_cny;
+      return (typeof v === 'number' && Number.isFinite(v)) ? v : 0;
+    });
     // 每日累计净投入（CNY），后端由 base_cny + total_cny 推算
     const contribRaw = sortedDates.map((ds) => calData[ds].contrib_cny);
     if (rDays && rDays > 0 && dailyPnl.length > rDays) {
       const cut = dailyPnl.length - rDays;
       dailyPnl.splice(0, cut);
       contribRaw.splice(0, cut);
-      // 日期数组必须同步截断：homeRateSparkState.dates 与 cumPnl/cumNet 按同一下标对齐，
+      // 日期数组必须同步截断：homeRateSparkState.dates 与 cumPnl/dayPnl 按同一下标对齐，
       // 漏截会让悬停 tooltip 的日期整体前移（实测悬停 10/6 的减仓悬崖会显示成 8/4）
       sortedDates.splice(0, cut);
     }
+    // 剔「空快照」日：equity_pnl 与 total 同时为 0，说明当天根本没抓到净值
+    // （周末/假日常见 —— 本库 10-11、10-18 都是周日，所有持仓 pnl 全 0）。
+    // 这些点把曲线一天一次拉回零轴，是「心电图」的一半来源；剔掉不改变区间累计
+    // （0 不影响求和），只是少画几个贴在零线上的假点。
+    for (let i = dailyPnl.length - 1; i >= 0; i--) {
+      if (!dailyPnl[i]) {
+        dailyPnl.splice(i, 1); contribRaw.splice(i, 1); sortedDates.splice(i, 1);
+      }
+    }
     const heroBox = document.getElementById('homeRateSpark');
     const heroTrend = document.getElementById('homeRateSparkTrend');
+    // 区间 chip 与状态对齐：离开首页再回来时按 homeRangeDays 重渲染，高亮要跟着走
+    const rtTabs = document.getElementById('homeRangeTabs');
+    if (rtTabs) {
+      rtTabs.querySelectorAll('.range-tab').forEach((x) => {
+        x.classList.toggle('active', (parseInt(x.dataset.range, 10) || 0) === (rDays || 0));
+      });
+    }
     if (heroBox && dailyPnl.length >= 2) {
-      // 累计盈亏（从 0 开始累加）
+      // 累计盈亏：切片之后从 0 累加 = 「本区间累计」。所以「近7天」看得出这 7 天的走势；
+      // 若用全期累计，7 天的波动会被几千的历史盈亏压成一条平线。
       const cumPnl = []; let s = 0;
       dailyPnl.forEach((v) => { s += v; cumPnl.push(s); });
-      // 累计投入（后端已算好，直接取）
+      const rangePnl = s;   // 区间累计盈亏（= 每日盈亏之和 = cumPnl 末值），头部涨跌幅与配色都用它
+      // 累计投入（后端已算好，直接取）：只做 hover 读数，不上曲线 —— 它是「存量」，
+      // 一笔大额买入就会把整条线的量级整体抬走（¥9.7万 → ¥14.7万），Y 轴被撑到十几万后，
+      // 真正要看的盈亏（几百到几千）就压成一条直线。2026-10-29 新增 ¥5 万债基即此症状。
       const contrib = contribRaw.map((v) => (v == null || isNaN(v)) ? null : v);
-      // 净值 = 累计投入 + 累计盈亏（两端曲线叠加）
-      const cumNet = cumPnl.map((p, i) => (contrib[i] != null ? contrib[i] : 0) + p);
-
-      // Y 轴：在数据 min/max 基础上保证一个「最小跨度」，避免几 % 的小波动 / 减仓撤资
-      // 被自动缩放放大成满屏暴跌（卡片高度有限，视觉冲击过强）。最小跨度 = 参考水平 × 8%，
-      // 以数据中点为中心对称展开；仅当实际变化幅度小于该值时触发。
-      const axisVals = cumNet.concat(contrib.filter((v) => Number.isFinite(v)));
-      let axMin = Math.min(...axisVals), axMax = Math.max(...axisVals);
-      if (axMax - axMin < 1e-9) { axMax += 1; axMin -= 1; }
-      const axMid = (axMin + axMax) / 2;
-      const minSpan = Math.max(1, Math.abs(axMid) * 0.08);
-      if (axMax - axMin < minSpan) { axMin = axMid - minSpan / 2; axMax = axMid + minSpan / 2; }
-      const axis = { min: axMin, max: axMax };
-
-      const rangePnl = cumPnl[cumPnl.length - 1];  // 区间累计盈亏
       // 方案 A：收益率基准改用「起始权益本金」= 当前权益市值 − 区间累计权益盈亏，
       // 不再混入理财/现金/负债的全口径净资产，使首页权益曲线与持仓口径可比。
       const eqMV = Number(assetData?.equity?.market_value || 0);
       const baseMV = eqMV > 0 ? eqMV : (homeNetVal || 0);
       const base = Math.max(baseMV - rangePnl, 1);  // 区间起始权益本金
+
+      // 主序列 = 盈亏金额（avg 日均 / day 单日 / cum 累计），不再是净值：买在市值上时
+      // 成本与市值同增、盈亏≈0，所以这个口径对「新增大额持仓」天然免疫，不会出现台阶式跳变。
+      const dmode = homeRateMode === 'cum' ? 'cum' : (homeRateMode === 'day' ? 'day' : 'avg');
+      // 日均窗口：按点数自适应，≈点数的 1/6 再夹在 2~7 之间。
+      // 固定给 7 会把「近7天」的 6 个点全抹平成一条斜坡（走势全丢），
+      // 给 1 又等于没平均；28 点→5、70 点→7 正好。
+      const nPts = dailyPnl.length;
+      const maWin = dmode !== 'avg' ? 1 : Math.max(2, Math.min(7, Math.round(nPts / 6)));
+      const series = dmode === 'cum' ? cumPnl : dailyPnl;
+      // 真正画出来的那条：日均 = 居中移动平均（去锯齿），其余口径 = 原值
+      const shown = maWin > 1 ? rbCenteredMA(series, maWin) : series;
+
+      // Y 轴：0 恒在轴内（盈亏分界线，正负一眼可辨）；再保一个最小跨度，
+      // 免得几十块的抖动被拉成满屏暴跌。下限 = 本金的 0.4%（约等于一个「正常日波动」），
+      // 但均值把波动压小了约 √w 倍，下限也要跟着除 √w，否则日均曲线永远只占轴高的一小截，
+      // 看着像「一条直线」而不是「一段趋势」。
+      let axMin = Math.min(0, ...shown), axMax = Math.max(0, ...shown);
+      if (axMax - axMin < 1e-9) { axMax += 1; axMin -= 1; }
+      const axMid = (axMin + axMax) / 2;
+      const minSpan = Math.max(120, Math.abs(base) * 0.004 / Math.sqrt(maWin));
+      if (axMax - axMin < minSpan) { axMin = axMid - minSpan / 2; axMax = axMid + minSpan / 2; }
+      const axis = { min: axMin, max: axMax };
+
       const trendCls = clsPnl(rangePnl);
       const strokeColor = trendCls === 'up' ? 'var(--up)' : (trendCls === 'down' ? 'var(--down)' : 'var(--text-muted)');
 
@@ -1617,31 +1658,29 @@ async function renderRateSpark(rangeDays, netVal) {
         if (r.width > 0 && r.height > 0) { svgW = Math.round(r.width); svgH = Math.round(r.height); }
       } catch (_) {}
 
-      // 检查 contrib 数据是否可用（需要至少 2 个有效值才能画 dashed 参考线）
-      const contribValidCount = contrib.filter((v) => v != null).length;
-      const legend = document.getElementById('homeRateLegend');
-      if (contribValidCount >= 2) {
-        // 双轴曲线 — 净值 area + 累计投入 dashed；图例随之显示
-        heroBox.innerHTML = sparklineDual(cumNet, contrib, { w: svgW, h: svgH, stroke: strokeColor, axis });
-        if (legend) legend.hidden = false;
-      } else {
-        // 降级：单轴净值 area（无 contrib 数据时）；图例隐藏
-        heroBox.innerHTML = sparkline(cumNet, { w: svgW, h: svgH, stroke: strokeColor, fill: strokeColor, axis });
-        if (legend) legend.hidden = true;
-      }
+      // 单序列画法：面积从零轴起填（不是从画布底边），亏损段才不会被填成「正面积」；
+      // smooth:true 用单调三次插值把折线画成曲线 —— 日频数据的折线全是尖角，
+      // 一个正负交替的序列画出来就是心电图，圆润之后读的是「走势」而不是「锯齿」。
+      heroBox.innerHTML = sparkline(shown, {
+        w: svgW, h: svgH, stroke: strokeColor, fill: strokeColor, axis, zero: true, smooth: true,
+      });
 
-      // 趋势文案：区间累计盈亏折算为收益率（基准 = 净资产 − 区间累计）
+      // 趋势文案：区间累计盈亏折算为收益率（基准 = 起始权益本金）。
+      // 与主序列口径解耦 —— 切到「日均/单日」时这里仍是区间累计收益率，卡片头部语义不变。
       if (heroTrend) {
         const pctV = rangePnl / base * 100;
         heroTrend.textContent = (pctV > 0 ? '+' : '') + pctV.toFixed(2) + '%';
         heroTrend.className = `hero-mini-trend ${trendCls}`;
       }
 
-      // hover 弹框所需序列：日期 / 累计盈亏 / 净值 / 基准；绑定一次（heroBox 每帧重建 innerHTML，事件绑在 heroBox 上）
+      // hover 弹框所需序列：日期 / 单日盈亏 / 本期累计盈亏 / 实际画的那条(shown) / 成本 / 期初本金。
+      // series 单独存一份：日均口径下画的是均值，弹框的参考点必须落在均值上，
+      // 否则竖线/卡片会飘到曲线之外。成本不上图但留在弹框里，想确认「我投了多少」不必切页面。
       homeRateSparkState = {
-        dates: sortedDates.slice(), cumPnl: cumPnl.slice(), cumNet: cumNet.slice(),
-        contrib: contrib.slice(), base, n: cumNet.length, hasContrib: contribValidCount >= 2,
-        axisMin: axMin, axisMax: axMax,
+        dates: sortedDates.slice(), dayPnl: dailyPnl.slice(), cumPnl: cumPnl.slice(),
+        series: shown.slice(), maWin,
+        contrib: contrib.slice(), base, n: shown.length,
+        mode: dmode, axisMin: axMin, axisMax: axMax,
       };
       bindHomeRateHover();
     } else if (heroBox) {
@@ -1650,9 +1689,10 @@ async function renderRateSpark(rangeDays, netVal) {
   } catch (e) { /* 走势失败不影响卡片主信息 */ }
 }
 
-// 首页权益曲线 hover 弹框：鼠标在曲线上移动时，定位到最近数据点，显示日期 + 持仓市值 + 持仓成本（本金）
-// + 盈亏金额 + 盈亏率，并画一条竖向参考线。持仓市值=该日权益净值（实线），持仓成本=累计投入（虚线）。
-// 坐标映射与 sparklineDual 共用同一套（xPad = max(1.5, h*0.08)；y 用统一 min/max），所以弹框位置与曲线点对齐。
+// 首页权益曲线 hover 弹框：鼠标在曲线上移动时定位到最近数据点，显示日期 + 持仓成本
+// + 单日盈亏 + 本期累计盈亏 + 盈亏率，并画一条竖向参考线。
+// 曲线画的是盈亏金额（day/cum 两口径），而成本只在弹框里出现 —— 弹框不影响 Y 轴，
+// 所以「¥9.7万的本金」不会再把曲线压平；参考点的 y 按 homeRateSparkState.mode 取同一条序列。
 function bindHomeRateHover() {
   const box = document.getElementById('homeRateSpark');
   const wrap = box ? box.closest('.nw-spark') : null;
@@ -1672,40 +1712,50 @@ function bindHomeRateHover() {
     let i = Math.round((x - xPad) / (w - xPad * 2) * (st.n - 1));
     i = Math.max(0, Math.min(st.n - 1, i));
     const pnl = st.cumPnl[i] || 0;
+    const dayAmt = (st.dayPnl && st.dayPnl[i]) || 0;
     const rate = st.base > 0 ? pnl / st.base * 100 : 0;
     const cls = pnl > 0 ? 'up' : (pnl < 0 ? 'down' : 'flat');
+    const dCls = dayAmt > 0 ? 'up' : (dayAmt < 0 ? 'down' : 'flat');
     const sign = pnl > 0 ? '+' : (pnl < 0 ? '-' : '');
+    const dSign = dayAmt > 0 ? '+' : (dayAmt < 0 ? '-' : '');
     const dateStr = (st.dates[i] || '').slice(0, 10);
-    // 本金（持仓成本=累计投入）与持仓现价（权益市值=该日净值）：contrib 缺失时隐藏本金行
-    const cost = st.contrib[i];
-    const mv = st.cumNet[i] || 0;
-    // 净投入（持仓成本日环比）：减仓/取出日本行现身，直接解释曲线上的"悬崖"
-    // （如 10/6 卖出纳指100ETF，成本撤出 ≈ -¥2,855，曲线当天垂直下落并非亏损）
-    const costPrev = i > 0 ? st.contrib[i - 1] : null;
-    const flow = (cost != null && costPrev != null) ? cost - costPrev : 0;
-    const flowRow = Math.abs(flow) >= 0.5
-      ? '<div class="rt-row"><span>净投入</span><b class="flat">' + (flow > 0 ? '+' : '-') + '¥' + fmt(Math.abs(flow)) + '</b></div>'
+    // 日均口径时把「画的那个均值」也列出来，否则鼠标停在一条平缓的曲线上、
+    // 弹框却报一个 ±400 的单日数，会以为曲线画错了。
+    const avgAmt = (st.series && st.series[i] != null) ? st.series[i] : null;
+    const aCls = avgAmt > 0 ? 'up' : (avgAmt < 0 ? 'down' : 'flat');
+    const aSign = avgAmt > 0 ? '+' : (avgAmt < 0 ? '-' : '');
+    const avgRow = (st.mode === 'avg' && avgAmt != null)
+      ? '<div class="rt-row"><span>' + (st.maWin || 5) + '日均</span><b class="' + aCls + '">' + aSign + '¥' + fmt(Math.abs(avgAmt)) + '</b></div>'
       : '';
+    // 只有「持仓成本」还留在这里：曲线画的是盈亏金额，市值 = 成本 + 本期累计盈亏已经不是一个
+    // 能直接读的数（本期累计从区间首日归零），再列「持仓市值」会让人拿三个数互相对账对不上。
+    const cost = st.contrib[i];
     tip.innerHTML =
       '<div class="rt-date">' + dateStr + '</div>' +
-      '<div class="rt-row"><span>持仓市值</span><b>¥' + fmt(mv) + '</b></div>' +
       (cost == null ? '' : '<div class="rt-row"><span>持仓成本</span><b>¥' + fmt(cost) + '</b></div>') +
-      flowRow +
-      '<div class="rt-row"><span>盈亏金额</span><b class="' + cls + '">' + sign + '¥' + fmt(Math.abs(pnl)) + '</b></div>' +
-      '<div class="rt-row"><span>盈亏率</span><b class="' + cls + '">' + sign + rate.toFixed(2) + '%</b></div>';
+      '<div class="rt-row"><span>单日盈亏</span><b class="' + dCls + '">' + dSign + '¥' + fmt(Math.abs(dayAmt)) + '</b></div>' +
+      avgRow +
+      '<div class="rt-row"><span>累计盈亏</span><b class="' + cls + '">' + sign + '¥' + fmt(Math.abs(pnl)) + '</b></div>' +
+      '<div class="rt-row"><span>盈亏率</span><b class="' + cls + '">' + sign + Math.abs(rate).toFixed(2) + '%</b></div>';
     // 纵向参考线
     guide.style.left = x + 'px';
     guide.hidden = false;
     // 弹框定位：用与曲线同一套 Y 轴（含最小跨度）保证参考点对齐；以 fixed 挂 body 定位，
     // 避免被 .hero-banner{overflow:hidden} 裁掉下半部分。
     const padY = Math.max(1.5, h * 0.12), innerH = h - padY * 2;
+    // 参考点取「当前画的那条序列」的值（st.series）：日均口径下画的是均值，
+    // 用单日原值去均值轴上定位，弹框会飘到曲线之外。
+    const anchor = (st.series && st.series[i] != null)
+      ? st.series[i]
+      : (st.mode === 'cum' ? pnl : dayAmt);
     let vmin = st.axisMin, vmax = st.axisMax;
     if (!Number.isFinite(vmin) || !Number.isFinite(vmax) || vmax <= vmin) {
-      const all = st.hasContrib ? st.cumNet.concat(st.contrib.filter((v) => Number.isFinite(v))) : st.cumNet;
+      const all = st.series || (st.mode === 'cum' ? st.cumPnl : st.dayPnl);
       vmin = Math.min.apply(null, all); vmax = Math.max.apply(null, all);
+      vmin = Math.min(vmin, 0); vmax = Math.max(vmax, 0);
       if (vmax - vmin < 1e-9) { vmax += 1; vmin -= 1; }
     }
-    const y = padY + innerH - (innerH * (st.cumNet[i] - vmin)) / (vmax - vmin);
+    const y = padY + innerH - (innerH * (anchor - vmin)) / (vmax - vmin);
     tip.hidden = false;                       // 先显示，量出真实尺寸再夹紧
     const tipW = tip.offsetWidth || 168, tipH = tip.offsetHeight || 120;
     const br = box.getBoundingClientRect();
@@ -1722,55 +1772,8 @@ function bindHomeRateHover() {
   box.onmouseleave = () => { if (tip) tip.hidden = true; if (guide) guide.hidden = true; };
 }
 
-// sparklineDual：双序列走势图 — 主序列画 area + 实线，参考序列画 dashed 线。
-// 用于首页净值走势（净值 area + 累计投入 dashed）。
-// data 主序列、ref 参考序列；参考序列允许 null 缺口（自动跳过）。
-function sparklineDual(data, ref, opts) {
-  const w = (opts && opts.w) || 300, h = (opts && opts.h) || 72;
-  const stroke = (opts && opts.stroke) || 'var(--up)';
-  const strokeColor = resolveColor(stroke);
-  const refColor = resolveColor('var(--text-muted)'); // 累计投入用柔和灰色虚线
-
-  const vals = (data || []).filter(v => Number.isFinite(v));
-  if (vals.length < 2) return '';
-
-  // 统一坐标系：主序列和参考序列共用 min/max（双轴对齐才能对比）
-  let allVals = [...vals];
-  (ref || []).forEach((v) => { if (Number.isFinite(v)) allVals.push(v); });
-  let min, max;
-  const ax = opts && opts.axis;
-  if (ax && Number.isFinite(ax.min) && Number.isFinite(ax.max) && ax.max > ax.min) {
-    min = ax.min; max = ax.max;   // 调用方给定 Y 轴（含最小跨度），避免小波动被放大
-  } else {
-    min = Math.min(...allVals); max = Math.max(...allVals);
-    if (max - min < 1e-9) { max += 1; min -= 1; }
-  }
-
-  const padY = Math.max(1.5, h * 0.12), innerH = h - padY * 2;
-  const xPad = Math.max(1.5, h * 0.08);
-  const xAt = i => xPad + ((w - xPad * 2) * i) / (vals.length - 1);
-  const yAt = v => padY + innerH - (innerH * (v - min)) / (max - min);
-
-  // 主序列 polyline + area
-  const mainPts = vals.map((v, i) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ');
-  const mainLast = mainPts.split(' ').pop();
-  const gid = 'spk' + (++sparkUid);
-  const areaDef = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity=".20"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="0"/></linearGradient></defs>`;
-  const areaPoly = `<polygon points="${xAt(0).toFixed(2)},${h} ${mainPts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(#${gid})"/>`;
-  const mainLine = `<polyline points="${mainPts}" fill="none" stroke="${strokeColor}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
-  const mainDot = `<circle cx="${mainLast.split(',')[0]}" cy="${mainLast.split(',')[1]}" r="2.5" fill="${strokeColor}"/>`;
-
-  // 参考序列 polyline（dashed），跳过 null 缺口
-  let refPts = '';
-  (ref || []).forEach((v, i) => {
-    if (Number.isFinite(v) && Number.isFinite(vals[i])) {
-      refPts += (refPts ? ' ' : '') + `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`;
-    }
-  });
-  const refLine = refPts ? `<polyline points="${refPts}" fill="none" stroke="${refColor}" stroke-width="1.2" stroke-dasharray="3,2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" opacity=".7"/>` : '';
-
-  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" class="u-block u-va-mid" role="img" aria-label="净值走势：实线为净值，虚线为累计投入">${areaDef}${areaPoly}${refLine}${mainLine}${mainDot}</svg>`;
-}
+// （sparklineDual 已于 2026-10-29 删除：首页曲线改画盈亏金额后只剩一条序列，
+//   原「净值 area + 累计投入 dashed」双轴没有别的调用方。）
 
 // 首页净资产走势区间切换（近30天/近90天/近1年/全部）：仅切片已取序列，不重复请求
 function bindHomeRangeTabs() {
@@ -1779,7 +1782,27 @@ function bindHomeRangeTabs() {
   rt.querySelectorAll('.range-tab').forEach((b) => {
     b.onclick = () => {
       rt.querySelectorAll('.range-tab').forEach((x) => x.classList.toggle('active', x === b));
-      renderRateSpark(parseInt(b.dataset.range, 10) || 30);
+      // 0 = 全部：不能写 `parseInt(...) || 30`，那样「全部」也会被当成 30 天（老 bug）
+      const rd = parseInt(b.dataset.range, 10);
+      renderRateSpark(Number.isFinite(rd) ? rd : 30);
+    };
+  });
+}
+
+// 首页权益曲线口径切换（日均 / 单日 / 累计）：只换主序列，不重新请求接口
+function bindHomeRateMode() {
+  const box = document.getElementById('homeRateMode');
+  if (!box) return;
+  box.querySelectorAll('.spark-mode-btn').forEach((b) => {
+    // 与状态对齐：离开首页再回来时按钮高亮要跟着 homeRateMode 走，否则默认「日均」
+    // 显示出来是「单日」高亮，点一下反而没反应（m === homeRateMode 直接 return）
+    b.classList.toggle('active', (b.dataset.mode || 'avg') === homeRateMode);
+    b.onclick = () => {
+      const m = b.dataset.mode === 'cum' ? 'cum' : (b.dataset.mode === 'day' ? 'day' : 'avg');
+      if (m === homeRateMode) return;
+      homeRateMode = m;
+      box.querySelectorAll('.spark-mode-btn').forEach((x) => x.classList.toggle('active', x === b));
+      renderRateSpark();
     };
   });
 }
@@ -1917,6 +1940,59 @@ function resolveColor(c) {
   return c;
 }
 
+// 居中移动平均（去锯齿）：窗口 w 以当前点为中心，两端窗口自动收窄。
+// 用居中而不是「过去 w 天」，是因为后者会让整条曲线右移 (w-1)/2 天，
+// 末点显示的是「几天前的平均值」，而卡片右下角恰恰是用户最常看的最新一天。
+function rbCenteredMA(arr, w) {
+  const W = Math.max(1, Math.round(w) || 1);
+  if (W <= 1 || arr.length < 3) return arr.slice();
+  const h = Math.floor(W / 2);
+  return arr.map((_, i) => {
+    const lo = Math.max(0, i - h), hi = Math.min(arr.length - 1, i + h);
+    let s = 0;
+    for (let j = lo; j <= hi; j++) s += arr[j];
+    return s / (hi - lo + 1);
+  });
+}
+
+// 折线 → 平滑曲线：单调三次 Hermite 插值（Fritsch–Carlson 限幅）。
+// 不用 Catmull-Rom 的原因：它会在拐点两侧甩出比原值更高/更低的一段（overshoot），
+// 在跨零轴的盈亏曲线里会把「小亏」画成「盈利」，读图直接读反。
+// 单调插值保证曲线在两相邻点之间不越过这两点的值域，只在形状上变圆润。
+function rbCurvePath(xs, ys) {
+  const n = xs.length;
+  if (n < 2) return '';
+  let d = `M${xs[0].toFixed(2)},${ys[0].toFixed(2)}`;
+  if (n === 2) return d + `L${xs[1].toFixed(2)},${ys[1].toFixed(2)}`;
+  const dx = new Array(n - 1), m = new Array(n - 1), t = new Array(n);
+  for (let i = 0; i < n - 1; i++) {
+    dx[i] = xs[i + 1] - xs[i];
+    m[i] = dx[i] === 0 ? 0 : (ys[i + 1] - ys[i]) / dx[i];   // 割线斜率
+  }
+  t[0] = m[0]; t[n - 1] = m[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    // 极值点（两侧斜率异号）切线置零 → 曲线在峰谷处「落平」，不会冲过原值
+    t[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
+  }
+  for (let i = 0; i < n - 1; i++) {
+    if (m[i] === 0) { t[i] = 0; t[i + 1] = 0; continue; }
+    const a = t[i] / m[i], b = t[i + 1] / m[i];
+    const s2 = a * a + b * b;
+    if (s2 > 9) {                       // 限幅到单位圆半径 3，保证段内单调
+      const k = 3 / Math.sqrt(s2);
+      t[i] = k * a * m[i];
+      t[i + 1] = k * b * m[i];
+    }
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const h3 = dx[i] / 3;
+    d += `C${(xs[i] + h3).toFixed(2)},${(ys[i] + t[i] * h3).toFixed(2)} ` +
+         `${(xs[i + 1] - h3).toFixed(2)},${(ys[i + 1] - t[i + 1] * h3).toFixed(2)} ` +
+         `${xs[i + 1].toFixed(2)},${ys[i + 1].toFixed(2)}`;
+  }
+  return d;
+}
+
 function sparkline(data, opts) {
   const w = (opts && opts.w) || 100, h = (opts && opts.h) || 28;
   const stroke = (opts && opts.stroke) || 'currentColor';
@@ -1939,8 +2015,14 @@ function sparkline(data, opts) {
   const dotR = Math.max(1.2, Math.min(3.5, h * 0.06));
   const xAt = i => xPad + ((w - xPad * 2) * i) / (vals.length - 1);
   const yAt = v => padY + innerH - (innerH * (v - min)) / (max - min);
-  const pts = vals.map((v, i) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ');
-  const last = pts.split(' ').pop();
+  const xs = vals.map((_, i) => xAt(i));
+  const ys = vals.map((v) => yAt(v));
+  const pts = xs.map((x, i) => `${x.toFixed(2)},${ys[i].toFixed(2)}`).join(' ');
+  const last = `${xs[xs.length - 1].toFixed(2)},${ys[ys.length - 1].toFixed(2)}`;
+  // smooth:true → 用单调三次插值画曲线（折线在日频数据上全是尖角，像心电图的折纸边）。
+  // 点太少（<3）时插值没有意义，直接退回折线。
+  const smooth = !!(opts && opts.smooth) && vals.length >= 3;
+  const lineD = smooth ? rbCurvePath(xs, ys) : '';
   const gid = 'spk' + (++sparkUid);
   // 渐变：默认 fade（顶深→底透明）；'soft' = 曲线下方同色柔和底色，
   // 自上而下近乎均匀、底部保留可见色（不淡出到透明），仅紧贴曲线处略深
@@ -1948,11 +2030,24 @@ function sparkline(data, opts) {
   let topOp = '.20', botOp = '0';
   // soft：柔和底色强度（.26/.13 在深色卡片上几乎不可见，提高到可清晰辨识的强度）
   if (grad === 'soft') { topOp = '.30'; botOp = '.22'; }
-  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity="${topOp}"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="${botOp}"/></linearGradient></defs><polygon points="${xAt(0).toFixed(2)},${h} ${pts} ${xAt(vals.length - 1).toFixed(2)},${h}" fill="url(#${gid})"/>`;
+  // zero:true → 面积从零轴起填。盈亏曲线跨零轴时若仍填到画布底边，
+  // 亏损段会被填成一块「正面积」，看图会读反。零轴不在数据范围内时退回底边。
+  const zeroIn = !!(opts && opts.zero) && min <= 0 && max >= 0;
+  const baseY = zeroIn ? yAt(0) : h;
+  const zeroEl = zeroIn
+    ? `<line x1="${xAt(0).toFixed(2)}" y1="${yAt(0).toFixed(2)}" x2="${xAt(vals.length - 1).toFixed(2)}" y2="${yAt(0).toFixed(2)}" stroke="${resolveColor('var(--text-faint)')}" stroke-width="1" stroke-dasharray="2,3" vector-effect="non-scaling-stroke"/>`
+    : '';
+  const areaShape = smooth
+    ? `<path d="${lineD}L${xs[xs.length - 1].toFixed(2)},${baseY.toFixed(2)}L${xs[0].toFixed(2)},${baseY.toFixed(2)}Z" fill="url(#${gid})"/>`
+    : `<polygon points="${xAt(0).toFixed(2)},${baseY.toFixed(2)} ${pts} ${xAt(vals.length - 1).toFixed(2)},${baseY.toFixed(2)}" fill="url(#${gid})"/>`;
+  const area = `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity="${topOp}"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="${botOp}"/></linearGradient></defs>${areaShape}`;
   // responsive:true → 去掉硬编码 width/height，只留 viewBox，由 CSS 容器控制尺寸
   const dimAttrs = (opts && opts.responsive) ? '' : ` width="${w}" height="${h}"`;
   const par = (opts && opts.nonUniform) ? 'none' : 'xMidYMid meet';
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="${par}"${dimAttrs} class="u-block u-va-mid" role="img" aria-hidden="true">${area}<polyline points="${pts}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth || 1.5}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="${dotR.toFixed(1)}" fill="${strokeColor}"/></svg>`;
+  const lineEl = smooth
+    ? `<path d="${lineD}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth || 1.5}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`
+    : `<polyline points="${pts}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth || 1.5}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="${par}"${dimAttrs} class="u-block u-va-mid" role="img" aria-hidden="true">${area}${zeroEl}${lineEl}<circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="${dotR.toFixed(1)}" fill="${strokeColor}"/></svg>`;
 }
 
 // 表格迷你走势单元格：线条为近30日收盘价走势，颜色按首尾收盘价对比（尾>首=涨红，否则=跌绿，
@@ -3362,9 +3457,11 @@ async function renderHomeDashboard() {
       }
     } catch (_) { rf.innerHTML = '<div class="recent-item empty-hint">流水加载失败</div>'; }
   }
-  // 首页「净资产走势」卡片：近 N 日净资产累计走势（数据复用盈亏日历 /api/pnl/history）
-  renderRateSpark(30, net);
+  // 首页「权益收益曲线」卡片：区间内每日/累计盈亏金额走势（数据复用 /api/pnl/history）
+  // 用 homeRangeDays 而不是写死 30：这样切到「全部」后离开再回来，区间不会被悄悄重置成 30 天
+  renderRateSpark(homeRangeDays, net);
   bindHomeRangeTabs();
+  bindHomeRateMode();
 }
 
 // ===== 财务（2026-10-20 tab 重构）=====

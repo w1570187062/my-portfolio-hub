@@ -143,7 +143,7 @@
           </div>
           <div class="nw-right">
             <div class="nw-spark">
-              <!-- 头部固定两行、各自两端对齐（① 标题 … 涨跌幅　② 区间切换 … 图例）。
+              <!-- 头部固定两行、各自两端对齐（① 标题 … 涨跌幅　② 区间切换 … 口径切换）。
                    涨跌幅原本是 head 的第三个独立 flex 项，单行 wrap 时会被挤到下一行贴着左边、中间空一片，
                    故收进左组与标题同一行；控件组单独一行。详见 style.css .rate-spark-head 注释。 -->
               <div class="rate-spark-head">
@@ -157,10 +157,17 @@
                     <button class="range-tab active" data-range="30" type="button">近30天</button>
                     <button class="range-tab" data-range="0" type="button">全部</button>
                   </div>
-                  <span class="rate-spark-legend" id="homeRateLegend" hidden>
-                    <span class="legend-item"><span class="lg-swatch lg-solid"></span>权益净值</span>
-                    <span class="legend-item"><span class="lg-swatch lg-dash"></span>持仓成本</span>
-                  </span>
+                  <!-- 口径切换（2026-10-29）：曲线画的是「盈亏金额」，不再是净值。
+                       净值/成本是存量，一笔大额买入就能把 Y 轴从几万撑到十几万、把盈亏压成一条直线
+                       （新增 ¥5 万债基后整条曲线只剩一级台阶），所以两条水平线都撤了，
+                       成本只在悬停弹框里作为一行读数出现。
+                       三档：日均=近几日的平均盈亏（默认，去锯齿看趋势）/ 单日=当天赚亏多少（原始值，
+                       正负天天翻，读起来像心电图）/ 累计=这一期总共赚多少。 -->
+                  <div class="spark-mode" id="homeRateMode">
+                    <button class="spark-mode-btn active" data-mode="avg" type="button">日均</button>
+                    <button class="spark-mode-btn" data-mode="day" type="button">单日</button>
+                    <button class="spark-mode-btn" data-mode="cum" type="button">累计</button>
+                  </div>
                 </div>
               </div>
               <div id="homeRateSpark" class="rate-spark-box"></div>

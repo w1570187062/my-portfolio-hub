@@ -236,10 +236,14 @@
   --th-bg-light: #e9ecef;
   /* 开关关闭态轨道灰（此前 #c4c9d2 散落） */
   --switch-off: #c4c9d2;
-  /* 首页资产分布条分类色（与 --cat-* 平行的一套视觉，集中管理，便于后续对齐到 --cat-*） */
+  /* 首页资产分布条分类色（与 --cat-* 平行的一套视觉，集中管理，便于后续对齐到 --cat-*）
+     2026-10-29：现金从「绿 #00d084」改为跟随 --cat-cash（暗色 #64D2FF / 日间 #32ADE6）。
+     原因有两条：① 本项目语义色里绿=跌，现金用绿点会被读成「亏损/下跌」；
+     ② 复盘圆环、资产页饼图里现金本来就是青，首页三种口径的色相应当同源。
+     直接引用 cat token 而不是抄一遍 hex，主题切换时自动跟。 */
   --home-eq: #4a9eff;
   --home-wealth: #a78bfa;
-  --home-cash: #00d084;
+  --home-cash: rgb(var(--cat-cash));
   --home-debt: #ff4d4f;
   /* 未命中品牌色的 logo 回退中性色：与 --cat-other 同源，hex 形式供 color-mix 消费 */
   --cat-other-c: #94a3b8;
@@ -1391,37 +1395,41 @@ header {
 /* 新增持仓弹框：持仓类型下拉（复用输入框外观） */
 .hold-type-select { padding: var(--sp-1) var(--sp-2); border: 1px solid var(--border); border-radius: var(--btn-radius); background: var(--bg-input); color: var(--text); font-size: var(--fs-md); }
 /* 头部固定两行（对齐原型 hero-spark-head 的「标题左 / 涨跌幅右」两端对齐写法）：
-     ① 权益收益曲线 ……… +0.23%
-     ② 区间切换 ……… 图例
+     ① 权益收益曲线 ……… +0.38%
+     ② 区间切换 ……… 日均/单日/累计
    两行各自撑满宽度、两端对齐 → 任何宽度下都不会出现「某一项被挤到下一行孤悬 + 中间空一片」。
-   之前是单行 flex-wrap 放 3 个块（标题 / 控件 / 涨跌幅），881–1340 档右列仅 ~290px，
-   控件块必然换行、涨跌幅单独掉到第二行贴着左边，形成大片空白。 */
+   之前是单行 flex-wrap 放 3 个块（标题 / 控件 / 涨跌幅），控件块必然换行、
+   涨跌幅单独掉到第二行贴着左边，形成大片空白。
+   2026-10-29 左右栏改 1:1 后右栏宽度：1500→682px、1200→532、900→382，控件一排（约 300px）
+   都放得下；641–760px 这段（右栏 250–285px）会由 .rate-spark-right 的 flex-wrap 掉成第三行，
+   口径组靠 margin-left:auto 仍贴右边缘，卡片相应高 26px，可接受。 */
 .rate-spark-head { display: flex; flex-direction: column; gap: var(--sp-2); }
 .rate-spark-left { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); min-width: 0; }
 .rate-spark-label { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
-/* 控件行：按钮靠左、图例靠右。右列窄到放不下两者时图例自动掉到下一行，
+/* 控件行：按钮靠左、口径切换靠右。右列窄到放不下两者时切换组自动掉到下一行，
    靠 margin-left:auto 仍然贴右边缘（用 space-between 的话孤立项会靠左，看着像没对齐）。 */
 .rate-spark-right { display: flex; align-items: center; justify-content: flex-start; gap: var(--sp-3); flex-wrap: wrap; row-gap: 6px; min-width: 0; }
-.rate-spark-legend { display: inline-flex; align-items: center; gap: var(--sp-3); margin-left: auto; font-size: var(--fs-xs); color: var(--text-muted); flex-wrap: wrap; }
-/* 上面的 display:inline-flex 会压过 UA 的 [hidden]{display:none}（本项目老坑），
-   单轴降级时 JS 设 legend.hidden=true 必须真的隐藏，否则图例常驻。 */
-.rate-spark-legend[hidden] { display: none; }
-/* 右列最窄 ~250px 时按钮/图例文字一律不换行（否则「近7天」被折成竖排） */
-.rate-spark-legend .legend-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.rate-spark-legend .lg-swatch { display: inline-block; width: 18px; height: 0; border-top: 1.5px solid currentColor; }
-.rate-spark-legend .lg-solid { color: var(--primary); }
-.rate-spark-legend .lg-dash { color: var(--text-muted); border-top-style: dashed; border-top-width: 1.2px; }
+/* 口径切换（日均 / 单日 / 累计）：轻量文字按钮，占位就是原图例的位置。
+   有意不复用 .range-tab 的 chip 外观 —— 同一行已有三个区间 chip，两组长得一样会被读成一组六个。
+   右侧必须留内边距：这一组是整行最后一个元素，右边缘 = 容器右边缘，
+   按钮自带 padding-right 只有 4px，文字会顶到卡片边上、看着像被裁掉半截。 */
+.spark-mode { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 0 var(--sp-2); border-left: 1px solid var(--border); }
+.spark-mode-btn {
+  padding: 0 var(--sp-1); border: 0; background: none; border-radius: var(--r-xs);
+  color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.8; cursor: pointer;
+  transition: color .15s, background .15s;
+}
+.spark-mode-btn:hover { color: var(--text); }
+.spark-mode-btn.active { color: var(--primary); background: var(--primary-soft); }
 .rate-spark-box { position: relative; width: 100%; flex: 1; min-height: 140px; }
 #homeRateSpark svg { width: 100%; height: 100%; display: block; }
 .hero-mini-trend { font-size: var(--fs-md); font-weight: 700; font-variant-numeric: tabular-nums; }
 .hero-mini-trend.up { color: var(--up); }
 .hero-mini-trend.down { color: var(--down); }
 .hero-mini-trend.flat { color: var(--text-muted); }
-/* 手机窄屏：两行放不下时把按钮内边距与图例线段收一档（≈省 40px），保住「一行不折」 */
+/* 手机窄屏：两行放不下时把按钮内边距收一档，保住「区间 + 口径」两行不折成三行 */
 @media (max-width: 640px) {
   #homeRangeTabs .range-tab { padding: var(--sp-1) var(--sp-2); }
-  .rate-spark-legend { gap: var(--sp-2); }
-  .rate-spark-legend .lg-swatch { width: 14px; }
 }
 
 /* 窄屏响应（≤880px，与同页 pano 塌栏点对齐）：hero 两栏改上下堆叠
@@ -5450,14 +5458,17 @@ textarea::placeholder {
 }
 .networth-hero > * { position: relative; z-index: 1; }
 /* Hero 主区：左列（信息组 ＋ 资产分布｜底部）｜权益收益曲线（右）
-   2026-10-27：左右宽度比改 4:6（原基线 1.618:1、桌面档固定 minmax(380px,460px)+1fr），
+   2026-10-29：4:6 → 6:4 → 1:1。左列是「净资产 + 今日/本月变动 + 资产分布芯片」三块竖排，
+   右列只有一条曲线；曲线对宽度的需求远低于数字组，40% 就够画 30–70 个点，
+   而左列在 40% 下净资产主数字两侧留白过宽、资产芯片容易折行。
+   最终按用户意见取等分：两侧各半，曲线不被压窄、数字组也不再靠边。
    两栏内容各自在栏内居中（见下方 .nw-left / .nw-right）。 */
 #homeHero { display: flex; flex-direction: column; }
-.nw-main { display: grid; grid-template-columns: 4fr 6fr; align-items: stretch; gap: var(--sp-8); min-width: 0; flex: 1; }
-/* ≥881px 桌面档：比例沿用 4:6（不再给左列固定 380–460px，否则比例会随视口漂移）。
-   左列 padding 一并取消 —— 内容已居中，靠 padding 留白只会压缩本就不宽的 40% 栏。 */
+.nw-main { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; gap: var(--sp-8); min-width: 0; flex: 1; }
+/* ≥1341px 桌面档：比例沿用 1:1（不再给左列固定 380–460px，否则比例会随视口漂移）。
+   左列 padding 一并取消 —— 内容已居中，靠 padding 留白只会压缩栏宽。 */
 @media (min-width: 1341px) {
-  .nw-main { grid-template-columns: 4fr 6fr; }
+  .nw-main { grid-template-columns: 1fr 1fr; }
   /* 桌面档左列纵向节奏整体拉开一档（行距/字号/芯片同步放大，移动端维持紧凑不动）：
      .nw-left 行距 16→20，hero 卡内部行距 4→8，「本月」行 11/13px→12/16px，
      芯片 4×8px 内距/11px 字→8×12px/12px 字、圆点 6→7px（元素尺寸 ≤30px 豁免）、芯片间距 8→12px */
@@ -5471,8 +5482,10 @@ textarea::placeholder {
   .nw-left .nw-chip { padding: 8px 12px; gap: var(--sp-2); font-size: var(--fs-sm); }
   .nw-left .nw-chip .d { width: 7px; height: 7px; }
 }
-/* 881–1340：4:6 下左栏只剩 ~350–500px，芯片用紧凑档，避免 3–4 枚折成两行
-   （本块在 ≥881 块之后、同特异性靠源码顺序生效，故无需再加一级类） */
+/* 641–1340：右栏等分后约 250–530px，曲线本身撑满栏宽没问题，但「三区间 chip + 三档口径」
+   这一排按钮在 700px 上下会换行 —— 紧凑档让左列的资产芯片先让出空间，右栏按钮尽量维持不折；
+   真要换行也由 .rate-spark-right 的 flex-wrap 兜住（掉行的口径组靠 margin-left:auto 仍贴右）。
+   本块在 ≥1341 块之后、同特异性靠源码顺序生效，故无需再加一级类 */
 @media (min-width: 641px) and (max-width: 1340px) {
   .nw-left .nw-asset-row { gap: var(--sp-2); }
   .nw-left .nw-chip { padding: var(--sp-1) var(--sp-2); gap: var(--sp-1); font-size: var(--fs-xs); }
@@ -5500,11 +5513,15 @@ textarea::placeholder {
 .hero-changes .hc-pct { color: var(--text-muted); font-style: normal; font-weight: 400; font-size: var(--fs-xs); }
 /* 资产分布芯片行（原型 hero-asset-chip）：一行 4 枚，取代原 4 列迷你条形 */
 .nw-asset-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+/* 资产分布芯片：一枚一个口径（● 持仓 ¥9.29万）。文字只用一种颜色（--text），
+   层级靠字重（标签 400 / 金额 600）+ 数字等宽，不再像以前那样「彩点 + 冷灰标签 + 白金额」三种色
+   挤在 6px 的圆点旁边 —— 芯片底色是强调色的暖调（--tint 7%），冷灰标签压在上面会发闷。
+   金额的涨跌色（b.down）仍保留，那是语义色，与这里的层级无关。 */
 .nw-chip {
   display: inline-flex; align-items: center; gap: var(--sp-1);
   padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm);
   background: rgba(var(--tint), .07); border: 1px solid rgba(var(--tint), .12);
-  font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap;
+  font-size: var(--fs-xs); font-weight: 400; color: var(--text); white-space: nowrap;
 }
 .nw-chip .d { width: 6px; height: 6px; border-radius: 50%; background: var(--dot-c, var(--primary)); flex: 0 0 auto; }
 .nw-chip b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
