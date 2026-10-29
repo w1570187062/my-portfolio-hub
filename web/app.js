@@ -254,6 +254,12 @@ const signedCur = (v, cur) => {
   const n = Number(v) || 0;
   return (n < 0 ? '-' : n > 0 ? '+' : '') + curSymbolJS(cur) + fmt(Math.abs(n));
 };
+// 同上，但走万位压缩（≥1万显示 x.xx万）：分组头 / 表格里的盈亏列统一用这个，
+// 避免「¥-1,240.5」这种符号落在货币符号之后的形状（落袋 / 今日 / 总盈亏都踩过）。
+const signedMoneyW = (v, cur) => {
+  const n = Number(v) || 0;
+  return (n < 0 ? '-' : n > 0 ? '+' : '') + curSymbolJS(cur) + fmtWan(Math.abs(n));
+};
 
 // 价格类字段统一截断到 4 位小数，避免 float64 全精度（如 12.34738291）污染输入框与落库。
 const round4 = (n) => { const v = Number(n); if (!isFinite(v)) return 0; return Math.round(v * 1e4) / 1e4; };
@@ -821,7 +827,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
       <div class="collapse-hat holdings-group-head">
         <span class="hat-title">${accountLogo(g.name)} ${esc(g.name)} <span class="hat-count">${g.items.length} 笔</span></span>
         <span class="hat-side">
-          <span class="hat-stat hat-stat-mv" title="该账户落袋盈亏（折合人民币）"><span class="hat-stat-lbl">落袋</span><b class="${clsPnl(g.pnlCny)}"${wanTitle(g.pnlCny, '¥')}>${g.pnlCny >= 0 ? '+' : ''}¥${fmtWan(g.pnlCny)}</b></span>
+          <span class="hat-stat hat-stat-mv" title="该账户落袋盈亏（折合人民币）"><span class="hat-stat-lbl">落袋</span><b class="${clsPnl(g.pnlCny)}"${wanTitle(g.pnlCny, '¥')}>${signedMoneyW(g.pnlCny, 'cny')}</b></span>
           ${gpct != null ? `<span class="hat-side-extra" title="该账户盈亏率（落袋 ÷ 本金）"><span class="hat-stat" title="该账户盈亏率"><span class="hat-stat-lbl">盈亏率</span><b class="${clsPnl(gpct)}"${wanTitle(gpct, '%')}>${gpct >= 0 ? '+' : ''}${gpct.toFixed(2)}%</b></span></span>` : ''}
           <span class="hat-chevron">▾</span>
         </span>
@@ -1254,8 +1260,8 @@ function renderHoldingsBySource(hs) {
       + `<span class="hat-side">`
       + `<span class="hat-stat hat-stat-mv" title="该账户持仓折合人民币市值"><span class="hat-stat-lbl">市值</span><b${wanTitle(g.mv, '¥')}>¥${fmtWan(g.mv)}</b></span>`
       + `<span class="hat-side-extra" title="今日 / 总盈亏（该账户合计）">`
-      + `<span class="hat-stat" title="该账户今日盈亏合计"><span class="hat-stat-lbl">今日</span><b class="${clsPnl(g.dayPnl)}"${wanTitle(g.dayPnl, '¥')}>¥${fmtWanPnl(g.dayPnl)}</b></span>`
-      + `<span class="hat-stat" title="该账户累计盈亏合计"><span class="hat-stat-lbl">总盈亏</span><b class="${clsPnl(g.pnl)}"${wanTitle(g.pnl, '¥')}>¥${fmtWanPnl(g.pnl)}</b></span>`
+      + `<span class="hat-stat" title="该账户今日盈亏合计"><span class="hat-stat-lbl">今日</span><b class="${clsPnl(g.dayPnl)}"${wanTitle(g.dayPnl, '¥')}>${signedMoneyW(g.dayPnl, 'cny')}</b></span>`
+      + `<span class="hat-stat" title="该账户累计盈亏合计"><span class="hat-stat-lbl">总盈亏</span><b class="${clsPnl(g.pnl)}"${wanTitle(g.pnl, '¥')}>${signedMoneyW(g.pnl, 'cny')}</b></span>`
       + `</span>`
       + `<span class="hat-chevron">▾</span></span>`
       + `</div>`
@@ -1356,8 +1362,8 @@ function renderGroupRow(h, i, maxItemMV, pool) {
     <td class="num" title="成本价（每份）">${fmtNav(h.cost_price, isFund(h) ? 'fund' : 'stock')}</td>
     <td class="num"${mvOrigTitle(h)}>¥${fmtWan(mvCny)}</td>
     <td class="num share${pool > 0 ? '' : ' is-empty'}"${pool > 0 ? ` style="--p:${posPct.toFixed(1)}%"` : ''} title="占该账户同币种资金池比例${pool > 0 ? ' ' + posPct.toFixed(2) + '%' : '；该账户无匹配现金子账户，无法算占比'}">${pool > 0 ? posPct.toFixed(2) + '%' : '—'}</td>
-    <td class="num ${clsPnl(h.day_pnl)}" title="今日盈亏${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）"><span${wanTitle(dayCny, '¥')}>¥${fmtWanPnl(dayCny)}</span></td>
-    <td class="num ${clsPnl(h.pnl)}" title="持有期总盈亏${h.pnl_pct ? ' ' + pct(h.pnl_pct) : ''}"><span${wanTitle(pnlCny, '¥')}>¥${fmtWanPnl(pnlCny)}</span></td>
+    <td class="num ${clsPnl(h.day_pnl)}" title="今日盈亏${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）"><span${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</span></td>
+    <td class="num ${clsPnl(h.pnl)}" title="持有期总盈亏${h.pnl_pct ? ' ' + pct(h.pnl_pct) : ''}"><span${wanTitle(pnlCny, '¥')}>${signedMoneyW(pnlCny, 'cny')}</span></td>
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
     <td class="row-act-cell">
       ${actBtn('edit', `data-edit="${h.id}"`, '编辑持仓')}
@@ -3547,7 +3553,8 @@ function renderRecentFlows() {
   rf.innerHTML = flows.map((f) => {
     const isIn = f.direction === 'in';
     const amtCls = isIn ? 'up' : 'down';
-    const amt = (isIn ? '+' : '−') + moneyCurW(f.amount, f.currency);
+    // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
+    const amt = (isIn ? '+' : '−') + moneyCurW(Math.abs(Number(f.amount) || 0), f.currency);
     const dd = (f.date || '').slice(5);
     const sub = [f.name, f.ref_name].filter(Boolean).join(' · ');
     return `<div class="recent-item">
@@ -3812,7 +3819,10 @@ function renderCatTreemap() {
       amt: flowToCny(f),
       title: [f.ref_name, f.note, f.name].filter(Boolean).join(' · ') || finCatLabel(it.category),
     })).filter((s) => s.amt > 0);
-    return { amt: Math.abs(it.amount) || 0, category: it.category, type: it.type, subs };
+    // signed：正=资金流入、负=流出。分类汇总金额可能是负的（如某月落袋收益净亏损、
+    // 退款大于支出的分类），方向和正负号必须按 signed 判，不能只看 type。
+    const signed = it.type === 'income' ? (it.amount || 0) : -(it.amount || 0);
+    return { amt: Math.abs(it.amount) || 0, signed, category: it.category, type: it.type, subs };
   }).filter((c) => c.amt > 0);
   if (!cats.length) {
     wrap.style.setProperty('--tmh', (narrow ? 180 : 220) + 'px');
@@ -3829,7 +3839,7 @@ function renderCatTreemap() {
     const rects = squarifyTreemap(cats, 0, 0, W, H);
     wrap.innerHTML = rects.map((r) => {
       const c = r.i;
-      const isInc = c.type === 'income';
+      const isInc = c.signed >= 0;
       const label = finCatLabel(c.category);
       const amtStr = (isInc ? '+' : '−') + moneyCurW(c.amt, 'cny');
       // 窄块（手机竖排后分类多）放不下「名称 + 金额」：先砍金额（进 title），再砍名称，避免文字互相挤压/溢出
@@ -3848,7 +3858,7 @@ function renderCatTreemap() {
       if (!c || !box || !c.subs.length) return;
       const iw = box.clientWidth, ih = box.clientHeight;
       if (iw < 12 || ih < 12) return;
-      const isInc = c.type === 'income';
+      const isInc = c.signed >= 0;
       const GAP = 3;   // 细项方块间距（太小的方块不留，避免挤出负尺寸）
       const sr = squarifyTreemap(c.subs, 0, 0, iw, ih);
       // 透明度随面积（金额）映射：组内最大 → 最实，最小 → 最透；sqrt 压缩让小方块也有可辨色阶
@@ -3933,9 +3943,10 @@ function renderFinCatBlock() {
   const incTotal = m.income || 0, expTotal = m.expense || 0;
   const rows = (m.items || []).filter((it) => Math.abs(it.amount) > 0)
     .map((it) => {
-      const isInc = it.type === 'income';
+      const isInc = (it.type === 'income' ? (it.amount || 0) : -(it.amount || 0)) >= 0;
       const total = Math.abs(it.amount);
-      const base = isInc ? Math.max(1, incTotal) : Math.max(1, expTotal);
+      // 分母取该方向合计的绝对值：某月收入净额为负（只有亏损落袋）时不会被压成 1 而算出离谱占比
+      const base = Math.max(1, Math.abs(it.type === 'income' ? incTotal : expTotal));
       const pct = Math.round(total / base * 100);
       const flows = flowsOf(it.category);
       const detailRows = flows.map((f) => {
@@ -3949,7 +3960,7 @@ function renderFinCatBlock() {
           <span class="flow-amt ${isIn ? 'income' : 'expense'}">${esc(amt)}</span>${flowSnapshotTag(f)}
         </div>`;
       }).join('') || '<div class="flow-row"><span class="flow-date"></span><div class="flow-title empty-hint">无逐笔记录</div></div>';
-      return `<div class="category-group" data-dir="${it.type}">
+      return `<div class="category-group" data-dir="${isInc ? 'income' : 'expense'}">
         <div class="group-header" role="button" tabindex="0">
           <div class="group-toggle"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></div>
           <span class="cat-head-name">
@@ -6911,8 +6922,8 @@ function renderWealthTable(w) {
       <td class="wn-code">${esc(p.code || '—')}</td>
       <td class="num"${wanTitle(p.amount || 0, curSymbolJS(p.currency))}>${moneyCurW(p.amount || 0, p.currency)}</td>
       <td class="num share${wPoolSum > 0 ? '' : ' is-empty'}"${wPoolSum > 0 ? ` style="--p:${wPos.toFixed(1)}%"` : ''} title="占该账户同币种理财合计比例${wPoolSum > 0 ? ' ' + wPos.toFixed(2) + '%' : ''}">${wPoolSum > 0 ? wPos.toFixed(2) + '%' : '—'}</td>
-      <td class="num ${clsPnl(pnl)}"${wRmbTitle(p, pnl)}><span${wanTitle(pnl, curSymbolJS(p.currency))}>${(pnl >= 0 ? '+' : '')}${moneyCurW(pnl, p.currency)}</span></td>
-      <td class="num ${clsPnl(cum)}"${wRmbTitle(p, cum)} title="累计收益"><span${wanTitle(cum, curSymbolJS(p.currency))}>${(cum >= 0 ? '+' : '')}${moneyCurW(cum, p.currency)}</span><small> (${p.cum_return_rate == null ? '—' : pct(p.cum_return_rate)})</small></td>
+      <td class="num ${clsPnl(pnl)}"${wRmbTitle(p, pnl)}><span${wanTitle(pnl, curSymbolJS(p.currency))}>${signedMoneyW(pnl, p.currency)}</span></td>
+      <td class="num ${clsPnl(cum)}"${wRmbTitle(p, cum)} title="累计收益"><span${wanTitle(cum, curSymbolJS(p.currency))}>${signedMoneyW(cum, p.currency)}</span><small> (${p.cum_return_rate == null ? '—' : pct(p.cum_return_rate)})</small></td>
       <td class="num ${clsPnl(ann)}" title="单利年化 = 累计收益 ÷ 当前持仓 ÷ 持有天数 × 365（当前持仓近似本金）">${ann === null ? '—' : pct(ann)}</td>
       <td class="num u-sm u-muted" title="从首次录入快照起算">${days > 0 ? days + '天' : '—'}</td>
       <td class="num" title="${p.nav_updated_at ? ('净值更新于 ' + esc(p.nav_updated_at)) : '尚未录入净值（净值型产品可在 App 查看后点「净值」录入，或由基金码自动抓取）'}">${p.nav > 0 ? fmt(p.nav) : '<span class="u-muted">—</span>'}</td>
