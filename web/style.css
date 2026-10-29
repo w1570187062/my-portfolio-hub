@@ -2665,10 +2665,12 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   /* 用主题感知的分割线：暗色=白6%，亮色=黑6%（原先硬编码白色5%在白底上不可见） */
   border-bottom: 1px solid var(--row-divider);
 }
-/* 资产页表格：表头背景与首页持仓子表一致（比分组头略浅一档），下缘用加深一档的 --sub-divider，
-   呼应持仓子表的「表头背景 + 表体分割线」视觉，使各页表格风格统一 */
+/* 资产页表格：表头底色**交给全局 th**（暗色 白 5% / 浅色 #e9ecef），不再单独覆盖 --th-bg。
+   2026-10-29：流水/历史表的表头比同页「账户」表亮一整档，像嵌进来的另一套表 ——
+   根因是这里用了 --th-bg（card-bg 82% + 白 18%，暗色下算出来接近 #454a53），
+   而账户表（.atbl 无自己的表头底规则）吃的是全局 th 的 rgba(255,255,255,.05)。
+   --th-bg 仍服务于首页持仓/理财子表（.holdings-subtable / .wealth-subtable），勿一起删。 */
 .asset-table thead th {
-  background: var(--th-bg);
   border-bottom: 1px solid var(--sub-divider);
 }
 .asset-table td { text-align: left; }
@@ -5579,9 +5581,10 @@ textarea::placeholder {
    hover 转实线主题色 */
 .plan-add-btn { display: flex; width: 100%; justify-content: center; align-items: center; gap: var(--sp-1); margin: var(--sp-3) 0; padding: var(--sp-2) var(--sp-4); border: 1px dashed rgba(var(--tint), .55); background: transparent; color: var(--primary); border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-md); font-family: inherit; transition: all .15s var(--e); }
 .plan-add-btn:hover { border-color: var(--primary); background: var(--bg-hover); }
-/* 资产页「收支」子面板：新增按钮与卡片等宽、非圆角（取代原财务页内联胶囊按钮）；
-   底部留 sp-3，与第一张计划卡之间形成与卡间距一致的呼吸 */
-.plan-add-btn-block { border-radius: 0; margin: var(--sp-2) 0 var(--sp-3); font-weight: 600; }
+/* 资产页「收支」子面板：新增按钮与卡片等宽、与计划卡同圆角（--r-sm）；
+   底部留 sp-3，与第一张计划卡之间形成与卡间距一致的呼吸。
+   2026-10-29：原先强制直角（0），与下方计划卡 r-sm 圆角并排时像两个时代的控件，改回 token。 */
+.plan-add-btn-block { border-radius: var(--r-sm); margin: var(--sp-2) 0 var(--sp-3); font-weight: 600; }
 .plan-add-plus { font-size: var(--fs-xl); line-height: 1; }
 .plan-list { display: flex; flex-direction: column; gap: var(--sp-2); }
 .plan-item { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-sm); --fp-dur: .24s; }
