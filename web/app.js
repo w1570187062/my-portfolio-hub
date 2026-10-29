@@ -131,6 +131,10 @@ const RB_CLASS_COLOR = {
 let rbData = null;         // /api/rebalance 最近一次结果
 let rbPicked = new Set();  // 本次勾选要执行的类别 key
 let rbHistoryLogs = [];
+// 本期兑现（2026-10-29）：与 rbData 分开拉。period 只影响兑现卡与 KPI 的收益三张，
+// 不重算配置偏离（偏离是「此刻快照」，与区间无关）。
+let rbActual = null;
+let rbPeriod = 'last';
 // 2026-10-20 tab 重构：原 hash 'holdings' 兼容映射到 'invest'（持仓/理财视图）。
 function viewFromHash() {
   const h = (location.hash || '').replace(/^#\/?/, '');
@@ -11883,10 +11887,16 @@ async function loadRebalance() {
   const body = document.getElementById('rbDriftBody');
   const loading = '<tr><td colspan="6"><div class="rb-act-empty">计算中…</div></td></tr>';
   if (body && !rbData) body.innerHTML = loading;
+  if (!rbData) setRbActualLoading();
   try {
-    const r = await api('/api/rebalance');
+    // 两条接口并行：配置偏离（此刻快照）+ 本期兑现（区间实测）。兑现失败不阻塞主表。
+    const [r, ra] = await Promise.all([
+      api('/api/rebalance'),
+      api('/api/rebalance/actual?period=' + encodeURIComponent(rbPeriod)).catch(() => null),
+    ]);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     rbData = await r.json();
+    rbActual = ra && ra.ok ? await ra.json() : null;
     // 默认勾选全部偏离项，用户可逐项取消（记录时只存勾选的）
     rbPicked = new Set((rbData.buckets || []).filter((b) => b.action !== 'none').map((b) => b.key));
     renderRebalance();
@@ -11894,6 +11904,22 @@ async function loadRebalance() {
   } catch (e) {
     if (body) body.innerHTML = '<tr><td colspan="6"><div class="rb-act-empty">再平衡计算失败：' + esc(e.message) + '</div></td></tr>';
   }
+}
+
+// 只换周期时不必重拉 /api/rebalance：配置部分与区间无关，重渲染两张卡即可。
+async function loadRbActual(period) {
+  rbPeriod = period || rbPeriod;
+  const box = document.getElementById('rbActualBody');
+  if (box) box.innerHTML = '<tr><td colspan="8"><div class="rb-act-empty">计算中…</div></td></tr>';
+  try {
+    const r = await api('/api/rebalance/actual?period=' + encodeURIComponent(rbPeriod));
+    rbActual = r.ok ? await r.json() : null;
+  } catch (_) {
+    rbActual = null;
+  }
+  if (rbData) renderRbKpi();
+  renderRbActual();
+  renderRbTop();
 }
 
 // —— 再平衡页渲染（2026-10-27 v2：叠加收益维度）——
@@ -11910,12 +11936,28 @@ const rbPP = (v, d = 2) => {
   const n = Number(v) || 0;
   return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(d) + 'pp';
 };
+// 带符号百分比（收益率用；pp 用 rbPP，两者语义不同不能混）
+const rbSignedPct = (v, d = 2) => {
+  const n = Number(v) || 0;
+  return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(d) + '%';
+};
+const rbActCls = (v) => (Number(v) > 0 ? 'up' : Number(v) < 0 ? 'down' : '');
+// 兑现率：预期金额极小时（如某类月预期仅 ¥67）比例会飙到四位数，直接截断而不是显示 1468%
+const rbHitTxt = (exp, hit) => {
+  if (!(Number(exp) > 0.005)) return '—';
+  const h = Number(hit) || 0;
+  if (h > 999) return '≥999%';
+  if (h < -999) return '≤−999%';
+  return rbFixed(h, 0) + '%';
+};
 
 function renderRebalance() {
   if (!rbData) return;
   renderRbKpi();
   renderRbInsight();
   renderRbDrift();
+  renderRbActual();
+  renderRbTop();
   const up = document.getElementById('rbUpdated');
   if (up) {
     const cfg = rbData.config || {};
@@ -11952,29 +11994,26 @@ function renderRbKpi() {
   const buckets = rbData.buckets || [];
   const rt = rbData.returns || {};
   const total = Number(rbData.total_cny) || 0;
-  const md = rbData.max_drift;
   const pending = buckets.filter((b) => b.action !== 'none');
   const need = Number(rbData.need_cny) || 0;
+
+  // —— 本期兑现（区间实测）：接口失败或区间无数据时整行降级为「—」，
+  //    绝不用 0 冒充，否则「本期真实收益 ¥0」会被读成「一分没赚」。
+  const act = rbActual || {};
+  const hasAct = Number(act.begin_cny) > 0 && (act.buckets || []).length > 0;
+  const realA = Number(act.real_cny) || 0;
+  const expA = Number(act.exp_cny) || 0;
+  const gapA = Number(act.gap_cny) || 0;
+  const planA = Number(act.plan_cny) || 0;
+  const hitA = Number(act.hit_rate) || 0;
+  const clsOf = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : '');
+  const valOr = (v, txt) => (hasAct ? `<span class="${clsOf(v)}">${txt}</span>` : '—');
 
   // 现金是子账户（数量多且意义弱），副标题只列持仓/理财件数
   const countText = buckets.filter((b) => b.key !== 'cash' && b.count > 0)
     .map((b) => `${b.label} ${b.count}`).join(' · ') || '暂无在持资产';
 
-  // 目标年化收益卡的副行：设了收益目标就优先报「还差多少」，否则报目标 / 当前收益率对比。
-  // 只留一行 —— 多一行会让这张卡比其他四张高，破坏 KPI 行等高。
-  let tgtSub;
-  const goalPct = rt.goal_pct;
-  if (goalPct == null) {
-    tgtSub = `目标 <b>${rbFixed(rt.ret_target)}%</b> · 当前 ${rbFixed(rt.ret_actual)}%`;
-  } else {
-    const gap = Number(rt.gap_amt) || 0;
-    tgtSub = gap > 0
-      ? `你的目标 ${rbFixed(goalPct, 1)}% · 还差 <b>${rbYuan(gap)}</b>`
-      : `你的目标 ${rbFixed(goalPct, 1)}% · 超出 <b>${rbYuan(-gap)}</b>`;
-  }
-
-  const ex = Number(rt.excess_pct) || 0;
-  const exDir = Math.abs(ex) < 0.05 ? '贴合目标' : (ex < 0 ? '比目标保守' : '比目标激进');
+  const md = rbData.max_drift;
   const maxText = md ? (md.drift > 0 ? '+' : '−') + Math.abs(Number(md.drift)).toFixed(1) + '%' : '—';
   const maxSub = md ? `${md.label} · ${md.drift > 0 ? '超配' : '低配'}` : '各类均在目标区间';
 
@@ -11983,25 +12022,29 @@ function renderRbKpi() {
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 6.6v10.8"/><path d="M8.4 9.6h7.2M8.4 14.4h7.2"/></svg></div>
       <div class="kpi-label">组合总市值</div>
       <div class="kpi-main"><div class="kpi-value">${total > 0 ? moneyCurW(total, 'cny') : '—'}</div></div>
-      <div class="kpi-sub">${esc(countText)}</div>
+      <div class="kpi-sub">${hasAct
+        ? `本期 <b class="${clsOf(realA)}">${rbSignedYuan(realA)}</b> · ${rbSignedPct(Number(act.real_pct) || 0)}`
+        : esc(countText)}</div>
     </div>
-    <div class="kpi-card density-standard" title="按「目标权重 × 各类预期年化」加权得出的年化收益；是配置层期望值，不是预测">
+    <div class="kpi-card density-standard" title="本期真实收益 = 期末市值 − 期初市值 − 期间净申购，含浮盈 / 已实现 / 分红票息。与上方配置表的年化口径不同">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 6-7"/><path d="M14 8h4v4"/></svg></div>
-      <div class="kpi-label">目标年化收益</div>
-      <div class="kpi-main"><div class="kpi-value">${rbYuan(rt.tgt_amt)}<span class="kpi-unit">/年</span></div></div>
-      <div class="kpi-sub">${tgtSub}</div>
+      <div class="kpi-label">本期真实收益</div>
+      <div class="kpi-main"><div class="kpi-value">${valOr(realA, rbSignedYuan(realA))}</div></div>
+      <div class="kpi-sub">${hasAct ? `折年化 <b>${rbFixed(act.real_ann_pct)}%</b> · ${Number(act.days) || 0} 天` : '暂无区间数据'}</div>
     </div>
-    <div class="kpi-card density-standard" title="超额收益率 = 当前配置加权年化 − 目标配置加权年化。负=比目标保守（少赚），正=比目标激进（多赚但风险更高）">
+    <div class="kpi-card density-standard" title="按当前各类权重 × 该类假设年化折算到本期天数；计划基准 = 若按目标权重配置本可赚多少">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M4 12h6"/><path d="M14 12h6"/><circle cx="12" cy="12" r="2.4"/></svg></div>
-      <div class="kpi-label">超额收益率</div>
-      <div class="kpi-main"><div class="kpi-value">${rbPP(ex)}</div></div>
-      <div class="kpi-sub">${rbSignedYuan(rt.excess_amt)}/年 · ${exDir}</div>
+      <div class="kpi-label">本期预期收益</div>
+      <div class="kpi-main"><div class="kpi-value">${hasAct ? rbYuan(expA) : '—'}</div></div>
+      <div class="kpi-sub">${hasAct ? `计划基准（目标配置）<b>${rbYuan(planA)}</b>` : '暂无区间数据'}</div>
     </div>
-    <div class="kpi-card density-standard">
+    <div class="kpi-card density-standard" title="兑现偏差 = 真实 − 预期。正=同类跑赢假设（选品/票息），负=跑输；兑现率 >100% 即跑赢">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 3.6 21 20H3Z"/><path d="M12 9.4v4.2"/><path d="M12 16.6h.01"/></svg></div>
-      <div class="kpi-label">最大偏离</div>
-      <div class="kpi-main"><div class="kpi-value">${maxText}</div></div>
-      <div class="kpi-sub">${esc(maxSub)}</div>
+      <div class="kpi-label">兑现偏差</div>
+      <div class="kpi-main"><div class="kpi-value">${valOr(gapA, rbSignedYuan(gapA))}</div></div>
+      <div class="kpi-sub">${hasAct
+        ? `${expA > 0.005 ? '兑现率 <b>' + rbHitTxt(expA, hitA) + '</b> · ' : ''}${rbPP(Number(act.gap_pp) || 0)}`
+        : '暂无区间数据'}</div>
     </div>
     <div class="kpi-card density-standard">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M4 7h11"/><path d="M18 7h2"/><path d="M4 12h5"/><path d="M12 12h8"/><path d="M4 17h9"/><path d="M16 17h4"/></svg></div>
@@ -12141,7 +12184,254 @@ function renderRbDrift() {
       ? `共 ${pend.length} 类偏离超过 ${thr}pp；买卖金额天然配平（合计为 0）。`
       : `四类均在 ${thr}pp 容差内，本期无需调仓。`) + exclTxt +
       `「收益影响」= 该类偏离 × 总市值 × 该类年化，四类相加等于组合超额收益 ${rbSignedYuan(rt.excess_amt)}/年。` +
-      `年化为假设值，不是承诺收益；波动率为简单加权（未计相关性），仅作方向参考。`;
+      `年化为假设值，不是承诺收益；波动率为简单加权（未计相关性），仅作方向参考。` +
+      `本表是年化机会成本，与下方「本期兑现」的区间实测口径不同，两处金额不可相加。`;
+  }
+}
+
+// ===== 本期兑现：真实 vs 预期（2026-10-29）=====
+// 数据全部来自 /api/rebalance/actual（服务端已算好四类聚合、归因与 Top），前端只做呈现与几何。
+// 与上方配置表的区别必须一眼看得出：那张表是年化假设，这张是区间实测。
+function setRbActualLoading() {
+  const body = document.getElementById('rbActualBody');
+  if (body) body.innerHTML = '<tr><td colspan="8"><div class="rb-act-empty">计算中…</div></td></tr>';
+  const foot = document.getElementById('rbActualFoot');
+  if (foot) foot.innerHTML = '';
+}
+
+function renderRbActual() {
+  const body = document.getElementById('rbActualBody');
+  const foot = document.getElementById('rbActualFoot');
+  const note = document.getElementById('rbActualNote');
+  const range = document.getElementById('rbPeriodRange');
+  if (!body) return;
+  const a = rbActual;
+  if (range) range.textContent = a ? `${a.from} → ${a.to} · ${a.days} 天` : '';
+  if (!a || !(Number(a.begin_cny) > 0) || !(a.buckets || []).length) {
+    body.innerHTML = `<tr><td colspan="8"><div class="rb-act-empty">${a ? '区间内没有可对比的期初市值，换个周期看看' : '本期兑现计算失败'}</div></td></tr>`;
+    if (foot) foot.innerHTML = '';
+    if (note) note.textContent = '';
+    renderRbActualChart();
+    renderRbActualAttr();
+    return;
+  }
+
+  // 偏差幅度条按最大 |偏差金额| 归一；最小 4% 保证极小偏差也能被看见
+  const maxGap = Math.max(1, ...a.buckets.map((b) => Math.abs(Number(b.gap_cny) || 0)));
+  const cell2 = (main, sub) => `<span class="rb-twol"><b>${main}</b><i>${sub}</i></span>`;
+
+  body.innerHTML = a.buckets.map((b) => {
+    const real = Number(b.real_cny) || 0;
+    const exp = Number(b.exp_cny) || 0;
+    const gap = Number(b.gap_cny) || 0;
+    const hit = Number(b.hit_rate) || 0;
+    const netIn = Number(b.net_in_cny) || 0;
+    const w = Math.max(4, Math.min(50, (Math.abs(gap) / maxGap) * 48));
+    const partial = b.quality === 'partial'
+      ? `<span class="rb-act-tag" title="${esc((b.note || '数据不完整') + (Number(b.days) > 0 && Number(b.days) < Number(a.days) ? ` · 仅覆盖 ${b.days}/${a.days} 天` : ''))}">估算</span>` : '';
+    return `<tr>
+      <td><span class="rb-cat"><span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[b.key] || 'var(--text-faint)'}"></span>${esc(b.label)}${partial}</span></td>
+      <td class="num">${cell2(rbYuan(b.end_cny), rbYuan(b.begin_cny))}</td>
+      <td class="num">${Math.abs(netIn) < 0.5 ? '<span class="rb-act-none">—</span>' : `<span class="${rbActCls(netIn)}">${rbSignedYuan(netIn)}</span>`}</td>
+      <td class="num">${cell2(`<span class="${rbActCls(real)}">${rbSignedYuan(real)}</span>`, rbSignedPct(b.real_pct))}</td>
+      <td class="num">${cell2(rbYuan(exp), rbFixed(b.exp_pct) + '%')}</td>
+      <td class="num">${cell2(`<span class="${rbActCls(gap)}">${rbSignedYuan(gap)}</span>`, rbPP(b.gap_pp))}</td>
+      <td class="num"><span class="rb-dev"><span class="rb-dev-axis"></span><span class="rb-dev-fill ${gap >= 0 ? 'pos' : 'neg'}" style="--w:${w.toFixed(1)}%"></span></span></td>
+      <td class="num"><span class="rb-rate-pill ${exp > 0.005 ? (hit >= 100 ? 'hi' : 'lo') : 'mid'}">${rbHitTxt(exp, hit)}</span></td>
+    </tr>`;
+  }).join('');
+
+  if (foot) {
+    const hit = Number(a.hit_rate) || 0;
+    const expA = Number(a.exp_cny) || 0;
+    const gapA = Number(a.gap_cny) || 0;
+    foot.innerHTML = `<tr>
+      <td>合计</td>
+      <td class="num">${cell2(rbYuan(a.end_cny), rbYuan(a.begin_cny))}</td>
+      <td class="num">${Math.abs(Number(a.net_in_cny) || 0) < 0.5 ? '—' : rbSignedYuan(a.net_in_cny)}</td>
+      <td class="num">${cell2(`<span class="${rbActCls(a.real_cny)}">${rbSignedYuan(a.real_cny)}</span>`, rbSignedPct(a.real_pct))}</td>
+      <td class="num">${cell2(rbYuan(a.exp_cny), rbFixed(a.exp_pct) + '%')}</td>
+      <td class="num">${cell2(`<span class="${rbActCls(gapA)}">${rbSignedYuan(gapA)}</span>`, rbPP(a.gap_pp))}</td>
+      <td class="num">—</td>
+      <td class="num"><span class="rb-rate-pill ${expA > 0.005 ? (hit >= 100 ? 'hi' : 'lo') : 'mid'}">${rbHitTxt(expA, hit)}</span></td>
+    </tr>`;
+  }
+
+  if (note) {
+    const notes = (a.notes || []).join('');
+    note.textContent = `真实收益 = 期末市值 − 期初市值 − 期间净申购 + 分红票息；预期 = 期初市值 × 该类假设年化 × ${a.days}/365。`
+      + `兑现率 = 真实 ÷ 预期，>100% 为跑赢假设；合计行按「期初市值加权」而非各行简单平均。` + notes;
+  }
+  renderRbActualChart();
+  renderRbActualAttr();
+}
+
+function renderRbActualChart() {
+  const box = document.getElementById('rbActualChart');
+  const lg = document.getElementById('rbActualLegend');
+  if (!box) return;
+  const s = (rbActual && rbActual.series) || [];
+  if (s.length < 2) {
+    box.innerHTML = '<div class="rb-act-empty">区间太短，暂无曲线</div>';
+    if (lg) lg.innerHTML = '';
+    return;
+  }
+  const W = 640, H = 190, L = 48, R = 12, T = 12, B = 24;
+  const nums = [];
+  s.forEach((p) => { nums.push(Number(p.real) || 0, Number(p.exp) || 0); });
+  let mn = Math.min(0, ...nums);
+  let mx = Math.max(0, ...nums);
+  if (mx - mn < 1) mx = mn + 1;
+  const pad = (mx - mn) * 0.12;
+  mn -= pad; mx += pad;
+  const X = (i) => L + (W - L - R) * (i / (s.length - 1));
+  const Y = (v) => T + (H - T - B) * (1 - (v - mn) / (mx - mn));
+  const rv = (p) => Number(p.real) || 0;
+  const ev = (p) => Number(p.exp) || 0;
+
+  // 尾部跳变：净值/快照不日更时，末点用当前市值、前一点用最近可得价，中间会掉一截。
+  // 这一段改用虚线 —— 让「数据没更新」在视觉上就是断的，而不是像一次真实暴跌。
+  const tailDash = ((rbActual.buckets || []).some((b) => b.quality === 'partial')) && s.length > 2;
+  const solid = tailDash ? s.slice(0, -1) : s;
+  const realLine = solid.map((p, i) => `${X(i).toFixed(1)},${Y(rv(p)).toFixed(1)}`).join(' ');
+  const expLine = s.map((p, i) => `${X(i).toFixed(1)},${Y(ev(p)).toFixed(1)}`).join(' ');
+  // 面积 = 真实线正向 + 预期线逆向（闭合后就是「累计超额」那块）
+  const area = `M${X(0).toFixed(1)},${Y(rv(s[0])).toFixed(1)} `
+    + s.map((p, i) => `L${X(i).toFixed(1)},${Y(rv(p)).toFixed(1)}`).join(' ')
+    + ' ' + s.map((p, i) => `L${X(s.length - 1 - i).toFixed(1)},${Y(ev(s[s.length - 1 - i])).toFixed(1)}`).join(' ') + ' Z';
+
+  const last = s[s.length - 1];
+  const realUp = rv(last) >= 0;
+  const realColor = realUp ? 'var(--up)' : 'var(--down)';
+  // 4 条网格 + 值标签
+  const ticks = [];
+  for (let k = 0; k <= 3; k++) {
+    const v = mn + (mx - mn) * (k / 3);
+    ticks.push(`<line x1="${L}" y1="${Y(v).toFixed(1)}" x2="${W - R}" y2="${Y(v).toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`
+      + `<text x="${L - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end" fill="var(--text-faint)" font-size="10">${fmt(Math.round(v))}</text>`);
+  }
+  const xl = [0, Math.floor((s.length - 1) / 2), s.length - 1];
+  const xLabels = xl.map((i) => `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === s.length - 1 ? 'end' : 'middle'}" fill="var(--text-faint)" font-size="10">${esc(String(s[i].date).slice(5))}</text>`).join('');
+
+  box.innerHTML = `<svg class="rb-chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="本期真实与预期累计收益曲线">
+    <defs><linearGradient id="rbActGap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(var(--tint), .26)"/><stop offset="100%" stop-color="rgba(var(--tint), .02)"/>
+    </linearGradient></defs>
+    ${ticks.join('')}
+    <path d="${area}" fill="url(#rbActGap)"/>
+    <polyline points="${expLine}" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <polyline points="${realLine}" fill="none" stroke="${realColor}" stroke-width="2" stroke-linejoin="round"/>
+    ${tailDash ? `<line x1="${X(s.length - 2).toFixed(1)}" y1="${Y(rv(s[s.length - 2])).toFixed(1)}" x2="${X(s.length - 1).toFixed(1)}" y2="${Y(rv(last)).toFixed(1)}" stroke="${realColor}" stroke-width="2" stroke-dasharray="3 3" opacity=".8"/>` : ''}
+    <circle cx="${X(s.length - 1).toFixed(1)}" cy="${Y(rv(last)).toFixed(1)}" r="3" fill="${realColor}"/>
+    <circle cx="${X(s.length - 1).toFixed(1)}" cy="${Y(ev(last)).toFixed(1)}" r="2.5" fill="var(--text-muted)"/>
+    ${xLabels}
+  </svg>`;
+
+  if (lg) {
+    const gap = Number(rbActual.gap_cny) || 0;
+    // 净值/快照不日更时曲线会走平台，末点又用当前市值 → 尾部会有一次跳变。
+    // 与其让用户以为是 bug，不如在图例里直接说清。
+    const hasGap = ((rbActual.buckets || []).some((b) => b.quality === 'partial'));
+    lg.innerHTML = `<span class="k"><i class="ln" style="--ln:${realColor}"></i>真实累计 ${rbSignedYuan(last.real)}</span>
+      <span class="k"><i class="ln dash"></i>预期 ${rbYuan(last.exp)}</span>
+      <span class="k"><i class="ln gap"></i>累计超额 <b class="${rbActCls(gap)}">${rbSignedYuan(gap)}</b></span>
+      ${hasGap ? '<span class="rb-chart-note">部分净值未日更，曲线尾段走平、末点按当前市值</span>' : ''}`;
+  }
+}
+
+function renderRbActualAttr() {
+  const box = document.getElementById('rbActualAttr');
+  const hint = document.getElementById('rbAttrHint');
+  if (!box) return;
+  const a = rbActual;
+  if (!a || !(Number(a.begin_cny) > 0)) {
+    box.innerHTML = '';
+    if (hint) hint.textContent = '';
+    return;
+  }
+  const alloc = Number(a.alloc_cny) || 0;
+  const sel = Number(a.select_cny) || 0;
+  // 相对计划 = real − plan（不是 gap_cny！gap_cny 是 real − exp，两者差一个「配置偏离」）
+  const vsPlan = a.plan_gap_cny != null ? Number(a.plan_gap_cny) || 0 : (Number(a.real_cny) || 0) - (Number(a.plan_cny) || 0);
+  const plan = Number(a.plan_cny) || 0;
+  const real = Number(a.real_cny) || 0;
+  const begin = Number(a.begin_cny) || 0;
+
+  // 配置项的主导类别：|实际权重 − 目标权重| 最大者，用一句人话点出来
+  const tgtOf = {};
+  ((rbData && rbData.buckets) || []).forEach((b) => { tgtOf[b.key] = Number(b.target) || 0; });
+  let topKey = null;
+  let topDiff = 0;
+  (a.buckets || []).forEach((b) => {
+    const w = begin > 0 ? (Number(b.begin_cny) / begin) * 100 : 0;
+    const d = w - (tgtOf[b.key] || 0);
+    if (Math.abs(d) > Math.abs(topDiff)) { topDiff = d; topKey = b.key; }
+  });
+  const topWord = topKey
+    ? `${RB_CLASS_LABEL[topKey] || topKey}${topDiff > 0 ? '超配' : '低配'} ${Math.abs(topDiff).toFixed(1)}pp`
+    : '各类权重接近目标';
+
+  // 兑现项：按贡献金额排序，取前 3 类拼成一句
+  const parts = (a.buckets || [])
+    .slice()
+    .sort((x, y) => Math.abs(Number(y.gap_cny) || 0) - Math.abs(Number(x.gap_cny) || 0))
+    .slice(0, 3)
+    .map((b) => `${b.label} ${rbSignedYuan(b.gap_cny)}`)
+    .join(' · ');
+
+  if (hint) hint.textContent = `基准 = 计划 ${rbYuan(plan)}`;
+  box.innerHTML = `
+    <div class="rb-attr-item">
+      <div class="rb-attr-k">① 配置偏离</div>
+      <div class="rb-attr-v ${rbActCls(alloc)}">${rbSignedYuan(alloc)}</div>
+      <div class="rb-attr-s">${esc(topWord)}；权重漂移相对计划基准的机会成本，不是选品能力。</div>
+    </div>
+    <div class="rb-attr-item">
+      <div class="rb-attr-k">② 兑现超额（选品 / 票息）</div>
+      <div class="rb-attr-v ${rbActCls(sel)}">${rbSignedYuan(sel)}</div>
+      <div class="rb-attr-s">${esc(parts || '—')}</div>
+    </div>
+    <div class="rb-attr-item sum">
+      <div class="rb-attr-k">③ 相对计划合计</div>
+      <div class="rb-attr-v ${rbActCls(vsPlan)}">${rbSignedYuan(vsPlan)}</div>
+      <div class="rb-attr-s">真实 ${rbYuan(real)} − 计划 ${rbYuan(plan)}；① + ② 恒等于 ③。</div>
+    </div>`;
+}
+
+function renderRbTop() {
+  const box = document.getElementById('rbTopList');
+  const note = document.getElementById('rbTopNote');
+  const hint = document.getElementById('rbTopHint');
+  if (!box) return;
+  const a = rbActual;
+  const top = (a && a.top) || [];
+  if (hint) hint.textContent = a ? `本期 ${a.label || ''} · 按收益绝对值排序` : '本期真实收益来源';
+  if (!top.length) {
+    box.innerHTML = '<div class="rb-act-empty">本期暂无标的级收益数据</div>';
+    if (note) note.textContent = '';
+    return;
+  }
+  const totalReal = Number(a.real_cny) || 0;
+  box.innerHTML = `<div class="rb-top-list">` + top.map((t) => {
+    const pnl = Number(t.pnl_cny) || 0;
+    return `<div class="rb-top-row">
+      <span class="rb-top-name">
+        <span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[t.key] || 'var(--text-faint)'}"></span>
+        <span class="t">${esc(t.name)}</span>
+        ${t.symbol ? `<span class="s">${esc(t.symbol)}</span>` : ''}
+      </span>
+      <span class="rb-top-v ${rbActCls(pnl)}">${rbSignedYuan(pnl)}</span>
+      <span class="rb-top-p">${rbSignedPct(t.pct)}</span>
+    </div>`;
+  }).join('') + '</div>';
+
+  if (note) {
+    // 集中度：Top 合计占本期收益的比例。收益为 0 或负时不硬算，避免出现负分母的百分比
+    const sum = top.reduce((acc, t) => acc + (Number(t.pnl_cny) || 0), 0);
+    const share = totalReal > 0 ? Math.round((Math.max(0, sum) / totalReal) * 100) : null;
+    note.textContent = share == null
+      ? `本期合计为 ${rbSignedYuan(totalReal)}，Top ${top.length} 项合计 ${rbSignedYuan(sum)}。`
+      : `Top ${top.length} 项合计 ${rbSignedYuan(sum)}，占本期收益 ${share}%。单只超过 30% 集中度时值得复查，但这里不给交易建议。`;
   }
 }
 
@@ -12409,6 +12699,16 @@ async function saveRbSettings() {
   });
   const fq = document.getElementById('rbFreqSel');
   if (fq) fq.onchange = rbSyncSetForm;
+  // 本期兑现的周期切换：只重拉 /api/rebalance/actual —— 配置偏离是「此刻快照」，与区间无关。
+  document.querySelectorAll('#rbPeriods .rb-chip').forEach((c) => {
+    c.onclick = () => {
+      const p = c.dataset.period || 'last';
+      if (p === rbPeriod) return;
+      rbPeriod = p;
+      document.querySelectorAll('#rbPeriods .rb-chip').forEach((x) => x.classList.toggle('is-on', x === c));
+      loadRbActual(p);
+    };
+  });
 })();
 
 // ============================================================

@@ -412,6 +412,75 @@
       <p class="rb-note" id="rbNote"></p>
     </section>
 
+    <!-- ===== 本期兑现：真实收益 vs 预期收益（2026-10-29）=====
+         上表是「配置纪律」（该不该调仓，年化口径的机会成本），本卡是「收益兑现」（这一期赚得对不对）。
+         两套口径混在一张表里会让 8 列都读不清，所以拆成两张卡，各只有一个结论。
+         真实收益来自 /api/rebalance/actual，含浮盈 + 已实现 + 分红/票息，已剔除期间净申购。 -->
+    <section class="card rb-actual-card">
+      <div class="rb-sub-head rb-actual-head">
+        <span class="rb-sub-title-wrap">
+          <span class="rb-sub-title">本期兑现 · 真实 vs 预期</span>
+          <span class="rb-tag-new">新增</span>
+        </span>
+        <!-- 周期切换只影响本卡与 KPI 的收益三张，不重算配置偏离 -->
+        <div class="rb-periods" id="rbPeriods">
+          <button class="rb-chip is-on" type="button" data-period="last">自上次复盘</button>
+          <button class="rb-chip" type="button" data-period="month">本月</button>
+          <button class="rb-chip" type="button" data-period="quarter">本季</button>
+          <button class="rb-chip" type="button" data-period="year">今年</button>
+          <span class="rb-period-range" id="rbPeriodRange"></span>
+        </div>
+      </div>
+      <div class="rb-tbl-wrap">
+        <table class="rb-tbl rb-tbl-actual">
+          <thead>
+            <tr>
+              <th>类别</th>
+              <th class="num">期末 · 期初</th>
+              <th class="num">净申购</th>
+              <th class="num">真实收益</th>
+              <th class="num">预期收益</th>
+              <th class="num">偏差</th>
+              <th class="num">偏差幅度</th>
+              <th class="num">兑现率</th>
+            </tr>
+          </thead>
+          <tbody id="rbActualBody"></tbody>
+          <tfoot id="rbActualFoot"></tfoot>
+        </table>
+      </div>
+      <p class="rb-note" id="rbActualNote"></p>
+
+      <div class="rb-actual-split">
+        <div class="rb-actual-chart">
+          <div class="rb-sub-head">
+            <span class="rb-sub-title">累计：真实 vs 预期</span>
+            <span class="rb-sub-hint">阴影 = 累计超额</span>
+          </div>
+          <div class="rb-chart-wrap" id="rbActualChart"></div>
+          <div class="rb-chart-legend" id="rbActualLegend"></div>
+        </div>
+        <div class="rb-actual-attr">
+          <div class="rb-sub-head">
+            <span class="rb-sub-title">差在哪</span>
+            <span class="rb-sub-hint" id="rbAttrHint"></span>
+          </div>
+          <div class="rb-attr-list" id="rbActualAttr"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 标的贡献 Top：回答「这期的钱具体是哪几只赚的」。
+         与上卡同源（同一份 items 排序），不做二次计算。 -->
+    <section class="card rb-top-card">
+      <div class="rb-sub-head">
+        <span class="rb-sub-title">标的贡献 Top 5</span>
+        <span class="rb-sub-hint" id="rbTopHint">本期真实收益来源</span>
+      </div>
+      <div id="rbTopList"></div>
+      <p class="rb-note" id="rbTopNote"></p>
+    </section>
+
     <section class="card rb-hist-card">
       <div class="rb-sub-head">
         <span class="rb-sub-title">再平衡历史</span>
@@ -1227,6 +1296,35 @@
         <span class="modal-actions-spacer"></span>
         <button type="button" id="crCancel" class="btn">取消</button>
         <button type="button" id="crSave" class="btn primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 批量新增已平仓（纯记录，不入账）===== -->
+  <div id="closedBatchModal" class="modal" hidden>
+    <div class="modal-card" style="width:760px; max-width:96vw; padding:0 28px 0;">
+      <h2 id="crbTitle" data-icon="check" style="padding-left:0;">批量新增已平仓</h2>
+      <p class="snap-hint">同一账户、同一类型批量录入；输入名称 / 代码可联想全市场标的，点选即回填代码。仅作记录，不计入任何账户。</p>
+      <form>
+        <div class="f-row">
+          <label>账户 <select id="crb_source"></select></label>
+          <label>类型
+            <select id="crb_kind">
+              <option value="stock">股票</option>
+              <option value="fund">基金</option>
+              <option value="wealth">理财</option>
+            </select>
+          </label>
+        </div>
+        <label id="crbSourceCustomRow" hidden>自定义账户名 <input id="crb_source_custom" placeholder="如 线下转让 / 朋友代持"></label>
+        <div class="batch-grid" id="crbGrid"></div>
+        <button type="button" id="crbAddRow" class="btn">+ 添加一行</button>
+        <div id="crbErr" class="err"></div>
+      </form>
+      <div class="modal-actions">
+        <span class="modal-actions-spacer"></span>
+        <button type="button" id="crbCancel" class="btn">取消</button>
+        <button type="button" id="crbSave" class="btn primary">保存</button>
       </div>
     </div>
   </div>

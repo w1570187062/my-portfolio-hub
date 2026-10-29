@@ -278,6 +278,9 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/asset/liabilities/:id/flows", liabilityFlows)
 		// 资产再平衡（2026-10-27 重新引入）：股票/基金/理财/现金 四大类配置偏离 + 历史记录
 		g.GET("/rebalance", rebalanceOverview)
+		// 本期兑现：真实收益 vs 预期收益（2026-10-29）。与 /rebalance 是两套口径：
+		// 那边是配置层内生期望，这边是区间实测。
+		g.GET("/rebalance/actual", rebalanceActualGet)
 		g.POST("/rebalance/log", rebalanceLogPost)
 		g.GET("/rebalance/history", rebalanceHistoryGet)
 		g.DELETE("/rebalance/log/:id", rebalanceLogDelete)

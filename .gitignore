@@ -66,6 +66,9 @@ tab-redesign-prototype/
 hero-prototype.html
 docs/*-proposal.html
 
+# ── 本地验证用二进制（pf-smoke，跑全量构建前的冒烟库）────────
+/pf-smoke.exe
+
 # ── 归档与 bsk 本地预览验证产物（沙箱 DB / 截图 / 临时二进制）─
 archive/
 .bsk_data/

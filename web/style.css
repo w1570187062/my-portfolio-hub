@@ -6261,6 +6261,130 @@ textarea::placeholder {
   .rb-hist-mix { grid-column: 1 / -1; grid-row: 2; }
 }
 
+/* ===== 本期兑现 · 真实 vs 预期（2026-10-29）=====
+   与上方「配置纪律」表并列的第二套口径：那套是年化假设的内生期望，这套是区间实测。
+   两表都放同一张卡里会让 14 列挤成一团，故独立成卡，各只回答一个问题。 */
+.rb-actual-card, .rb-top-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--sp-4) var(--sp-5);
+}
+.rb-actual-head { align-items: center; flex-wrap: wrap; }
+.rb-sub-title-wrap { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+/* 「新增」标签：只在本次改版保留一个迭代期，之后删掉这一行即可 */
+.rb-tag-new {
+  flex: 0 0 auto;
+  padding: 0 5px; border-radius: var(--r-xs);
+  font-size: 10px; line-height: 15px;
+  color: var(--primary); background: var(--primary-soft);
+  border: 1px solid rgba(var(--tint), .30);
+}
+.rb-periods { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rb-period-range { font-size: var(--fs-xs); color: var(--text-faint); margin-left: 2px; white-space: nowrap; }
+
+/* 明细表：8 列，列宽只写在 th（table-layout:fixed 以首行定宽）。
+   ≤1340 不进 grid 竖排 —— 8 列竖排会变成 8 排短文，比横滚更难读。 */
+.rb-tbl-actual { table-layout: fixed; }
+.rb-tbl-actual th:nth-child(1) { width: 76px; }
+.rb-tbl-actual th:nth-child(2) { width: 120px; }
+.rb-tbl-actual th:nth-child(3) { width: 72px; }
+.rb-tbl-actual th:nth-child(4) { width: 96px; }
+.rb-tbl-actual th:nth-child(5) { width: 88px; }
+.rb-tbl-actual th:nth-child(6) { width: 96px; }
+.rb-tbl-actual th:nth-child(7) { width: 104px; }
+.rb-tbl-actual th:nth-child(8) { width: 72px; }
+.rb-tbl-actual td { padding-top: 5px; padding-bottom: 5px; }
+
+/* 两行单元格：主值（金额/百分比）+ 次值（另一口径）。右对齐时按小数点对齐 */
+.rb-twol { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 1px; line-height: 1.25; }
+.rb-twol b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.rb-twol i { font-style: normal; font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* 数据不完整徽标：期初价/快照缺失时按兜底值算出，必须标出来，否则用户会当成精确值 */
+.rb-act-tag {
+  margin-left: 4px; padding: 0 4px; border-radius: var(--r-xs);
+  font-size: 10px; line-height: 14px;
+  color: var(--warning); background: var(--warning-soft);
+  border: 1px solid rgba(var(--warning-rgb), .30);
+}
+.rb-act-none { color: var(--text-faint); }
+
+/* 偏差幅度：中轴 = 0，向右红（超预期）、向左绿（低于预期）。宽度由 --w 注入 */.rb-dev { display: block; position: relative; height: 8px; border-radius: 2px; background: var(--bg-soft); min-width: 68px; }
+.rb-dev-axis { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--border-strong); }
+.rb-dev-fill { position: absolute; top: 0; height: 100%; border-radius: 2px; }
+.rb-dev-fill.pos { left: 50%; width: var(--w, 0%); background: var(--up); }
+.rb-dev-fill.neg { right: 50%; width: var(--w, 0%); background: var(--down); }
+
+/* 兑现率胶囊：>100% 红（跑赢假设）、<100% 绿、无预期基准时中性 */.rb-rate-pill {
+  display: inline-block; min-width: 48px; text-align: center;
+  padding: 1px 6px; border-radius: var(--r-xs);
+  font-size: var(--fs-xs); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.rb-rate-pill.hi { color: var(--up); background: rgba(248, 113, 113, .12); }
+.rb-rate-pill.lo { color: var(--down); background: rgba(74, 222, 128, .12); }
+.rb-rate-pill.mid { color: var(--text-muted); background: var(--bg-soft); }
+
+/* 曲线 + 归因：两栏；≤1340 单栏堆叠（与资产页 fig/analysis 同一套断点） */
+.rb-actual-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--sp-5);
+  align-items: start;
+  margin-top: var(--sp-4);
+}
+.rb-actual-chart, .rb-actual-attr { min-width: 0; }
+.rb-chart-wrap { position: relative; }
+.rb-chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.rb-chart-legend { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-chart-legend .k { display: inline-flex; align-items: center; gap: 5px; }
+.rb-chart-legend .ln { display: inline-block; width: 14px; height: 2px; border-radius: 2px; background: var(--ln, var(--text-secondary)); }
+.rb-chart-legend .ln.dash { background: repeating-linear-gradient(90deg, var(--text-muted) 0 3px, transparent 3px 6px); }
+.rb-chart-legend .ln.gap { width: 12px; height: 8px; border-radius: 2px; background: var(--primary-soft); }
+.rb-chart-note { flex: 1 1 100%; font-size: var(--fs-xs); color: var(--text-faint); }
+
+/* 归因三段：① 配置偏离 ② 兑现超额 ③ 相对计划 */
+.rb-attr-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.rb-attr-item { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--bg-soft); border: 1px solid var(--border); }
+.rb-attr-item.sum { background: var(--primary-soft); border-color: rgba(var(--tint), .26); }
+.rb-attr-k { font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-attr-v { margin-top: 2px; font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.rb-attr-s { margin-top: 1px; font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5; }
+
+/* 标的贡献 Top */
+.rb-top-list { display: flex; flex-direction: column; margin-top: var(--sp-1); }
+.rb-top-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 62px;
+  align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+.rb-top-row:last-child { border-bottom: 0; }
+.rb-top-name { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.rb-top-name .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.rb-top-name .s { flex: 0 0 auto; font-size: var(--fs-xs); color: var(--text-faint); }
+.rb-top-v { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rb-top-p { text-align: right; font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1340px) {
+  .rb-actual-card, .rb-top-card { padding: var(--sp-3) var(--sp-4); }
+  .rb-actual-split { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+  /* 8 列在 1340 以下按容器横滚，不压扁：table-layout:fixed + 固定列宽合计 726px */
+  .rb-tbl-actual { min-width: 724px; }
+}
+@media (max-width: 640px) {
+  .rb-tag-new { display: none; }
+  .rb-period-range { display: none; }
+  .rb-actual-head { align-items: flex-start; gap: var(--sp-2); }
+  .rb-periods { width: 100%; }
+  /* 曲线上 30+ 个点等比缩到 390px 会把轴标签挤成一团，保最小宽度让卡片内横滚 */
+  .rb-chart-wrap { overflow-x: auto; }
+  .rb-chart-svg { min-width: 520px; }
+  .rb-top-row { grid-template-columns: minmax(0, 1fr) 78px 52px; gap: var(--sp-2); }
+}
+
 /* ===== 认证层：登录闸门 / 登录与设备（2026-10-28）===== */
 /* 闸门：未认证设备的首屏。z-index 低于弹框(100)，高于普通内容。 */
 .auth-gate {
