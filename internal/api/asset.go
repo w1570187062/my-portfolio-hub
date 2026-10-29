@@ -452,9 +452,9 @@ func createSource(c *gin.Context) {
 	}
 	s.Region = db.NormRegion(s.Region)
 	s.UserID = currentUserID(c)
-	// 币种集合：勾选的币种（cny/hkd/usd）规范化后入库；
-	// 2026-10-16 起不再随账户创建自动生成子账户（默认子账户概念已移除，子账户完全手动管理，
-	// 首次资金联动时按需补建落点账户）。
+	// 币种集合：勾选的币种（cny/hkd/usd）规范化后入库。
+	// 每个勾选的币种默认生成一个同币种子账户（落点账户），免去新建账户后再手动建子账户的步骤；
+	// 子账户仍可在资产页继续增删，互不影响。
 	s.Currencies = db.NormalizeCurrencies(s.Currencies)
 	id, err := db.CreateSource(&s)
 	if err != nil {
@@ -462,6 +462,12 @@ func createSource(c *gin.Context) {
 		return
 	}
 	s.ID = id
+	// 为每个勾选币种补建默认子账户（该来源下已存在同币种子账户则不重复创建）
+	for _, cur := range db.ParseSourceCurrencies(s.Currencies) {
+		if _, e := db.EnsureCashForCurrency(s.UserID, id, s.Name, cur); e != nil {
+			log.Printf("warn: createSource id=%d 自动补建 %s 子账户失败: %v", id, cur, e)
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"source": s})
 }
 
@@ -491,7 +497,7 @@ func updateSource(c *gin.Context) {
 	s.Region = db.NormRegion(s.Region)
 	s.UserID = currentUserID(c)
 	// 币种集合联动：仅作为「该账户允许的子账户币种」元数据（新增/编辑子账户时反向同步补全）；
-	// 不再自动补齐对应币种的子账户（2026-10-16 移除默认子账户概念）。
+	// 编辑时不自动补建子账户（新建账户会按勾选币种自动生成，见 createSource）。
 	s.Currencies = db.NormalizeCurrencies(s.Currencies)
 	if err := db.UpdateSource(&s); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
