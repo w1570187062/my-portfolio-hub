@@ -9118,8 +9118,8 @@ function renderAnalysis(a) {
 
 $('#analysisModal').addEventListener('click', (e) => { if (e.target === $('#analysisModal')) { $('#analysisModal').hidden = true; } });
 
-// ===== 多用户：用户切换 / 用户管理（底部抽屉） =====
-// 当前用户 ID 持久化在 localStorage('pf_user')；api() 会在请求头注入 X-User-Id。
+// ===== 多账本：账本切换 / 账本管理（底部抽屉） =====
+// 当前账本 ID 持久化在 localStorage('pf_user')；api() 会在请求头注入 X-User-Id。
 let allUsersCache = [];
 
 function setUserText(name) {
@@ -9130,7 +9130,7 @@ function setUserText(name) {
 // ===== 右上角个人菜单（2026-10-27）=====
 // 设置项从主导航迁入此处（导航回落 5 项）；面板样式对齐 PanWatch 的 AccountMenu：
 // 头像触发 + 右侧下拉 + 分组小标题 + 发丝线分隔 + 激活项右侧打勾。
-// 用户切换直接列在面板内（点即生效），新增/删除等重操作仍走原「管理用户」抽屉。
+// 账本切换直接列在面板内（点即生效），新增/删除等重操作仍走「管理账本」抽屉。
 function acctMenuEls() {
   return {
     menu: document.getElementById('acctMenu'),
@@ -9141,7 +9141,7 @@ function acctMenuEls() {
 function renderAcctUsers() {
   const list = document.getElementById('acctUserList');
   if (!list) return;
-  if (!allUsersCache.length) { list.innerHTML = '<div class="acct-empty">暂无用户</div>'; return; }
+  if (!allUsersCache.length) { list.innerHTML = '<div class="acct-empty">暂无账本</div>'; return; }
   const curId = localStorage.getItem('pf_user');
   list.innerHTML = allUsersCache.map((u) => {
     const on = String(u.id) === String(curId);
@@ -9179,7 +9179,7 @@ function toggleAcctMenu() {
   if (!pop) return;
   if (pop.hidden) openAcctMenu(); else closeAcctMenu();
 }
-// 面板交互：事件委托，重渲染用户列表后仍生效
+// 面板交互：事件委托，重渲染账本列表后仍生效
 function onAcctPopClick(e) {
   const item = e.target.closest('[data-act]');
   if (!item) return;
@@ -9288,24 +9288,31 @@ async function refreshUsers() {
 function renderUserList(users, curId, statsMap) {
   const list = document.getElementById('userList');
   if (!list) return;
-  if (!users.length) { list.innerHTML = '<div class="user-empty">暂无用户</div>'; return; }
+  if (!users.length) { list.innerHTML = '<div class="user-empty">暂无账本</div>'; return; }
   const canDelete = users.length > 1;
+  // 「能否切换」必须以**会话授权**为准（authState.users 来自 session_users），
+  // 不能用 allUsersCache —— 那是 /api/users 的全量列表，恒为真，会让未接入本设备的账本
+  // 也亮出「切换」，点下去只换来一条 403。会话还没取到时退化为可切（保持旧行为）。
+  const grantedIds = new Set((authState.users || []).map((g) => String(g.id)));
+  const hasGrantInfo = grantedIds.size > 0;
   list.innerHTML = users.map((u) => {
     const isCur = String(u.id) === String(curId);
     const cnt = (statsMap[u.id] != null ? statsMap[u.id] : 0);
-    // 认证层：只有本设备已授权的账本才可切换，其余只展示（避免误点了又吃 403）
-    const granted = allUsersCache.some((g) => String(g.id) === String(u.id));
+    const granted = !hasGrantInfo || grantedIds.has(String(u.id));
+    const switchable = !isCur && granted;
     const delBtn = canDelete
-      ? `<button class="btn danger ur-del" type="button" data-act="delete" data-id="${u.id}" data-name="${escapeHtml(u.name)}" title="删除用户" aria-label="删除用户">${actIcon('del')}</button>`
-      : `<button class="btn danger ur-del" type="button" disabled title="至少保留一个用户" aria-label="至少保留一个用户">${actIcon('del')}</button>`;
+      ? `<button class="btn danger ur-del" type="button" data-act="delete" data-id="${u.id}" data-name="${escapeHtml(u.name)}" title="删除账本" aria-label="删除账本">${actIcon('del')}</button>`
+      : `<button class="btn danger ur-del" type="button" disabled title="至少保留一个账本" aria-label="至少保留一个账本">${actIcon('del')}</button>`;
+    // 整行即热区：data-act 挂在行上，点名字/空白都能切；行内删除按钮的 data-act 优先命中
     return `
-    <div class="user-row ${isCur ? 'active' : ''}" data-id="${u.id}">
+    <div class="user-row ${isCur ? 'active' : ''}${switchable ? ' is-switchable' : ''}" data-id="${u.id}"
+         ${switchable ? 'data-act="switch" role="button" tabindex="0"' : ''}>
       <div class="ur-main">
         <div class="ur-name">${escapeHtml(u.name)}${isCur ? ' <span class="ur-cur">当前</span>' : ''}</div>
         <div class="ur-meta">${cnt} 条数据${granted || isCur ? '' : ' · 本设备未接入'}</div>
       </div>
       <div class="ur-actions">
-        ${isCur || !granted ? '' : `<button class="btn ur-switch" type="button" data-act="switch" data-id="${u.id}" title="切换到此用户" aria-label="切换到此用户">${actIcon('toggle')}</button>`}
+        ${switchable ? '<span class="ur-go">切换</span>' : ''}
         ${delBtn}
       </div>
     </div>`;
@@ -9330,6 +9337,11 @@ async function switchUser(id) {
       let m = '切换失败';
       try { const d = await r.json(); if (d && d.error) m = d.error; } catch (e) {}
       toast(m, 'err');
+      // 403 = 本设备没这个账本的授权：本地把它摘掉并重绘，别让同一行还能再点一次
+      if (r.status === 403) {
+        authState.users = (authState.users || []).filter((g) => String(g.id) !== String(id));
+        await refreshUsers();
+      }
       return;
     }
     const st = await r.json();
@@ -9338,7 +9350,7 @@ async function switchUser(id) {
     setUserText(st.user.name);
     allUsersCache = (st.users || []).map((u) => ({ id: u.id, name: u.name }));
     renderAcctUsers();
-    calData = {};  // 清空权益曲线(pnl/history)缓存，切换用户后重新拉取，否则复用上一用户数据导致近30日曲线不刷新
+    calData = {};  // 清空权益曲线(pnl/history)缓存，切换账本后重新拉取，否则复用上一账本数据导致近30日曲线不刷新
     closeUserSheet();
     await load();
     await loadAsset();
@@ -9350,7 +9362,7 @@ async function switchUser(id) {
 async function addUser() {
   const inp = document.getElementById('userNameInput');
   const name = (inp && inp.value || '').trim();
-  if (!name) { toast('请输入用户名', 'err'); return; }
+  if (!name) { toast('请输入账本名称', 'err'); return; }
   try {
     const r = await api('/api/users', {
       method: 'POST',
@@ -9362,8 +9374,12 @@ async function addUser() {
       toast(m, 'err');
       return;
     }
+    const d = await r.json().catch(() => ({}));
     if (inp) inp.value = '';
-    toast('已新增用户：' + name, 'ok');
+    // 服务端建账本时会把它授权给本设备（grantSessionUser），本地同步进会话授权表，
+    // 否则新行会一直显示「本设备未接入」、点了也切不过去
+    if (d && d.id) authState.users = (authState.users || []).concat([{ id: d.id, name }]);
+    toast('已新增账本：' + name, 'ok');
     await refreshUsers();
   } catch (e) { toast('新增异常：' + e.message, 'err'); }
 }
@@ -9371,10 +9387,10 @@ async function addUser() {
 let pendingClearUserId = null;
 function clearUserData() {
   const curId = localStorage.getItem('pf_user');
-  if (!curId) { toast('未选择用户', 'err'); return; }
+  if (!curId) { toast('未选择账本', 'err'); return; }
   pendingClearUserId = curId;
-  $('#confirmTitle').textContent = '清空当前用户数据';
-  $('#confirmMsg').textContent = '确认清空当前用户的全部账户数据（持仓 / 资产全景 / 计算器 / AI 配置 / 历史等）？此操作不可恢复。';
+  $('#confirmTitle').textContent = '清空当前账本数据';
+  $('#confirmMsg').textContent = '确认清空当前账本的全部数据（持仓 / 资产全景 / 计算器 / AI 配置 / 历史等）？此操作不可恢复。';
   $('#confirmModal').hidden = false;
 }
 
@@ -9384,7 +9400,7 @@ function deleteUser(id, name) {
   pendingDeleteUserId = Number(id);
   pendingDeleteName = name || '';
   const msg = document.getElementById('userDeleteMsg');
-  if (msg) msg.textContent = '确认删除用户「' + name + '」及其全部账户数据？删除后该用户的所有数据将被清空，且不可恢复。';
+  if (msg) msg.textContent = '确认删除账本「' + name + '」及其全部数据？删除后该账本的所有数据将被清空，且不可恢复。';
   const inp = document.getElementById('userDeleteInput');
   if (inp) inp.value = '';
   const ok = document.getElementById('userDeleteOk');
@@ -9409,8 +9425,8 @@ async function onUserDeleteConfirm() {
       toast(m + ' (HTTP ' + r.status + ')', 'err');
       return;
     }
-    toast('已删除用户：' + name, 'ok');
-    // 若删除的是当前用户，自动切换到剩余首个用户
+    toast('已删除账本：' + name, 'ok');
+    // 若删除的是当前账本，自动切到剩余首个账本
     const curId = localStorage.getItem('pf_user');
     if (String(curId) === String(id)) {
       const users = await fetchUsers();
@@ -9424,16 +9440,19 @@ async function onUserDeleteConfirm() {
   } catch (e) { toast('删除异常：' + e.message, 'err'); }
 }
 
-// 绑定用户切换相关 UI
+// 账本切换相关 UI
 (function wireUserUI() {
-  // 头像按钮 -> 个人菜单（内部含「管理用户」入口打开原抽屉）
+  // 头像按钮 -> 个人菜单（内部含「管理账本」入口打开弹框）
   bindAcctMenu();
-  const closeBtn = document.getElementById('userSheetClose');
-  if (closeBtn) closeBtn.onclick = closeUserSheet;
-  const backdrop = document.getElementById('userSheetBackdrop');
-  if (backdrop) backdrop.onclick = closeUserSheet;
+  // 弹框：点遮罩关闭（.modal 铺满全屏，点到卡片以外即 e.target 是 #userSheet 本身）；
+  // Esc 由全局 keydown 统一处理（.modal:not([hidden])），右上角 ✕ 由 injectModalClose 自动注入
+  const sheet = document.getElementById('userSheet');
+  if (sheet) sheet.onclick = (e) => { if (e.target === sheet) closeUserSheet(); };
   const addBtn = document.getElementById('userAddBtn');
   if (addBtn) addBtn.onclick = addUser;
+  // 新增框回车即提交（弹框里输完名字下意识敲回车，不该还去点按钮）
+  const nameInput = document.getElementById('userNameInput');
+  if (nameInput) nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addUser(); } });
   const clearBtn = document.getElementById('userClearBtn');
   if (clearBtn) clearBtn.onclick = clearUserData;
   // 数据导出/导入（原资产全景工具栏迁入，功能不变）
@@ -9442,7 +9461,18 @@ async function onUserDeleteConfirm() {
   const importBtn = document.getElementById('ai_import_json');
   if (importBtn) importBtn.onclick = () => { document.getElementById('importFile').click(); };
   const list = document.getElementById('userList');
-  if (list) list.addEventListener('click', onUserListClick);
+  if (list) {
+    list.addEventListener('click', onUserListClick);
+    // 行可键盘操作：Tab 到行上按 Enter / 空格 = 切换（行内删除按钮自己会响应，跳过）
+    list.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (e.target.closest('.ur-actions')) return;
+      const row = e.target.closest('.user-row[data-act="switch"]');
+      if (!row) return;
+      e.preventDefault();
+      switchUser(row.dataset.id);
+    });
+  }
   const delInput = document.getElementById('userDeleteInput');
   if (delInput) delInput.oninput = () => {
     const ok = document.getElementById('userDeleteOk');

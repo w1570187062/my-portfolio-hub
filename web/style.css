@@ -852,8 +852,7 @@ w {
    （chartTitle / histTitle / confirmTitle …），内联 SVG 会被整体覆盖掉；
    mask 挂在 ::before 上，改文本不影响图标，且 background-color: var(--primary) 天然跟随主题色。 */
 .modal-card > h2::before,
-.cal-modal-head > h2::before,
-.sheet-head > h2::before {
+.cal-modal-head > h2::before {
   content: '';
   display: inline-block;
   width: 16px;
@@ -866,99 +865,75 @@ w {
 }
 /* 未标注 data-icon 的标题不显示图标（避免出现实心方块） */
 .modal-card > h2:not([data-icon])::before,
-.cal-modal-head > h2::before,
-.sheet-head > h2:not([data-icon])::before { display: none; }
+.cal-modal-head > h2::before { display: none; }
 
 .modal-card > h2[data-icon="calendar"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="calendar"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='5' width='17' height='15.5' rx='2.4'/%3E%3Cpath d='M3.5 10h17M8 3.6v3M16 3.6v3'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='5' width='17' height='15.5' rx='2.4'/%3E%3Cpath d='M3.5 10h17M8 3.6v3M16 3.6v3'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="plus"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="plus"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.6'/%3E%3Cpath d='M12 8.2v7.6M8.2 12h7.6'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.6'/%3E%3Cpath d='M12 8.2v7.6M8.2 12h7.6'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="holding"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="holding"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='6.6' width='17' height='13.4' rx='2.2'/%3E%3Cpath d='M3.5 10.8h17'/%3E%3Cpath d='M9 6.6V4.5h6v2.1'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='6.6' width='17' height='13.4' rx='2.2'/%3E%3Cpath d='M3.5 10.8h17'/%3E%3Cpath d='M9 6.6V4.5h6v2.1'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="adjust"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="adjust"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 20.5v-17M4.5 8 8 3.5 11.5 8'/%3E%3Cpath d='M16 3.5v17M12.5 16 16 20.5 19.5 16'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 20.5v-17M4.5 8 8 3.5 11.5 8'/%3E%3Cpath d='M16 3.5v17M12.5 16 16 20.5 19.5 16'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="target"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="target"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.6'/%3E%3Ccircle cx='12' cy='12' r='3.8'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.6'/%3E%3Ccircle cx='12' cy='12' r='3.8'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="chart"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="chart"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 19.5V10M9.8 19.5V5M15.1 19.5v-6.5M20.4 19.5V8'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 19.5V10M9.8 19.5V5M15.1 19.5v-6.5M20.4 19.5V8'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="pie"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="pie"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.6a8.4 8.4 0 1 0 8.4 8.4H12Z'/%3E%3Cpath d='M14.4 4.1a8.4 8.4 0 0 1 5.5 5.5h-5.5Z'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.6a8.4 8.4 0 1 0 8.4 8.4H12Z'/%3E%3Cpath d='M14.4 4.1a8.4 8.4 0 0 1 5.5 5.5h-5.5Z'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="list"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="list"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.5 6.5h11.5M8.5 12h11.5M8.5 17.5h11.5'/%3E%3Cpath d='M4 6.5h.01M4 12h.01M4 17.5h.01'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.5 6.5h11.5M8.5 12h11.5M8.5 17.5h11.5'/%3E%3Cpath d='M4 6.5h.01M4 12h.01M4 17.5h.01'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="hist"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="hist"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 16.5 8.5 11l4 3 7.5-7.5'/%3E%3Cpath d='M15 6.5h5.5V12'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 16.5 8.5 11l4 3 7.5-7.5'/%3E%3Cpath d='M15 6.5h5.5V12'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="clock"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="clock"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.4'/%3E%3Cpath d='M12 7.5V12l3.2 2'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.4'/%3E%3Cpath d='M12 7.5V12l3.2 2'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="analysis"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="analysis"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.2'/%3E%3Cpath d='M15.6 15.6 20.5 20.5'/%3E%3Cpath d='M8.4 12.4l2-2 1.6 1.6 2-2.6'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.2'/%3E%3Cpath d='M15.6 15.6 20.5 20.5'/%3E%3Cpath d='M8.4 12.4l2-2 1.6 1.6 2-2.6'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="wallet"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="wallet"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.8 7.6A2.1 2.1 0 0 1 5.9 5.5h10.2a2.1 2.1 0 0 1 2.1 2.1v8.8a2.1 2.1 0 0 1-2.1 2.1H5.9a2.1 2.1 0 0 1-2.1-2.1Z'/%3E%3Cpath d='M3.8 9.7h16.4'/%3E%3Ccircle cx='16.2' cy='14' r='1.3'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.8 7.6A2.1 2.1 0 0 1 5.9 5.5h10.2a2.1 2.1 0 0 1 2.1 2.1v8.8a2.1 2.1 0 0 1-2.1 2.1H5.9a2.1 2.1 0 0 1-2.1-2.1Z'/%3E%3Cpath d='M3.8 9.7h16.4'/%3E%3Ccircle cx='16.2' cy='14' r='1.3'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="coin"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="coin"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.4'/%3E%3Cpath d='M12 7.6v8.8M9.3 10.4h5.4M9.3 13.6h5.4'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.4'/%3E%3Cpath d='M12 7.6v8.8M9.3 10.4h5.4M9.3 13.6h5.4'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="bag"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="bag"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.2 7.8h13.6l-1.2 11.6H6.4Z'/%3E%3Cpath d='M8.9 7.8V6a3.1 3.1 0 0 1 6.2 0v1.8'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.2 7.8h13.6l-1.2 11.6H6.4Z'/%3E%3Cpath d='M8.9 7.8V6a3.1 3.1 0 0 1 6.2 0v1.8'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="layers"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="layers"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.6 20.4 8 12 12.4 3.6 8Z'/%3E%3Cpath d='M3.6 12.4 12 16.8l8.4-4.4'/%3E%3Cpath d='M3.6 16.6 12 21l8.4-4.4'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.6 20.4 8 12 12.4 3.6 8Z'/%3E%3Cpath d='M3.6 12.4 12 16.8l8.4-4.4'/%3E%3Cpath d='M3.6 16.6 12 21l8.4-4.4'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="arrowDown"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="arrowDown"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v12.5'/%3E%3Cpath d='M7 11.5 12 16.5 17 11.5'/%3E%3Cpath d='M4.5 20h15'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v12.5'/%3E%3Cpath d='M7 11.5 12 16.5 17 11.5'/%3E%3Cpath d='M4.5 20h15'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="transfer"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="transfer"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8.5h12.5'/%3E%3Cpath d='M13.5 5.5 16.5 8.5 13.5 11.5'/%3E%3Cpath d='M20 15.5H7.5'/%3E%3Cpath d='M10.5 12.5 7.5 15.5 10.5 18.5'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8.5h12.5'/%3E%3Cpath d='M13.5 5.5 16.5 8.5 13.5 11.5'/%3E%3Cpath d='M20 15.5H7.5'/%3E%3Cpath d='M10.5 12.5 7.5 15.5 10.5 18.5'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="refresh"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="refresh"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11.6a8 8 0 1 0-1.9 5.6'/%3E%3Cpath d='M20.2 5.6v5.2h-5.2'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11.6a8 8 0 1 0-1.9 5.6'/%3E%3Cpath d='M20.2 5.6v5.2h-5.2'/%3E%3C/svg%3E"); }
 /* 基金定投：日历 + 向下箭头（定期定额投入），与「更新/刷新」环形箭头区分 */
-.modal-card > h2[data-icon="dca"],
-.sheet-head > h2[data-icon="dca"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5.5' width='16' height='15' rx='2'/%3E%3Cpath d='M4 9.5h16'/%3E%3Cpath d='M8 3.2v3M16 3.2v3'/%3E%3Cpath d='M12 11.6v4.2'/%3E%3Cpath d='M9.6 13.4 12 15.8 14.4 13.4'/%3E%3C/svg%3E"); }
+.modal-card > h2[data-icon="dca"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5.5' width='16' height='15' rx='2'/%3E%3Cpath d='M4 9.5h16'/%3E%3Cpath d='M8 3.2v3M16 3.2v3'/%3E%3Cpath d='M12 11.6v4.2'/%3E%3Cpath d='M9.6 13.4 12 15.8 14.4 13.4'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="check"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="check"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.6'/%3E%3Cpath d='M8.2 12.3 11 15.1l4.9-5.3'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.6'/%3E%3Cpath d='M8.2 12.3 11 15.1l4.9-5.3'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="userMinus"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="userMinus"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9.8' cy='8.2' r='3.7'/%3E%3Cpath d='M3.6 19.8a6.4 6.4 0 0 1 12.2-2'/%3E%3Cpath d='M16.4 16.8h5'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9.8' cy='8.2' r='3.7'/%3E%3Cpath d='M3.6 19.8a6.4 6.4 0 0 1 12.2-2'/%3E%3Cpath d='M16.4 16.8h5'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="user"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="user"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8.2' r='3.9'/%3E%3Cpath d='M4.8 20a7.2 7.2 0 0 1 14.4 0'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8.2' r='3.9'/%3E%3Cpath d='M4.8 20a7.2 7.2 0 0 1 14.4 0'/%3E%3C/svg%3E"); }
 
 .modal-card > h2[data-icon="warn"],
-.cal-modal-head > h2::before,
-.sheet-head > h2[data-icon="warn"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4.2 21 19.4H3Z'/%3E%3Cpath d='M12 9.5v4.6M12 17h.01'/%3E%3C/svg%3E"); }
+.cal-modal-head > h2::before { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4.2 21 19.4H3Z'/%3E%3Cpath d='M12 9.5v4.6M12 17h.01'/%3E%3C/svg%3E"); }
 
 /* 标题内的图标（非 .btn，无主色继承）显式取主题色 */
 h2 > svg { color: var(--primary); }
@@ -3452,67 +3427,19 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
   font-weight: 600;
 }
 
-.bottom-sheet {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.bottom-sheet[hidden] { display: none; }
-.sheet-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, .5);
-  backdrop-filter: blur(4px) saturate(var(--sat));
-}
-.sheet-panel {
-  position: relative;
-  width: 100%;
-  max-width: 520px;
-  max-height: 86vh;
-  background: var(--bg-card-solid);
-  border: 1px solid var(--border);
-  border-top-left-radius: 18px;
-  border-top-right-radius: 18px;
-  box-shadow: 0 -12px 48px rgba(0, 0, 0, .5);
-  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  animation: sheetUp .28s cubic-bezier(.32,.72,0,1);
-}
-@keyframes sheetUp {
-  from { transform: translateY(24px); opacity: .35; }
-  to { transform: translateY(0); opacity: 1; }
-}
-.sheet-handle {
-  width: 44px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--border-strong, rgba(var(--tint), .35));
-  margin: 4px auto 10px;
-}
-.sheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--sp-2);
-}
-.sheet-head h2 { margin: 0; font-size: var(--fs-lg); color: var(--text); font-weight: 700; }
-.sheet-close { padding: var(--sp-1) var(--sp-2); font-size: var(--fs-base); }
+/* ===== 账本管理弹框（2026-10-29：底部抽屉 → 居中对话框）=====
+   抽屉是移动端范式：桌面端点右上角头像后视线要跑到屏幕下缘，面板还从底部顶出来盖住当前页面。
+   改居中后与「删除账本」等弹框同一套语言，Esc / 点遮罩 / 右上角 ✕ 三种关法都成立。 */
+.book-modal { width: 460px; }
+.book-hint { margin: 0 0 var(--sp-3); font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; }
 
-/* 原 .user-current（「当前用户：X / N 条数据」卡片）已删除：
-   信息与用户列表完全重复 —— 列表行内已有 .ur-cur「当前」标签与 .ur-meta「N 条数据」，
-   顶部再放一张卡属于双重表达。相关 .uc-name/.uc-meta 规则一并移除。 */
-
+/* 列表行：整行即「切换」热区（旧版要靠行内小图标按钮，命中率低、还得猜图标含义） */
 .user-list {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
-  max-height: 42vh;
+  gap: var(--sp-1);
+  max-height: 46vh;
   overflow-y: auto;
-  margin-bottom: var(--sp-2);
   scrollbar-width: thin;
   scrollbar-color: var(--primary) rgba(255, 255, 255, .06);
 }
@@ -3525,11 +3452,12 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-soft, rgba(255, 255, 255, .04));
+  transition: background .14s ease, border-color .14s ease;
 }
-.user-row.active {
-  border-color: var(--primary);
-  background: var(--primary-soft);
-}
+.user-row.is-switchable { cursor: pointer; }
+.user-row.is-switchable:hover { border-color: rgb(var(--tint)); background: rgba(var(--tint), .1); }
+.user-row.is-switchable:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.user-row.active { border-color: var(--primary); background: var(--primary-soft); }
 .ur-main { min-width: 0; }
 .ur-name { font-size: var(--fs-base); color: var(--text); font-weight: 600; }
 .ur-cur {
@@ -3543,8 +3471,11 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
   padding: 1px var(--sp-2);
 }
 .ur-meta { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 2px; }
-.ur-actions { display: flex; gap: var(--sp-2); flex-shrink: 0; }
-/* 用户弹框行内按钮改纯图标（2026-10-18）：32px 方钮，删除保留危险色，title/aria-label 兜底可读性 */
+.ur-actions { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
+/* 「切换」是可点击的弱提示：整行已是热区，hover 时才点亮，不抢删除按钮的注意力 */
+.ur-go { font-size: var(--fs-sm); color: var(--text-muted); transition: color .14s ease; }
+.user-row.is-switchable:hover .ur-go { color: var(--primary); }
+/* 行内按钮改纯图标：32px 方钮，删除保留危险色，title/aria-label 兜底可读性 */
 .ur-actions .btn {
   width: var(--icon-btn);
   height: var(--icon-btn);
@@ -3555,36 +3486,31 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
   justify-content: center;
 }
 .ur-actions .btn svg { width: 16px; height: 16px; display: block; }
+/* 行内删除改成「安静」的图标钮：三行各一个实心红块并排太抢眼，把弹框的视觉重心全抢走了。
+   常态透明只留灰叉，指针移上去才变红；只剩一本账本时（disabled）进一步压到 35%。 */
+.user-row .ur-del,
+.user-row .ur-del:hover,
+.user-row .ur-del:disabled {
+  background: transparent;
+  border-color: transparent;
+}
+.user-row .ur-del { color: var(--text-muted); }
+.user-row .ur-del:hover { background: var(--danger-soft); color: var(--danger); }
+.user-row .ur-del:disabled { color: var(--text-faint); opacity: .35; }
 .user-empty { text-align: center; color: var(--text-muted); padding: var(--sp-4) 0; font-size: var(--fs-md); }
 
-.user-add { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-2); }
-
-/* 主题色选择（后期可调）：色板色值是各预设的主色，选中态用外描边标记 */
-.ua-hint { color: var(--text-faint); margin-left: var(--sp-1); font-size: var(--fs-xs); }
-.accent-swatches { display: flex; gap: var(--sp-2); }
-.accent-swatch {
-  width: 24px; height: var(--h-1); padding: 0; cursor: pointer;
-  border-radius: 50%; border: 2px solid transparent;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
-  transition: transform .15s cubic-bezier(.32,.72,0,1), box-shadow .15s cubic-bezier(.32,.72,0,1);
-}
-.accent-swatch:hover { transform: scale(1.12); }
-.accent-swatch[data-accent="gold"]   { background: #d9a52b; }
-.accent-swatch[data-accent="green"]  { background: #6f9e5e; }
-.accent-swatch[data-accent="blue"]   { background: #0a84ff; }
-/* 铅笔按钮：自定义主题色入口（虚线框 + 铅笔图标，点击弹出系统取色器） */
-.accent-swatch.accent-custom {
+/* 新增账本：底部独立一条，用细分割线与列表分开（原来贴着列表最后一行的按钮像个尾巴） */
+.user-add {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--fs-md);
-  line-height: 1;
-  background: var(--bg-input);
-  border: 1px dashed var(--border);
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border);
 }
-.accent-swatch.active { box-shadow: 0 0 0 2px var(--bg-card-solid), 0 0 0 4px currentColor; }
 .user-add input {
   flex: 1;
+  min-width: 0;
+  margin-top: 0;   /* 覆盖 .modal-card input 的行节奏 margin-top，否则在 flex 行里顶不齐 */
   padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-base);
   border: 1px solid var(--border);
@@ -3593,6 +3519,7 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
   color: var(--text);
 }
 .user-add input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.user-add .btn { flex: 0 0 auto; }
 .full-migrate { display: flex; align-items: center; gap: var(--sp-1); width: 100%; font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; user-select: none; }
 .full-migrate input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
 
@@ -3614,7 +3541,7 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
 }
 .ud-confirm-label input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 
-/* 删除用户弹框：增大中间内容（标题/提示语/输入标签/按钮）左右边距，避免文字与输入框贴边 */
+/* 删除账本弹框：增大中间内容（标题/提示语/输入标签/按钮）左右边距，避免文字与输入框贴边 */
 #userDeleteModal .modal-card > h2,
 #userDeleteModal .modal-card > p,
 #userDeleteModal .modal-card > label,
@@ -3622,6 +3549,9 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
   padding-left: 36px;
   padding-right: 36px;
 }
+/* 删除确认开在「账本管理」弹框之上，属于弹框套弹框：遮罩压深一档，
+   否则下层那张 460px 卡片会在左右透出两条竖边，看着像第三层背景。 */
+#userDeleteModal { background: rgba(0, 0, 0, .68); }
 
 /* ===== 资产再平衡 tab ===== */
 
@@ -5947,7 +5877,7 @@ textarea::placeholder {
 .dep-settle-desc { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.7; margin: 0 0 var(--sp-3); }
 
 /* 弹框标题图标：存款（纸币 + 币点） */
-.modal-card > h2[data-icon="deposit"], .sheet-head > h2[data-icon="deposit"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.8' y='6.5' width='18.4' height='11' rx='2'/%3E%3Ccircle cx='12' cy='12' r='2.4'/%3E%3Cpath d='M6 12h.01M18 12h.01'/%3E%3C/svg%3E"); }
+.modal-card > h2[data-icon="deposit"] { --h2-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.8' y='6.5' width='18.4' height='11' rx='2'/%3E%3Ccircle cx='12' cy='12' r='2.4'/%3E%3Cpath d='M6 12h.01M18 12h.01'/%3E%3C/svg%3E"); }
 
 /* 设置页：自定义收支分类编辑器 */
 .fincat-list { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-3); }
@@ -6541,7 +6471,9 @@ textarea::placeholder {
 /* 出码 / 邀请 / PIN 弹框：子项平铺，自带 28px 横缩（.modal-card 本体 padding:0） */
 .pair-card, .invite-card, .pin-card { width: 380px; }
 .pair-card > h2, .invite-card > h2, .pin-card > h2 { padding-left: 28px; }
-.pair-code-wrap, .invite-wrap, .pin-prompt-wrap { padding: var(--sp-2) 28px var(--sp-6); }
+/* 底部留白交由内部 .modal-actions 自带的 padding 兜底（var(--sp-5)），此处不重复加底部 padding，
+   否则按钮到卡片边的距离会比标准对话框（modal-actions 直接作 modal-card 子元素）多一层 var(--sp-6) */
+.pair-code-wrap, .invite-wrap, .pin-prompt-wrap { padding: var(--sp-2) 28px 0; }
 .pair-code {
   font-size: 34px;
   letter-spacing: 12px;
