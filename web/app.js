@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // 低频的 AI 配置（模型/提示词/MCP）也独立成 ai 页，同样只在个人菜单里有入口，不占主导航。
 const VIEWS = ['home', 'invest', 'asset', 'finance', 'rebalance', 'settings', 'ai', 'devices', 'notify'];
 
-// ==== 再平衡页状态与配色（声明必须早于下方同步执行的 applyRoute()，否则 TDZ 报错）====
+// ==== 复盘页状态与配色（声明必须早于下方同步执行的 applyRoute()，否则 TDZ 报错）====
 const RB_CLASS_LABEL = { stock: '股票', fund: '基金', wealth: '理财', cash: '现金' };
 // 分类色复用 --cat-*（与资产构成卡同源，同一类别跨页同色）。
 // 值以字符串形式注入 style 的 --rb-c，故此处保留 rgba(var(--cat-x), 1) 原样写法。
@@ -143,17 +143,7 @@ const RB_CLASS_COLOR = {
   wealth: 'rgba(var(--cat-wealth), 1)',
   cash: 'rgba(var(--cat-cash), 1)',
 };
-// 圆环「超配那截」的浅色做法：白底 + 55% 类别色两层叠出不透明浅色，
-// 而不是给类别色降 alpha —— 降 alpha 在暗色主题下是往背景偏（变暗，看着像缺口），
-// 这里要的恰恰是「变浅」。
-const RB_LITE_ALPHA = 0.55;
-let rbData = null;         // /api/rebalance 最近一次结果
-let rbPicked = new Set();  // 本次勾选要执行的类别 key
-let rbHistoryLogs = [];
-// 本期兑现（2026-10-29）：与 rbData 分开拉。period 只影响兑现卡与 KPI 的收益三张，
-// 不重算配置偏离（偏离是「此刻快照」，与区间无关）。
-let rbActual = null;
-let rbPeriod = 'last';
+let rvData = null;          // /api/review 最近一次结果（复盘页）
 // 2026-10-20 tab 重构：原 hash 'holdings' 兼容映射到 'invest'（持仓/理财视图）。
 function viewFromHash() {
   const h = (location.hash || '').replace(/^#\/?/, '');
@@ -290,19 +280,6 @@ const pct = (n) => (n > 0 ? '+' : '') + (n == null ? '' : n.toFixed(2)) + '%';
 // 全项目所有盈亏/涨跌幅着色都走这里，消除分散的 > 0 ? 'up' : 'down' 判断。
 const clsPnl = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat');
 const cat = (c) => (c === 'fund' ? '基金' : '股票');
-// 年化口径：单利 年化 = 收益率 × 365 ÷ 持有天数。持有不足 ANN_MIN_DAYS 天一律不外推 ——
-// 短期收益线性放大后是个「数值为真、结论无意义」的数（14 天 +8% → +209%，1 天 +1% → +372%），
-// 直接显示会误导；改成「—」并用 title 说明原因，比封顶或改成复利（更夸张）都诚实。
-const ANN_MIN_DAYS = 30;
-function annOf(pct, days) {
-  if (pct == null || !isFinite(pct) || !(days > 0)) return { val: null, short: false };
-  if (days < ANN_MIN_DAYS) return { val: null, short: true };
-  return { val: pct * 365 / days, short: false };
-}
-const annHint = (short) => (short
-  ? `持有不足 ${ANN_MIN_DAYS} 天，不做年化外推（短期收益线性放大后无参考意义）`
-  : '单利年化 = 收益率 × 365 ÷ 持有天数');
-const annText = (v) => (v != null ? (v >= 0 ? '+' : '') + v.toFixed(2) + '%' : '—');
 // 净值/成本价按类别精度显示：基金净值强制 4 位小数，股票保留最多 4 位（美股/部分基金需第 3-4 位），其余按货币默认 2 位。
 const fmtNav = (n, category) => {
   if (n == null) return '';
@@ -617,7 +594,7 @@ function renderFiltered() {
     const depBoxC = document.getElementById('homeDepositBox');
     if (depBoxC) depBoxC.hidden = true;
     if (empty) empty.hidden = true;
-    if (toolbar) { toolbar.hidden = false; renderClosedToolbar(toolbar); }
+    if (toolbar) toolbar.hidden = true; // 平仓视图无筛选/排序：整行隐藏，删掉 tab 与表格之间的空行间距
     if (closedBox) { closedBox.hidden = false; renderClosed(closedBox, closedHoldings, closedWealth); }
     return;
   }
@@ -935,14 +912,10 @@ function bindClosedActions(box) {
 function renderInvestToolbar() {
   const bar = document.getElementById('investToolbar');
   if (!bar) return;
-  // 存款视图：没有筛选 / 排序 / 密度切换，但这一行不能空着 ——
-  // 右侧放一句当前最有行动价值的信息（到期待落袋），空行会把上方 KPI 和下方表格隔开显得断裂。
+  // 存款视图：没有筛选 / 排序 / 密度切换，整行隐藏（不再占一行 + margin）。
+  // 原本右侧的「到期待落袋」提示合并进下方「存款（N）」区头、排在新增按钮前。
   if (homeSection === 'deposits') {
-    const list = depositsCache || [];
-    const pending = list.filter((d) => d.status !== 'settled' && d.matured);
-    bar.innerHTML = pending.length
-      ? '<div class="toolbar-gain right">已到期待落袋 <b>' + pending.length + '</b> 笔 · 行内点「确认落袋」把本金+利息入账</div>'
-      : '<div class="toolbar-gain right">共 <b>' + list.length + '</b> 笔 · 预计利息按「年利率 × 天数 / 365」估算</div>';
+    bar.hidden = true;
     return;
   }
   if (homeSection === 'wealth') {
@@ -974,7 +947,7 @@ function renderInvestToolbar() {
         '<button type="button" class="dt-btn' + (dens === 'compact' ? ' active' : '') + '" data-density="compact">紧凑</button>' +
         '<button type="button" class="dt-btn' + (dens === 'standard' ? ' active' : '') + '" data-density="standard">标准</button>' +
       '</div>' +
-      '<button type="button" class="inv-refresh-btn" id="invRefreshBtn" title="刷新行情（补刷漏更新的持仓数据）" aria-label="刷新行情"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>' +
+      '<button type="button" class="btn icon-btn inv-refresh-btn" id="invRefreshBtn" title="刷新行情（补刷漏更新的持仓数据）" aria-label="刷新行情">' + actIcon('refresh') + '</button>' +
     '</div>';
   bar.querySelectorAll('.filter-chip').forEach((b) => {
     b.onclick = () => { catFilter = new Set(b.dataset.cat ? [b.dataset.cat] : []); renderInvestToolbar(); renderFiltered(); };
@@ -1051,12 +1024,6 @@ function toolbarChip(cat, label, active) {
   return '<button type="button" class="filter-chip' + (active ? ' active' : '') + '" data-cat="' + cat + '">' + label + '</button>';
 }
 
-// 已平仓视图工具条：类型下拉与统计区间已移除（2026-10-28），此处仅保留一行占位，
-// 高度由 CSS .closed-toolbar 的 --toolbar-row-h 兜住，与持仓工具条等高，避免切 tab 时表格上下窜。
-function renderClosedToolbar(bar) {
-  bar.innerHTML = '<div class="closed-toolbar"></div>';
-}
-
 // 打开「新增 / 编辑已平仓记录」弹框（纯记录，不入账）。record 为空表示新增。
 function openClosedRecordModal(record) {
   const m = record || null;
@@ -1120,23 +1087,6 @@ function syncClosedSourceCustom() {
   if (!isCustom) $('#cr_source_custom').value = '';
 }
 
-// 手动补录的「收益率 / 年化」：优先用记录里填的收益率（持有期 %），
-// 留空则按 盈亏 ÷ 本金 推算；年化 = 收益率 × 365 ÷ 天数（持有不足 30 天不外推，见 annOf）。
-function manClosedRates(m, amt) {
-  const principal = m && m.principal != null ? Number(m.principal) : 0;
-  const rateIn = m && m.return_rate != null ? Number(m.return_rate) : null;
-  const pct = rateIn != null ? rateIn : (principal > 0 ? amt / principal * 100 : null);
-  const days = Number(m && m.holding_days) || 0;
-  const a = annOf(pct, days);
-  const ann = a.val;
-  return {
-    pctTxt: pct != null ? (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%' : '—',
-    annTxt: annText(ann),
-    annHint: annHint(a.short),
-    pctCls: pct != null ? clsPnl(pct) : 'flat',
-    annCls: ann != null ? clsPnl(ann) : 'flat',
-  };
-}
 function toolbarOpt(v, label, active) {
   return '<option value="' + v + '"' + (active ? ' selected' : '') + '>' + label + '</option>';
 }
@@ -2106,14 +2056,6 @@ async function openModal(h) {
 function toggleLinkedSymbol() {
   const row = $('#linked_symbol_row');
   if (row) row.style.display = '';
-}
-
-// 关联基金代码输入时，实时按 linked_symbol 推导 selCat（基金判定仍以 linked_symbol 为准，与 isFund 一致）
-function syncCatFromLinked() {
-  const linked = ($('#f_linked_code').value || '').trim();
-  selCat = linked ? 'fund' : 'stock';
-  const htSel = $('#f_hold_type'); if (htSel) htSel.value = selCat;
-  $('#f_market').value = selMkt;
 }
 
 async function editHolding(id) {
@@ -5176,19 +5118,25 @@ function renderHistNavTable() {
   // 展示倒序：从最新开始（区间过滤仍基于升序 sAll，这里仅反转展示）
   rows = rows.slice().reverse();
   const trs = rows.map((x) => {
+    // 尚未建仓（份额为 0）的净值日：盈亏金额 / 累计盈亏不计算也不展示，只留净值供回溯。
+    // buy_date 常被填早于实际首笔买入，若照算会把建仓前的净值涨跌显示成持仓盈亏。
+    const held = x.held !== false;
     const pct = x.day_pnl_pct;
-    const pctTxt = (pct == null || isNaN(pct)) ? '—' : ((pct >= 0 ? '+' : '') + pct.toFixed(2) + '%');
-    const pctCls = (pct == null || isNaN(pct)) ? 'flat' : clsPnl(pct);
+    // 未建仓行：涨跌幅是净值自身涨跌（行情属性，保留），但没有前一快照基准时置「—」
+    const noPct = pct == null || isNaN(pct) || (!held && !pct);
+    const pctTxt = noPct ? '—' : ((pct >= 0 ? '+' : '') + pct.toFixed(2) + '%');
+    const pctCls = noPct ? 'flat' : clsPnl(pct);
     const day = x.day_pnl || 0;
     const tot = x.total_pnl || 0;
+    const naTd = '<td class="num" title="该日尚未建仓，不计盈亏">—</td>';
     // 净值·股价固定 4 位小数（基金净值与股价均需 4 位精度，整数位后不足补零）
     const navTxt = (x.close == null || isNaN(x.close)) ? '—' : Number(x.close).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
     return '<tr>'
-      + '<td>' + esc(x.date) + '</td>'
+      + '<td>' + esc(x.date) + (held ? '' : '<span class="hist-nav-na" title="该日尚未建仓">未建仓</span>') + '</td>'
       + '<td class="num">' + navTxt + '</td>'
       + '<td class="num ' + pctCls + '">' + pctTxt + '</td>'
-      + '<td class="num ' + clsPnl(day) + '">' + (day >= 0 ? '+' : '') + cur + fmt(day) + '</td>'
-      + '<td class="num ' + clsPnl(tot) + '">' + (tot >= 0 ? '+' : '') + cur + fmt(tot) + '</td>'
+      + (held ? '<td class="num ' + clsPnl(day) + '">' + (day >= 0 ? '+' : '') + cur + fmt(day) + '</td>' : naTd)
+      + (held ? '<td class="num ' + clsPnl(tot) + '">' + (tot >= 0 ? '+' : '') + cur + fmt(tot) + '</td>' : naTd)
       + '</tr>';
   }).join('');
   body.innerHTML = '<table class="hist-nav-table">' + head + '<tbody>' + trs + '</tbody></table>';
@@ -5597,7 +5545,9 @@ const closedTipFor = (i) => {
 function renderHistChart(d, cur, mode) {
   const h = d.holding || {};
   const ci = h.closed ? { closed: true, closedDate: h.closed_date } : null;
-  drawPnlCurve(d.series || [], cur, d.markers || [], ci, d.closed_info || null, mode);
+  // 未建仓的净值日不进曲线：它们没有盈亏，画上去会把建仓前那段压成一条贴零轴的假线
+  const pts = (d.series || []).filter((x) => x.held !== false);
+  drawPnlCurve(pts, cur, d.markers || [], ci, d.closed_info || null, mode);
 }
 
 // 历史盈亏曲线 tooltip：悬停/点按柱子显示单日盈亏、涨跌幅、累计盈亏等。
@@ -6412,7 +6362,8 @@ let cashShowZero = false;   // 零余额账户默认收起（17 个账户里常�
 // 三个子 tab 共用的合计条：{ k 标签, v 数值, s 说明, tone 语义色类(up/down) }。
 // tone 交给全局 .up/.down（涨红跌绿），别在这里写颜色字面量。
 function assetSumHTML(items) {
-  return '<div class="asset-sum">' + items.filter(Boolean).map((it) =>
+  const list = items.filter(Boolean);
+  return '<div class="asset-sum" style="--n:' + Math.max(list.length, 1) + '">' + list.map((it) =>
     '<div class="asset-sum-item"><span class="asset-sum-k">' + it.k + '</span>' +
     '<span class="asset-sum-v' + (it.tone ? ' ' + it.tone : '') + '">' + it.v + '</span>' +
     (it.s ? '<span class="asset-sum-s">' + it.s + '</span>' : '') + '</div>').join('') + '</div>';
@@ -10384,7 +10335,12 @@ function renderDeposits(box) {
   renderDepositKpi(); // 顶部 KPI 与表格同源（depositsCache），任何一次重渲染都同步刷新
   if (!box) return;
   const list = depositsCache || [];
-  const head = `<div class="asset-section-head"><h3>存款（${list.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="depAddBtn" type="button" title="新增存款" aria-label="新增存款">${actIcon('plus')}</button></div></div>`;
+  // 提示语（原 investToolbar 右侧的 toolbar-gain）合并到区头、排在新增按钮前
+  const pending = list.filter((d) => d.status !== 'settled' && d.matured);
+  const hint = pending.length
+    ? '已到期待落袋 <b>' + pending.length + '</b> 笔 · 行内点「确认落袋」把本金+利息入账'
+    : '共 <b>' + list.length + '</b> 笔 · 预计利息按「年利率 × 天数 / 365」估算';
+  const head = `<div class="asset-section-head"><h3>存款（${list.length}）</h3><div class="sec-actions"><span class="toolbar-gain dep-hint">${hint}</span><button class="btn icon-btn asset-add" id="depAddBtn" type="button" title="新增存款" aria-label="新增存款">${actIcon('plus')}</button></div></div>`;
   if (!list.length) {
     box.innerHTML = head + emptyStateHTML({
       icon: EMPTY_ICONS.deposit,
@@ -10408,7 +10364,7 @@ function renderDeposits(box) {
     const interest = settled ? (d.actual_interest || 0) : (d.expected_interest || 0);
     const acct = [d.account_name, d.source_name].filter(Boolean).join(' · ') || '—';
     const ops = settled
-      ? ''
+      ? `<button class="row-act" disabled title="已落袋的存款本金+利息流水已入账，删除会破坏账目，故不可删" aria-label="已落袋不可删除">${actIcon('trash')}</button>`
       : `<button class="row-act" data-dep-settle="${d.id}" title="确认落袋（本金+利息入账）" aria-label="确认落袋">${actIcon('check')}</button>
          <button class="row-act" data-dep-edit="${d.id}" title="编辑" aria-label="编辑">${actIcon('edit')}</button>
          <button class="row-act danger" data-dep-del="${d.id}" title="删除（提前支取，本金退回账户）" aria-label="删除">${actIcon('trash')}</button>`;
@@ -10421,7 +10377,7 @@ function renderDeposits(box) {
       <td class="num">${(d.rate || 0).toFixed(2)}%</td>
       <td class="num">${cur}${fmt(interest)}</td>
       <td>${status}</td>
-      <td class="row-actions">${ops}</td>
+      <td class="row-act-cell">${ops}</td>
     </tr>`;
   }).join('');
   box.innerHTML = head + `<div class="card asset-flow-card"><table class="asset-table dep-table"><thead><tr>
@@ -10502,14 +10458,21 @@ async function deleteDeposit(id) {
   const d = (depositsCache || []).find((x) => x.id === id);
   if (!d) return;
   if (d.status === 'settled') { toast('已落袋的存款不可删除', 'err'); return; }
-  if (!confirm(`删除存款「${d.name}」将按提前支取处理：本金 ${curSymbolJS(d.currency)}${fmt(d.amount)} 退回账户「${d.account_name || ''}」，继续？`)) return;
-  try {
-    const r = await api('/api/asset/deposits/' + id, { method: 'DELETE' });
-    if (!r.ok) { let m = '删除失败'; try { const dd = await r.json(); if (dd && dd.error) m = dd.error; } catch (_) {} toast(m, 'err'); return; }
-    toast('已删除并退回本金', 'ok');
-    await refreshDeposits();
-    await loadAsset();
-  } catch (e) { toast('异常：' + e.message, 'err'); }
+  openConfirm({
+    title: '删除存款',
+    msg: `删除存款「${d.name}」将按提前支取处理：本金 ${curSymbolJS(d.currency)}${fmt(d.amount)} 退回账户「${d.account_name || ''}」。该操作不可撤销，确定删除？`,
+    okText: '删除',
+    danger: true,
+    onOk: async () => {
+      try {
+        const r = await api('/api/asset/deposits/' + id, { method: 'DELETE' });
+        if (!r.ok) { let m = '删除失败'; try { const dd = await r.json(); if (dd && dd.error) m = dd.error; } catch (_) {} toast(m, 'err'); return; }
+        toast('已删除并退回本金', 'ok');
+        await refreshDeposits();
+        await loadAsset();
+      } catch (e) { toast('异常：' + e.message, 'err'); }
+    },
+  });
 }
 
 function openDepositSettle(id) {
@@ -12241,896 +12204,200 @@ async function dcaDeletePlan() {
   if (ec) ec.onclick = () => { document.getElementById('dcaExecModal').hidden = true; };
 })();
 
-// ===== 再平衡（2026-10-27 重新引入）=====
-// 口径（经确认）：股票 / 基金 / 理财 / 现金 四大类，不细到 asset_type 行业标签。
-// 市值、权重、偏离、建议金额全部由 GET /api/rebalance 在服务端算好，
-// 前端只负责呈现 + 勾选 + 记录，避免两边各算一套导致数字对不上。
-// 注：RB_CLASS_LABEL / RB_CLASS_COLOR / rbData / rbPicked / rbHistoryLogs
-// 已在文件顶部 VIEWS 之后声明（那里必须早于同步执行的 applyRoute()）。
-// 动作文案按类别区分：理财在实务里叫「赎回/申购」，现金叫「转出/补入」，
-// 只有股票/基金才说「卖出/买入」。后端只给 sell|buy 语义，措辞在前端落地。
-function rbActionLabel(key, action) {
-  if (action === 'none') return '—';
-  if (key === 'cash') return action === 'sell' ? '转出' : '补入';
-  if (key === 'wealth') return action === 'sell' ? '赎回' : '申购';
-  return action === 'sell' ? '卖出' : '买入';
-}
+// ===== 复盘页 v6.2 · 收益率诊断（2026-10-30）=====
+// 只回答一个问题：各产品实际收益率与落袋多少钱（单一榜 + 收益占比圆环）。
+// 判定与年化一律服务端做（GET /api/review），前端只呈现与画条/画环：
+//   1) 收益总额 = 市值 × 年化（持仓中）/ 落袋总收益（已平仓），单位 元；
+//   2) 持有 <90 天照列但打「仅 N 天」灰标；
+//   3) 圆环 = 当前榜单按类别汇总的收益占比（色 = 类别色，与行首色点同源）。
+// 2026-10-30 变更：闲置现金卡连同其渲染逻辑整块删除；目标配置入口早已移除，
+// 因此列表与圆环都只呈现实际收益率/实际收益额，不再出现「目标 xx%」。
+
+const rvMinDays = 90;                 // 前端灰标阈值：持有不足 90 天标「仅 N 天」
+const RV_PERF_MAX = 10;               // 业绩表现默认条数，超出可展开
+const RV_CLASS_ORDER = ['stock', 'fund', 'wealth', 'cash'];
+let rvPerfState = 'holding';          // 业绩表现视图：holding 持仓中（默认）| closed 已平仓
+let rvPerfExpanded = false;
 
 async function showRebalanceView() {
   const v = document.getElementById('rebalanceView');
   if (v) v.hidden = false; // hideAllViews 后必须显式恢复，否则页面空白
-  await loadRebalance();
+  await loadReview();
 }
 
-async function loadRebalance() {
-  const body = document.getElementById('rbDriftBody');
-  const loading = '<tr><td colspan="6"><div class="rb-act-empty">计算中…</div></td></tr>';
-  if (body && !rbData) body.innerHTML = loading;
-  if (!rbData) setRbActualLoading();
+// 复盘页只拉 /api/review（数据全在服务端算好）。
+async function loadReview() {
   try {
-    // 两条接口并行：配置偏离（此刻快照）+ 本期兑现（区间实测）。兑现失败不阻塞主表。
-    const [r, ra] = await Promise.all([
-      api('/api/rebalance'),
-      api('/api/rebalance/actual?period=' + encodeURIComponent(rbPeriod)).catch(() => null),
-    ]);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    rbData = await r.json();
-    rbActual = ra && ra.ok ? await ra.json() : null;
-    // 默认勾选全部偏离项，用户可逐项取消（记录时只存勾选的）
-    rbPicked = new Set((rbData.buckets || []).filter((b) => b.action !== 'none').map((b) => b.key));
-    renderRebalance();
-    loadRbHistory();
+    const rr = await api('/api/review');
+    if (!rr.ok) throw new Error('HTTP ' + rr.status);
+    rvData = await rr.json();
+    renderReview();
   } catch (e) {
-    if (body) body.innerHTML = '<tr><td colspan="6"><div class="rb-act-empty">再平衡计算失败：' + esc(e.message) + '</div></td></tr>';
+    const box = document.getElementById('rvPerfList');
+    if (box) box.innerHTML = `<div class='rv-empty'>复盘计算失败：${esc(e.message)}</div>`;
   }
 }
 
-// 只换周期时不必重拉 /api/rebalance：配置部分与区间无关，重渲染两张卡即可。
-async function loadRbActual(period) {
-  rbPeriod = period || rbPeriod;
-  const box = document.getElementById('rbActualBody');
-  if (box) box.innerHTML = '<tr><td colspan="8"><div class="rb-act-empty">计算中…</div></td></tr>';
-  try {
-    const r = await api('/api/rebalance/actual?period=' + encodeURIComponent(rbPeriod));
-    rbActual = r.ok ? await r.json() : null;
-  } catch (_) {
-    rbActual = null;
-  }
-  if (rbData) renderRbKpi();
-  renderRbActual();
-  renderRbTop();
+function renderReview() {
+  if (!rvData) return;
+  renderRvKpis();
+  renderPerf();
 }
 
-// —— 再平衡页渲染（2026-10-27 v2：叠加收益维度）——
-// 收益三个口径全部由服务端算好（GET /api/rebalance 的 returns 对象），前端只负责呈现。
-// 这里不重新计算，避免两边算法漂移导致 KPI 与表格对不上。
-const rbYuan = (v) => (Number(v) < 0 ? '−¥' : '¥') + Math.abs(Math.round(Number(v) || 0)).toLocaleString('en-US');
-const rbSignedYuan = (v) => {
-  const n = Math.round(Number(v) || 0);
-  if (n === 0) return '¥0';
-  return (n < 0 ? '−¥' : '+¥') + Math.abs(n).toLocaleString('en-US');
-};
-const rbFixed = (v, d = 2) => (Number(v) || 0).toFixed(d);
-const rbPP = (v, d = 2) => {
-  const n = Number(v) || 0;
-  return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(d) + 'pp';
-};
-// 带符号百分比（收益率用；pp 用 rbPP，两者语义不同不能混）
-const rbSignedPct = (v, d = 2) => {
-  const n = Number(v) || 0;
-  return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(d) + '%';
-};
-const rbActCls = (v) => (Number(v) > 0 ? 'up' : Number(v) < 0 ? 'down' : '');
-// 兑现率：预期金额极小时（如某类月预期仅 ¥67）比例会飙到四位数，直接截断而不是显示 1468%
-const rbHitTxt = (exp, hit) => {
-  if (!(Number(exp) > 0.005)) return '—';
-  const h = Number(hit) || 0;
-  if (h > 999) return '≥999%';
-  if (h < -999) return '≤−999%';
-  return rbFixed(h, 0) + '%';
-};
-
-function renderRebalance() {
-  if (!rbData) return;
-  renderRbKpi();
-  renderRbInsight();
-  renderRbDrift();
-  renderRbActual();
-  renderRbTop();
-  const up = document.getElementById('rbUpdated');
-  if (up) {
-    const cfg = rbData.config || {};
-    const days = Number(rbData.days_since);
-    const interval = Number(rbData.interval_days) || 0;
-    // caption 一行承载三件事：目标何时保存、距上次多久、是否超期。
-    // 文案要短：这一行与右侧两个按钮抢宽度，过长会被压到裁切。
-    let txt = cfg.updated_at
-      ? '目标更新于 ' + String(cfg.updated_at).slice(0, 10)
-      : '默认目标 · 未按偏好调整';
-    let overdue = false;
-    if (days >= 0) {
-      txt += ' · 距上次 ' + days + ' 天';
-      if (interval > 0 && days > interval) {
-        txt += '（超期 ' + (days - interval) + ' 天）';
-        overdue = true;
-      }
-    } else {
-      txt += ' · 尚无再平衡记录';
-    }
-    up.textContent = txt;
-    up.classList.toggle('is-overdue', overdue);
-    up.title = overdue
-      ? `已超过建议间隔 ${interval} 天，建议尽快复查配置`
-      : cfg.updated_at
-        ? '目标权重最后保存于 ' + String(cfg.updated_at)
-        : '当前使用内置默认目标（股票 15 / 基金 30 / 理财 40 / 现金 15），点右上角「配置」按自己的偏好调整';
+// 顶部 4 张 KPI 卡（与投资/资产页同款 .kpi-card）：
+//   ① 组合实测年化 —— 服务端逐标的 XIRR 市值加权，est 标记是否有估算成分；
+//   ② 收益合计 —— 随榜单 tab 切换，只汇总有实测年化的标的（估算标的不计入）；
+//   ③ 累计落袋 —— 已平仓落袋收益合计，不随 tab；
+//   ④ 持仓胜率 —— 有考核资格（quality≠estimated）的标的中收益 > 0 的占比。
+function renderRvKpis() {
+  const perf = (rvData && rvData.perf) || [];
+  const ann = rvData && rvData.ann == null ? null : Number(rvData.ann);
+  const aV = document.getElementById('rvKpiAnn');
+  if (aV) {
+    aV.textContent = ann == null ? '—' : rvPct(ann, 2);
+    aV.className = 'kpi-value ' + (ann == null ? '' : ann >= 0 ? 'up' : 'down');
+    const s = document.getElementById('rvKpiAnnSub');
+    if (s) s.textContent = rvData.ann_est ? '含估算成分' : '全量实测';
   }
+  const closed = perf.filter((b) => (b.state || 'holding') === 'closed');
+  const realized = closed.reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
+  const rV = document.getElementById('rvKpiRealized');
+  if (rV) {
+    rV.textContent = closed.length ? (realized >= 0 ? '+' : '') + rbYuan(realized) : '—';
+    rV.className = 'kpi-value ' + (closed.length ? (realized >= 0 ? 'up' : 'down') : '');
+    const s = document.getElementById('rvKpiRealizedSub');
+    if (s) s.textContent = closed.length ? `已平仓 ${closed.length} 只` : '暂无平仓记录';
+  }
+  const elig = perf;
+  const wins = elig.filter((b) => (Number(b.gain_cny) || 0) > 0).length;
+  const wV = document.getElementById('rvKpiWin');
+  if (wV) {
+    wV.textContent = elig.length ? rvPct(wins / elig.length * 100, 0) : '—';
+    const s = document.getElementById('rvKpiWinSub');
+    if (s) s.textContent = elig.length ? `盈利 ${wins} / 共 ${elig.length} 只` : '暂无标的';
+  }
+  renderRvGainKpi();
 }
 
-function renderRbKpi() {
-  const grid = document.getElementById('rbKpiBody');
-  if (!grid) return;
-  const buckets = rbData.buckets || [];
-  const rt = rbData.returns || {};
-  const total = Number(rbData.total_cny) || 0;
-  const pending = buckets.filter((b) => b.action !== 'none');
-  const need = Number(rbData.need_cny) || 0;
-
-  // —— 本期兑现（区间实测）：接口失败或区间无数据时整行降级为「—」，
-  //    绝不用 0 冒充，否则「本期真实收益 ¥0」会被读成「一分没赚」。
-  const act = rbActual || {};
-  const hasAct = Number(act.begin_cny) > 0 && (act.buckets || []).length > 0;
-  const realA = Number(act.real_cny) || 0;
-  const expA = Number(act.exp_cny) || 0;
-  const gapA = Number(act.gap_cny) || 0;
-  const planA = Number(act.plan_cny) || 0;
-  const hitA = Number(act.hit_rate) || 0;
-  const clsOf = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : '');
-  const valOr = (v, txt) => (hasAct ? `<span class="${clsOf(v)}">${txt}</span>` : '—');
-
-  // 现金是子账户（数量多且意义弱），副标题只列持仓/理财件数
-  const countText = buckets.filter((b) => b.key !== 'cash' && b.count > 0)
-    .map((b) => `${b.label} ${b.count}`).join(' · ') || '暂无在持资产';
-
-  const md = rbData.max_drift;
-  const maxText = md ? (md.drift > 0 ? '+' : '−') + Math.abs(Number(md.drift)).toFixed(1) + '%' : '—';
-  const maxSub = md ? `${md.label} · ${md.drift > 0 ? '超配' : '低配'}` : '各类均在目标区间';
-
-  grid.innerHTML = `
-    <div class="kpi-card density-standard">
-      <div class="kpi-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 6.6v10.8"/><path d="M8.4 9.6h7.2M8.4 14.4h7.2"/></svg></div>
-      <div class="kpi-label">组合总市值</div>
-      <div class="kpi-main"><div class="kpi-value">${total > 0 ? moneyCurW(total, 'cny') : '—'}</div></div>
-      <div class="kpi-sub">${hasAct
-        ? `本期 <b class="${clsOf(realA)}">${rbSignedYuan(realA)}</b> · ${rbSignedPct(Number(act.real_pct) || 0)}`
-        : esc(countText)}</div>
-    </div>
-    <div class="kpi-card density-standard" title="本期真实收益 = 期末市值 − 期初市值 − 期间净申购，含浮盈 / 已实现 / 分红票息。与上方配置表的年化口径不同">
-      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 6-7"/><path d="M14 8h4v4"/></svg></div>
-      <div class="kpi-label">本期真实收益</div>
-      <div class="kpi-main"><div class="kpi-value">${valOr(realA, rbSignedYuan(realA))}</div></div>
-      <div class="kpi-sub">${hasAct ? `折年化 <b>${rbFixed(act.real_ann_pct)}%</b> · ${Number(act.days) || 0} 天` : '暂无区间数据'}</div>
-    </div>
-    <div class="kpi-card density-standard" title="按当前各类权重 × 该类假设年化折算到本期天数；计划基准 = 若按目标权重配置本可赚多少">
-      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M4 12h6"/><path d="M14 12h6"/><circle cx="12" cy="12" r="2.4"/></svg></div>
-      <div class="kpi-label">本期预期收益</div>
-      <div class="kpi-main"><div class="kpi-value">${hasAct ? rbYuan(expA) : '—'}</div></div>
-      <div class="kpi-sub">${hasAct ? `计划基准（目标配置）<b>${rbYuan(planA)}</b>` : '暂无区间数据'}</div>
-    </div>
-    <div class="kpi-card density-standard" title="兑现偏差 = 真实 − 预期。正=同类跑赢假设（选品/票息），负=跑输；兑现率 >100% 即跑赢">
-      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 3.6 21 20H3Z"/><path d="M12 9.4v4.2"/><path d="M12 16.6h.01"/></svg></div>
-      <div class="kpi-label">兑现偏差</div>
-      <div class="kpi-main"><div class="kpi-value">${valOr(gapA, rbSignedYuan(gapA))}</div></div>
-      <div class="kpi-sub">${hasAct
-        ? `${expA > 0.005 ? '兑现率 <b>' + rbHitTxt(expA, hitA) + '</b> · ' : ''}${rbPP(Number(act.gap_pp) || 0)}`
-        : '暂无区间数据'}</div>
-    </div>
-    <div class="kpi-card density-standard">
-      <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M4 7h11"/><path d="M18 7h2"/><path d="M4 12h5"/><path d="M12 12h8"/><path d="M4 17h9"/><path d="M16 17h4"/></svg></div>
-      <div class="kpi-label">待调整金额</div>
-      <div class="kpi-main"><div class="kpi-value">${rbYuan(need)}</div></div>
-      <div class="kpi-sub">${pending.length ? pending.length + ' 类超阈值 · 买卖两侧等额' : '无需调仓'}</div>
-    </div>`;
+// 收益合计卡：清仓浮盈 / 已落袋 双口径固定展示，不随榜单 tab 切换。
+// 主值 = 两者相加（整体盈亏）；副标签拆开两个口径各自金额与只数。
+function renderRvGainKpi() {
+  const perf = (rvData && rvData.perf) || [];
+  const hold = perf.filter((b) => (b.state || 'holding') === 'holding');
+  const closed = perf.filter((b) => (b.state || 'holding') === 'closed');
+  const holdSum = hold.reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
+  const closedSum = closed.reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
+  const sum = holdSum + closedSum;
+  const v = document.getElementById('rvKpiGain');
+  if (!v) return;
+  const has = hold.length + closed.length > 0;
+  v.textContent = has ? (sum >= 0 ? '+' : '') + rbYuan(sum) : '—';
+  v.className = 'kpi-value ' + (has ? (sum >= 0 ? 'up' : 'down') : '');
+  const s = document.getElementById('rvKpiGainSub');
+  if (s) s.textContent = has
+    ? `浮盈 ${holdSum >= 0 ? '+' : ''}${rbYuan(holdSum)} · 落袋 ${closedSum >= 0 ? '+' : ''}${rbYuan(closedSum)}`
+    : '暂无数据';
 }
 
-// 收益结论条：把「偏保守还是偏激进 / 差多少钱 / 主因是哪类 / 执行后怎么变」压成一句话。
-// 这是整页最该被读到的结论 —— 比 KPI 数字更能回答「这次要不要动」。
-function renderRbInsight() {
-  const box = document.getElementById('rbInsight');
-  if (!box) return;
-  const buckets = rbData.buckets || [];
-  const rt = rbData.returns || {};
-  const total = Number(rbData.total_cny) || 0;
-  if (!buckets.length || !(total > 0)) {
-    box.hidden = true;
-    box.innerHTML = '';
-    return;
-  }
-  // 点击最右侧关闭按钮即可临时收起该提示（不记忆状态，下次刷新仍会显示）
-  box.onclick = (e) => { if (e.target.closest('.rb-insight-close')) box.hidden = true; };
-  const ex = Number(rt.excess_pct) || 0;
-  const top = buckets.slice().sort((a, b) => Math.abs(b.contrib) - Math.abs(a.contrib))[0];
-  const topWord = top ? (top.drift > 0 ? '超配' : '低配') : '';
-  const icoCheck = '<svg class="rb-insight-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
-  const icoUp = '<svg class="rb-insight-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l5-5 4 3 6-7"/><path d="M14 8h4v4"/></svg>';
-  const icoWarn = '<svg class="rb-insight-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>';
-  const closeBtn = '<button class="rb-insight-close" type="button" aria-label="关闭提示" title="关闭提示">✕</button>';
-
-  if (Math.abs(ex) < 0.05) {
-    box.className = 'rb-insight';
-    box.innerHTML = icoCheck + `<div class="rb-insight-body">当前配置与目标基本一致：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>（<b>${rbYuan(rt.cur_amt)}</b>/年），超额收益率 <b>${rbPP(ex)}</b>。按纪律定期复查即可，不必为收益调仓。</div>` + closeBtn;
-    box.hidden = false;
-    return;
-  }
-  if (ex < 0) {
-    box.className = 'rb-insight';
-    box.innerHTML = icoUp + `<div class="rb-insight-body">当前配置比目标<b>保守 ${Math.abs(ex).toFixed(2)}pp</b>：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>，低于目标配置的 <b>${rbFixed(rt.ret_target)}%</b>，一年少 <b>${rbYuan(-rt.excess_amt)}</b>。
-      主因是 <b>${esc(top.label)}${topWord}</b>（${rbSignedYuan(top.contrib)}）。执行建议后收益补齐到 <b>${rbFixed(rt.ret_target)}%</b>，代价是波动敞口由 <b>${rbFixed(rt.vol_actual, 1)}%</b> 升至 <b>${rbFixed(rt.vol_target, 1)}%</b>。</div>` + closeBtn;
-    box.hidden = false;
-    return;
-  }
-  box.className = 'rb-insight is-warn';
-  box.innerHTML = icoWarn + `<div class="rb-insight-body">当前配置比目标<b>激进 ${ex.toFixed(2)}pp</b>：预期年化 <b>${rbFixed(rt.ret_actual)}%</b>，高于目标配置 <b>${rbFixed(rt.ret_target)}%</b>，一年多 <b>${rbYuan(rt.excess_amt)}</b>。
-    这部分超额来自 <b>${esc(top.label)}${topWord}</b>（${rbSignedYuan(top.contrib)}）的权重漂移，不是选股能力。执行再平衡意味着<b>主动让出这部分收益</b>，把波动敞口从 <b>${rbFixed(rt.vol_actual, 1)}%</b> 降回 <b>${rbFixed(rt.vol_target, 1)}%</b>。</div>` + closeBtn;
-  box.hidden = false;
+// 业绩表现单一榜：按收益总额排序（服务端排好），条长 = |收益总额|，涨红跌绿。
+// 列序 name | rate | amt | bar（条形贴最右）。金额列与持仓/平仓/理财表格同口径（gain_cny），
+// 每行都有真实金额可显示；仅年化列在 XIRR 无解时显示「—」（估算标的不影响金额与条形）。
+// 持仓中金额 = (现价−成本)×数量；已平仓 = Σ realized_pnl（副标签展示本金而非市值）。
+function rvPerfRow(b, maxAbs) {
+  const gain = Number(b.gain_cny) || 0;
+  const ann = b.ann == null ? null : Number(b.ann);
+  const closed = (b.state || 'holding') === 'closed';
+  const up = gain >= 0;
+  const short = Number(b.days) > 0 && Number(b.days) < rvMinDays;
+  const w = maxAbs > 0 ? Math.min(100, Math.abs(gain) / maxAbs * 100) : 0;
+  const invested = Number(b.invested_cny) || 0;
+  const base = closed
+    ? (invested > 0 ? `${esc(b.label || '')} 本金 ${rbYuan(invested)}` : `${esc(b.label || '')} 本金未知`)
+    : `${esc(b.label || '')} ${rbYuan(Number(b.mv_cny) || 0)}`;
+  return `<div class='rv-row'>`
+    + `<span class='rv-name'><span class='rb-dot' style='--rb-c:${RB_CLASS_COLOR[b.key] || 'var(--text-faint)'}'></span>`
+      + `<span class='rv-t'>${esc(b.name)}</span>`
+      + `<span class='rv-s'>${base}</span>`
+      + (short ? `<span class='rv-tag'>仅 ${Number(b.days)} 天</span>` : '')
+      + (b.note ? `<span class='rv-tag' title='${esc(b.note)}'>${b.quality === 'estimated' ? '估算' : '口径'}</span>` : '')
+      + `</span>`
+    + `<span class='rv-rate ${ann == null ? '' : up ? 'up' : 'down'}'>${ann == null ? '—' : rvPct(ann, 1)}</span>`
+    + `<span class='rv-amt ${up ? 'up' : 'down'}'>${(up ? '+' : '') + rbYuan(gain)}</span>`
+    + `<span class='rv-bar'><span class='rv-track'><span class='rv-fill ${up ? 'is-up' : 'is-down'}' style='--w:${w.toFixed(1)}%'></span></span></span>`
+    + `</div>`;
 }
 
-// —— 主卡左：占比圆环（2026-10-29 取代原来的配置条）——
-// 段 = 该类实际占比（合计 100%），段内再分两截：实色 = 目标以内的部分，浅色 = 超出的部分。
-// 于是「有没有超配」不用读数字 —— 段尾出现浅色就是超配，整段实色就是低配或达标。
-// 段间留 2° 空隙当分割线（不描边：描边颜色浅了看不见、深了像多出一条数据）。
-function rbArcPath(cx, cy, r, a0, a1) {
-  const pt = (a) => {
-    const rad = (a - 90) * Math.PI / 180;
-    return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
-  };
-  const [x0, y0] = pt(a0);
-  const [x1, y1] = pt(a1);
-  const big = a1 - a0 > 180 ? 1 : 0;
-  return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${big} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
-}
-
-function renderRbRing(buckets) {
-  const box = document.getElementById('rbRing');
-  if (!box) return;
-  const S = 200, C = S / 2, R = 78, W = 26, GAP = 2;
-  const arcs = [];
-  let cur = 0;
-  buckets.forEach((b) => {
-    const w = Math.max(0, Number(b.weight) || 0);
-    const t = Math.max(0, Number(b.target) || 0);
-    const span = w * 3.6;
-    const g = Math.min(GAP, span / 4);       // 极细小类不留缝，否则整段被吃掉
-    const a0 = cur + g;
-    const a1 = cur + span - g;
-    cur += span;
-    if (a1 <= a0) return;
-    const c = RB_CLASS_COLOR[b.key] || 'var(--text-faint)';
-    // 实色截到「目标占比」为止；实际 < 目标时整段实色（没有超配那截）
-    const solid = a0 + (a1 - a0) * (w > 0 ? Math.min(w, t) / w : 0);
-    arcs.push(`<path d="${rbArcPath(C, C, R, a0, solid)}" stroke="${c}" stroke-width="${W}" fill="none"/>`);
-    if (a1 - solid > 0.05) {
-      const d = rbArcPath(C, C, R, solid, a1);
-      arcs.push(`<path d="${d}" stroke="#fff" stroke-width="${W}" fill="none"/>`);
-      arcs.push(`<path d="${d}" stroke="${c}" stroke-opacity="${RB_LITE_ALPHA}" stroke-width="${W}" fill="none"/>`);
-    }
-  });
-  const need = Number(rbData.need_cny) || 0;
-  box.innerHTML = `<svg class="rb-ring-svg" viewBox="0 0 ${S} ${S}" role="img"
-      aria-label="四类资产实际占比圆环，段尾浅色表示超配">
-      <circle cx="${C}" cy="${C}" r="${R}" stroke="var(--bg-soft)" stroke-width="${W}" fill="none"/>
-      ${arcs.join('')}
-    </svg>
-    <div class="rb-ring-mid">
-      <span class="k">待调整</span>
-      <b class="v">${need > 0 ? rbYuan(need) : '—'}</b>
-    </div>`;
-}
-
-// —— 主表：一行 = 一个判断（2026-10-27 由「左条形图 + 右明细表」两栏合并）——
-// 原来两栏把同一份四类数据画了两遍，行节奏也不同，来回对照很累；现在条形嵌进「配置」列，
-// 「建议」列就地勾选（勾选集合决定「记录」时写进快照的 actions）。
-function renderRbDrift() {
-  const body = document.getElementById('rbDriftBody');
-  const foot = document.getElementById('rbDriftFoot');
-  if (!body) return;
-  const buckets = rbData.buckets || [];
-  const rt = rbData.returns || {};
-  const total = Number(rbData.total_cny) || 0;
-  if (!buckets.length || !(total > 0)) {
-    body.innerHTML = '<tr><td colspan="6"><div class="rb-act-empty">暂无资产数据</div></td></tr>';
-    if (foot) foot.innerHTML = '';
-    renderRbRing([]);
-    return;
-  }
-  renderRbRing(buckets);
-  const pend = buckets.filter((b) => b.action !== 'none');
-  body.innerHTML = buckets.map((b) => {
-    const d = Number(b.drift) || 0;
-    const none = b.action === 'none';
-    const cls = none ? 'ok' : (d > 0 ? 'over' : 'under');
-    const on = rbPicked.has(b.key);
-    // 建议列：可勾选的「动作 + 金额」。勾掉=这次不打算执行，记录时不进快照。
-    const pick = none
-      ? '<span class="rb-act none">—</span>'
-      : `<label class="rb-act-pick${on ? '' : ' off'}">
-           <input type="checkbox" data-key="${b.key}"${on ? ' checked' : ''}>
-           <span class="rb-act ${b.action}">${rbActionLabel(b.key, b.action)}</span>
-           <span class="rb-act-amt">${rbYuan(Math.abs(b.amount))}</span>
-         </label>`;
-    return `<tr>
-      <td data-l="类别"><span class="rb-cat"><span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[b.key]}"></span>${esc(b.label)}</span></td>
-      <td class="rb-alloc" data-l="实际 / 目标" title="实际 ${rbFixed(b.weight, 1)}% · 目标 ${b.target}%"><span class="rb-alloc-vals"><b>${rbFixed(b.weight, 1)}%</b><i>/ ${b.target}%</i></span></td>
-      <td class="num" data-l="偏离"><span class="rb-drift ${cls}">${none ? '容差内' : (d > 0 ? '+' : '−') + Math.abs(d).toFixed(1) + '%'}</span></td>
-      <td class="num" data-l="年化">${rbFixed(b.exp, 1)}%</td>
-      <td class="num rb-imp" data-l="收益影响">${rbSignedYuan(b.contrib)}</td>
-      <td class="num" data-l="建议">${pick}</td>
-    </tr>`;
-  }).join('');
-
-  body.querySelectorAll('input[data-key]').forEach((el) => {
-    el.onchange = () => {
-      const k = el.dataset.key;
-      if (el.checked) rbPicked.add(k); else rbPicked.delete(k);
-      const row = el.closest('.rb-act-pick');
-      if (row) row.classList.toggle('off', !el.checked);
-    };
-  });
-
-  if (foot) {
-    // 合计行自解释：配置列给「实际合计 / 目标合计」、年化列给加权目标、建议列给要换手多少钱，
-    // 不回看表头也知道每个数字是什么（合计行是唯一不需要对齐表头的行）。
-    const sumW = buckets.reduce((a, b) => a + (Number(b.weight) || 0), 0);
-    const need = Number(rbData.need_cny) || 0;
-    foot.innerHTML = `<tr>
-      <td>合计</td>
-      <td class="rb-alloc"><span class="rb-alloc-vals"><b>${rbFixed(sumW, 1)}%</b><i>/ 100%</i></span></td>
-      <td class="num">—</td>
-      <td class="num">加权 ${rbFixed(rt.ret_target)}%</td>
-      <td class="num rb-imp">${rbSignedYuan(rt.excess_amt)}</td>
-      <td class="num">${need > 0 ? '换手 ' + rbYuan(need) : '—'}</td>
-    </tr>`;
-  }
-
-  const note = document.getElementById('rbNote');
-  if (note) {
-    const cfg = rbData.config || {};
-    const pend = buckets.filter((b) => b.action !== 'none');
-    const thr = cfg.drift_alert != null ? cfg.drift_alert : 1;
-    // 日常开销账户被剔除时必须写出来 —— 否则用户对比资产页会发现「现金少了一截」以为算漏了
-    const exclN = Number(rbData.cash_excluded_n) || 0;
-    const exclTxt = exclN
-      ? `其中 ${exclN} 个「日常开销」子账户（${rbYuan(Number(rbData.cash_excluded_amt) || 0)}）已剔除，既不计入现金类也不计入总市值。`
-      : '';
-    note.textContent = (pend.length
-      ? `共 ${pend.length} 类偏离超过 ${thr}pp；买卖金额天然配平（合计为 0）。`
-      : `四类均在 ${thr}pp 容差内，本期无需调仓。`) + exclTxt +
-      `「收益影响」= 该类偏离 × 总市值 × 该类年化，四类相加等于组合超额收益 ${rbSignedYuan(rt.excess_amt)}/年。` +
-      `年化为假设值，不是承诺收益；波动率为简单加权（未计相关性），仅作方向参考。` +
-      `本表是年化机会成本，与下方「本期兑现」的区间实测口径不同，两处金额不可相加。`;
-  }
-}
-
-// ===== 本期兑现：真实 vs 预期（2026-10-29）=====
-// 数据全部来自 /api/rebalance/actual（服务端已算好四类聚合、归因与 Top），前端只做呈现与几何。
-// 与上方配置表的区别必须一眼看得出：那张表是年化假设，这张是区间实测。
-function setRbActualLoading() {
-  const body = document.getElementById('rbActualBody');
-  if (body) body.innerHTML = '<tr><td colspan="8"><div class="rb-act-empty">计算中…</div></td></tr>';
-  const foot = document.getElementById('rbActualFoot');
-  if (foot) foot.innerHTML = '';
-}
-
-function renderRbActual() {
-  const body = document.getElementById('rbActualBody');
-  const foot = document.getElementById('rbActualFoot');
-  const note = document.getElementById('rbActualNote');
-  const range = document.getElementById('rbPeriodRange');
-  if (!body) return;
-  const a = rbActual;
-  if (range) range.textContent = a ? `${a.from} → ${a.to} · ${a.days} 天` : '';
-  if (!a || !(Number(a.begin_cny) > 0) || !(a.buckets || []).length) {
-    body.innerHTML = `<tr><td colspan="8"><div class="rb-act-empty">${a ? '区间内没有可对比的期初市值，换个周期看看' : '本期兑现计算失败'}</div></td></tr>`;
-    if (foot) foot.innerHTML = '';
-    if (note) note.textContent = '';
-    renderRbActualChart();
-    renderRbActualAttr();
-    return;
-  }
-
-  // 偏差幅度条按最大 |偏差金额| 归一；最小 4% 保证极小偏差也能被看见
-  const maxGap = Math.max(1, ...a.buckets.map((b) => Math.abs(Number(b.gap_cny) || 0)));
-  const cell2 = (main, sub) => `<span class="rb-twol"><b>${main}</b><i>${sub}</i></span>`;
-
-  body.innerHTML = a.buckets.map((b) => {
-    const real = Number(b.real_cny) || 0;
-    const exp = Number(b.exp_cny) || 0;
-    const gap = Number(b.gap_cny) || 0;
-    const hit = Number(b.hit_rate) || 0;
-    const netIn = Number(b.net_in_cny) || 0;
-    const w = Math.max(4, Math.min(50, (Math.abs(gap) / maxGap) * 48));
-    const partial = b.quality === 'partial'
-      ? `<span class="rb-act-tag" title="${esc((b.note || '数据不完整') + (Number(b.days) > 0 && Number(b.days) < Number(a.days) ? ` · 仅覆盖 ${b.days}/${a.days} 天` : ''))}">估算</span>` : '';
-    return `<tr>
-      <td><span class="rb-cat"><span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[b.key] || 'var(--text-faint)'}"></span>${esc(b.label)}${partial}</span></td>
-      <td class="num">${cell2(rbYuan(b.end_cny), rbYuan(b.begin_cny))}</td>
-      <td class="num">${Math.abs(netIn) < 0.5 ? '<span class="rb-act-none">—</span>' : `<span class="${rbActCls(netIn)}">${rbSignedYuan(netIn)}</span>`}</td>
-      <td class="num">${cell2(`<span class="${rbActCls(real)}">${rbSignedYuan(real)}</span>`, rbSignedPct(b.real_pct))}</td>
-      <td class="num">${cell2(rbYuan(exp), rbFixed(b.exp_pct) + '%')}</td>
-      <td class="num">${cell2(`<span class="${rbActCls(gap)}">${rbSignedYuan(gap)}</span>`, rbPP(b.gap_pp))}</td>
-      <td class="num"><span class="rb-dev"><span class="rb-dev-axis"></span><span class="rb-dev-fill ${gap >= 0 ? 'pos' : 'neg'}" style="--w:${w.toFixed(1)}%"></span></span></td>
-      <td class="num"><span class="rb-rate-pill ${exp > 0.005 ? (hit >= 100 ? 'hi' : 'lo') : 'mid'}">${rbHitTxt(exp, hit)}</span></td>
-    </tr>`;
-  }).join('');
-
-  if (foot) {
-    const hit = Number(a.hit_rate) || 0;
-    const expA = Number(a.exp_cny) || 0;
-    const gapA = Number(a.gap_cny) || 0;
-    foot.innerHTML = `<tr>
-      <td>合计</td>
-      <td class="num">${cell2(rbYuan(a.end_cny), rbYuan(a.begin_cny))}</td>
-      <td class="num">${Math.abs(Number(a.net_in_cny) || 0) < 0.5 ? '—' : rbSignedYuan(a.net_in_cny)}</td>
-      <td class="num">${cell2(`<span class="${rbActCls(a.real_cny)}">${rbSignedYuan(a.real_cny)}</span>`, rbSignedPct(a.real_pct))}</td>
-      <td class="num">${cell2(rbYuan(a.exp_cny), rbFixed(a.exp_pct) + '%')}</td>
-      <td class="num">${cell2(`<span class="${rbActCls(gapA)}">${rbSignedYuan(gapA)}</span>`, rbPP(a.gap_pp))}</td>
-      <td class="num">—</td>
-      <td class="num"><span class="rb-rate-pill ${expA > 0.005 ? (hit >= 100 ? 'hi' : 'lo') : 'mid'}">${rbHitTxt(expA, hit)}</span></td>
-    </tr>`;
-  }
-
-  if (note) {
-    const notes = (a.notes || []).join('');
-    note.textContent = `真实收益 = 期末市值 − 期初市值 − 期间净申购 + 分红票息；预期 = 期初市值 × 该类假设年化 × ${a.days}/365。`
-      + `兑现率 = 真实 ÷ 预期，>100% 为跑赢假设；合计行按「期初市值加权」而非各行简单平均。` + notes;
-  }
-  renderRbActualChart();
-  renderRbActualAttr();
-}
-
-function renderRbActualChart() {
-  const box = document.getElementById('rbActualChart');
-  const lg = document.getElementById('rbActualLegend');
-  if (!box) return;
-  const s = (rbActual && rbActual.series) || [];
-  if (s.length < 2) {
-    box.innerHTML = '<div class="rb-act-empty">区间太短，暂无曲线</div>';
-    if (lg) lg.innerHTML = '';
-    return;
-  }
-  const W = 640, H = 190, L = 48, R = 12, T = 12, B = 24;
-  const nums = [];
-  s.forEach((p) => { nums.push(Number(p.real) || 0, Number(p.exp) || 0); });
-  let mn = Math.min(0, ...nums);
-  let mx = Math.max(0, ...nums);
-  if (mx - mn < 1) mx = mn + 1;
-  const pad = (mx - mn) * 0.12;
-  mn -= pad; mx += pad;
-  const X = (i) => L + (W - L - R) * (i / (s.length - 1));
-  const Y = (v) => T + (H - T - B) * (1 - (v - mn) / (mx - mn));
-  const rv = (p) => Number(p.real) || 0;
-  const ev = (p) => Number(p.exp) || 0;
-
-  // 尾部跳变：净值/快照不日更时，末点用当前市值、前一点用最近可得价，中间会掉一截。
-  // 这一段改用虚线 —— 让「数据没更新」在视觉上就是断的，而不是像一次真实暴跌。
-  const tailDash = ((rbActual.buckets || []).some((b) => b.quality === 'partial')) && s.length > 2;
-  const solid = tailDash ? s.slice(0, -1) : s;
-  const realLine = solid.map((p, i) => `${X(i).toFixed(1)},${Y(rv(p)).toFixed(1)}`).join(' ');
-  const expLine = s.map((p, i) => `${X(i).toFixed(1)},${Y(ev(p)).toFixed(1)}`).join(' ');
-  // 面积 = 真实线正向 + 预期线逆向（闭合后就是「累计超额」那块）
-  const area = `M${X(0).toFixed(1)},${Y(rv(s[0])).toFixed(1)} `
-    + s.map((p, i) => `L${X(i).toFixed(1)},${Y(rv(p)).toFixed(1)}`).join(' ')
-    + ' ' + s.map((p, i) => `L${X(s.length - 1 - i).toFixed(1)},${Y(ev(s[s.length - 1 - i])).toFixed(1)}`).join(' ') + ' Z';
-
-  const last = s[s.length - 1];
-  const realUp = rv(last) >= 0;
-  const realColor = realUp ? 'var(--up)' : 'var(--down)';
-  // 4 条网格 + 值标签
-  const ticks = [];
-  for (let k = 0; k <= 3; k++) {
-    const v = mn + (mx - mn) * (k / 3);
-    ticks.push(`<line x1="${L}" y1="${Y(v).toFixed(1)}" x2="${W - R}" y2="${Y(v).toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`
-      + `<text x="${L - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end" fill="var(--text-faint)" font-size="10">${fmt(Math.round(v))}</text>`);
-  }
-  const xl = [0, Math.floor((s.length - 1) / 2), s.length - 1];
-  const xLabels = xl.map((i) => `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === s.length - 1 ? 'end' : 'middle'}" fill="var(--text-faint)" font-size="10">${esc(String(s[i].date).slice(5))}</text>`).join('');
-
-  box.innerHTML = `<svg class="rb-chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="本期真实与预期累计收益曲线">
-    <defs><linearGradient id="rbActGap" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="rgba(var(--tint), .26)"/><stop offset="100%" stop-color="rgba(var(--tint), .02)"/>
-    </linearGradient></defs>
-    ${ticks.join('')}
-    <path d="${area}" fill="url(#rbActGap)"/>
-    <polyline points="${expLine}" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
-    <polyline points="${realLine}" fill="none" stroke="${realColor}" stroke-width="2" stroke-linejoin="round"/>
-    ${tailDash ? `<line x1="${X(s.length - 2).toFixed(1)}" y1="${Y(rv(s[s.length - 2])).toFixed(1)}" x2="${X(s.length - 1).toFixed(1)}" y2="${Y(rv(last)).toFixed(1)}" stroke="${realColor}" stroke-width="2" stroke-dasharray="3 3" opacity=".8"/>` : ''}
-    <circle cx="${X(s.length - 1).toFixed(1)}" cy="${Y(rv(last)).toFixed(1)}" r="3" fill="${realColor}"/>
-    <circle cx="${X(s.length - 1).toFixed(1)}" cy="${Y(ev(last)).toFixed(1)}" r="2.5" fill="var(--text-muted)"/>
-    ${xLabels}
-  </svg>`;
-
-  if (lg) {
-    const gap = Number(rbActual.gap_cny) || 0;
-    // 净值/快照不日更时曲线会走平台，末点又用当前市值 → 尾部会有一次跳变。
-    // 与其让用户以为是 bug，不如在图例里直接说清。
-    const hasGap = ((rbActual.buckets || []).some((b) => b.quality === 'partial'));
-    lg.innerHTML = `<span class="k"><i class="ln" style="--ln:${realColor}"></i>真实累计 ${rbSignedYuan(last.real)}</span>
-      <span class="k"><i class="ln dash"></i>预期 ${rbYuan(last.exp)}</span>
-      <span class="k"><i class="ln gap"></i>累计超额 <b class="${rbActCls(gap)}">${rbSignedYuan(gap)}</b></span>
-      ${hasGap ? '<span class="rb-chart-note">部分净值未日更，曲线尾段走平、末点按当前市值</span>' : ''}`;
-  }
-}
-
-function renderRbActualAttr() {
-  const box = document.getElementById('rbActualAttr');
-  const hint = document.getElementById('rbAttrHint');
-  if (!box) return;
-  const a = rbActual;
-  if (!a || !(Number(a.begin_cny) > 0)) {
-    box.innerHTML = '';
-    if (hint) hint.textContent = '';
-    return;
-  }
-  const alloc = Number(a.alloc_cny) || 0;
-  const sel = Number(a.select_cny) || 0;
-  // 相对计划 = real − plan（不是 gap_cny！gap_cny 是 real − exp，两者差一个「配置偏离」）
-  const vsPlan = a.plan_gap_cny != null ? Number(a.plan_gap_cny) || 0 : (Number(a.real_cny) || 0) - (Number(a.plan_cny) || 0);
-  const plan = Number(a.plan_cny) || 0;
-  const real = Number(a.real_cny) || 0;
-  const begin = Number(a.begin_cny) || 0;
-
-  // 配置项的主导类别：|实际权重 − 目标权重| 最大者，用一句人话点出来
-  const tgtOf = {};
-  ((rbData && rbData.buckets) || []).forEach((b) => { tgtOf[b.key] = Number(b.target) || 0; });
-  let topKey = null;
-  let topDiff = 0;
-  (a.buckets || []).forEach((b) => {
-    const w = begin > 0 ? (Number(b.begin_cny) / begin) * 100 : 0;
-    const d = w - (tgtOf[b.key] || 0);
-    if (Math.abs(d) > Math.abs(topDiff)) { topDiff = d; topKey = b.key; }
-  });
-  const topWord = topKey
-    ? `${RB_CLASS_LABEL[topKey] || topKey}${topDiff > 0 ? '超配' : '低配'} ${Math.abs(topDiff).toFixed(1)}pp`
-    : '各类权重接近目标';
-
-  // 兑现项：按贡献金额排序，取前 3 类拼成一句
-  const parts = (a.buckets || [])
-    .slice()
-    .sort((x, y) => Math.abs(Number(y.gap_cny) || 0) - Math.abs(Number(x.gap_cny) || 0))
-    .slice(0, 3)
-    .map((b) => `${b.label} ${rbSignedYuan(b.gap_cny)}`)
-    .join(' · ');
-
-  if (hint) hint.textContent = `基准 = 计划 ${rbYuan(plan)}`;
-  box.innerHTML = `
-    <div class="rb-attr-item">
-      <div class="rb-attr-k">① 配置偏离</div>
-      <div class="rb-attr-v ${rbActCls(alloc)}">${rbSignedYuan(alloc)}</div>
-      <div class="rb-attr-s">${esc(topWord)}；权重漂移相对计划基准的机会成本，不是选品能力。</div>
-    </div>
-    <div class="rb-attr-item">
-      <div class="rb-attr-k">② 兑现超额（选品 / 票息）</div>
-      <div class="rb-attr-v ${rbActCls(sel)}">${rbSignedYuan(sel)}</div>
-      <div class="rb-attr-s">${esc(parts || '—')}</div>
-    </div>
-    <div class="rb-attr-item sum">
-      <div class="rb-attr-k">③ 相对计划合计</div>
-      <div class="rb-attr-v ${rbActCls(vsPlan)}">${rbSignedYuan(vsPlan)}</div>
-      <div class="rb-attr-s">真实 ${rbYuan(real)} − 计划 ${rbYuan(plan)}；① + ② 恒等于 ③。</div>
-    </div>`;
-}
-
-function renderRbTop() {
-  const box = document.getElementById('rbTopList');
-  const note = document.getElementById('rbTopNote');
-  const hint = document.getElementById('rbTopHint');
-  if (!box) return;
-  const a = rbActual;
-  const top = (a && a.top) || [];
-  if (hint) hint.textContent = a ? `本期 ${a.label || ''} · 按收益绝对值排序` : '本期真实收益来源';
-  if (!top.length) {
-    box.innerHTML = '<div class="rb-act-empty">本期暂无标的级收益数据</div>';
-    if (note) note.textContent = '';
-    return;
-  }
-  const totalReal = Number(a.real_cny) || 0;
-  box.innerHTML = `<div class="rb-top-list">` + top.map((t) => {
-    const pnl = Number(t.pnl_cny) || 0;
-    return `<div class="rb-top-row">
-      <span class="rb-top-name">
-        <span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[t.key] || 'var(--text-faint)'}"></span>
-        <span class="t">${esc(t.name)}</span>
-        ${t.symbol ? `<span class="s">${esc(t.symbol)}</span>` : ''}
-      </span>
-      <span class="rb-top-v ${rbActCls(pnl)}">${rbSignedYuan(pnl)}</span>
-      <span class="rb-top-p">${rbSignedPct(t.pct)}</span>
-    </div>`;
-  }).join('') + '</div>';
-
-  if (note) {
-    // 集中度：Top 合计占本期收益的比例。收益为 0 或负时不硬算，避免出现负分母的百分比
-    const sum = top.reduce((acc, t) => acc + (Number(t.pnl_cny) || 0), 0);
-    const share = totalReal > 0 ? Math.round((Math.max(0, sum) / totalReal) * 100) : null;
-    note.textContent = share == null
-      ? `本期合计为 ${rbSignedYuan(totalReal)}，Top ${top.length} 项合计 ${rbSignedYuan(sum)}。`
-      : `Top ${top.length} 项合计 ${rbSignedYuan(sum)}，占本期收益 ${share}%。单只超过 30% 集中度时值得复查，但这里不给交易建议。`;
-  }
-}
-
-async function loadRbHistory() {
-  try {
-    const r = await api('/api/rebalance/history?limit=12');
-    if (!r.ok) return;
-    const d = await r.json();
-    rbHistoryLogs = d.logs || [];
-    renderRbHistory();
-  } catch (_) { /* 历史失败不影响主计算 */ }
-}
-
-function renderRbHistory() {
-  const box = document.getElementById('rbHistory');
-  if (!box) return;
-  if (!rbHistoryLogs.length) {
-    box.innerHTML = '<div class="rb-hist-empty">还没有记录。调整后点右上角「记录」，之后这里会留下每次的配置快照与当时的收益假设。</div>';
-    return;
-  }
-  box.innerHTML = '<div class="rb-hist-list">' + rbHistoryLogs.map((l) => {
-    const mix = (l.actual || []).map((a) => `${RB_CLASS_LABEL[a.key] || a.key} ${Number(a.pct).toFixed(0)}%`).join(' · ');
-    // 快照里存了「记录时勾选了哪些动作」，不展示出来「勾选」就没有任何可观察效果。
-    const acts = (l.actions || [])
-      .filter((a) => a && a.action && a.action !== 'none')
-      .map((a) => `${rbActionLabel(a.key, a.action)}${a.label || RB_CLASS_LABEL[a.key] || a.key} ${rbYuan(Math.abs(Number(a.amount) || 0))}`)
-      .join(' · ');
-    const md = Number(l.max_drift) || 0;
-    // 收益率列 = 当时实际 / 当时目标。两者都来自落库快照，不会因为今天改了假设而变形。
-    const rtA = Number(l.ret_actual) || 0;
-    const rtT = Number(l.ret_target) || 0;
-    const hasRet = rtA !== 0 || rtT !== 0;
-    return `<div class="rb-hist-row">
-      <span class="rb-hist-date">${esc(l.date)}</span>
-      <span class="rb-hist-mix">
-        <span>${esc(mix)}</span>
-        ${acts ? `<span class="rb-hist-acts">已记录 ${esc(acts)}</span>` : ''}
-      </span>
-      <span class="rb-hist-total">${moneyCurW(l.total_cny, 'cny')}</span>
-      <span class="rb-hist-ret">${hasRet ? `<b>${rbFixed(rtA)}%</b> / ${rbFixed(rtT)}%` : '—'}</span>
-      <span class="rb-hist-drift">${(md > 0 ? '+' : md < 0 ? '−' : '') + Math.abs(md).toFixed(1)}%</span>
-    </div>`;
-  }).join('') + '</div>';
-}
-
-// —— 目标配置与收益假设弹框 ——
-// 每类三个参数：目标权重 / 预期年化 / 预期波动。三者都只是「假设」，改完立刻在下方试算，
-// 不必保存就能看到「目标收益率会变成多少」—— 避免用户在弹框里盲填。
-// 与服务端 defaultRebalanceConfig / rbDefaultExp / rbDefaultVol 保持一致，改动时两处同步。
-const RB_DEFAULT = {
-  pct: { stock: 15, fund: 30, wealth: 40, cash: 15 },
-  exp: { stock: 8, fund: 6, wealth: 2.8, cash: 1.2 },
-  vol: { stock: 22, fund: 16, wealth: 2, cash: 0.6 },
-};
-// 预设只改权重，收益/波动假设沿用当前值（假设是对资产类别的判断，不该被配置风格覆盖）
-const RB_PRESETS = {
-  cons: { stock: 10, fund: 20, wealth: 60, cash: 10 },
-  bal: { stock: 15, fund: 30, wealth: 40, cash: 15 },
-  aggr: { stock: 30, fund: 40, wealth: 25, cash: 5 },
-};
-
-function rbSetInputs() {
-  return Array.from(document.querySelectorAll('#rbTgtInputs input[data-f]'));
-}
-
-// 从弹框读出一份完整配置（targets 数组按 RB_CLASS_LABEL 顺序）
-function rbReadCfg() {
-  const o = { pct: {}, exp: {}, vol: {} };
-  rbSetInputs().forEach((el) => {
-    const f = el.dataset.f;
-    const k = el.dataset.k;
-    const raw = el.value === '' ? 0 : Number(el.value);
-    o[f][k] = Number.isFinite(raw) ? raw : 0;
-  });
-  const freq = (document.getElementById('rbFreqSel') || {}).value || 'monthly';
-  const thrRaw = Number((document.getElementById('rbDriftThr') || {}).value);
-  const goalRaw = (document.getElementById('rbGoalPct') || {}).value;
-  const goal = goalRaw === '' || goalRaw == null ? null : Number(goalRaw);
-  return {
-    targets: Object.keys(RB_CLASS_LABEL).map((k) => ({
-      key: k,
-      pct: Math.max(0, Math.min(100, o.pct[k] || 0)),
-      exp: Math.max(0, Math.min(50, o.exp[k] || 0)),
-      vol: Math.max(0, Math.min(80, o.vol[k] || 0)),
-    })),
-    freq,
-    drift_alert: Number.isFinite(thrRaw) && thrRaw > 0 ? thrRaw : 1,
-    goal_pct: goal != null && Number.isFinite(goal) && goal > 0 ? goal : null,
-  };
-}
-
-// 弹框内联动：合计校验 + 试算预览 + 预设高亮
-function rbSyncSetForm() {
-  const cfg = rbReadCfg();
-  const sum = cfg.targets.reduce((a, t) => a + t.pct, 0);
-  const sumEl = document.getElementById('rbTgtSum');
-  if (sumEl) {
-    sumEl.textContent = (Math.round(sum * 100) / 100) + '%';
-    sumEl.className = Math.abs(sum - 100) < 0.01 ? 'ok' : 'bad';
-  }
-  const save = document.getElementById('rbSetSave');
-  if (save) save.disabled = Math.abs(sum - 100) > 0.01;
-
-  // 试算：用实际权重（来自 rbData.buckets）套用弹框里的假设，保存前就能看到收益变化
-  const buckets = (rbData && rbData.buckets) || [];
-  const total = Number(rbData && rbData.total_cny) || 0;
+// 圆环：当前榜单按类别汇总收益占比（|收益| 占总量），中心显示收益合计。
+// 用类别色而不是逐条配色：条目一多颜色必然重复，按类别汇总才能和行首色点一一对应。
+function renderPerfDonut(list) {
+  const donut = document.getElementById('rvDonut');
+  const val = document.getElementById('rvDonutV');
+  const sum = list.reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
+  if (val) val.textContent = list.length ? rbYuan(sum) : '—';
   const byKey = {};
-  cfg.targets.forEach((t) => { byKey[t.key] = t; });
-  let retT = 0, volT = 0, retA = 0, volA = 0;
-  cfg.targets.forEach((t) => {
-    retT += t.pct / 100 * t.exp;
-    volT += t.pct / 100 * t.vol;
+  let total = 0;
+  list.forEach((b) => {
+    const g = Math.abs(Number(b.gain_cny) || 0);
+    byKey[b.key] = (byKey[b.key] || 0) + g;
+    total += g;
   });
-  buckets.forEach((b) => {
-    const t = byKey[b.key];
-    if (!t) return;
-    retA += (Number(b.weight) || 0) / 100 * t.exp;
-    volA += (Number(b.weight) || 0) / 100 * t.vol;
-  });
-  const pv = document.getElementById('rbPreview');
-  if (pv) {
-    pv.innerHTML = `
-      <div class="rb-pv-box">
-        <div class="rb-pv-k">目标配置预期年化</div>
-        <div class="rb-pv-v">${rbFixed(retT)}%</div>
-        <div class="rb-pv-s">${rbYuan(total * retT / 100)}/年 · 波动 ${rbFixed(volT, 1)}%</div>
-      </div>
-      <div class="rb-pv-box">
-        <div class="rb-pv-k">当前配置预期年化</div>
-        <div class="rb-pv-v">${rbFixed(retA)}%</div>
-        <div class="rb-pv-s">${rbYuan(total * retA / 100)}/年 · 波动 ${rbFixed(volA, 1)}%</div>
-      </div>`;
-  }
-  const goalAmt = document.getElementById('rbGoalAmt');
-  if (goalAmt) {
-    goalAmt.textContent = cfg.goal_pct == null
-      ? '留空则只看配置内生的预期收益'
-      : '≈ ' + rbYuan(total * cfg.goal_pct / 100) + '/年';
-  }
-  // 预设高亮：权重完全命中某个预设才点亮
-  document.querySelectorAll('#rbPresets .rb-chip').forEach((c) => {
-    const p = RB_PRESETS[c.dataset.preset];
-    const hit = p && Object.keys(p).every((k) => Math.abs((byKey[k] ? byKey[k].pct : -1) - p[k]) < 0.01);
-    c.classList.toggle('is-on', !!hit);
-  });
-}
-
-function openRbSettings() {
-  if (!rbData) return;
-  const box = document.getElementById('rbTgtInputs');
-  if (!box) return;
-  const cfg = rbData.config || {};
-  const cur = {};
-  ((cfg.targets) || []).forEach((t) => {
-    cur[t.key] = { pct: Number(t.pct) || 0, exp: Number(t.exp) || 0, vol: Number(t.vol) || 0 };
-  });
-  const keys = Object.keys(RB_CLASS_LABEL);
-  box.innerHTML = `
-    <div class="rb-pgrid-h">类别</div>
-    <div class="rb-pgrid-h">权重</div>
-    <div class="rb-pgrid-h">年化</div>
-    <div class="rb-pgrid-h">波动</div>` +
-    keys.map((k) => {
-      const c = cur[k] || { pct: 0, exp: 0, vol: 0 };
-      return `
-      <div class="rb-pgrid-name"><span class="rb-dot" style="--rb-c:${RB_CLASS_COLOR[k]}"></span>${RB_CLASS_LABEL[k]}</div>
-      <input type="number" min="0" max="100" step="1" data-f="pct" data-k="${k}" value="${c.pct}" aria-label="${RB_CLASS_LABEL[k]} 目标权重">
-      <input type="number" min="0" max="50" step="0.1" data-f="exp" data-k="${k}" value="${c.exp}" aria-label="${RB_CLASS_LABEL[k]} 预期年化">
-      <input type="number" min="0" max="80" step="0.1" data-f="vol" data-k="${k}" value="${c.vol}" aria-label="${RB_CLASS_LABEL[k]} 预期波动">`;
-    }).join('');
-  rbSetInputs().forEach((el) => { el.oninput = rbSyncSetForm; });
-
-  const f = document.getElementById('rbFreqSel');
-  if (f) f.value = cfg.freq || 'monthly';
-  const th = document.getElementById('rbDriftThr');
-  if (th) th.value = cfg.drift_alert != null ? cfg.drift_alert : 1;
-  const g = document.getElementById('rbGoalPct');
-  if (g) g.value = cfg.goal_pct == null ? '' : cfg.goal_pct;
-  rbSyncSetForm();
-  document.getElementById('rbSettingsModal').hidden = false;
-}
-
-async function saveRbSettings() {
-  const cfg = rbReadCfg();
-  const sum = cfg.targets.reduce((a, t) => a + t.pct, 0);
-  if (Math.abs(sum - 100) > 0.01) {
-    toast('目标权重合计必须为 100%（当前 ' + (Math.round(sum * 100) / 100) + '%）', 'err');
+  if (!donut) return;
+  if (total <= 0 || !list.length) {
+    donut.style.setProperty('--donut', 'none');
     return;
   }
-  const btn = document.getElementById('rbSetSave');
-  if (btn) btn.disabled = true;
-  try {
-    const r = await api('/api/settings/rebalance_targets', {
-      method: 'PUT',
-      body: JSON.stringify({ payload: cfg }),
-    });
-    if (!r.ok) {
-      let m = '保存失败';
-      try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
-      toast(m, 'err');
-      return;
-    }
-    // 合并原「记录」按钮语义：保存配置时一并落一份再平衡快照（勾选的偏离项，未勾选则记全部偏离项）。
-    // 记录失败不影响配置已保存——纯 best-effort，不阻塞保存主流程。
-    let logged = false;
-    try {
-      const drifted = (rbData.buckets || []).filter((b) => b.action !== 'none');
-      const chosen = drifted.filter((b) => rbPicked.has(b.key));
-      const acts = chosen.length ? chosen : drifted;
-      if (acts.length) {
-        await api('/api/rebalance/log', {
-          method: 'POST',
-          body: JSON.stringify({ actions: acts.map((b) => ({ key: b.key })) }),
-        });
-        logged = true;
-      }
-    } catch (_) { /* 记录失败不影响配置已保存 */ }
-    document.getElementById('rbSettingsModal').hidden = true;
-    toast(logged ? '配置已保存并记录本次再平衡' : '目标与收益假设已保存', 'ok');
-    rbData = null;
-    await loadRebalance();
-  } catch (e) { toast('保存失败：' + e.message, 'err'); }
-  finally { if (btn) btn.disabled = false; }
+  let acc = 0;
+  const segs = [];
+  RV_CLASS_ORDER.forEach((k) => {
+    const v = byKey[k] || 0;
+    if (v <= 0) return;
+    const a0 = acc / total * 360;
+    acc += v;
+    segs.push(`${RB_CLASS_COLOR[k]} ${a0.toFixed(1)}deg ${(acc / total * 360).toFixed(1)}deg`);
+  });
+  donut.style.setProperty('--donut', segs.length ? `conic-gradient(${segs.join(', ')})` : 'none');
 }
 
-(function bindRebalanceUI() {
-  const s = document.getElementById('rbSettingsBtn');
-  if (s) s.onclick = openRbSettings;
-  const close = () => { const m = document.getElementById('rbSettingsModal'); if (m) m.hidden = true; };
-  ['rbSetClose'].forEach((id) => { const b = document.getElementById(id); if (b) b.onclick = close; });
-  // 点击遮罩空白处关闭抽屉（卡片本身不触发）
-  const modal = document.getElementById('rbSettingsModal');
-  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
-  const sv = document.getElementById('rbSetSave');
-  if (sv) sv.onclick = saveRbSettings;
-  const rs = document.getElementById('rbSetReset');
-  if (rs) rs.onclick = () => {
-    // 恢复默认：三类参数一起回默认（只重置权重会让「默认权重 + 上次的假设」变成四不像）
-    rbSetInputs().forEach((el) => {
-      const k = el.dataset.k;
-      const f = el.dataset.f;
-      el.value = RB_DEFAULT[f] && RB_DEFAULT[f][k] != null ? RB_DEFAULT[f][k] : 0;
-    });
-    const th = document.getElementById('rbDriftThr');
-    if (th) th.value = 1;
-    const g = document.getElementById('rbGoalPct');
-    if (g) g.value = '';
-    rbSyncSetForm();
+function renderPerf() {
+  const box = document.getElementById('rvPerfList');
+  if (!box) return;
+  const all = (rvData && rvData.perf) || [];
+  const list = all.filter((b) => (b.state || 'holding') === rvPerfState);
+  const n = document.getElementById('rvPerfN');
+  if (n) n.textContent = list.length ? list.length + ' 只' : '';
+  renderPerfDonut(list);
+  if (!list.length) {
+    box.innerHTML = `<div class='rv-empty'>${rvPerfState === 'closed' ? '还没有已平仓的记录 —— 平仓后会在这里看到落袋收益。' : '暂时没有持仓中的产品。'}</div>`;
+    return;
+  }
+  const maxAbs = Math.max(1, ...list.map((b) => Math.abs(Number(b.gain_cny) || 0)));
+  let html = list.slice(0, rvPerfExpanded ? list.length : Math.min(RV_PERF_MAX, list.length))
+    .map((b) => rvPerfRow(b, maxAbs)).join('');
+  if (list.length > RV_PERF_MAX) {
+    html += `<button type='button' class='rv-more' id='rvPerfMore'>${rvPerfExpanded ? '收起' : '展开全部 ' + list.length + ' 条'}</button>`;
+  }
+  box.innerHTML = html;
+  const btn = document.getElementById('rvPerfMore');
+  if (btn) btn.onclick = () => { rvPerfExpanded = !rvPerfExpanded; renderPerf(); };
+}
+
+// —— 金额 / 百分比格式化（复盘页专用）——
+const rbYuan = (v) => (Number(v) < 0 ? '−¥' : '¥') + Math.abs(Math.round(Number(v) || 0)).toLocaleString('en-US');
+const rvPct = (v, d = 2) => (Number(v) || 0).toFixed(d) + '%';
+
+(function bindReviewUI() {
+  // 复盘页业绩表现：持仓中（默认）/ 已平仓 切换（HTML 里持仓中在左且自带 .on）
+  const tabClosed = document.getElementById('rvTabClosed');
+  const tabHold = document.getElementById('rvTabHold');
+  const setPerfTab = (st) => {
+    rvPerfState = st;
+    if (tabClosed) tabClosed.classList.toggle('on', st === 'closed');
+    if (tabHold) tabHold.classList.toggle('on', st === 'holding');
+    rvPerfExpanded = false;
+    renderPerf();
   };
-  // 预设：只改权重，不动收益假设
-  document.querySelectorAll('#rbPresets .rb-chip').forEach((c) => {
-    c.onclick = () => {
-      const p = RB_PRESETS[c.dataset.preset];
-      if (!p) return;
-      rbSetInputs().forEach((el) => {
-        if (el.dataset.f !== 'pct') return;
-        if (p[el.dataset.k] != null) el.value = p[el.dataset.k];
-      });
-      rbSyncSetForm();
-    };
-  });
-  ['rbGoalPct', 'rbDriftThr'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.oninput = rbSyncSetForm;
-  });
-  const fq = document.getElementById('rbFreqSel');
-  if (fq) fq.onchange = rbSyncSetForm;
-  // 本期兑现的周期切换：只重拉 /api/rebalance/actual —— 配置偏离是「此刻快照」，与区间无关。
-  document.querySelectorAll('#rbPeriods .rb-chip').forEach((c) => {
-    c.onclick = () => {
-      const p = c.dataset.period || 'last';
-      if (p === rbPeriod) return;
-      rbPeriod = p;
-      document.querySelectorAll('#rbPeriods .rb-chip').forEach((x) => x.classList.toggle('is-on', x === c));
-      loadRbActual(p);
-    };
-  });
+  if (tabClosed) tabClosed.onclick = () => setPerfTab('closed');
+  if (tabHold) tabHold.onclick = () => setPerfTab('holding');
 })();
 
 // ============================================================

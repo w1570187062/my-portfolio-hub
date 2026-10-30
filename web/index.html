@@ -389,140 +389,61 @@
   <!-- ===== 再平衡（2026-10-27 重新引入） =====
        口径：股票 / 基金 / 理财 / 现金 四大类（不细到行业主题）。
        结构沿用财务页：.kpi-section（眉标 + 控件 + .kpi-row）→ 主卡（目标vs实际 + 偏离建议）→ 本次清单 / 历史。 -->
+  <!-- ===== 复盘页 v6.2 · 收益率诊断（2026-10-30）=====
+       一张卡：业绩表现 —— 左侧「收益占比」圆环 + 右侧单一榜（按收益总额排序，
+       可切「持仓中/已平仓」（默认持仓中），默认 10 条可展开）。
+       数据全部来自 GET /api/review：收益总额、年化都在服务端算好，
+       前端只负责呈现与条形/圆环几何，避免两边各算一套导致数字对不上。
+       2026-10-30：删掉闲置现金卡（连带圆环移到业绩表现左侧做收益占比）、
+       删掉头部操作区与口径说明卡；目标无设置入口，因此不再展示「目标 xx%」。 -->
   <div id="rebalanceView" hidden>
     <div class="kpi-section">
       <div class="kpi-head">
-        <span class="kpi-head-label">资产配置 · 再平衡</span>
-        <div class="rb-head-actions">
-          <span class="rb-updated" id="rbUpdated"></span>
-          <!-- 文案缩到 2 字：5 字会把右上角挤到跟主 CTA 抢位置；完整含义交给 title。
-               样式走「操作区芯片」（.btn.rb-cfg，透明边 + primary-soft 底），与纯 .btn 的白边不是一套。 -->
-          <button class="btn icon-btn" id="rbSettingsBtn" type="button" title="配置目标权重、收益假设与触发规则" aria-label="配置目标权重、收益假设与触发规则">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h9"/><path d="M17 6h3"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
-          </button>
+        <span class="kpi-head-label">复盘 · 收益率诊断</span>
+      </div>
+      <div class="kpi-row cols-flat">
+        <div class="kpi-card density-standard">
+          <div class="kpi-icon kpi-ico-pct"><svg viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg></div>
+          <div class="kpi-label">组合实测年化</div>
+          <div class="kpi-main"><div class="kpi-value" id="rvKpiAnn">—</div></div>
+          <div class="kpi-sub" id="rvKpiAnnSub">—</div>
+        </div>
+        <div class="kpi-card density-standard">
+          <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
+          <div class="kpi-label">收益合计</div>
+          <div class="kpi-main"><div class="kpi-value" id="rvKpiGain">—</div></div>
+          <div class="kpi-sub" id="rvKpiGainSub">—</div>
+        </div>
+        <div class="kpi-card density-standard">
+          <div class="kpi-icon kpi-ico-cash"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg></div>
+          <div class="kpi-label">累计落袋</div>
+          <div class="kpi-main"><div class="kpi-value" id="rvKpiRealized">—</div></div>
+          <div class="kpi-sub" id="rvKpiRealizedSub">—</div>
+        </div>
+        <div class="kpi-card density-standard">
+          <div class="kpi-icon kpi-ico-fund"><svg viewBox="0 0 24 24"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg></div>
+          <div class="kpi-label">持仓胜率</div>
+          <div class="kpi-main"><div class="kpi-value" id="rvKpiWin">—</div></div>
+          <div class="kpi-sub" id="rvKpiWinSub">—</div>
         </div>
       </div>
-      <!-- 5 张：比例维度 3 张（市值 / 最大偏离 / 待调整）+ 收益维度 2 张（目标年化 / 超额收益率）。
-           「距上次再平衡」不进卡，挪到右上 caption —— 它是元信息不是指标，占一张卡会挤掉收益位。 -->
-      <div class="kpi-row cols-5" id="rbKpiBody"></div>
     </div>
 
-    <!-- 收益结论：一句话说清「偏保守还是偏激进、差多少钱、主因是哪类、执行后怎么变」 -->
-    <div class="rb-insight" id="rbInsight" hidden></div>
-
-    <!-- 主卡：左圆环 + 右表（2026-10-29 由单表拆回两栏）
-         原来六列挤一张表，左栏的配置条要跟右边的偏离/建议横向对照，眼睛来回跳。
-         现在左侧只讲「占比长什么样」：一个圆环，段 = 实际占比，实色 = 目标以内、浅色 = 超配部分，
-         段间留缝当分割线；右侧只讲「要做什么」：偏离 → 年化 → 收益影响 → 建议（可勾选，
-         决定「记录」时存进快照哪些动作）。表里不再画条，占比退成「实际 / 目标」两个数字。 -->
-    <section class="card rb-main-card">
+    <!-- 业绩表现：单一榜按收益总额排序（赚最多在上、亏最多在下）；默认持仓中，可切已平仓。
+         左圆环 = 当前榜单按类别汇总的收益占比（色 = 类别色，与行首色点同源） -->
+    <section class="card rv-card">
       <div class="rb-sub-head">
-        <span class="rb-sub-title">目标 vs 实际 · 偏离与建议</span>
-        <span class="rb-sub-hint">占比 = 占组合总市值 · 收益影响 = 偏离 × 该类年化</span>
-      </div>
-      <div class="rb-main-split">
-        <div class="rb-ring-pane">
-          <div class="rb-ring-wrap" id="rbRing"></div>
-          <div class="rb-ring-key">
-            <span class="k"><i class="sw"></i>目标以内</span>
-            <span class="k"><i class="sw lite"></i>超配部分</span>
-          </div>
-        </div>
-        <div class="rb-tbl-wrap">
-          <table class="rb-tbl rb-tbl-alloc">
-            <thead>
-              <tr>
-                <th>类别</th>
-                <th class="num">实际 / 目标</th>
-                <th class="num">偏离</th>
-                <th class="num">年化</th>
-                <th class="num">收益影响</th>
-                <th class="num">建议</th>
-              </tr>
-            </thead>
-            <tbody id="rbDriftBody"></tbody>
-            <tfoot id="rbDriftFoot"></tfoot>
-          </table>
-        </div>
-      </div>
-      <p class="rb-note" id="rbNote"></p>
-    </section>
-
-    <!-- ===== 本期兑现：真实收益 vs 预期收益（2026-10-29）=====
-         上表是「配置纪律」（该不该调仓，年化口径的机会成本），本卡是「收益兑现」（这一期赚得对不对）。
-         两套口径混在一张表里会让 8 列都读不清，所以拆成两张卡，各只有一个结论。
-         真实收益来自 /api/rebalance/actual，含浮盈 + 已实现 + 分红/票息，已剔除期间净申购。 -->
-    <section class="card rb-actual-card">
-      <div class="rb-sub-head rb-actual-head">
-        <span class="rb-sub-title-wrap">
-          <span class="rb-sub-title">本期兑现 · 真实 vs 预期</span>
-          <span class="rb-tag-new">新增</span>
+        <span class="rb-sub-title">业绩表现</span>
+        <span class="rv-n" id="rvPerfN"></span>
+        <span class="rv-seg">
+          <button type="button" id="rvTabHold" class="on">持仓中</button>
+          <button type="button" id="rvTabClosed">已平仓</button>
         </span>
-        <!-- 周期切换只影响本卡与 KPI 的收益三张，不重算配置偏离 -->
-        <div class="rb-periods" id="rbPeriods">
-          <button class="rb-chip is-on" type="button" data-period="last">自上次复盘</button>
-          <button class="rb-chip" type="button" data-period="month">本月</button>
-          <button class="rb-chip" type="button" data-period="quarter">本季</button>
-          <button class="rb-chip" type="button" data-period="year">今年</button>
-          <span class="rb-period-range" id="rbPeriodRange"></span>
-        </div>
       </div>
-      <div class="rb-tbl-wrap">
-        <table class="rb-tbl rb-tbl-actual">
-          <thead>
-            <tr>
-              <th>类别</th>
-              <th class="num">期末 · 期初</th>
-              <th class="num">净申购</th>
-              <th class="num">真实收益</th>
-              <th class="num">预期收益</th>
-              <th class="num">偏差</th>
-              <th class="num">偏差幅度</th>
-              <th class="num">兑现率</th>
-            </tr>
-          </thead>
-          <tbody id="rbActualBody"></tbody>
-          <tfoot id="rbActualFoot"></tfoot>
-        </table>
+      <div class="rv-body">
+        <div class="rv-donut" id="rvDonut"><span class="rv-donut-c"><b id="rvDonutV">—</b>收益合计</span></div>
+        <div class="rv-list" id="rvPerfList"></div>
       </div>
-      <p class="rb-note" id="rbActualNote"></p>
-
-      <div class="rb-actual-split">
-        <div class="rb-actual-chart">
-          <div class="rb-sub-head">
-            <span class="rb-sub-title">累计：真实 vs 预期</span>
-            <span class="rb-sub-hint">阴影 = 累计超额</span>
-          </div>
-          <div class="rb-chart-wrap" id="rbActualChart"></div>
-          <div class="rb-chart-legend" id="rbActualLegend"></div>
-        </div>
-        <div class="rb-actual-attr">
-          <div class="rb-sub-head">
-            <span class="rb-sub-title">差在哪</span>
-            <span class="rb-sub-hint" id="rbAttrHint"></span>
-          </div>
-          <div class="rb-attr-list" id="rbActualAttr"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 标的贡献 Top：回答「这期的钱具体是哪几只赚的」。
-         与上卡同源（同一份 items 排序），不做二次计算。 -->
-    <section class="card rb-top-card">
-      <div class="rb-sub-head">
-        <span class="rb-sub-title">标的贡献 Top 5</span>
-        <span class="rb-sub-hint" id="rbTopHint">本期真实收益来源</span>
-      </div>
-      <div id="rbTopList"></div>
-      <p class="rb-note" id="rbTopNote"></p>
-    </section>
-
-    <section class="card rb-hist-card">
-      <div class="rb-sub-head">
-        <span class="rb-sub-title">再平衡历史</span>
-        <span class="rb-sub-hint">收益率 = 当时实际 / 当时目标 · 末列为最大偏离</span>
-      </div>
-      <div id="rbHistory"></div>
     </section>
   </div>
 
@@ -817,7 +738,7 @@
   <!-- 盈亏日历弹框（原「日历 + 走势」双 Tab 已移除走势视图） -->
   <div id="pnlModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="pnlModalTitle" data-icon="calendar">盈亏日历</h2>
+      <h2 id="pnlModalTitle">盈亏日历</h2>
       <button class="card-close" type="button" id="pnlClose" title="关闭" aria-label="关闭">✕</button>
       <div class="ac-panel m-body">
         <div class="cal-body">
@@ -931,7 +852,7 @@
 
   <div id="modal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="modalTitle" data-icon="holding">添加持仓</h2>
+      <h2 id="modalTitle">添加持仓</h2>
         <form id="form">
           <input type="hidden" id="f_id">
           <label class="f-search-label">名称 / 代码
@@ -994,7 +915,7 @@
 
   <div id="adjustModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 id="adjustTitle" data-icon="adjust">加减仓</h2>
+      <h2 id="adjustTitle">加减仓</h2>
       <div class="adj-tabs">
         <button type="button" class="adj-tab active" data-tab="calc">加减仓</button>
         <button type="button" class="adj-tab" data-tab="dividend">分红</button>
@@ -1086,7 +1007,7 @@
 
   <div id="cashflowModal" class="modal" hidden>
     <div class="modal-card" style="width:460px; max-width:94vw;">
-      <h2 id="cfModalTitle" data-icon="calendar">收支计划</h2>
+      <h2 id="cfModalTitle">收支计划</h2>
       <form id="cashflowForm">
         <input type="hidden" id="cf_id" />
         <input type="hidden" id="cf_type" value="income" />
@@ -1152,7 +1073,7 @@
   <!-- 定投计划：新建 / 编辑（标的 + 金额 + 间隔 + 起止 + 限购上限 + 资金子账户） -->
   <div id="dcaModal" class="modal" hidden>
     <div class="modal-card" style="width:520px; max-width:94vw;">
-      <h2 id="dcaTitle" data-icon="dca">定投计划</h2>
+      <h2 id="dcaTitle">定投计划</h2>
       <div class="dca-form m-body">
         <label>定投标的
           <select id="dcaHolding"></select>
@@ -1206,7 +1127,7 @@
   <!-- 基金定投：计划列表（顶部操作条「基金定投」入口；首页不再常驻卡片，2026-10-14） -->
   <div id="dcaPlansModal" class="modal" hidden>
     <div class="modal-card" style="width:560px; max-width:94vw;">
-      <h2 data-icon="dca">基金定投</h2>
+      <h2>基金定投</h2>
       <div id="dcaPlansBody" class="dca-list dca-plans-body"></div>
       <div class="modal-actions">
         <button class="btn ghost" id="dcaPlansNew" type="button">新建计划</button>
@@ -1217,7 +1138,7 @@
 
   <div id="dcaHistModal" class="modal" hidden>
     <div class="modal-card" style="width:680px; max-width:94vw;">
-      <h2 id="dcaHistTitle" data-icon="dca">定投记录</h2>
+      <h2 id="dcaHistTitle">定投记录</h2>
       <div id="dcaHistHead" class="dca-hist-head"></div>
       <div id="dcaHistBody" class="dca-hist-body"></div>
       <div class="modal-actions">
@@ -1231,7 +1152,7 @@
   <!-- 单期执行 / 修改：成交价 × 份额（金额自动联动），费用可选 -->
   <div id="dcaExecModal" class="modal" hidden>
     <div class="modal-card" style="width:420px; max-width:94vw;">
-      <h2 id="dcaExecTitle" data-icon="check">确认定投</h2>
+      <h2 id="dcaExecTitle">确认定投</h2>
       <div class="df-row">
         <label>成交价<input id="dcaExecPrice" type="number" step="0.0001" min="0" placeholder="净值" /></label>
         <label>份额<input id="dcaExecQty" type="number" step="0.0001" min="0" placeholder="0.0000" /></label>
@@ -1251,7 +1172,7 @@
 
   <div id="cfAmtModal" class="modal" hidden>
     <div class="modal-card" style="width:380px; max-width:94vw;">
-      <h2 id="cfAmtTitle" data-icon="calendar">完成计划</h2>
+      <h2 id="cfAmtTitle">完成计划</h2>
       <label>实际金额
         <input id="cfAmtInput" type="number" step="0.01" min="0" placeholder="0.00" />
       </label>
@@ -1265,7 +1186,7 @@
 
   <div id="chartModal" class="modal" hidden>
     <div class="modal-card chart-card">
-      <h2 id="chartTitle" data-icon="chart">图表</h2>
+      <h2 id="chartTitle">图表</h2>
       <div id="chartBody" class="m-body"></div>
     </div>
   </div>
@@ -1273,7 +1194,7 @@
   <div id="calModal" class="modal" hidden>
     <div class="modal-card">
       <div class="cal-modal-head">
-        <h2 id="calModalDate" data-icon="list">日期明细</h2>
+        <h2 id="calModalDate">日期明细</h2>
       </div>
       <div id="calModalBody" class="m-body"></div>
       <!-- 前一天/后一天按钮：由 openCalDay 每次渲染时重建拼入统计行（静态元素 append 进 innerHTML 内容区会被销毁，故改重建+事件委托） -->
@@ -1283,7 +1204,7 @@
   <!-- ===== 持仓历史盈亏弹框（3 段切换：盈亏走势曲线 / 历史净值表格 / 交易记录表格）===== -->
   <div id="histModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
-      <h2 id="histTitle" data-icon="hist">历史盈亏</h2>
+      <h2 id="histTitle">历史盈亏</h2>
       <div class="m-body">
         <div class="wh-range-bar ds-t-seg" id="histSegBar">
           <button data-seg="amount" class="active" type="button">盈亏走势</button>
@@ -1312,7 +1233,7 @@
   <!-- ===== 已平仓记录：手动新增 / 编辑（纯记录，不入账）===== -->
   <div id="closedRecordModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 id="crTitle" data-icon="check">新增已平仓记录</h2>
+      <h2 id="crTitle">新增已平仓记录</h2>
       <p id="crHint" class="snap-hint"></p>
       <form>
         <input type="hidden" id="cr_id">
@@ -1359,7 +1280,7 @@
   <!-- ===== 批量新增已平仓（纯记录，不入账）===== -->
   <div id="closedBatchModal" class="modal" hidden>
     <div class="modal-card" style="width:760px; max-width:96vw; padding:0 28px 0;">
-      <h2 id="crbTitle" data-icon="check" style="padding-left:0;">批量新增已平仓</h2>
+      <h2 id="crbTitle" style="padding-left:0;">批量新增已平仓</h2>
       <p class="snap-hint">同一账户、同一类型批量录入；输入名称 / 代码可联想全市场标的，点选即回填代码。仅作记录，不计入任何账户。</p>
       <form>
         <div class="f-row">
@@ -1388,7 +1309,7 @@
   <!-- ===== 理财历史盈亏弹框（每日盈亏与审计合并为单表，末列「操作」含撤销/删除）===== -->
   <div id="wealthHistModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
-      <h2 id="wealthHistTitle" data-icon="hist">理财每日盈亏</h2>
+      <h2 id="wealthHistTitle">理财每日盈亏</h2>
       <div class="m-body">
         <div class="wh-range-bar ds-t-seg" id="whRangeBar">
           <button data-range="30" type="button">近30天</button>
@@ -1409,7 +1330,7 @@
   <!-- ===== 编辑理财每日快照弹框（修正分红日历史曲线） ===== -->
   <div id="whEditModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 data-icon="edit">编辑今日记录</h2>
+      <h2>编辑今日记录</h2>
       <p id="whEditHint" class="snap-hint"></p>
       <div class="m-body">
         <div class="sr-field"><label class="sr-label">持仓金额</label><input type="number" step="0.01" id="whEditAmt"></div>
@@ -1423,7 +1344,7 @@
   <!-- ===== 技术分析弹框 ===== -->
   <div id="analysisModal" class="modal" hidden>
     <div class="modal-card" style="width:680px; max-width:94vw;">
-      <h2 id="analysisTitle" data-icon="analysis">技术分析</h2>
+      <h2 id="analysisTitle">技术分析</h2>
       <div id="analysisTime" class="analysis-time m-body"></div>
       <div id="analysisBody" class="analysis-body m-body"></div>
     </div>
@@ -1434,7 +1355,7 @@
   <!-- ===== 资产全景弹框 ===== -->
   <div id="assetSourceModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="assetSourceTitle" data-icon="wallet">添加账户</h2>
+      <h2 id="assetSourceTitle">添加账户</h2>
       <form id="assetSourceForm">
         <input type="hidden" id="as_id">
         <label>名称 <input id="as_name" placeholder="如 招商银行 / 支付宝" required></label>
@@ -1460,7 +1381,7 @@
 
   <div id="wealthModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="wealthTitle" data-icon="coin">添加理财</h2>
+      <h2 id="wealthTitle">添加理财</h2>
       <form id="wealthForm">
         <input type="hidden" id="w_id">
         <label>名称 <input id="w_name" placeholder="如 安心天天成长3号163期A" required></label>
@@ -1500,7 +1421,7 @@
   <!-- 理财「赎回」弹框：部分赎回或全额清仓；操作行内含永久删除按钮（替代原操作列删除按钮） -->
   <div id="wealthReduceModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="wrTitle" data-icon="exit">赎回</h2>
+      <h2 id="wrTitle">赎回</h2>
       <form id="wealthReduceForm">
         <label>赎回金额 <input id="wr_amount" type="number" step="0.01" min="0" placeholder="默认等于剩余持仓（即清仓）"></label>
         <label>赎回金额入账账户
@@ -1518,7 +1439,7 @@
 
   <div id="cashModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 id="cashTitle" data-icon="layers">添加子账户</h2>
+      <h2 id="cashTitle">添加子账户</h2>
       <form id="cashForm">
         <!-- 统一表单：一个复选框标记「是负债」，不再分子账户/负债两个 tab。
              新增与编辑都可通过它切换性质（编辑时换性质走后端安全转换：无流水、无引用才允许）。 -->
@@ -1557,7 +1478,7 @@
 
   <div id="flowModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 class="m-head" data-icon="plus">添加流水</h2>
+      <h2 class="m-head">添加流水</h2>
       <form id="flowForm">
         <label><span>子账户</span>
           <div class="ac-picker" id="flowCashPicker">
@@ -1596,7 +1517,7 @@
   <!-- 批量录入流水：截图识别出多条明细时用（每行可勾选 / 改分类 / 改金额 / 改说明） -->
   <div id="flowBatchModal" class="modal" hidden>
     <div class="modal-card fb-card">
-      <h2 class="m-head" data-icon="list">批量录入流水</h2>
+      <h2 class="m-head">批量录入流水</h2>
       <p class="fb-desc">核对识别结果后一次写入；取消勾选可跳过某条。</p>
       <label class="fb-acct">子账户
         <select id="fb_cash"></select>
@@ -1614,7 +1535,7 @@
   <!-- 一键更新余额：手动对账所有账户余额，差额自动记「手动调整」流水并联动余额 -->
   <div id="balanceSyncModal" class="modal" hidden>
     <div class="modal-card" style="width:560px; max-width:94vw;">
-      <h2 class="m-head" data-icon="adjust">一键更新余额</h2>
+      <h2 class="m-head">一键更新余额</h2>
       <form id="balanceSyncForm">
         <p class="bsync-desc">填入账户的最新余额（原币种），留空跳过；有变化的自动补一条「手动调整」流水。</p>
         <div id="bsBody" class="bsync-list"></div>
@@ -1631,7 +1552,7 @@
 
   <div id="cashTransferModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="cashTransferTitle" data-icon="transfer">账户转账</h2>
+      <h2 id="cashTransferTitle">账户转账</h2>
       <form id="cashTransferForm">
         <input type="hidden" id="ct_from_id">
         <label>转出账户
@@ -1654,7 +1575,7 @@
   <!-- 存款：新建 / 编辑（定期存款 / 大额存单）。新增时从子账户扣款，到期确认落袋后才入账本息 -->
   <div id="depositModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 id="depModalTitle" data-icon="deposit">新增存款</h2>
+      <h2 id="depModalTitle">新增存款</h2>
       <form id="depositForm">
         <input type="hidden" id="dep_id" />
         <label>名称
@@ -1686,7 +1607,7 @@
   <!-- 存款确认落袋：本金 + 利息入账（利息预填估算值，可改；确认才落账） -->
   <div id="depositSettleModal" class="modal" hidden>
     <div class="modal-card" style="width:440px; max-width:94vw;">
-      <h2 data-icon="deposit">确认落袋</h2>
+      <h2>确认落袋</h2>
       <div class="m-body">
         <p class="dep-settle-desc" id="depSettleDesc"></p>
         <div class="df-row">
@@ -1705,7 +1626,7 @@
   <!-- 新增类型选择（2026-10-09）：顶部「添加」按钮按胶囊（类别筛选）当前是否落在「理财」决定默认项 -->
   <div id="addPickModal" class="modal" hidden>
     <div class="modal-card add-pick-card">
-      <h2 data-icon="plus">新增</h2>
+      <h2>新增</h2>
       <div class="add-pick">
         <button class="add-pick-item" type="button" data-add-kind="holding">
           <span class="ap-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="6.6" width="17" height="13.4" rx="2.2"/><path d="M3.5 10.8h17"/><path d="M9 6.6V4.5h6v2.1"/></svg></span>
@@ -1721,7 +1642,7 @@
 
   <div id="snapModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
-      <h2 data-icon="refresh">更新理财持仓</h2>
+      <h2>更新理财持仓</h2>
       <div id="snapBody" class="snap-body m-body"></div>
       <div class="modal-actions"><button type="button" id="snapSave" class="btn primary">保存</button></div>
     </div>
@@ -1729,7 +1650,7 @@
 
   <div id="snapConfirmModal" class="modal" hidden>
     <div class="modal-card" style="width:680px; max-width:94vw;">
-      <h2 data-icon="check">确认保存持仓</h2>
+      <h2>确认保存持仓</h2>
       <div id="snapConfirmBody" class="m-body"></div>
       <div class="modal-actions">
         <button type="button" id="snapConfirmCancel" class="btn">取消</button>
@@ -1744,7 +1665,7 @@
      列表整行即热区，点哪儿都能切，不必再找行内那个小图标按钮。 -->
 <div id="userSheet" class="modal" hidden>
   <div class="modal-card book-modal">
-    <h2 data-icon="layers">账本管理</h2>
+    <h2>账本管理</h2>
     <div class="m-body">
       <p class="book-hint">点击任一行即可切换账本，当前在用的账本带勾选标记。</p>
       <div class="user-list" id="userList"></div>
@@ -1760,7 +1681,7 @@
 <!-- 删除账本：需输入「我已知晓」确认 -->
 <div id="userDeleteModal" class="modal" hidden>
   <div class="modal-card confirm-card">
-    <h2 data-icon="warn">删除账本</h2>
+    <h2>删除账本</h2>
     <p class="confirm-msg" id="userDeleteMsg"></p>
     <label class="ud-confirm-label">请输入「我已知晓」以确认删除：
       <input id="userDeleteInput" type="text" autocomplete="off" spellcheck="false" placeholder="我已知晓" data-1p-ignore data-lpignore="true">
@@ -1775,7 +1696,7 @@
   <!-- ===== 通用确认弹框（置于根级，z-index 高于其它弹框，避免清空数据时被遮罩盖住；含「取消」以防误清空） ===== -->
   <div id="confirmModal" class="modal" hidden>
     <div class="modal-card confirm-card">
-      <h2 id="confirmTitle" data-icon="warn">确认删除</h2>
+      <h2 id="confirmTitle">确认删除</h2>
       <p id="confirmMsg" class="confirm-msg"></p>
       <div class="modal-actions">
         <button type="button" id="confirmCancel" class="btn">取消</button>
@@ -1787,7 +1708,7 @@
   <!-- ===== 刷新行情确认弹框（含 N 天回朔补刷） ===== -->
   <div id="refreshConfirmModal" class="modal" hidden>
     <div class="modal-card confirm-card">
-      <h2 data-icon="refresh">刷新行情</h2>
+      <h2>刷新行情</h2>
       <p class="confirm-msg">将从行情源拉取最新现价与汇率、重算当日盈亏；并可<b>回朔补刷</b>过去 N 天因系统断档而缺失的每日快照（修复盈亏日历与走势的断点）。</p>
       <div class="f-row">
         <label for="refreshDays" class="field-label">回朔天数 N</label>
@@ -1803,7 +1724,7 @@
 
 <div id="calJumpModal" class="modal" hidden>
   <div class="modal-card" style="width:360px; max-width:92vw;">
-    <h2 data-icon="calendar">跳转到月份</h2>
+    <h2>跳转到月份</h2>
     <button class="card-close" type="button" id="calJumpClose" title="关闭" aria-label="关闭">✕</button>
     <div class="cal-jump">
       <div class="cal-jump-year">
@@ -1815,61 +1736,10 @@
     </div>
   </div>
 </div>
-<!-- 再平衡 · 目标权重设置（2026-10-27）：四类目标合计须 100%，保存后即时重算偏离 -->
-<div id="rbSettingsModal" class="modal" hidden>
-  <div class="modal-card rb-set-card">
-    <h2>再平衡设置</h2>
-    <button class="card-close" type="button" id="rbSetClose" title="关闭" aria-label="关闭">✕</button>
-    <div class="rb-set-scroll">
-    <p class="snap-hint">三类参数都是「假设值」，作用是把配置比例折算成预期收益，不是行情也不是预测。目标权重合计须为 100%；现金通常留 10–20% 作为再平衡弹药。</p>
-
-    <div class="rb-presets" id="rbPresets">
-      <button type="button" class="rb-chip" data-preset="cons">保守</button>
-      <button type="button" class="rb-chip is-on" data-preset="bal">稳健</button>
-      <button type="button" class="rb-chip" data-preset="aggr">积极</button>
-      <span class="rb-presets-hint">预设会同时套用权重与三类假设，套用后可继续微调</span>
-    </div>
-
-    <div class="rb-pgrid" id="rbTgtInputs"></div>
-    <div class="rb-tgt-sum">目标权重合计：<b id="rbTgtSum">100%</b></div>
-
-    <div class="rb-sec-label">收益目标（可选）</div>
-    <div class="rb-goal-row">
-      <label for="rbGoalPct" class="field-label">年度收益率</label>
-      <div class="rb-thr"><input id="rbGoalPct" type="number" min="0" max="50" step="0.1" placeholder="不设"><span>%</span></div>
-      <span class="rb-goal-amt" id="rbGoalAmt">留空则只看配置内生的预期收益</span>
-    </div>
-
-    <div class="rb-preview" id="rbPreview"></div>
-
-    <div class="rb-sec-label">再平衡触发规则</div>
-    <div class="f-row rb-tgt-extra">
-      <label>检查频率
-        <select id="rbFreqSel">
-          <option value="monthly">每月</option>
-          <option value="quarterly">每季度</option>
-          <option value="manual">手动</option>
-        </select>
-      </label>
-      <label>偏离阈值
-        <div class="rb-thr"><input id="rbDriftThr" type="number" min="0.5" max="20" step="0.5" value="1"><span>pp</span></div>
-      </label>
-    </div>
-    <p class="snap-hint rb-thr-hint">偏离超过阈值的类别才进「本次调整清单」。阈值调小会给出更多小额调仓，调大则更接近「只在大幅漂移时动手」。</p>
-    </div>
-
-    <div class="modal-actions">
-      <button type="button" class="btn" id="rbSetReset">恢复默认</button>
-      <span class="modal-actions-spacer"></span>
-      <button type="button" class="btn primary" id="rbSetSave">保存配置</button>
-    </div>
-  </div>
-</div>
-
 <!-- 出码结果弹框：添加设备 / 邀请家人共用 -->
 <div class="modal" id="pairCodeModal" hidden>
   <div class="modal-card pair-card">
-    <h2 data-icon="plus" id="pairCodeTitle">配对码</h2>
+    <h2 id="pairCodeTitle">配对码</h2>
     <button class="card-close" type="button" id="pairCodeClose" title="关闭" aria-label="关闭">✕</button>
     <div class="pair-code-wrap">
       <div class="pair-code" id="pairCodeValue">······</div>
@@ -1886,7 +1756,7 @@
 <!-- 邀请家人：选新建账本或授权已有账本 -->
 <div class="modal" id="inviteModal" hidden>
   <div class="modal-card invite-card">
-    <h2 data-icon="user">邀请家人</h2>
+    <h2>邀请家人</h2>
     <button class="card-close" type="button" id="inviteClose" title="关闭" aria-label="关闭">✕</button>
     <div class="invite-wrap">
       <label class="invite-opt">
@@ -1912,7 +1782,7 @@
 <!-- 操作 PIN 输入弹框（危险操作前弹出，promise 化） -->
 <div class="modal" id="pinPromptModal" hidden>
   <div class="modal-card pin-card">
-    <h2 data-icon="warn">需要操作 PIN</h2>
+    <h2>需要操作 PIN</h2>
     <button class="card-close" type="button" id="pinPromptClose" title="关闭" aria-label="关闭">✕</button>
     <div class="pin-prompt-wrap">
       <input id="pinPromptInput" type="password" inputmode="numeric" maxlength="6" placeholder="输入 4–6 位操作 PIN" autocomplete="off">
@@ -1929,7 +1799,7 @@
      省得接进来再去列表改一次。留空就用 UA 自动识别。 -->
 <div class="modal" id="addDeviceModal" hidden>
   <div class="modal-card dev-name-card">
-    <h2 data-icon="plus">添加设备</h2>
+    <h2>添加设备</h2>
     <div class="m-body">
       <label class="dev-name-label">设备名称（可选）
         <input id="addDeviceName" type="text" maxlength="20" placeholder="如：客厅台式机 / 妈妈的手机" autocomplete="off" spellcheck="false">
@@ -1948,7 +1818,7 @@
      改了之后设备列表认得出是哪台机器。留空即恢复自动识别名。Esc / 点遮罩 / 右上角 ✕ 均可关。 -->
 <div class="modal" id="devNameModal" hidden>
   <div class="modal-card dev-name-card">
-    <h2 data-icon="user">设备名称</h2>
+    <h2>设备名称</h2>
     <div class="m-body">
       <label class="dev-name-label">名称
         <input id="devNameInput" type="text" maxlength="20" placeholder="如：客厅台式机 / 我的 MacBook" autocomplete="off" spellcheck="false">
@@ -1966,7 +1836,7 @@
      用途收得很窄——只在已登录的主设备上重置操作 PIN，不能用来在别处加设备。 -->
 <div class="modal" id="recoveryModal" hidden>
   <div class="modal-card rec-card">
-    <h2 data-icon="warn">主设备的恢复码</h2>
+    <h2>主设备的恢复码</h2>
     <button class="card-close" type="button" id="recoveryClose" title="关闭" aria-label="关闭">✕</button>
     <div class="m-body">
       <p class="rec-lead">忘记<b>操作 PIN</b>时用这串码重置。它<b>只显示这一次</b>，请现在抄到手机备忘录或密码管理器里。</p>
@@ -1990,7 +1860,7 @@
 <!-- 忘记 PIN：用恢复码重置（2026-10-29）。成功即焚，提示再生成一份。 -->
 <div class="modal" id="pinResetModal" hidden>
   <div class="modal-card pin-card">
-    <h2 data-icon="warn">用恢复码重置 PIN</h2>
+    <h2>用恢复码重置 PIN</h2>
     <button class="card-close" type="button" id="pinResetClose" title="关闭" aria-label="关闭">✕</button>
     <div class="m-body">
       <label class="dev-name-label">恢复码
