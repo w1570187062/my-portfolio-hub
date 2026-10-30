@@ -283,12 +283,12 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/asset/liabilities/:id/flows", liabilityFlows)
 		// 资产再平衡（2026-10-27 重新引入）：股票/基金/理财/现金 四大类配置偏离 + 历史记录
 		g.GET("/rebalance", rebalanceOverview)
-		// 本期兑现：真实收益 vs 预期收益（2026-10-29）。与 /rebalance 是两套口径：
-		// 那边是配置层内生期望，这边是区间实测。
-		g.GET("/rebalance/actual", rebalanceActualGet)
 		g.POST("/rebalance/log", rebalanceLogPost)
 		g.GET("/rebalance/history", rebalanceHistoryGet)
 		g.DELETE("/rebalance/log/:id", rebalanceLogDelete)
+		// 复盘页 v6（2026-10-30）：收益率诊断三问（谁在拖累 / 现金闲置 / 谁表现好）。
+		// 与 /rebalance 是两套口径：那边是权重偏离，这边是逐标的实测年化（XIRR）。
+		g.GET("/review", reviewGet)
 		// 存款（定期存款 / 大额存单）：新增扣款、到期确认落袋后才入账利息
 		g.GET("/asset/deposits", listDeposits)
 		g.POST("/asset/deposits", createDeposit)
@@ -2201,6 +2201,7 @@ func holdingPnlHistory(c *gin.Context) {
 		TotalPnl    float64 `json:"total_pnl"`
 		TotalPnlPct float64 `json:"total_pnl_pct"`
 		MarketValue float64 `json:"market_value"`
+		Held        bool    `json:"held"` // false = 该日尚未建仓（份额为 0），盈亏不计算、前端显示「—」
 	}
 	// 现金分红后复权：把累计每股现金分红加回净值，使分红日的当日盈亏不再假跌
 	// （净值+分红口径）。红利再投（REINVEST）不在此处理——分红已转为份额，市值连续。
@@ -2229,6 +2230,24 @@ func holdingPnlHistory(c *gin.Context) {
 	// 历史快照不属于本持仓生命周期——否则首行基准错乱，两个月前的价差会被算成
 	// 「当日盈亏」（2026-10-23 NVDA 复现：8-27 旧快照 209.66 作基准，10-23 虚增 +7.65）。
 	startDate := h.BuyDate
+	// 真实建仓日：以交易记录里最早的「持仓证据」为准（BUY 建仓 / DIV 分红，二者都只在持仓后才会发生）。
+	// buy_date 常在录入时被填早于实际建仓（本库「招商港股通红利低波」buy_date=04-14、首笔买入
+	// 却是 09-21；「中证海外互联50」buy_date=01-14、首笔买入 08-13），直接用它会把建仓之前
+	// 的净值涨跌算成持仓盈亏。
+	// 这类日期只保留净值供「历史净值」表查看，盈亏金额/累计盈亏一律不计算（Held=false，前端显「—」）。
+	posStart := ""
+	for _, t := range txs {
+		if (t.TxType != "BUY" && t.TxType != "DIV") || t.Reverted == 1 || len(t.CreatedAt) < 10 {
+			continue
+		}
+		d := t.CreatedAt[:10]
+		if posStart == "" || d < posStart {
+			posStart = d
+		}
+	}
+	if posStart == "" {
+		posStart = startDate // 无交易记录的老持仓：无法证明建仓更晚，退回买入日
+	}
 	n := 0 // 纳入曲线的点数：过滤（continue）不重置 range 索引，首条判定必须用独立计数
 	for _, p := range series {
 		// 已清仓：曲线截止清仓日（含），之后的行情与持仓无关，不能再算成持仓盈亏
@@ -2242,6 +2261,16 @@ func holdingPnlHistory(c *gin.Context) {
 			cumDiv += d
 		}
 		adj := p.Close + cumDiv
+		// 尚未建仓：份额为 0，任何盈亏都是假的。只记录净值与净值涨跌幅（行情属性，与持仓无关）。
+		if posStart != "" && p.Date < posStart {
+			var navPct float64
+			if prevAdj > 0 {
+				navPct = (adj - prevAdj) / prevAdj * 100
+			}
+			prevAdj = adj
+			rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnlPct: navPct, Held: false})
+			continue
+		}
 		mv := p.Close * qty * fx
 		// 历史成本基准：当前成本 + 尚未生效的每股分红（分红当日成本已摊薄，不再加回）。
 		// 现金分红收益通过成本下调计入一次，与持仓列表 pnl = (现价−成本)×份额 完全同口径。
@@ -2272,7 +2301,7 @@ func holdingPnlHistory(c *gin.Context) {
 				totalPct = totalPnl / (costAt * qty * fx) * 100
 			}
 		}
-		rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})
+		rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv, Held: true})
 	}
 	// 买入日之后尚无快照（刚买入、当日快照任务未跑）：回退用最后一个 ≤买入日 的点
 	// 保底，避免弹框空图（day_pnl 缺省 0，首行无基准问题）。
@@ -2286,7 +2315,7 @@ func holdingPnlHistory(c *gin.Context) {
 				if cost > 0 {
 					totalPct = totalPnl / (cost * qty * fx) * 100
 				}
-				rows = append(rows, Row{Date: p.Date, Close: p.Close, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})
+				rows = append(rows, Row{Date: p.Date, Close: p.Close, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv, Held: true})
 				break
 			}
 		}
@@ -2300,7 +2329,7 @@ func holdingPnlHistory(c *gin.Context) {
 		if cost > 0 {
 			totalPct = totalPnl / (cost * qty * fx) * 100
 		}
-		rows = append(rows, Row{Date: p.Date, Close: p.Close, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv})
+		rows = append(rows, Row{Date: p.Date, Close: p.Close, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv, Held: true})
 	}
 	// 交易点：BUY/SELL 供前端在曲线上打 B/S 标记；DIV（分红）不画。
 	// 日期取 created_at[:10]，若当天没有行情点，前端会就近落到最近一个点上。
