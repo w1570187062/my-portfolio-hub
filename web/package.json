@@ -6,7 +6,9 @@
   "scripts": {
     "build": "node build.mjs",
     "lint:ui": "node check-ui.mjs",
-    "verify": "node check-ui.mjs && node build.mjs"
+    "lint:dead": "node lint-deadcode.mjs",
+    "lint:dead:freeze": "node lint-deadcode.mjs --update-baseline",
+    "verify": "node lint-deadcode.mjs --strict && node check-ui.mjs && node build.mjs"
   },
   "devDependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",

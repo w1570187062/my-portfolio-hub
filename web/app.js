@@ -134,7 +134,6 @@ document.addEventListener('DOMContentLoaded', () => {
 const VIEWS = ['home', 'invest', 'asset', 'finance', 'rebalance', 'settings', 'ai', 'devices', 'notify'];
 
 // ==== 复盘页状态与配色（声明必须早于下方同步执行的 applyRoute()，否则 TDZ 报错）====
-const RB_CLASS_LABEL = { stock: '股票', fund: '基金', wealth: '理财', cash: '现金' };
 // 分类色复用 --cat-*（与资产构成卡同源，同一类别跨页同色）。
 // 值以字符串形式注入 style 的 --rb-c，故此处保留 rgba(var(--cat-x), 1) 原样写法。
 const RB_CLASS_COLOR = {
@@ -307,8 +306,6 @@ const normCur = (c) => { const s = String(c || '').toLowerCase(); return s === '
 // 金额折人民币：usd/hkd 按汇率，其余（cny/rmb）按原值。usdRate/hkdRate 在模块初始化后赋值。
 const cnyOf = (v, cur) => (cur === 'usd' ? v * usdRate : cur === 'hkd' ? v * hkdRate : v);
 let catFilter = new Set(); // selected categories; empty = all
-let mktFilter = new Set(); // selected markets; empty = all
-let textFilter = '';        // 文本搜索（名称/代码/备注），配合「/」快捷聚焦
 let usdRate = 1;
 let hkdRate = 1;
 let snapshotDate = '';   // 最近 pnl_daily 快照日期（YYYY-MM-DD）
@@ -321,12 +318,6 @@ let failedSymbols = {};  // symbol -> 失败原因（刷新失败持久标记）
 // 首页主区切换：持仓 / 理财（localStorage 记忆），默认持仓
 let homeSection = localStorage.getItem('pf_home_section') || 'holdings';
 let homeLoadError = false;  // 首页持仓数据加载失败标记（驱动 alert-triangle 空态）
-// Two-level category -> market association (二级筛选).
-const CAT_MARKETS = {
-  stock: ['沪深', '美股', '港股'],
-  fund: ['QDII', '债券', '股票', '商品'],
-};
-const ALL_MARKETS = [...CAT_MARKETS.stock, ...CAT_MARKETS.fund];
 
 // 基金判定：以是否关联基金代码（linked_symbol）为准，取代已废弃的手动分类字段 category
 const isFund = (h) => !!(h && (h.category === 'fund' || (h.linked_symbol && String(h.linked_symbol).trim())));
@@ -479,20 +470,9 @@ async function reopenHoldingRow(id) {
 
 // 行情时效性标识（renderFreshness/更新时间行）已随首页 market-bar 整体下线（2026-10-09）。
 
-// Holdings after applying the two-level (category + market) filter.
+// Holdings after applying the category filter.
 function filteredHoldings() {
-  const kw = textFilter;
-  return allHoldings.filter((h) => {
-    if (catFilter.size && !catFilter.has(h.category)) return false;
-    // 市场筛选仅在选定了具体类别（市场行可见）时生效：全不勾选 → 空集 → 无数据；全勾选 → 全部。
-    if (catFilter.size && !mktFilter.has(h.market)) return false;
-    if (kw) {
-      // 搜索框按「名称 / 代码」过滤（首页 #homeFilterInput 绑定 textFilter）
-      const hay = ((h.name || '') + ' ' + (h.symbol || '')).toLowerCase();
-      if (!hay.includes(kw)) return false;
-    }
-    return true;
-  });
+  return allHoldings.filter((h) => !(catFilter.size && !catFilter.has(h.category)));
 }
 
 // Render both the summary cards and the table from the currently filtered set,
@@ -541,7 +521,6 @@ function emptyStateHTML({ icon, title, desc, btnLabel, btnAttrs }) {
 function renderFiltered() {
   const hs = filteredHoldings();
   renderSummary(hs);
-  const desc = document.getElementById('tblDesc');
   const empty = document.getElementById('holdingsEmpty');
   const srcBox = document.getElementById('holdingsBySource');
   const metaBar = document.querySelector('.tbl-meta-bar');
@@ -551,8 +530,6 @@ function renderFiltered() {
   const toolbar = document.getElementById('investToolbar');
 
   if (metaBar) metaBar.hidden = false;
-  // 数量已并入分段控件徽标（原型风格），左侧描述留空避免重复
-  if (desc) desc.hidden = true;
 
   // 每个 tab 有自己的 KPI 口径（持仓看市值/今日/本月/收益率，平仓看落袋，理财看收益/年化，
   // 存款看本金/利息/到期）。但**不能只隐藏不补位**——那样下方内容整体上移，切 tab 会有
@@ -1668,114 +1645,10 @@ function bindHomeRateMode() {
   });
 }
 
-// Build the two-level filter UI: a category slider (left-right swipeable, single
-// select) and a market row (multi-select chips) whose options depend on the
-// selected category (二级筛选).
-// 布局（2026-10-09 压缩高度）：类别滑块与市场 chips 合并为一行（slider 左、市场右，
-// 仅选中股票/基金时出现市场 chips；全部/理财时整行只有滑块，高度省一半）。
+// 筛选状态复位：每次 load 把类别筛选清空（真正的交互在投资页表头工具条 .toolbar-chip 上，
+// 见 renderInvestToolbar）。历史上的「市场二级筛选」弹层与 #filters 容器均已下线。
 function buildFilters() {
-  // 重置筛选状态（保留「按市场筛选」弹窗所需的 mktFilter 初始化）。
-  // 文本搜索框已按需求移除（见投资页清理），#filters 容器一并下线，故找不到时直接返回。
   catFilter = new Set();
-  mktFilter = new Set(ALL_MARKETS);
-  const box = $('#filters');
-  if (!box) return;
-  box.innerHTML = '';
-}
-
-// Markets offered depend on which categories are selected.
-function availableMarkets() {
-  if (catFilter.size === 0) return ALL_MARKETS;
-  let ms = [];
-  catFilter.forEach((c) => { ms = ms.concat(CAT_MARKETS[c] || []); });
-  return ms;
-}
-
-// 摘要按钮：全选显示「市场：全部」，部分显示数量，全不选显示「市场：未选」
-function syncMktSummary() {
-  const btn = document.getElementById('mktSummaryBtn');
-  if (!btn) return;
-  const avail = availableMarkets();
-  let label;
-  if (!mktFilter.size) label = '市场：未选';
-  else if (mktFilter.size >= avail.length) label = '市场：全部';
-  else if (mktFilter.size === 1) label = '市场：' + [...mktFilter][0];
-  else label = '市场：' + mktFilter.size + ' 项';
-  btn.textContent = label;
-  btn.classList.toggle('is-partial', mktFilter.size > 0 && mktFilter.size < avail.length);
-  btn.classList.toggle('is-empty', mktFilter.size === 0);
-}
-
-function renderMktList(avail) {
-  const box = $('#mktFilterList');
-  if (!box) return;
-  box.innerHTML = '';
-  if (!avail.length) { box.innerHTML = '<p class="src-empty">当前类别没有市场维度</p>'; return; }
-  avail.forEach((m) => {
-    const lbl = document.createElement('label');
-    lbl.className = 'src-item';
-    lbl.innerHTML = `<input type="checkbox" name="mkt-filter" value="${m}" ${mktFilter.has(m) ? 'checked' : ''}> <span>${esc(m)}</span>`;
-    lbl.querySelector('input').addEventListener('change', onMktChange);
-    box.appendChild(lbl);
-  });
-}
-
-function toggleMktPop(force) {
-  const btn = document.getElementById('mktSummaryBtn');
-  const pop = $('#mktFilterPop');
-  if (!btn || !pop) return;
-  const show = (force === undefined) ? pop.hidden : force;
-  if (show) {
-    renderMktList(availableMarkets());
-    const r = btn.getBoundingClientRect();
-    pop.style.top = (r.bottom + 6) + 'px';
-    // 右对齐到按钮右缘，并夹在视口内（弹层固定 224px 宽）
-    pop.style.left = Math.max(8, Math.min(r.right - 224, window.innerWidth - 232)) + 'px';
-    pop.hidden = false;
-    btn.setAttribute('aria-expanded', 'true');
-  } else {
-    pop.hidden = true;
-    btn.setAttribute('aria-expanded', 'false');
-  }
-}
-
-function onMktChange() {
-  mktFilter = new Set([...document.querySelectorAll('#mktFilterList input:checked')].map((i) => i.value));
-  syncMktSummary();
-  applyFilter();
-}
-
-// 市场弹层交互：摘要按钮开合、全选/清空、点击外部关闭、Esc 关闭
-// 注意：#mktSummaryBtn 是 buildFilters() 动态创建的（load() 里才执行，晚于本段脚本），
-// 所以按钮一律走 document 事件委托，不能在此处直接取元素绑定 —— 否则拿到 null 静默失效。
-(function wireMktFilter() {
-  const pop = document.getElementById('mktFilterPop');
-  if (!pop) return;
-  const apply = document.getElementById('mktApply');
-  const all = document.getElementById('mktAll');
-  const none = document.getElementById('mktNone');
-  if (apply) apply.onclick = () => toggleMktPop(false);
-  if (all) all.onclick = () => {
-    document.querySelectorAll('#mktFilterList input').forEach((i) => { i.checked = true; });
-    onMktChange();
-  };
-  if (none) none.onclick = () => {
-    document.querySelectorAll('#mktFilterList input').forEach((i) => { i.checked = false; });
-    onMktChange();
-  };
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('#mktSummaryBtn');
-    if (btn) { e.stopPropagation(); toggleMktPop(); return; }
-    if (!pop.hidden && !pop.contains(e.target)) toggleMktPop(false);
-  });
-  pop.addEventListener('click', (e) => e.stopPropagation());
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !pop.hidden) toggleMktPop(false);
-  });
-})();
-
-function applyFilter() {
-  renderFiltered();
 }
 
 let sparkUid = 0;
@@ -2623,16 +2496,7 @@ wireSearch();
 function syncViewToggle() {
   document.querySelectorAll('#viewToggle .sub-tab').forEach((x) => x.classList.toggle('active', x.dataset.view === homeSection));
 }
-// 滑动白块：根据当前 active 按钮定位指示器（宽 + 位移），实现左右平移动画
-function positionIndicator() {
-  const ind = document.getElementById('vtIndicator');
-  if (!ind) return;
-  const active = document.querySelector('#viewToggle .vt-btn.active');
-  if (!active) return;
-  ind.style.width = active.offsetWidth + 'px';
-  ind.style.transform = 'translateX(' + active.offsetLeft + 'px)';
-}
-// 通用：根据指定切换器内当前 active 按钮定位滑动白块（首页/资产/日历多个切换器共用）
+// 通用：根据指定切换器内当前 active 按钮定位滑动白块（资产/日历切换器共用）
 function positionIndicatorFor(toggleId, indId) {
   const ind = document.getElementById(indId);
   if (!ind) return;
@@ -2650,17 +2514,7 @@ document.querySelectorAll('#viewToggle .sub-tab').forEach((b) => {
   };
 });
 syncViewToggle();
-window.addEventListener('resize', () => { positionIndicator(); });
-setTimeout(positionIndicator, 0); // 字体/布局稳定后校正初始位置
 $('#emptyAddBtn').onclick = () => openModal(null);
-// 文本筛选（设计系统：搜索框 + 「/」聚焦 + Enter 提交）
-(function wireFilter() {
-  const fi = document.getElementById('filterInput');
-  if (!fi) return;
-  const apply = () => { textFilter = fi.value.trim().toLowerCase(); renderFiltered(); };
-  fi.addEventListener('input', apply);
-  fi.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
-})();
 
 // 资产空状态内联"添加"按钮（各空 tab 共用，data-empty-add 区分类型）
 $('#assetTabBody').addEventListener('click', (e) => {
@@ -4209,15 +4063,6 @@ function finCatBadge(key, cls) {
 
 // ESC 键：从任意二级页（资产/速算/日历）返回主页
 document.addEventListener('keydown', (e) => {
-  const t = e.target;
-  const tag = (t.tagName || '').toLowerCase();
-  const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable;
-  // 「/」聚焦筛选（设计系统：快捷聚焦搜索框）
-  if (e.key === '/' && !typing) {
-    const fi = document.getElementById('homeFilterInput');
-    if (fi) { e.preventDefault(); fi.focus(); }
-    return;
-  }
   if (e.key !== 'Escape') return;
   // 弹框优先（含通知弹框），ESC 直接关闭
   const openModals = document.querySelectorAll('.modal:not([hidden])');
@@ -6168,8 +6013,6 @@ const REGION_META = {
 };
 // 占比文案：分母 ≤0 时不给无意义的百分比
 const pctOf = (a, b) => (b > 0 ? (a / b * 100).toFixed(1) + '%' : '—');
-// 金额带符号：负数写成 -¥1,234.56（¥ 在负号之后，避免 ¥-1,234 的错位读法）
-const yuanOf = (v) => (Number(v) < 0 ? '-¥' : '¥') + fmt(Math.abs(Number(v) || 0));
 // 地域归一：兼容存量 domestic/overseas 与大小写混写，输出 cn/hk/us（与后端 NormRegion 一致）
 const normRegionJS = (r) => {
   switch (String(r || '').toLowerCase()) {
@@ -6828,7 +6671,7 @@ function renderWealth(body) {
   const w = [...raw].sort((a, b) => Number(b.amount) - Number(a.amount)); // 按金额从大到小
   // 「更新理财持仓」已上移到首页顶部操作条（#wealthSnapBtn）；「添加理财」收敛到顶部 #addBtn。
   // 「批量刷新净值」按钮及前端逻辑已删（2026-10-19）：自动/批量刷新净值尚未支持，后端接口保留。
-  // 计数（理财（N））已上提到切换条右侧 #tblDesc，此处不再单独渲染头，避免与切换条分两行。
+  // 计数（理财（N））已上提到切换条徽标，此处不再单独渲染头，避免与切换条分两行。
   let html = '';
   if (!w.length) html += emptyStateHTML({ icon: EMPTY_ICONS.wallet, title: '还没有理财', desc: '添加第一笔理财，每日净值自动录入并计入资产全景。', btnLabel: '＋ 添加第一笔理财', btnAttrs: 'data-empty-add="wealth"' });
   else html += renderWealthTable(w);
@@ -9632,22 +9475,7 @@ let cashflowDone = {};         // { plan_id: {done_at, actual_amount} }，key �
 let cashflowMonth = '';        // 当前展示的月份 YYYY-MM
 // 当前月份 YYYY-MM（用于「截止日期」到期判断）
 const cfNowYm = (function () { const d = new Date(); const m = String(d.getMonth() + 1).padStart(2, '0'); return d.getFullYear() + '-' + m; })();
-// 计划是否仍有效：无截止日期=长期有效；有截止日期则当月需 <= 截止月
-function cfPlanActive(p, ym) {
-  if (p.pattern === 'one_time') {
-    // 一次性计划仅在归属日期所在月出现
-    return !!p.one_time_date && p.one_time_date.slice(0, 7) === (ym || '');
-  }
-  if (!p.end_date) return true;
-  return (ym || '') <= p.end_date.slice(0, 7);
-}
 let cashflowLiabilities = [];  // 编辑弹框内「关联负债」下拉用
-// 卡片视图状态：bars=柱状图（默认）/ table=表格；记忆到 localStorage（pf_cf_view）
-let cfViewMode = (function () { try { return localStorage.getItem('pf_cf_view') === 'table' ? 'table' : 'bars'; } catch (_) { return 'bars'; } })();
-// 切换按钮图标：单色线性极简（stroke 1.9 / round），与站内 icon-btn 同风格。
-// 按钮图标显示「点击后切换到」的目标视图：柱状图态显示表格 icon，表格态显示柱状图 icon。
-const CF_ICON_TABLE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.4"/><path d="M3.5 10h17M9.5 10v9.5M15.5 10v9.5"/></svg>';
-const CF_ICON_BARS = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M7.5 16v-4.5M12 16V8M16.5 16v-6.5"/></svg>';
 
 async function loadCashflow() {
   try {
@@ -9665,254 +9493,14 @@ async function loadCashflow() {
   } catch (e) {
     // 静默失败，不阻塞首页渲染
   }
-  renderCashflowCard();
 }
-// 柱状图排序用：返回 1..31 日的数字，用于稳定排序（pending/done 切换不跳序）
+// 计划日排序用：返回 1..31 日的数字（收支计划面板按月卡展示，月度计划取 day_of_month）
 function cfSortDay(p) {
   if (p.pattern === 'one_time' && p.one_time_date) {
     const d = p.one_time_date.split('-');
     return Number(d[2]) || 1;
   }
   return Number(p.day_of_month) || 1;
-}
-// 截止日小字：返回 { day, soon }
-// day：截止日在当月的「日」数字（一次性计划取 one_time_date 的日；循环计划取当月 cashflowMonth 的 day_of_month）
-// soon：当月截止日距今 <= 2 天（含提前 2 天、当天、以及过期未完成，均为红），否则默认灰。
-function cfDueInfo(p) {
-  const now = new Date(); now.setHours(0, 0, 0, 0);
-  let target, day;
-  if (p.pattern === 'one_time' && p.one_time_date) {
-    const d = p.one_time_date.split('-');
-    const y = Number(d[0]), m = Number(d[1]) - 1, dd = Number(d[2]);
-    target = new Date(y, m, dd); target.setHours(0, 0, 0, 0);
-    day = dd;
-  } else {
-    const dm = Number(p.day_of_month) || 1;
-    day = dm;
-    const parts = (cashflowMonth || cfNowYm).split('-');
-    const y = Number(parts[0]), mo = Number(parts[1]) - 1;
-    target = new Date(y, mo, dm); target.setHours(0, 0, 0, 0);
-  }
-  const diff = Math.round((target - now) / 86400000);
-  const soon = diff <= 2; // 提前 2 天、当天、过期未完成，均标红
-  return { day, soon };
-}
-// v3.6：收支计划 → SVG 柱状图。每个计划一根柱子，收入红色、支出绿色，按日排序。
-// listEl：cf-list 容器，用于测实际宽度做动态布局
-function renderCfBars(plans, listEl) {
-  if (!plans || !plans.length) {
-    // 空态：与全局 emptyAddBtn 同款 .btn 样式的「添加收支计划」按钮，点击弹出新建弹框
-    // （复用 openCashflowModal(null)，与账户区标题行「添加收支」按钮一致）；删除旧的小号「＋ 添加」链接
-    return emptyStateHTML({ icon: EMPTY_ICONS.plan, title: '还没有收支计划', desc: '新建一笔月度收支计划，自动追踪预算执行与结余。', btnLabel: '＋ 添加收支计划', btnAttrs: 'id="cfQuickAdd"' });
-  }
-  // 提取日数字 + 排序
-  const bars = plans.map((p) => {
-    let day;
-    if (p.pattern === 'one_time' && p.one_time_date) {
-      day = Number(p.one_time_date.split('-')[2]) || 1;
-    } else {
-      day = Number(p.day_of_month) || 1;
-    }
-    return {
-      id: p.id, day,
-      amount: Math.abs(Number(p.amount) || 0),
-      isIncome: p.type === 'income',
-      done: !!cashflowDone[p.id],
-      title: p.title || '',
-      currency: p.currency || 'cny',
-    };
-  // 稳定排序：先按「日」排，同日再用 id 兜底，避免标记完成后 pending/done 分组互换导致同日柱子跳序
-  }).sort((a, b) => (a.day - b.day) || (a.id - b.id));
-
-  const H = 100;     // 总高固定（撑满 cf-list flex:1）
-  const padTop = 16, padBot = 20;   // padTop 给柱顶金额小字留空间（字号 7.5→10 后需再+2）
-  const chartH = H - padTop - padBot;
-  const maxV = Math.max(...bars.map((b) => b.amount), 1);
-  const incomeColor = 'var(--up)';
-  const expenseColor = 'var(--down)';
-  // 柱顶金额小字：¥1.1k 紧凑格式（按各柱币种取符号；>=1000 才带 k，否则整数）
-  const kfmt = (v, cur) => {
-    const sym = curSymbolJS(cur);
-    if (v >= 1000) {
-      const k = v / 1000;
-      return sym + (k >= 100 ? Math.round(k) : k.toFixed(1)) + 'k';
-    }
-    return sym + Math.round(v);
-  };
-
-  // 动态测容器宽度：优先用 getBoundingClientRect，否则估算
-  let containerW = 280;
-  try { if (listEl) { const r = listEl.getBoundingClientRect(); if (r.width > 0) containerW = Math.round(r.width); } } catch (_) {}
-  // 窄屏最小宽
-  containerW = Math.max(200, containerW);
-
-  // 根据柱子数量和容器宽算每柱 slot（柱宽+间距）
-  const minBarW = 16, maxBarW = 30;       // 柱宽范围（v3.6 加宽）
-  const slot = Math.floor((containerW - 16) / bars.length);  // 每柱可用空间（减去左右各 8px padding）
-  const barW = Math.max(minBarW, Math.min(maxBarW, slot - 4));  // 柱宽 = slot - 4px gap
-  const gap = Math.max(2, slot - barW);                          // 实际间距
-  const contentW = bars.length * (barW + gap) - gap;              // 柱子总宽（不含 padding）
-  const sidePad = Math.max(8, Math.floor((containerW - contentW) / 2));  // 左右相等 padding 让柱子居中
-  const W = Math.max(containerW, contentW + sidePad * 2);        // SVG 总宽（至少容器宽，多则滚动）
-
-  let x = sidePad;
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="cf-bars">`];
-  // 基线
-  parts.push(`<line x1="0" y1="${padTop + chartH}" x2="${W}" y2="${padTop + chartH}" stroke="rgba(var(--tint),.15)" stroke-width="1"/>`);
-  // 折线：柱顶中点连成趋势线（先画线再画柱，保证柱子压在线之上）
-  const pts = [];
-  bars.forEach((b) => {
-    const h = Math.max(2, (b.amount / maxV) * chartH);
-    pts.push({ cx: x + barW / 2, cy: padTop + chartH - h });
-    x += barW + gap;
-  });
-  if (pts.length > 1) {
-    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p.cx.toFixed(1)} ${p.cy.toFixed(1)}`).join(' ');
-    parts.push(`<path class="cf-trend" d="${d}" fill="none" stroke="currentColor" stroke-opacity=".38" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`);
-  }
-  x = sidePad;
-  bars.forEach((b, idx) => {
-    const h = Math.max(2, (b.amount / maxV) * chartH);
-    const y = padTop + chartH - h;
-    const fill = b.isIncome ? incomeColor : expenseColor;
-    const opacity = b.done ? 'fill-opacity="0.4"' : '';
-    parts.push(`<rect class="cf-bar" data-id="${b.id}" x="${x}" y="${y}" width="${barW}" height="${h}" rx="2" ry="2" fill="${fill}" ${opacity} title="${esc(b.title)} ${b.isIncome ? '＋' : '－'}${curSymbolJS(b.currency)}${fmt(b.amount)} / ${b.day}日"/>`);
-    // 柱顶金额小字（￥1.1k 格式）；字号 7.5→10（原偏小几乎看不清）。满高柱 y 贴近 padTop，文字基线 y-4 仍在 viewBox 内
-    parts.push(`<text x="${(x + barW / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="${fill}" opacity="0.9">${kfmt(b.amount, b.currency)}</text>`);
-    parts.push(`<text x="${x + barW / 2}" y="${H - 4}" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.5">${b.day}日</text>`);
-    // 柱顶中点圆点：与折线衔接（描边色走 CSS 类，SVG 属性里的 var() 兼容性不稳）
-    parts.push(`<circle class="cf-dot-top" cx="${pts[idx].cx.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="${fill}" stroke-width="1.4" ${b.done ? 'opacity="0.45"' : ''}/>`);
-    x += barW + gap;
-  });
-  parts.push('</svg>');
-  return parts.join('');
-}
-// v3.7：表格视图。与柱状图共用同一份 ordered 数据（已完成置灰 + 删除线，与列表行 cf-done 同语言）；
-// 行点击 = 柱子点击，走同一个确认框（cfOpenPlanConfirm）。空态复用「＋ 添加收支计划」按钮。
-function renderCfTable(plans) {
-  if (!plans || !plans.length) {
-    return emptyStateHTML({ icon: EMPTY_ICONS.plan, title: '还没有收支计划', desc: '新建一笔月度收支计划，自动追踪预算执行与结余。', btnLabel: '＋ 添加收支计划', btnAttrs: 'id="cfQuickAdd"' });
-  }
-  const rows = plans.map((p) => {
-    const done = !!cashflowDone[p.id];
-    const isIncome = p.type === 'income';
-    const sign = isIncome ? '＋' : '－';
-    const amtCls = isIncome ? 'cf-amt-in' : 'cf-amt-out';
-    const liabTag = (p.type === 'expense' && p.liability_mode === 'incur') ? '<span class="cf-tag">新负债</span>'
-      : (p.liability_id ? '<span class="cf-tag">负债</span>' : '');
-    const due = cfDueInfo(p);
-    return `<tr class="cf-tr${done ? ' cf-done' : ''}" data-id="${p.id}">
-      <td class="cf-t-name"><span class="cf-ellip">${esc(p.title)}</span>${liabTag}</td>
-      <td class="num cf-amt ${amtCls}">${sign}${curSymbolJS(p.currency || 'cny')}${fmt(p.amount)}</td>
-      <td class="num cf-t-day${due.soon ? ' due-soon' : ''}">${due.day}日</td>
-    </tr>`;
-  }).join('');
-  return `<table class="cf-table">
-    <tbody>${rows}</tbody>
-  </table>`;
-}
-// 柱子 / 表格行共用的点击确认框：标记完成 ⇄ 撤销完成 / 编辑收支
-function cfOpenPlanConfirm(id) {
-  const idNum = Number(id);
-  const p = cashflowPlans.find((x) => x.id === idNum);
-  if (!p) return;
-  const done = !!cashflowDone[idNum];
-  const sign = p.type === 'income' ? '＋' : '－';
-  let day;
-  if (p.pattern === 'one_time' && p.one_time_date) day = Number(p.one_time_date.split('-')[2]) || 1;
-  else day = Number(p.day_of_month) || 1;
-  const line2 = `${sign}${curSymbolJS(p.currency || 'cny')}${fmt(Math.abs(Number(p.amount) || 0))} · ${day}日`;
-  openConfirm({
-    title: p.title || '收支计划',
-    msg: `${line2}`,
-    okText: done ? '撤销完成' : '标记完成',
-    cancelText: '编辑收支',
-    danger: done,
-    onOk: () => cfToggle(idNum),
-    onCancel: () => openCashflowModal(p),
-  });
-}
-function renderCashflowCard() {
-  const card = document.getElementById('cashflowCard');
-  const list = document.getElementById('cfList');
-  if (!card || !list) return;
-  // 首页紧凑卡片展示「当月仍有效」的计划；已完成的不再隐藏，而是整体置灰 + 单选框选中效果（可回看/撤销）。
-  // （已过截止日期且仍未完成的仍不显示）
-  const monthPlans = cashflowPlans.filter((p) => cfPlanActive(p, cashflowMonth))
-    .sort((a, b) => cfSortDay(a) - cfSortDay(b));
-  const pendingPlans = monthPlans.filter((p) => !cashflowDone[p.id]);
-  const donePlans = monthPlans.filter((p) => cashflowDone[p.id]);
-  const rowHtml = (p) => {
-    const done = !!cashflowDone[p.id];
-    const isIncome = p.type === 'income';
-    const sign = isIncome ? '＋' : '－';
-    const amtCls = isIncome ? 'cf-amt-in' : 'cf-amt-out';
-    const cur = curSymbolJS(p.currency || 'cny');
-    const liabTag = (p.type === 'expense' && p.liability_mode === 'incur') ? '<span class="cf-tag">新负债</span>'
-      : (p.liability_id ? '<span class="cf-tag">负债</span>' : '');
-    const due = cfDueInfo(p);
-    const dueHtml = `<span class="cf-due${due.soon ? ' due-soon' : ''}" title="截止日（每月该日到期）"><i class="cf-dot"></i>${due.day}日</span>`;
-    const checkInner = done
-      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>'
-      : '';
-    return `<div class="cf-row${done ? ' cf-done' : ''}" data-id="${p.id}">
-      <button class="cf-check" data-act="cf-toggle" data-id="${p.id}" title="${done ? '撤销完成' : '标记完成并记账'}" aria-label="${done ? '撤销完成' : '标记完成并记账'}" aria-checked="${done}">${checkInner}</button>
-      <div class="cf-main">
-        <div class="cf-name">${esc(p.title)} ${dueHtml}${liabTag}</div>
-      </div>
-      <div class="cf-amt ${amtCls}">${sign}${cur}${fmt(p.amount)}</div>
-      <button class="cf-edit" data-act="cf-edit" data-id="${p.id}" title="编辑" aria-label="编辑">${actIcon('edit')}</button>
-    </div>`;
-  };
-  // 净收支：当月全部计划（含已完成）的收入和 − 支出和；已完成/未完成只是执行状态
-  const allInSum = monthPlans.filter((p) => p.type === 'income').reduce((s, p) => s + (p.amount || 0), 0);
-  const allOutSum = monthPlans.filter((p) => p.type === 'expense').reduce((s, p) => s + (p.amount || 0), 0);
-  const net = allInSum - allOutSum;
-  card.hidden = false;
-  const sub = document.getElementById('cfSub');
-  if (sub) {
-    sub.innerHTML = `净 <b class="${clsPnl(net)}">${net >= 0 ? '＋' : '－'}${curSymbolJS('cny')}${fmt(Math.abs(net))}</b>`;
-  }
-  const monthEl = document.getElementById('cfMonth');
-  if (monthEl) monthEl.textContent = cashflowMonth || '';
-  const netEl = document.getElementById('cfNet');
-  if (netEl) {
-    netEl.className = 'cf-net ' + (clsPnl(net));
-    netEl.textContent = `${net >= 0 ? '＋' : '－'}${curSymbolJS('cny')}${fmt(Math.abs(net))}`;
-  }
-  // 右上角视图切换按钮：图标 = 点击后切换到的目标视图
-  const tg = document.getElementById('cfViewToggle');
-  if (tg) {
-    tg.innerHTML = cfViewMode === 'table' ? CF_ICON_BARS : CF_ICON_TABLE;
-    tg.title = cfViewMode === 'table' ? '切换为柱状图' : '切换为表格';
-    tg.setAttribute('aria-label', tg.title);
-    tg.onclick = () => {
-      cfViewMode = cfViewMode === 'table' ? 'bars' : 'table';
-      try { localStorage.setItem('pf_cf_view', cfViewMode); } catch (_) {}
-      renderCashflowCard();
-    };
-  }
-  // 全部当月计划 → SVG 柱状图 / 表格（按 cfViewMode；空态也在渲染函数里统一处理）
-  const ordered = pendingPlans.concat(donePlans);
-  list.classList.toggle('cf-list-table', cfViewMode === 'table');
-  list.innerHTML = cfViewMode === 'table' ? renderCfTable(ordered) : renderCfBars(ordered, list);
-  // 空态：添加按钮；有数据：柱子/表格行点击 → openConfirm 让用户选「编辑 / 标记完成」
-  const qa = document.getElementById('cfQuickAdd');
-  if (qa) qa.onclick = () => openCashflowModal(null);
-  list.querySelectorAll('.cf-bar').forEach((el) => {
-    el.onclick = () => cfOpenPlanConfirm(el.dataset.id);
-  });
-  list.querySelectorAll('.cf-tr').forEach((el) => {
-    el.onclick = () => cfOpenPlanConfirm(el.dataset.id);
-  });
-}
-
-// 勾选「标记完成」：已完成则直接撤销（冲正记账）；未完成一律弹金额框确认实际金额。
-function cfToggle(id) {
-  const done = cashflowDone[id];
-  if (done) { doCfToggle(id); return; }
-  const p = (cashflowPlans || []).find((x) => x.id === Number(id)) || {};
-  openCfAmtModal(id, p);
 }
 
 // 完成金额弹窗：完成计划时确认实际金额（预填计划金额，可改；填 0 = 本月跳过不记账）。

@@ -293,17 +293,6 @@
 
   <!-- 已平仓汇总视图：持仓(quantity<=0) + 理财(archived=1) 的落袋收益总览 -->
   <div id="closedView" class="closed-view" hidden></div>
-  <div id="mktFilterPop" class="src-pop" hidden>
-    <div class="src-pop-head">
-      <span>按市场筛选</span>
-      <span>
-        <button type="button" class="src-link" id="mktAll">全选</button>
-        <button type="button" class="src-link" id="mktNone">清空</button>
-      </span>
-    </div>
-    <div id="mktFilterList" class="src-pop-list"></div>
-    <div class="src-pop-foot"><button type="button" class="btn btn-sm" id="mktApply">确定</button></div>
-  </div>
   <!-- 持仓/理财切换：持仓显示在 #holdingsBySource，理财显示在 #homeWealthBox（由顶部 #viewToggle 切换） -->
   <div id="holdingsEmpty" class="empty-state" hidden>
     <div class="empty-icon" id="emptyIcon" aria-hidden="true">
@@ -1280,7 +1269,7 @@
   <!-- ===== 批量新增已平仓（纯记录，不入账）===== -->
   <div id="closedBatchModal" class="modal" hidden>
     <div class="modal-card" style="width:760px; max-width:96vw; padding:0 28px 0;">
-      <h2 id="crbTitle" style="padding-left:0;">批量新增已平仓</h2>
+      <h2 style="padding-left:0;">批量新增已平仓</h2>
       <p class="snap-hint">同一账户、同一类型批量录入；输入名称 / 代码可联想全市场标的，点选即回填代码。仅作记录，不计入任何账户。</p>
       <form>
         <div class="f-row">

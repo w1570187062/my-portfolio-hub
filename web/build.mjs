@@ -1,6 +1,28 @@
 import { build } from 'esbuild';
 import { copyFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
-import { dirname } from 'path';
+import { dirname, join } from 'path';
+import { spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+// ── 死代码门禁：产出 dist 之前先跑 ─────────────────────────────────────────
+// dist 会被 //go:embed 打进二进制，所以「构建 dist 之前」就是「打包之前」。
+// 任何入口（npm run build / scripts/build.sh / 直接 node build.mjs）都绕不过去。
+// 只拦「新增」：存量已冻结在 deadcode-baseline.json，清掉一项后跑
+//   node lint-deadcode.mjs --update-baseline
+// 让账本同步减少（账本只减不增）。白名单见 lint-deadcode.mjs 的 DEFAULT_CONFIG.ignore。
+{
+  const r = spawnSync(process.execPath, [join(HERE, 'lint-deadcode.mjs'), '--strict'], {
+    stdio: 'inherit',
+    cwd: HERE,
+  });
+  if (r.status !== 0) {
+    console.error('\n✗ 死代码门禁未通过，构建中止（dist 未生成）。');
+    console.error('  修掉上方清单里的新增项，或确认可留后执行：node lint-deadcode.mjs --update-baseline\n');
+    process.exit(r.status || 1);
+  }
+}
 
 mkdirSync('dist', { recursive: true });
 
