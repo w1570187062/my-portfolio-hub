@@ -823,9 +823,9 @@ func dividendHolding(c *gin.Context) {
 		if strings.TrimSpace(req.Mode) == "total" {
 			modeTag = "｜按总额录入"
 		}
-		detail := fmt.Sprintf("分红入账 %s %s｜每股 %g｜份额 %g%s", h.Name, h.Symbol, perShare, h.Quantity, modeTag)
+		detail := fmt.Sprintf("分红入账 %s %s｜每股 %s｜份额 %s%s", h.Name, h.Symbol, fmtNum(perShare), fmtNum(h.Quantity), modeTag)
 		if req.Fee > 0 {
-			detail += fmt.Sprintf("｜费用 %g", req.Fee)
+			detail += "｜费用 " + fmtNum(req.Fee)
 		}
 		if s := strings.TrimSpace(req.Note); s != "" {
 			detail += "｜" + s
@@ -929,7 +929,7 @@ func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee flo
 	if err != nil {
 		return 0, err
 	}
-	detail := fmt.Sprintf("%s %s %s｜数量 %g｜价 %g｜费 %g", label, h.Name, h.Symbol, qty, price, fee)
+	detail := fmt.Sprintf("%s %s %s｜数量 %s｜价 %s｜费 %s", label, h.Name, h.Symbol, fmtNum(qty), fmtNum(price), fmtNum(fee))
 	if s := strings.TrimSpace(note); s != "" {
 		detail += "｜" + s
 	}

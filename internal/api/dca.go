@@ -440,7 +440,7 @@ func doExecuteDCA(uid int64, rec *db.DCARecord, req dcaExecReq, revert bool) err
 		_ = db.RevertBuyTx(rec.HoldingID, txID)
 		return err
 	}
-	detail := fmt.Sprintf("定投扣款 %s %s｜第%d期｜份额 %g｜价 %g｜费 %g", h.Name, h.Symbol, rec.Seq, qty, price, fee)
+	detail := fmt.Sprintf("定投扣款 %s %s｜第%d期｜份额 %s｜价 %s｜费 %s", h.Name, h.Symbol, rec.Seq, fmtNum(qty), fmtNum(price), fmtNum(fee))
 	if s := strings.TrimSpace(req.Note); s != "" {
 		detail += "｜" + s
 	}

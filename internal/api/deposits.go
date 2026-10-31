@@ -125,7 +125,7 @@ func createDeposit(c *gin.Context) {
 	d.UserID = uid
 	// 扣款：钱从子账户转进存款（投资活动，不计收支）
 	if err := db.AddCashAmountCat(d.CashAccountID, -d.Amount, "deposit_out", "deposit", 0, d.Name,
-		"存款存入「"+d.Name+"」", db.CatInvest); err != nil {
+		"存入「"+d.Name+"」", db.CatInvest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -174,7 +174,7 @@ func updateDeposit(c *gin.Context) {
 			return
 		}
 		if err := db.AddCashAmountCat(d.CashAccountID, -d.Amount, "deposit_out", "deposit", id, d.Name,
-			"存款存入「"+d.Name+"」", db.CatInvest); err != nil {
+			"存入「"+d.Name+"」", db.CatInvest); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -208,7 +208,7 @@ func deleteDeposit(c *gin.Context) {
 	}
 	// 存期中的存款删除 = 提前支取：本金退回原账户后再删记录
 	if err := db.AddCashAmountCat(d.CashAccountID, d.Amount, "deposit_back", "deposit", id, d.Name,
-		"存款提前支取「"+d.Name+"」", db.CatInvest); err != nil {
+		"提前支取「"+d.Name+"」", db.CatInvest); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
