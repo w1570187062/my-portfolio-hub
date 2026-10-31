@@ -295,7 +295,7 @@ func computeReview(uid int64) reviewResp {
 				// 现金流口径只用于 invested 反推与 XIRR，不再用来出展示金额。
 				Invested: round2(fxToCNY(invested, cur, cnyRate, hkdRate)),
 				Gain:     round2(fxToCNY(realizedAll, cur, cnyRate, hkdRate)),
-				Quality:  "ok", Days: daysBetweenDates(first, last),
+				Quality:  "ok", Days: db.CalcHoldingDays(h.BuyDate), // 与持仓表格「持仓天数」列同口径（holding_days = CalcHoldingDays(buy_date)：买入日→今天，无买入日记 0）
 			}
 			if it.Days < 0 {
 				it.Days = 0
@@ -343,11 +343,6 @@ func computeReview(uid int64) reviewResp {
 			}
 		}
 		cfs = append(cfs, reviewCashflow{date: today, amt: nativeMV})
-		if first == "" {
-			it.Days = 0
-		} else if d := daysBetweenDates(first, today); d > 0 {
-			it.Days = d // 首笔流水早于建仓日时以流水为准（买入日可能未填或不准）
-		}
 		if ann, ok := xirrSolve(cfs); ok {
 			it.Ann = &ann
 		}
@@ -427,8 +422,8 @@ func computeReview(uid int64) reviewResp {
 			}
 			it := reviewItem{
 				Key: rbClassWealth, Label: rbClassLabels[rbClassWealth], Name: w.Name,
-				State: "holding", MV: round2(mv), Target: expOf[rbClassWealth], Quality: "ok",
-				Days: daysBetweenDates(snaps[0].Date, today),
+			State: "holding", MV: round2(mv), Target: expOf[rbClassWealth], Quality: "ok",
+			Days: db.CalcHoldingDays(snaps[0].Date), // 与理财表格「持仓天数」列同口径（holding_days = CalcHoldingDays(首条快照日期)）
 				// Gain 与理财表「累计收益」列同源（手动值优先 / 快照累计），持仓中同样可对账
 				Gain: round2(fxToCNY(cum, cur, cnyRate, hkdRate)),
 			}
