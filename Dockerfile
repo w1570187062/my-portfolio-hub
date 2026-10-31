@@ -1,7 +1,5 @@
-# 前端构建：优先使用已预构建的 web/dist（同步时一并上传，免服务器 npm 联网）。
-# fe 阶段仅负责搬运 web/dist，不需要 node 运行时；用已缓存的 alpine 作基础，
-# 避免路由器到 Docker Hub 拉取 node:20-alpine（~43MB，出口被限速到 KB/s 级）。
-# 若本地未预构建 dist，需先在本地 `cd web && npm run build` 再上传。
+# 前端阶段：只搬运本地预构建好的 web/dist，服务器上不跑 npm（免联网、免 node 镜像）。
+# 本地需先 `cd web && npm run build`，否则这里直接报错退出。
 FROM alpine:3.20 AS fe
 WORKDIR /fe
 COPY web ./web
@@ -15,20 +13,24 @@ FROM golang:1.25-alpine AS build
 WORKDIR /src
 ENV GOPROXY=https://goproxy.cn,direct
 ENV GOSUMDB=off
-COPY go.mod ./
+ENV GOTOOLCHAIN=local
+# 依赖层：模块靠镜像层缓存持久（go.mod/go.sum 不变即 CACHED）。
+# 不要加 --mount=type=cache,target=/go/pkg/mod：本机 BuildKit 的 cache mount 会被 --no-cache 清空，
+# 且空挂载会遮住层里的模块。也不要加 go mod tidy（会拉 modernc.org/z 等非构建依赖）。
+COPY go.mod go.sum ./
+RUN go mod download
 COPY internal ./internal
 COPY main.go ./
 COPY web ./web
 COPY --from=fe /fe/web/dist ./web/dist
-# VERSION 不入库（部署产物）：构建时按 git HEAD + UTC 时间自动生成，格式 "commit|commitTime"（与 /api/version、缓存戳一致）。
-# 无 git 时回退 "dev"，保证本地无仓库也能构建。
-RUN H=$(git rev-parse --short HEAD 2>/dev/null || echo "dev") && \
+# VERSION 不入库：构建时按 git HEAD + UTC 时间生成，格式 "commit|commitTime"；无 git 回退 "dev"。
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    H=$(git rev-parse --short HEAD 2>/dev/null || echo "dev") && \
     V="${H}|$(date -u +%Y-%m-%dT%H:%M:%SZ)" && \
     echo "$V" > VERSION && \
-    go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags "-X 'portfolio/internal/api.BuildInfo=$V'" -o /out/app .
+    CGO_ENABLED=0 GOOS=linux go build -ldflags "-X 'portfolio/internal/api.BuildInfo=$V'" -o /out/app .
 
 FROM alpine:3.20
-# 换国内镜像源，避免跨境直连 dl-cdn.alpinelinux.org 卡在 apk add（deploy 常卡点）。
 RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories && \
     apk add --no-cache ca-certificates tzdata
 WORKDIR /app
