@@ -230,6 +230,9 @@
   --home-eq: #4a9eff;
   --home-wealth: #a78bfa;
   --home-cash: rgb(var(--cat-cash));
+  /* 负债 chip 色：跟随 --warning（琥珀）。刻意不碰 --up/--down —— 本项目红=涨、绿=跌，
+     负债既不是涨也不是跌，用中性警示色才不会和盈亏语义撞车。 */
+  --home-debt: var(--warning);
 
   --cat-other-c: #94a3b8;
   /* 字号补充档（此前 10px / 32px 散落，不在 7 档 token 内） */
@@ -1292,6 +1295,8 @@ header {
 .spark-mode-btn.active { color: var(--primary); background: var(--primary-soft); }
 .rate-spark-box { position: relative; width: 100%; flex: 1; min-height: 140px; }
 #homeRateSpark svg { width: 100%; height: 100%; display: block; }
+/* 权益曲线坐标轴刻度文字：等宽数字对齐、不拦截 hover */
+#homeRateSpark svg text { font-family: var(--font-mono); font-variant-numeric: tabular-nums; pointer-events: none; }
 .hero-mini-trend { font-size: var(--fs-md); font-weight: 700; font-variant-numeric: tabular-nums; }
 .hero-mini-trend.up { color: var(--up); }
 .hero-mini-trend.down { color: var(--down); }
@@ -1933,7 +1938,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 #chartBody svg { max-width: 100%; height: auto; }
 /* 桌面端筛选行吸顶：紧贴 sticky 顶栏之下（顶栏高 ≈58px），长列表滚动时筛选/操作区常驻 */
 
-/* 表格/卡片切换行：上方分割线，左侧列表描述（样式同 asset-section-head 标题），右侧视图切换；间距收紧（8/8/8） */
+/* 表格/卡片切换行：上方分割线，左侧列表描述（样式同 asset-toolbar 标题），右侧视图切换；间距收紧（8/8/8） */
 .tbl-meta-bar {
   display: flex;
   align-items: center;
@@ -1950,13 +1955,13 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 .icon-btn { padding-left: var(--sp-2); padding-right: var(--sp-2); }
 /* 首页 AI总结/添加/计划 图标按钮，以及资产页各区块标题行的添加按钮（添加流水 / 添加账户 / 添加消费 /
    添加收支计划）：统一恢复 .btn 默认描边与 ghost 底色（同「盈亏分析」等资产工具按钮），不再透明无边框。
-   前者用 .asset-section-head 限定作用域，避免误伤 .icon-btn 的纯色场景（主题切换 / 用户切换 / 日历）；
+   前者用 .asset-toolbar 限定作用域，避免误伤 .icon-btn 的纯色场景（主题切换 / 用户切换 / 日历）；
    后者是持仓工具条的「刷新行情」按钮（.inv-refresh-btn），与存款区头的新增按钮同款 ghost 描边样式。 */
-.asset-section-head .btn.icon-btn,
+.asset-toolbar .btn.icon-btn,
 .btn.icon-btn.inv-refresh-btn { border-color: var(--border); background: var(--btn-ghost); }
-.asset-section-head .btn.icon-btn:hover,
+.asset-toolbar .btn.icon-btn:hover,
 .btn.icon-btn.inv-refresh-btn:hover { border-color: var(--btn-border); background: var(--btn-ghost-hover); }
-.asset-section-head .btn.icon-btn:active,
+.asset-toolbar .btn.icon-btn:active,
 .btn.icon-btn.inv-refresh-btn:active { border-color: var(--btn-border); background: var(--btn-ghost-hover); }
 /* 投资页理财视图：左右不再内缩（原 28px）——与 .holdings-by-source 保持同一左缘基准
    （均贴齐 Hero/切换器/工具栏的 20px 内容边），否则切换持仓/理财时整块表格会横跳 28px。
@@ -2333,8 +2338,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 
   /* 内容区 padding 收窄 */
   #assetTabBody { padding: 0 0 28px; }
-  /* 区块标题行：防按钮溢出 */
-  .asset-section-head { flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-2); }
+  /* 区块工具行：防按钮溢出 */
+  .asset-toolbar { flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-2); }
   /* 表格：与首页 th/td 规格一致，可横向滚动 */
   .asset-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .asset-table th, .asset-table td { padding: var(--sp-2) var(--sp-2); }
@@ -2461,8 +2466,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 
 /* 资产页主容器：底部留白（账户表很长时不被页面底边裁切） */
 #assetTabBody { padding: 0 0 28px; }
-.asset-section-head { display: flex; justify-content: space-between; align-items: center; margin: var(--sp-2) 0 var(--sp-3); }
-.asset-section-head h3 { font-size: var(--fs-base); margin: 0; color: var(--text); }
+.asset-toolbar { display: flex; justify-content: space-between; align-items: center; margin: var(--sp-2) 0 var(--sp-3); }
 /* 来源表按类型分组（银行/证券/软件/平台），组头可折叠。
    外边框：暗色用更亮的白（.30）保证可辨边界，亮色用更深灰（.22） */
 .source-group {
@@ -2604,8 +2608,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 /* 新系统已在顶部定义，此处保留旧样式以兼容 */
 .asset-add { margin-left: auto; }
 /* 理财区块标题右侧操作区：添加按钮 + 视图切换（表格/卡片），切换器紧贴添加按钮右侧 */
-.asset-section-head .sec-actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
-.asset-section-head .sec-actions .asset-add { margin-left: 0; }
+.asset-toolbar .sec-actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.asset-toolbar .sec-actions .asset-add { margin-left: 0; }
 /* 资产全景理财表格视图，复用全局 table 样式，仅约束内边距 */
 .asset-table { width: 100%; }
 /* 理财分组表格（含来源分组表）：窄屏横向滚动而非撑破布局；与持仓来源分组表一致 */
@@ -3013,6 +3017,13 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .wh-custom-row label { display: inline-flex; align-items: center; gap: 4px; }
 .wh-custom-row input[type="date"] { font-family: inherit; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--bg); color: var(--text); }
 .wh-custom-hint { font-size: var(--fs-xs); }
+
+/* 持仓历史净值段：时间胶囊与自定义区间同一行，自定义区间仅选中「自定义」时显示 */
+.hist-nav-range { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.wh-custom-inline { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); }
+.wh-custom-inline[hidden] { display: none; }
+.wh-custom-inline label { display: inline-flex; align-items: center; gap: 4px; }
+.wh-custom-inline input[type="date"] { font-family: inherit; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--bg); color: var(--text); }
 .wh-more { margin-top: var(--sp-2); text-align: center; }
 
 /* 明文输入框眼睛切换 */
@@ -3266,8 +3277,8 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .sort-select { min-height: var(--toolbar-row-h); padding: 5px 12px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text-muted); font-size: var(--fs-sm); border-radius: var(--r-sm); cursor: pointer; }
 .toolbar-gain { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
 .toolbar-gain b { font-weight: 700; }
-/* 工具条右侧控件组：排序下拉 + 行密度切换 右对齐 */
-.toolbar-right { display: flex; align-items: center; gap: var(--sp-2); }
+/* 工具条右侧控件组：排序下拉 + 行密度切换 右对齐（持仓页签唯一子元素，靠 margin-left:auto 推到最右） */
+.toolbar-right { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
 /* v3.4 行密度切换：分段控件，localStorage 记忆 */
 .density-toggle {
   display: inline-flex;
@@ -4139,6 +4150,13 @@ textarea::placeholder {
   min-width: 0;
   white-space: nowrap;
 }
+/* 时/分输入框不参与收缩：窄屏下 .cf-remind-time 是 nowrap flex，
+   input 被 flex 压到 27px 后数字直接被裁掉（实测 390px 视口）。 */
+/* width 必须写死且用 ID 提权：`.settings-page .settings-group-body input{width:100%}`(0,2,1)
+   特异性高于 `.cf-remind-time .num-sm`(0,2,0)，会把时/分框撑满容器（实测 186px）。
+   与 `#devicesView .pin-row input` 同一个坑，同样用 ID 提到 (0,3,1) 才压得住。 */
+#notifyView .cf-remind-time .num-sm { flex: 0 0 auto; width: 52px; min-width: 0; max-width: 52px; }
+.cf-remind-colon { color: var(--text-faint); }
 .num-sm {
   width: 52px;
   padding: var(--sp-1) var(--sp-2);
@@ -5332,6 +5350,10 @@ textarea::placeholder {
 }
 /* Tier-3 工具微件：半透明底 + 小圆角；hover 不做位移，仅阴影微升（与 Tier-2 悬浮拉开层级） */
 .shortcut { position: relative; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-2); background: rgba(var(--tint), .04); border: 1px solid rgba(var(--tint), .10); border-radius: var(--r-sm); cursor: pointer; transition: transform .2s var(--e), border-color .2s var(--e), background-color .2s var(--e), box-shadow .2s var(--e); }
+/* 快捷功能改为原生 <button> 后的重置：浏览器默认会给 button 一套 font/border/背景，
+   .shortcut 自己的 background/border 已经覆盖，这里补 font 与 focus 可见性。 */
+button.shortcut { font: inherit; color: inherit; text-align: center; -webkit-appearance: none; appearance: none; }
+button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .shortcut:hover { transform: translateY(-3px); border-color: rgba(var(--tint), .40); background: rgba(var(--tint), .08); box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 12px 24px -12px rgba(var(--tint), .25); }
 .shortcut:hover::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 1px; pointer-events: none; background: linear-gradient(90deg, transparent, rgba(var(--tint), .6), transparent); }
 .shortcut-icon { width: 36px; height: 36px; border-radius: var(--r-sm); background: rgba(var(--tint), .08); border: 1px solid rgba(var(--tint), .18); color: var(--primary); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 12px rgba(var(--tint), .10), inset 0 1px 0 rgba(255,255,255,.08); transition: border-color .2s var(--e), color .2s var(--e); }
@@ -5604,8 +5626,11 @@ textarea::placeholder {
   .year-nav-btn { width: 24px; height: 24px; }
   .year-label { min-width: 44px; }
   /* 月份胶囊单行横滚：12 个胶囊在窄屏会折成 4 行，把方块区往下推 */
-  .hm-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
-  .hm-chips::-webkit-scrollbar { display: none; }
+  /* 月份胶囊单行横滚：12 个胶囊在窄屏会折成 4 行，把方块区往下推。
+     滚动条保留细条而不隐藏——完全隐藏时用户看不出这排还能横滑，会以为只显示到 9 月。 */
+  .hm-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+  .hm-chips::-webkit-scrollbar { height: 4px; }
+  .hm-chips::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
   .hm-chip { flex: 0 0 auto; }
   /* 12 个月标签在窄屏每格仅 ~26px 宽，加高点击区补偿触控精度 */
   .bar-chart-xlabels span { padding: 6px 0; }
@@ -5695,6 +5720,8 @@ textarea::placeholder {
 /* ===== 收支语义分类（2026-10-22）：chips / 徽标 / 中性行 / 被动收入来源 / 存款 / 自定义分类设置 ===== */
 /* 记流水弹框：收支分类 chips（收入=收入类、取出=支出类，含自定义分类） */
 .cat-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); flex: 1; min-width: 0; }
+/* 添加流水弹框：label（收支分类）独占一行，胶囊落后 4px，与「资金变动」等 label→控件节奏一致 */
+#flowCatRow .cat-chips { margin-top: var(--sp-1); }
 .cat-opt {
   border: 1px solid var(--border);
   background: var(--bg-soft);
@@ -6140,4 +6167,9 @@ textarea::placeholder {
   .fb-card { padding: 0 20px var(--sp-5); }
   .fb-row { flex-wrap: wrap; row-gap: var(--sp-1); }
   .modal-card .fb-row input.fb-note { flex: 1 1 100%; }
+}
+@media (max-width: 640px) {
+  /* 通知页「提前 1 天，在 [07]:[00] 推送」：窄屏放不下整句，允许在时/分处换行，
+     输入框保持 52px 不被 flex 压缩（压到 27px 时数字被裁）。 */
+  .cf-remind-time { white-space: normal; flex-wrap: wrap; }
 }

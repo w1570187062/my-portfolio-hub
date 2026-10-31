@@ -232,7 +232,7 @@ const api = async (path, opts = {}) => {
 const fmt = (n) => (n == null ? '' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }));
 // 盈亏专用格式：强制 2 位小数 + 显式正负号（如 +432.00 / -18.34 / 0.00）。
 // 整数与小数统一成同一「形状」，配合 tabular-nums 按小数点对齐，避免整数(432)比小数(72.42)视觉更窄被看岔。
-const fmtPnl = (n) => (n == null ? '' : (n > 0 ? '+' : '') + Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const fmtPnl = (n) => (n == null ? '' : (n > 0 ? '+' : n < 0 ? NEG : '') + Math.abs(Number(n)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 // 万位压缩金额：|n| ≥ 1万 → 「x.xx万」（固定 2 位小数），不足万沿用 fmt（千分位）。
 // 表格/卡片里长金额占宽过大；压缩后由调用方挂 wanTitle，悬停还原精确值。
@@ -240,30 +240,41 @@ const fmtWan = (n) => {
   const v = Number(n) || 0;
   return Math.abs(v) >= 1e4 ? (v / 1e4).toFixed(2) + '万' : fmt(v);
 };
-// 万位压缩的盈亏版：正数带 + 号（负数自带 -），形状约定与 fmtPnl 一致（tabular-nums 按小数点对齐）
-const fmtWanPnl = (n) => (n > 0 ? '+' : '') + fmtWan(n);
+// 万位压缩的「强制 2 位小数」版：不足万时补齐到分位（¥183.20 而不是 ¥183.2），
+// 让整数与小数在 tabular-nums 下形状一致（组头「+¥183.2」挨着「+¥46.55」时小数点对不齐）。
+const fmtWan2 = (n) => {
+  const v = Number(n) || 0, a = Math.abs(v);
+  return a >= 1e4 ? (v / 1e4).toFixed(2) + '万'
+    : v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+// 万位压缩的盈亏版：符号 + 货币符号 + 2 位小数（+¥46.55 / −¥183.20 / ¥0.00）。
+// 符号一律提到货币符号之前（此前组头只写「+10.64」，同一屏内表格行却是「+¥10.64」）。
+const fmtWanPnl = (n, cur) => (n > 0 ? '+' : n < 0 ? NEG : '') + curSymbolJS(cur || 'cny') + fmtWan2(Math.abs(n));
 // 万位金额悬停精确值：仅 |n| ≥ 1万 时输出 title 属性（prefix 传货币符号），配合 fmtWan 使用；
 // 负数符号提到货币符号前（-¥89,000，而不是 ¥-89,000）
 const wanTitle = (n, prefix) => {
   const v = Number(n) || 0;
   if (Math.abs(v) < 1e4) return '';
-  return ` title="${v < 0 ? '-' : ''}${prefix || ''}${fmt(Math.abs(v))}"`;
+  return ` title="${v < 0 ? NEG : ''}${prefix || ''}${fmt(Math.abs(v))}"`;
 };
 // money / moneyCur / yuanOf 的万位压缩版（≥1万显示 x.xx万，其余同原函数）
 const moneyCurW = (n, cur) => curSymbolJS(cur) + fmtWan(n == null ? 0 : n);
+// 全站负号一律用 U+2212（−），不用 ASCII hyphen：中文排版下 − 与数字等宽、视觉对齐更好，
+// 且历史上「−¥1.68万 / -¥6,383.45」两种字符同屏混用。此处是唯一真源，其它符号函数都复用 NEG 常量。
+const NEG = '\u2212';
 // yuanOfW：万位压缩版（≥1万显示 x.xx万，其余同 yuanOf 原始值）
-const yuanOfW = (v) => { const n = Number(v) || 0; return (n < 0 ? '-¥' : '¥') + fmtWan(Math.abs(n)) };
-// 带符号货币金额（不做万位压缩）：符号一律提到货币符号之前（-¥89,000，而非 ¥-89,000），0 不带 +。
+const yuanOfW = (v) => { const n = Number(v) || 0; return (n < 0 ? NEG + '¥' : '¥') + fmtWan(Math.abs(n)) };
+// 带符号货币金额（不做万位压缩）：符号一律提到货币符号之前（−¥89,000，而非 ¥-89,000），0 不带 +。
 // 用于表格里的盈亏金额列，避免负数被渲染成「¥-201」这种别扭形状。
 const signedCur = (v, cur) => {
   const n = Number(v) || 0;
-  return (n < 0 ? '-' : n > 0 ? '+' : '') + curSymbolJS(cur) + fmt(Math.abs(n));
+  return (n < 0 ? NEG : n > 0 ? '+' : '') + curSymbolJS(cur) + fmt(Math.abs(n));
 };
 // 同上，但走万位压缩（≥1万显示 x.xx万）：分组头 / 表格里的盈亏列统一用这个，
 // 避免「¥-1,240.5」这种符号落在货币符号之后的形状（落袋 / 今日 / 总盈亏都踩过）。
 const signedMoneyW = (v, cur) => {
   const n = Number(v) || 0;
-  return (n < 0 ? '-' : n > 0 ? '+' : '') + curSymbolJS(cur) + fmtWan(Math.abs(n));
+  return (n < 0 ? NEG : n > 0 ? '+' : '') + curSymbolJS(cur) + fmtWan(Math.abs(n));
 };
 
 // 价格类字段统一截断到 4 位小数，避免 float64 全精度（如 12.34738291）污染输入框与落库。
@@ -274,7 +285,8 @@ const roundByCat = (v, cat) => (cat === 'fund' || cat === 'stock' ? round4(v) : 
 function fmtCat(n, cat) { return Number(n).toLocaleString('zh-CN', { maximumFractionDigits: (cat === 'fund' || cat === 'stock') ? 4 : 2 }); }
 // 试算 Tab 上下文类别（决定价格输入框保留几位小数），由 prefillAdjCalc 写入
 let calcCat = 'stock';
-const pct = (n) => (n > 0 ? '+' : '') + (n == null ? '' : n.toFixed(2)) + '%';
+// 负号走 NEG（U+2212）而非 ASCII hyphen：与金额列同源，同屏混用时字宽一致、不会左右错半格。
+const pct = (n) => (n == null ? '' : (n > 0 ? '+' : n < 0 ? NEG : '') + Math.abs(n).toFixed(2)) + '%';
 // 盈亏颜色统一入口：正=红(up)、负=绿(down)、零=灰(flat)（中国惯例涨红跌绿）。
 // 全项目所有盈亏/涨跌幅着色都走这里，消除分散的 > 0 ? 'up' : 'down' 判断。
 const clsPnl = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat');
@@ -305,7 +317,6 @@ let cashBalMap = {}; // "sourceID:currency"(小写、存量 rmb 归一为 cny) -
 const normCur = (c) => { const s = String(c || '').toLowerCase(); return s === 'rmb' ? 'cny' : s; };
 // 金额折人民币：usd/hkd 按汇率，其余（cny/rmb）按原值。usdRate/hkdRate 在模块初始化后赋值。
 const cnyOf = (v, cur) => (cur === 'usd' ? v * usdRate : cur === 'hkd' ? v * hkdRate : v);
-let catFilter = new Set(); // selected categories; empty = all
 let usdRate = 1;
 let hkdRate = 1;
 let snapshotDate = '';   // 最近 pnl_daily 快照日期（YYYY-MM-DD）
@@ -408,7 +419,6 @@ async function load() {
     monthPnlCny = hd.month_pnl_cny_ccy || 0;
     monthPnlUsd = hd.month_pnl_usd || 0;
     todayRealizedCny = hd.today_realized_cny || 0;
-    buildFilters();
     await loadManualClosed(); // 已平仓页手动补录记录（不入账）
     await loadCustomFlowCats(); // 自定义收支分类（设置页维护，选择器/统计共用）
     await loadDeposits(); // 存款列表（首页「存款」分段）
@@ -470,9 +480,9 @@ async function reopenHoldingRow(id) {
 
 // 行情时效性标识（renderFreshness/更新时间行）已随首页 market-bar 整体下线（2026-10-09）。
 
-// Holdings after applying the category filter.
+// Holdings（持仓分类筛选已移除，直接返回全集）。
 function filteredHoldings() {
-  return allHoldings.filter((h) => !(catFilter.size && !catFilter.has(h.category)));
+  return allHoldings;
 }
 
 // Render both the summary cards and the table from the currently filtered set,
@@ -670,9 +680,11 @@ function renderClosed(box, closedHoldings, closedWealth) {
     return c === 'usd' ? v * usdRate : c === 'hkd' ? v * hkdRate : v;
   };
   let hTotalDays = 0, hTotalRealized = 0, wTotalDays = 0, wTotalPnl = 0;
-  closedHoldings.forEach((h) => { hTotalDays += ((h.closed_date && h.buy_date) ? daysBetween(h.buy_date, h.closed_date) : (h.holding_days || 0)); hTotalRealized += (Number(h.realized_pnl) || 0); });
+  // 汇总一律折 CNY（原币 → cnyOf）：分组小计用的就是 cnyOf(金额, 币种)，
+  // 早期汇总直接累加原币，导致「落袋合计 229.17 ≠ 分组小计 220.76 + 55.96」，且与复盘页「累计落袋」对不上。
+  closedHoldings.forEach((h) => { hTotalDays += ((h.closed_date && h.buy_date) ? daysBetween(h.buy_date, h.closed_date) : (h.holding_days || 0)); hTotalRealized += cnyOf(Number(h.realized_pnl) || 0, normCurJS(h.currency)); });
   mHold.forEach((m) => { hTotalDays += (Number(m.holding_days) || 0); hTotalRealized += mcToCny(m); });
-  closedWealth.forEach((w) => { wTotalDays += (w.holding_days || 0); wTotalPnl += (Number(w.cum_pnl) || 0); });
+  closedWealth.forEach((w) => { wTotalDays += (w.holding_days || 0); wTotalPnl += cnyOf(Number(w.cum_pnl) || 0, normCurJS(w.currency)); });
   mWealth.forEach((m) => { wTotalDays += (Number(m.holding_days) || 0); wTotalPnl += mcToCny(m); });
   const hAvgDays = hCount ? Math.round(hTotalDays / hCount) : 0;
   const wAvgDays = wCount ? Math.round(wTotalDays / wCount) : 0;
@@ -909,16 +921,9 @@ function renderInvestToolbar() {
     });
     return;
   }
-  // 持仓态：类别筛选（catFilter 按 h.category）+ 排序下拉
+  // 持仓/平仓态：类别筛选已移除，仅保留行密度切换 + 刷新行情
   const dens = localStorage.getItem('pf_row_density') || 'standard';
   bar.innerHTML =
-    '<div class="filter-group" id="catChips">' +
-      toolbarChip('', '全部', catFilter.size === 0) +
-      toolbarChip('stock', '股票', catFilter.has('stock')) +
-      toolbarChip('fund', '基金', catFilter.has('fund')) +
-      toolbarChip('etf', 'ETF', catFilter.has('etf')) +
-      toolbarChip('bond', '债券', catFilter.has('bond')) +
-    '</div>' +
     '<div class="toolbar-right">' +
       '<div class="density-toggle" role="group" aria-label="行密度">' +
         '<button type="button" class="dt-btn' + (dens === 'compact' ? ' active' : '') + '" data-density="compact">紧凑</button>' +
@@ -926,9 +931,6 @@ function renderInvestToolbar() {
       '</div>' +
       '<button type="button" class="btn icon-btn inv-refresh-btn" id="invRefreshBtn" title="刷新行情（补刷漏更新的持仓数据）" aria-label="刷新行情">' + actIcon('refresh') + '</button>' +
     '</div>';
-  bar.querySelectorAll('.filter-chip').forEach((b) => {
-    b.onclick = () => { catFilter = new Set(b.dataset.cat ? [b.dataset.cat] : []); renderInvestToolbar(); renderFiltered(); };
-  });
   // v3.4 行密度切换：记忆到 localStorage，仅切 body[data-density]，CSS 实时生效（无需重渲染）
   bar.querySelectorAll('.dt-btn').forEach((b) => {
     b.onclick = () => {
@@ -1215,7 +1217,10 @@ function renderHoldingsBySource(hs) {
       + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
       + `<thead><tr><th>名称</th><th class="num" title="近20日收盘价走势">近20日走势</th><th>代码</th><th class="num">现价</th><th class="num" title="今日涨跌幅：现价相对昨收（基金为昨日净值），行情口径；与「今日」列括号里的盈亏率不同——今日% 首日按买入成本计">涨跌幅</th><th class="num" title="成本价（每份）">成本价</th>`
       + `<th class="num sortable${sortedCls('mv')}" data-sort="mv" title="持仓市值（折人民币；悬停查看原币种市值）· 点击排序">市值</th>`
-      + `<th class="num" title="占该账户同币种资金池比例：持仓市值 ÷ 持仓合计+现金子账户余额；无匹配现金子账户时显示 —">仓位</th>`
+      // 列名从「仓位」改为「占资金池」：分母是「同账户同币种持仓合计 + 现金子账户余额」，
+      // 不是组合总市值。叫「仓位」会被读成「占我总持仓的比例」，同一张表里还能出现多个 100%，
+      // 实测一直有人按总市值去核这个数（分母差一个数量级）。
+      + `<th class="num" title="占该账户同币种资金池比例：持仓市值 ÷（该账户同币种持仓合计 + 现金子账户余额），不是占总持仓的比例；无匹配现金子账户时显示 —">占资金池</th>`
       + `<th class="num" title="今日盈亏金额">今日</th>`
       + `<th class="num sortable${sortedCls('profit')}" data-sort="profit" title="持有期总盈亏金额 · 点击排序">盈亏</th>`
       + `<th class="num sortable${sortedCls('days')}" data-sort="days" title="持仓天数 · 点击排序">持仓</th>`
@@ -1354,8 +1359,8 @@ function renderSummary(hs) {
     else otherMV += mv;
   });
   // 总市值分类堆叠条（股票/基金/理财/其他）。理财段（2026-10-09 迁入）：
-  // 仅「全部 / 理财」筛选口径下显示（选中股票/基金时保持纯持仓口径）；分母同步含理财。
-  const showWealthSeg = catFilter.size === 0 || catFilter.has('wealth');
+  // 持仓分类筛选已移除，始终显示理财段；分母同步含理财。
+  const showWealthSeg = true;
   const wealthTotal = showWealthSeg && assetData && assetData.wealth ? (Number(assetData.wealth.total) || 0) : 0;
   const mvAll = totalCNY + wealthTotal;
   const mvSegs = [
@@ -1375,14 +1380,14 @@ function renderSummary(hs) {
   // 今日盈亏口径与首页「今日」一致：持仓今日盈亏 + 今日已实现（清仓/减仓）盈亏，均折 CNY
   const invDay = document.getElementById('investDayPnl');
   if (invDay) {
-    invDay.textContent = (dayPnlCNY > 0 ? '+' : '') + '¥' + fmt(Math.abs(dayPnlCNY));
+    invDay.textContent = signedCur(dayPnlCNY, 'cny');
     invDay.className = 'kpi-value ' + dpCls;
     const sub = document.getElementById('investDayPct');
     if (sub) { sub.textContent = pct(dayPnlCNY / Math.max(totalCNY - dayPnlCNY, 1) * 100); sub.className = 'kpi-sub ' + dpCls; }
   }
   const invMonth = document.getElementById('investMonthPnl');
   if (invMonth) {
-    invMonth.textContent = (monthPnlCNY > 0 ? '+' : '') + '¥' + fmt(Math.abs(monthPnlCNY));
+    invMonth.textContent = signedCur(monthPnlCNY, 'cny');
     invMonth.className = 'kpi-value ' + mpCls;
     const sub = document.getElementById('investMonthPct');
     if (sub) { sub.textContent = pct(monthPnlCNY / Math.max(totalCNY - monthPnlCNY, 1) * 100); sub.className = 'kpi-sub ' + mpCls; }
@@ -1499,8 +1504,27 @@ async function renderRateSpark(rangeDays, netVal) {
       // 单序列画法：面积从零轴起填（不是从画布底边），亏损段才不会被填成「正面积」；
       // smooth:true 用单调三次插值把折线画成曲线 —— 日频数据的折线全是尖角，
       // 一个正负交替的序列画出来就是心电图，圆润之后读的是「走势」而不是「锯齿」。
+      // 参照模拟盘收益曲线：Y 轴 4 档金额刻度 + X 轴 3 个日期刻度（首/中/末），
+      // 左侧留 36px、底部留 14px 给刻度文字；网格线极淡，避免抢曲线。
+      const axisSpan = axMax - axMin;
+      const fmtAxisAmt = (v) => {
+        const a = Math.abs(v);
+        const sign = v < -0.5 ? '-' : (v > 0.5 ? '+' : '');
+        const s = a >= 10000 ? (a / 10000).toFixed(1) + '万' : Math.round(a).toLocaleString('zh-CN');
+        return sign + s;
+      };
+      const yTicks = [0, 1, 2, 3].map((k) => {
+        const v = axMax - axisSpan * k / 3;
+        return { v, label: fmtAxisAmt(v) };
+      });
+      const dd = sortedDates.filter(Boolean);
+      const mmdd = (s) => (s ? s.slice(5) : '');
+      const xLabels = dd.length >= 3
+        ? [mmdd(dd[0]), mmdd(dd[Math.floor((dd.length - 1) / 2)]), mmdd(dd[dd.length - 1])]
+        : dd.map(mmdd);
       heroBox.innerHTML = sparkline(shown, {
         w: svgW, h: svgH, stroke: strokeColor, fill: strokeColor, axis, zero: true, smooth: true,
+        axes: true, gutLeft: 36, gutBottom: 14, yTicks, xLabels,
       });
 
       // 趋势文案：区间累计盈亏折算为收益率（基准 = 起始权益本金）。
@@ -1519,6 +1543,7 @@ async function renderRateSpark(rangeDays, netVal) {
         series: shown.slice(), maWin,
         contrib: contrib.slice(), base, n: shown.length,
         mode: dmode, axisMin: axMin, axisMax: axMax,
+        gutLeft: 36, gutBottom: 14,
       };
       bindHomeRateHover();
     } else if (heroBox) {
@@ -1546,8 +1571,10 @@ function bindHomeRateHover() {
     const w = r.width, h = r.height;
     if (w <= 0 || h <= 0) return;
     const xPad = Math.max(1.5, h * 0.08);
+    const gutLeft = st.gutLeft || 0, gutBottom = st.gutBottom || 0;
+    const plotL = xPad + gutLeft, plotR = w - xPad;
     const x = e.clientX - r.left;
-    let i = Math.round((x - xPad) / (w - xPad * 2) * (st.n - 1));
+    let i = Math.round((x - plotL) / (plotR - plotL) * (st.n - 1));
     i = Math.max(0, Math.min(st.n - 1, i));
     const pnl = st.cumPnl[i] || 0;
     const dayAmt = (st.dayPnl && st.dayPnl[i]) || 0;
@@ -1580,7 +1607,7 @@ function bindHomeRateHover() {
     guide.hidden = false;
     // 弹框定位：用与曲线同一套 Y 轴（含最小跨度）保证参考点对齐；以 fixed 挂 body 定位，
     // 避免被 .hero-banner{overflow:hidden} 裁掉下半部分。
-    const padY = Math.max(1.5, h * 0.12), innerH = h - padY * 2;
+    const padY = Math.max(1.5, h * 0.12), innerH = h - padY * 2 - gutBottom;
     // 参考点取「当前画的那条序列」的值（st.series）：日均口径下画的是均值，
     // 用单日原值去均值轴上定位，弹框会飘到曲线之外。
     const anchor = (st.series && st.series[i] != null)
@@ -1643,12 +1670,6 @@ function bindHomeRateMode() {
       renderRateSpark();
     };
   });
-}
-
-// 筛选状态复位：每次 load 把类别筛选清空（真正的交互在投资页表头工具条 .toolbar-chip 上，
-// 见 renderInvestToolbar）。历史上的「市场二级筛选」弹层与 #filters 容器均已下线。
-function buildFilters() {
-  catFilter = new Set();
 }
 
 let sparkUid = 0;
@@ -1743,12 +1764,20 @@ function sparkline(data, opts) {
     min = Math.min(...vals); max = Math.max(...vals);
     if (max - min < 1e-9) { max += 1; min -= 1; }
   }
-  const padY = Math.max(1.5, h * 0.12), innerH = h - padY * 2;
+  const padY = Math.max(1.5, h * 0.12);
   // v3.6: 两端 padding 和圆点半径都按 h 等比缩放，避免小容器里圆点太小/大容器里圆点太大
   const xPad = Math.max(1.5, h * 0.08);
+  // 坐标轴留白：左侧给 Y 轴刻度文字、底部给 X 轴日期文字；不传时=0，不影响表格迷你图
+  const gutLeft = (opts && opts.gutLeft) || 0;
+  const gutBottom = (opts && opts.gutBottom) || 0;
+  const plotL = xPad + gutLeft;
+  const plotR = w - xPad;
+  const plotT = padY;
+  const plotB = h - padY - gutBottom;
+  const innerH = plotB - plotT;
   const dotR = Math.max(1.2, Math.min(3.5, h * 0.06));
-  const xAt = i => xPad + ((w - xPad * 2) * i) / (vals.length - 1);
-  const yAt = v => padY + innerH - (innerH * (v - min)) / (max - min);
+  const xAt = i => plotL + ((plotR - plotL) * i) / (vals.length - 1);
+  const yAt = v => plotT + innerH - (innerH * (v - min)) / (max - min);
   const xs = vals.map((_, i) => xAt(i));
   const ys = vals.map((v) => yAt(v));
   const pts = xs.map((x, i) => `${x.toFixed(2)},${ys[i].toFixed(2)}`).join(' ');
@@ -1767,7 +1796,7 @@ function sparkline(data, opts) {
   // zero:true → 面积从零轴起填。盈亏曲线跨零轴时若仍填到画布底边，
   // 亏损段会被填成一块「正面积」，看图会读反。零轴不在数据范围内时退回底边。
   const zeroIn = !!(opts && opts.zero) && min <= 0 && max >= 0;
-  const baseY = zeroIn ? yAt(0) : h;
+  const baseY = zeroIn ? yAt(0) : (gutBottom > 0 ? plotB : h);
   const zeroEl = zeroIn
     ? `<line x1="${xAt(0).toFixed(2)}" y1="${yAt(0).toFixed(2)}" x2="${xAt(vals.length - 1).toFixed(2)}" y2="${yAt(0).toFixed(2)}" stroke="${resolveColor('var(--text-faint)')}" stroke-width="1" stroke-dasharray="2,3" vector-effect="non-scaling-stroke"/>`
     : '';
@@ -1781,7 +1810,31 @@ function sparkline(data, opts) {
   const lineEl = smooth
     ? `<path d="${lineD}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth || 1.5}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`
     : `<polyline points="${pts}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth || 1.5}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="${par}"${dimAttrs} class="u-block u-va-mid" role="img" aria-hidden="true">${area}${zeroEl}${lineEl}<circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="${dotR.toFixed(1)}" fill="${strokeColor}"/></svg>`;
+  // 坐标轴（仅 axes:true）：横向淡网格 + 左侧 Y 轴金额刻度 + 底部 X 轴日期刻度。
+  // 网格先画（垫在面积之下），刻度文字最后画（都落在绘图区外的留白里，不压曲线）。
+  let gridEl = '', axisText = '';
+  if (opts && opts.axes) {
+    const tickColor = resolveColor('var(--text-muted)');
+    const gridColor = resolveColor('var(--border)');
+    const g = [];
+    const t = [];
+    for (const yt of (opts.yTicks || [])) {
+      const yy = yAt(yt.v);
+      g.push(`<line x1="${plotL.toFixed(2)}" y1="${yy.toFixed(2)}" x2="${plotR.toFixed(2)}" y2="${yy.toFixed(2)}" stroke="${gridColor}" stroke-width="1" stroke-dasharray="2,4" vector-effect="non-scaling-stroke"/>`);
+      t.push(`<text x="${(plotL - 6).toFixed(2)}" y="${(yy + 3).toFixed(2)}" text-anchor="end" font-size="10" fill="${tickColor}">${esc(yt.label)}</text>`);
+    }
+    const xl = opts.xLabels || [];
+    xl.forEach((lb, idx) => {
+      const n = xl.length;
+      let anchor = 'middle', xx = plotL + (plotR - plotL) * (n <= 1 ? 0 : idx / (n - 1));
+      if (idx === 0) { anchor = 'start'; xx = plotL; }
+      else if (idx === n - 1) { anchor = 'end'; xx = plotR; }
+      t.push(`<text x="${xx.toFixed(2)}" y="${(h - 3).toFixed(2)}" text-anchor="${anchor}" font-size="10" fill="${tickColor}">${esc(lb)}</text>`);
+    });
+    gridEl = g.join('');
+    axisText = t.join('');
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="${par}"${dimAttrs} class="u-block u-va-mid" role="img" aria-hidden="true">${gridEl}${area}${zeroEl}${lineEl}<circle cx="${last.split(',')[0]}" cy="${last.split(',')[1]}" r="${dotR.toFixed(1)}" fill="${strokeColor}"/>${axisText}</svg>`;
 }
 
 // 表格迷你走势单元格：线条为近30日收盘价走势，颜色按首尾收盘价对比（尾>首=涨红，否则=跌绿，
@@ -3285,14 +3338,18 @@ async function renderHomeDashboard() {
     ch.innerHTML = segs.join('');
   }
 
-  // 资产分布条：持仓 / 理财 / 现金（2026-10-27 起不再在首页 Hero 展示负债，
-  // 净资产仍按 资产 − 负债 计算，负债明细只保留在资产页）
+  // 资产分布 chip：持仓 / 理财 / 现金 / 负债。
+  // 负债必须列出（2026-10-27 曾摘掉）：净资产 = 资产 − 负债，只给三个资产项时
+  // 用户把 chip 相加（14.74+6.82+8.68=30.24万）对不上净资产（27.79万），差额 2.44万无从解释。
+  // 带上负号 chip 后四项相加恰好等于净资产，明细仍以资产页为准。
   const bd = $('#homeAssetBreakdown');
   if (bd) {
+    const lTotal = (ov.liability && ov.liability.total) || 0;
     const rows = [
       { label: '持仓', val: eqMV, color: 'var(--home-eq)' },
       { label: '理财', val: wTotal, color: 'var(--home-wealth)' },
       { label: '现金', val: cTotal, color: 'var(--home-cash)' },
+      { label: '负债', val: lTotal, color: 'var(--home-debt)', neg: true },
     ];
     // 资产分布 → 芯片行（原型 hero-asset-chip）：一枚一个口径，金额右对齐读数
     bd.innerHTML = rows.map((r) => {
@@ -3316,11 +3373,13 @@ async function renderHomeDashboard() {
     ];
     // 每个快捷功能取一个独立强调色（注入 --tint，仅作用于该微件子树，不影响全局强调色）
     const SC_TINTS = ['217, 165, 43', '42, 163, 155', '232, 110, 145', '56, 132, 232', '139, 92, 246', '150, 165, 180'];
-    sc.innerHTML = items.map((it, i) => `<div class="shortcut tier-3" data-i="${i}" style="--tint:${SC_TINTS[i] || 'var(--tint)'}">
-      <div class="shortcut-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${it.ico}</svg></div>
-      <div class="shortcut-label">${it.label}</div></div>`).join('');
+    // 必须是原生 <button>：此前用 <div> + JS 挂 cursor/onclick，
+    // 结果 role/tabindex/键盘事件全没有——Tab 键走不到这六个入口，屏幕阅读器也读不出是按钮。
+    // cursor:pointer 由 CSS 的 .shortcut 提供，不再用 JS 写内联样式（内联只允许 --x: v）。
+    sc.innerHTML = items.map((it, i) => `<button type="button" class="shortcut tier-3" data-i="${i}" style="--tint:${SC_TINTS[i] || 'var(--tint)'}">
+      <span class="shortcut-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${it.ico}</svg></span>
+      <span class="shortcut-label">${it.label}</span></button>`).join('');
     sc.querySelectorAll('.shortcut').forEach((el) => {
-      el.style.cursor = 'pointer';
       el.onclick = items[Number(el.dataset.i)].fn;
     });
   }
@@ -3449,27 +3508,34 @@ function renderFinKpis(d) {
   const yr = d.year || {};
   const inc = Number(yr.income) || 0, exp = Number(yr.expense) || 0, net = Number(yr.net) || 0;
   const rate = Math.max(-100, Math.min(100, Math.round((Number(d.save_rate) || 0) * 100)));
-  const months = Number(d.months_covered) || 0;
+  // 月均分母 = 当年「有收支流水的月份数」，不能写死 12：
+  // 年中（如 10 月）按 12 摊会把月均压低约 17%，与资产页「每月支出」（循环计划口径）也对不上。
+  const activeMonths = (d.months || []).filter((x) => Math.abs(Number(x.income) || 0) + Math.abs(Number(x.expense) || 0) > 0).length;
+  const div = Math.max(1, activeMonths);
+  const netMonth = net / div;
+  // 后端的 months_covered 是「被动收入可覆盖几个月支出」，与「净结余」不是一个口径，
+  // 放在净结余卡下会被读成「结余能撑几个月」——改挂到 title 里，正文让位给月均（与前后两张卡同形）。
+  const passiveMonths = Number(d.months_covered) || 0;
   const netCls = net >= 0 ? '' : ' is-neg';
-  const netSign = net >= 0 ? '+' : '−';
+  const netSign = net >= 0 ? '+' : NEG;
   grid.innerHTML = `
     <div class="kpi-card density-standard kpi-income">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></div>
       <div class="kpi-label">年度总收入</div>
       <div class="kpi-main"><div class="kpi-value">${moneyCurW(inc, 'cny')}</div></div>
-      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(inc / 12, 'cny')}</span></div>
+      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(inc / div, 'cny')}</span><span class="u-muted"> · ${div} 个月</span></div>
     </div>
     <div class="kpi-card density-standard kpi-expense">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></div>
       <div class="kpi-label">年度总支出</div>
       <div class="kpi-main"><div class="kpi-value">${moneyCurW(exp, 'cny')}</div></div>
-      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(exp / 12, 'cny')}</span></div>
+      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(exp / div, 'cny')}</span><span class="u-muted"> · ${div} 个月</span></div>
     </div>
-    <div class="kpi-card density-standard kpi-surplus">
+    <div class="kpi-card density-standard kpi-surplus" title="被动收入可覆盖 ${passiveMonths.toFixed(1)} 个月支出（按当前月支出水平估算）">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div>
       <div class="kpi-label">年度净结余</div>
       <div class="kpi-main"><div class="kpi-value${netCls}">${netSign}${moneyCurW(Math.abs(net), 'cny')}</div></div>
-      <div class="kpi-sub">已覆盖 <span class="hl">${months.toFixed(1)} / 12</span> 月支出</div>
+      <div class="kpi-sub">月均 <span class="hl">${(netMonth >= 0 ? '+' : NEG) + moneyCurW(Math.abs(netMonth), 'cny')}</span><span class="u-muted"> · ${div} 个月</span></div>
     </div>
     <div class="kpi-card density-standard kpi-rate">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
@@ -3633,7 +3699,7 @@ function renderCatTreemap() {
       (f.date || '').slice(0, 7) === monthYm && flowCatOf(f) === it.category);
     const subs = flows.map((f) => ({
       amt: flowToCny(f),
-      title: [f.ref_name, f.note, f.name].filter(Boolean).join(' · ') || finCatLabel(it.category),
+      title: flowTitleOf(f, finCatLabel(it.category)),
     })).filter((s) => s.amt > 0);
     // signed：正=资金流入、负=流出。分类汇总金额可能是负的（如某月落袋收益净亏损、
     // 退款大于支出的分类），方向和正负号必须按 signed 判，不能只看 type。
@@ -3746,6 +3812,15 @@ function squarifyTreemap(items, x, y, w, h) {
   return out;
 }
 
+// 流水明细标题 = ref_name · note · name 三段拼接。
+// 收尾两段同名时要去重：「手动调整」这类自指流水会拼成
+// 「RMB账户 · 手动调整：¥1400.95 → ¥1401.69 · RMB账户」，首尾账户名重复纯属噪音。
+function flowTitleOf(f, fallback) {
+  const parts = [f.ref_name, f.note, f.name].filter(Boolean);
+  if (parts.length > 1 && parts[0] === parts[parts.length - 1]) parts.pop();
+  return parts.join(' · ') || (fallback || '');
+}
+
 // ===== 财务页 · 当月收支分类明细（合并进收支分析卡下半部分，跟随热力图选月） =====
 function renderFinCatBlock() {
   const groups = document.getElementById('finCategoryGroups');
@@ -3756,18 +3831,29 @@ function renderFinCatBlock() {
   const monthYm = m.ym;
   const flowsOf = (cat) => (finFlowsCache || []).filter((f) =>
     (f.date || '').slice(0, 7) === monthYm && flowCatOf(f) === cat);
-  const incTotal = m.income || 0, expTotal = m.expense || 0;
+  // 占比分母 = 该方向「各分类金额绝对值之和」，不能用后端给的净额合计：
+  // 支出分类里若混入冲正/退款（如撤销信用卡还款 +¥1,623.51），净额合计会被抵消变小，
+  // 单分类占比就会超过 100%（实测「其他支出 110% + 负债偿还 10% = 120%」）。
+  const sumAbs = (type) => (m.items || [])
+    .filter((it) => (it.type === 'income') === (type === 'income') && Math.abs(it.amount) > 0)
+    .reduce((a, it) => a + Math.abs(it.amount), 0);
+  const incBase = Math.max(1, sumAbs('income'));
+  const expBase = Math.max(1, sumAbs('expense'));
   const rows = (m.items || []).filter((it) => Math.abs(it.amount) > 0)
     .map((it) => {
-      const isInc = (it.type === 'income' ? (it.amount || 0) : -(it.amount || 0)) >= 0;
+      // isInc = 分类归属（收入组 / 支出组），只看 type，不随金额符号漂移；
+      // 否则某支出分类因退款净额转正会被整块搬到「收入」侧显示（负债偿还踩过）。
+      const isInc = it.type === 'income';
+      // signed = 资金方向（正=流入、负=流出），决定金额前的 +/−；冲正会让支出分类净额转正，这是对的。
+      const signed = isInc ? (it.amount || 0) : -(it.amount || 0);
+      const sign = signed >= 0 ? '+' : NEG;
       const total = Math.abs(it.amount);
-      // 分母取该方向合计的绝对值：某月收入净额为负（只有亏损落袋）时不会被压成 1 而算出离谱占比
-      const base = Math.max(1, Math.abs(it.type === 'income' ? incTotal : expTotal));
+      const base = isInc ? incBase : expBase;
       const pct = Math.round(total / base * 100);
       const flows = flowsOf(it.category);
       const detailRows = flows.map((f) => {
         const isIn = f.direction === 'in';
-        const title = [f.ref_name, f.note, f.name].filter(Boolean).join(' · ') || finCatLabel(it.category);
+        const title = flowTitleOf(f, finCatLabel(it.category));
         const acct = [f.name, f.currency ? f.currency.toUpperCase() : ''].filter(Boolean).join(' · ');
         const amt = (isIn ? '+' : '−') + moneyCurW(Math.abs(f.amount || 0), f.currency || 'cny');
         return `<div class="flow-row">
@@ -3784,7 +3870,7 @@ function renderFinCatBlock() {
             <span class="category-name">${esc(finCatLabel(it.category))}</span>
             <span class="category-count">· ${flows.length} 笔</span>
           </span>
-          <span class="category-total ${isInc ? 'income' : 'expense'}">${isInc ? '+' : '−'}${moneyCurW(total, 'cny')}</span>
+          <span class="category-total ${isInc ? 'income' : 'expense'}">${sign}${moneyCurW(total, 'cny')}</span>
           <span class="category-pct">${pct}%</span>
         </div>
         <div class="group-rows-wrap"><div class="group-rows">${detailRows}</div></div>
@@ -5990,10 +6076,15 @@ async function loadAsset() {
     toast('资产加载异常：' + e.message, 'err');
     return;
   }
-  // 首页同步（2026-10-09 理财迁首页）：理财增删改/录入/资金变动后都会走 loadAsset，
-  // 首页「全部 / 理财」两种口径下总市值卡含理财段、理财视图还承载管理区 → 重渲染首页。
+  // 任何一次资产变动后，重渲染当前可见的视图：
+  // - 资产页（上面的 renderAssetTab 已处理）
+  // - 投资页（持仓/理财/存款/平仓）只要 #holdingsView 可见就整体重渲染，由其内部按 homeSection
+  //   决定当前显示哪一区块。
   const hv = document.getElementById('holdingsView');
-  if (hv && !hv.hidden && catFilter.has && (catFilter.has('wealth') || catFilter.size === 0)) renderFiltered();
+  if (hv && !hv.hidden) renderFiltered();
+  // 首页仪表盘（净资产 / 资产分布条含理财段）若可见也一并刷新
+  const hm = document.getElementById('homeView');
+  if (hm && !hm.hidden) renderHomeDashboard();
 }
 
 async function loadSourcesCache() {
@@ -6112,7 +6203,9 @@ function renderAssetTab() {
     <div class="cmp-row"><div class="cmp-name cmp-name-net">净资产</div><div class="cmp-bars"><div class="cmp-bar cmp-bar-net ${net < 0 ? 'neg' : ''}" style="--w:${(Math.abs(net) / triMax * 100).toFixed(1)}%"></div></div><div class="cmp-val ${clsPnl(net)}">${yuanOfW(net)}</div></div>`;
 
   // === 4 张独立小卡（原型场景 D 的扁平版）：构成 / 区域 / 币种 / 净值结构 ===
-  // 主数字各自取该维度最关心的一项：总资产 / 海外占比 / 外币占比 / 净资产。
+  // 主数字各自取该维度最关心的一项：总资产 / 内地以外占比 / 外币占比 / 净资产。
+  // 口径用词统一为「内地以外」而非「海外」：中国香港属于中国，按地域统计只能说「内地以外」，
+  // 写「海外」既与国家主权表述冲突，也会让人误以为含外国市场敞口。
   // 占比一律走 pctOf（不带正负号）——pct() 是给涨跌用的，会给正数加 "+"。
   const hkA = Number(regA.hk || 0), usA = Number(regA.us || 0), cnA = Number(regA.cn || 0);
   const cnyA = Number(curA.cny || 0);
@@ -6126,16 +6219,16 @@ function renderAssetTab() {
     <div class="kpi-row cols-flat asset-kpi-row">
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-fund"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 3v9h9"/></svg></div>
-        <div class="kpi-label">资产构成</div>
+        <div class="kpi-label">持仓市值</div>
         <div class="kpi-main"><div class="kpi-value">${yuanOfW(eqMV)}</div></div>
-        <div class="kpi-sub">持仓市值 · 股票与基金，折算 CNY</div>
+        <div class="kpi-sub">股票与基金，折算 CNY · 占总资产 <span class="hl">${pctOf(eqMV, totalA)}</span></div>
         <div class="kpi-extra asset-cmp-body asset-cmp-donut">${donutHtml}<div class="asset-ov-legend">${donutLegend}</div></div>
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-cash"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg></div>
         <div class="kpi-label">资产区域</div>
         <div class="kpi-main"><div class="kpi-value">${pctOf(hkA + usA, totalA)}</div></div>
-        <div class="kpi-sub">海外占比 · 中国 <span class="hl">${pctOf(cnA, totalA)}</span></div>
+        <div class="kpi-sub">内地以外占比 · 中国内地 <span class="hl">${pctOf(cnA, totalA)}</span></div>
         <div class="kpi-extra asset-cmp-body">${regionBars}</div>
         <div class="asset-cmp-legend-2"><span><i class="lg-sq lg-asset"></i>资产</span><span><i class="lg-sq lg-liab"></i>负债</span></div>
       </div>
@@ -6312,7 +6405,9 @@ function paintFlows(body) {
     { k: '笔数', v: list.length + ' 笔', s: rangeLabel },
     { k: '入账合计', v: yuanOfW(inSum), s: inCnt + ' 笔', tone: 'up' },
     { k: '支出合计', v: yuanOfW(outSum), s: outCnt + ' 笔', tone: 'down' },
-    { k: '净额', v: signedYuanW(net), s: '入账 − 支出', tone: clsPnl(net) },
+    // 净额含投资买卖 / 存款 / 账户互转等内部划转，不是「收支结余」；
+    // 原副标签只写「入账 − 支出」，用户会把 −5.55万 读成当月亏损。
+    { k: '净额', v: signedYuanW(net), s: '含划转 / 投资，≠ 收支结余', tone: clsPnl(net) },
   ]);
 
   html += '<div class="holding-toolbar"><div class="filter-group" id="flowChips">' +
@@ -6386,8 +6481,10 @@ async function renderAssetCashflowPanel(body) {
   const netSum = incSum - expSum;
   const cntOf = (type) => rec.filter((p) => p.type === type).length;
   const sumHTML = plans.length ? assetSumHTML([
-    { k: '每月收入', v: yuanOfW(incSum), s: cntOf('income') + ' 项循环', tone: 'up' },
-    { k: '每月支出', v: yuanOfW(expSum), s: cntOf('expense') + ' 项循环', tone: 'down' },
+    { k: '每月收入', v: yuanOfW(incSum), s: cntOf('income') + ' 项循环 · 计划口径', tone: 'up' },
+    // 副标签点明是「计划」口径：财务页的「月均支出」走实际流水、数字差一倍多，
+    // 不标注会被当成同一个指标算错了。
+    { k: '每月支出', v: yuanOfW(expSum), s: cntOf('expense') + ' 项循环 · 计划口径', tone: 'down' },
     { k: '每月结余', v: signedYuanW(netSum), s: incSum > 0 ? '留存 ' + (netSum / incSum * 100).toFixed(0) + '%' : '收入 − 支出', tone: clsPnl(netSum) },
     { k: '计划', v: plans.length + ' 项', s: '循环 ' + rec.length + ' / 一次性 ' + one.length },
   ]) : '';
@@ -6477,7 +6574,25 @@ function renderSources(body) {
   const prevScroll = body.scrollTop;
   // 「添加收支」「添加流水」入口已删（2026-10-22）：与首页功能重复——收支计划新建收敛到资产页「收支」子面板
   // 「＋ 新增收支计划」（#assetPlanAddBtn），流水录入收敛到首页「快捷功能 · 记收入/记支出」，均复用同一弹框。
-  let html = `<div class="asset-section-head"><h3>账户（${list.length}）</h3><div class="sec-actions"><button class="btn icon-btn asset-add" id="balanceSyncBtn" type="button" title="一键更新余额" aria-label="一键更新余额">${actIcon('refresh')}</button><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div></div>`;
+  let html = '';
+  // 口径说明条：分组小计是「账户维度净值」（负债子账户的负余额已扣在里面），
+  // 所以 Σ 分组合计 ≈ 净资产而非总资产。不写明的话用户会发现 23.79+4.01=27.80 ≠ 总资产 30.23 而无法对账。
+  {
+    const ovv = assetData || {};
+    const tt = Number(ovv.total_asset != null ? ovv.total_asset : ((ovv.equity?.market_value || 0) + (ovv.wealth?.total || 0) + (ovv.cash?.total || 0))) || 0;
+    const ll = Number(ovv.liability?.total || 0) || 0;
+    const nn = Number(ovv.net_asset != null ? ovv.net_asset : tt - ll) || 0;
+    if (tt > 0) {
+      html += assetSumHTML([
+        { k: '账户', v: list.length + ' 个', s: '按地域分组' },
+        { k: '总资产', v: yuanOfW(tt), s: '持仓 + 理财 + 现金' },
+        { k: '负债', v: (ll ? NEG : '') + yuanOfW(Math.abs(ll)), s: '负债子账户', tone: 'down' },
+        { k: '净资产', v: yuanOfW(nn), s: '= 分组小计之和' },
+      ]);
+    }
+  }
+  // 账户操作工具行（添加账户 / 一键更新余额）：置于「资产摘要」卡下方、账户主表上方
+  html += `<div class="asset-toolbar"><div class="sec-actions"><button class="btn icon-btn asset-add" id="balanceSyncBtn" type="button" title="一键更新余额" aria-label="一键更新余额">${actIcon('refresh')}</button><button class="btn icon-btn asset-add" id="addSourceBtn" title="添加账户" aria-label="添加账户">${actIcon('plus')}</button></div></div>`;
   // 一张卡承载账户主表；横向滚动由 .as-main 接管。指标条摘要头已迁出为独立「资产摘要」卡。
   html += `<div class="as-card tier-1"><div class="as-main">`;
   if (!list.length) html += emptyStateHTML({ icon: EMPTY_ICONS.bank, title: '还没有账户', desc: '先添加一个银行、证券或软件，开始记录你的资产。', btnLabel: '＋ 添加账户', btnAttrs: 'data-empty-add="source"' });
@@ -6634,6 +6749,12 @@ function renderWealthKpi() {
   const annRate = (cumRate != null && wDays > 0) ? cumRate * 365 / wDays : null;
   // 今日收益占市值只有千分之几，pctOf 的 1 位小数会全被抹成 0.1%／0.0%，这里给 2 位
   const dayPct = mv > 0.005 ? (day / mv * 100).toFixed(2) + '%' : '—';
+  // 非交易日 / 尚未录入当日快照时，今日收益恒为 ¥0 且整张表涨跌幅全 0.00%，
+  // 极易被当成「数据出错」或「今天真的一分没赚」。取在持产品的最新快照日期提示截至日。
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const latestSnap = live.reduce((a, p) => ((p.snap_date || '') > a ? p.snap_date : a), '');
+  const snapStale = !!latestSnap && latestSnap < todayStr;
+  const staleHint = snapStale ? `净值截至 ${latestSnap.slice(5)}` : '';
 
   el.innerHTML = `<div class="kpi-row cols-anchor">
       <div class="kpi-card density-standard anchor">
@@ -6645,8 +6766,8 @@ function renderWealthKpi() {
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
         <div class="kpi-label">今日收益</div>
-        <div class="kpi-main"><div class="kpi-value ${clsPnl(day)}">${day > 0 ? '+' : ''}${yuanOfW(day)}</div></div>
-        <div class="kpi-sub">占市值 <span class="hl">${dayPct}</span></div>
+        <div class="kpi-main"><div class="kpi-value ${clsPnl(day)}">${signedCur(day, 'cny')}</div></div>
+        <div class="kpi-sub">${staleHint ? `<span class="u-muted">${esc(staleHint)}</span>` : `占市值 <span class="hl">${dayPct}</span>`}</div>
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-down"><svg viewBox="0 0 24 24"><path d="M3 7l6 6 4-4 8 8"/><path d="M14 17h7v-7"/></svg></div>
@@ -6723,7 +6844,9 @@ function renderWealthTable(w) {
       const same = g.items.filter((p) => (p.currency || 'cny') === c);
       const d = same.reduce((s, p) => s + Number(p.today_pnl || 0), 0);
       const m = same.reduce((s, p) => s + Number(p.cum_pnl || 0), 0);
-      return `<span${wanTitle(d, curSymbolJS(c))}>${curSymbolJS(c)}${d >= 0 ? '+' : ''}${fmtWan(d)}</span> / <span${wanTitle(m, curSymbolJS(c))}>${m >= 0 ? '+' : ''}${fmtWan(m)}</span>`;
+      // 每段自带币种符号与「今日 / 累计」两个数字，段与段用全角空格分隔；
+      // 组头只有一个「今日/累计」标签，靠币种符号区分段，不再出现裸的「+22.53」。
+      return `<span${wanTitle(d, curSymbolJS(c))}>${fmtWanPnl(d, c)}</span> / <span${wanTitle(m, curSymbolJS(c))}>${fmtWanPnl(m, c)}</span>`;
     }).join('　');
     const rows = g.items.map((p, i) => {
       const pnl = p.today_pnl || 0;
@@ -6773,7 +6896,7 @@ function renderWealthTable(w) {
       <div class="collapse-body source-group-body">
         <div class="subtable-wrap"><table class="asset-table holdings-subtable wealth-subtable">
         <thead><tr><th>名称</th><th>代码</th>
-        <th class="num" title="当前金额（折人民币）">市值</th><th class="num" title="占该账户同币种理财合计比例">仓位</th><th class="num">今日收益</th><th class="num" title="累计收益金额">累计收益</th><th class="num">年化</th>
+        <th class="num" title="当前金额（折人民币）">市值</th><th class="num" title="占该账户同币种理财合计比例（不是占理财总额的比例）">占该组</th><th class="num">今日收益</th><th class="num" title="累计收益金额">累计收益</th><th class="num">年化</th>
         <th class="num">持有天数</th><th class="num">最新净值</th><th>操作</th>
         </tr></thead><tbody>${rows}</tbody>
         </table></div></div></div>`;
@@ -7047,7 +7170,13 @@ async function openFlowHistory(kind, id) {
   } catch (err) { toast('异常：' + err.message, 'err'); }
 }
 
+// 流水金额符号的口径：一律是「这笔流水让该现金账户余额增加还是减少」。
+// 「存款存入 −¥1.11万」最容易被读反（存入怎么会是减号），挂到类型标签上悬停可解。
+const FLOW_SIGN_TIP = '金额符号 = 该笔流水对现金账户余额的影响：− 账户减少，+ 账户增加';
 function cashFlowTypeTag(f) {
+  return flowTypeTagRaw(f).replace('<span class="flow-tag', '<span title="' + FLOW_SIGN_TIP + '" class="flow-tag');
+}
+function flowTypeTagRaw(f) {
   const t = typeof f === 'object' ? f.type : f;
   const amt = typeof f === 'object' ? (f.amount || 0) : 0;
   if (t === 'manual') {
@@ -7600,7 +7729,12 @@ async function openFlowModal(sign) {
   $('#flowErr').textContent = '';
   const snapCb = document.getElementById('flow_snapshot');
   if (snapCb) snapCb.checked = false;
-  flowSetSign(sign === 'out' ? 'out' : 'in');
+  const dir = sign === 'out' ? 'out' : 'in';
+  flowSetSign(dir);
+  // 标题跟着方向走：首页「记收入」「记支出」两个入口复用同一弹框，
+  // 标题都叫「添加流水」时用户无法确认自己点的是哪一个。
+  const ft = document.getElementById('flowModalTitle');
+  if (ft) ft.textContent = dir === 'in' ? '记一笔收入' : '记一笔支出';
   $('#flowModal').hidden = false;
 }
 
@@ -9928,7 +10062,7 @@ function renderDeposits(box) {
   const hint = pending.length
     ? '已到期待落袋 <b>' + pending.length + '</b> 笔 · 行内点「确认落袋」把本金+利息入账'
     : '共 <b>' + list.length + '</b> 笔 · 预计利息按「年利率 × 天数 / 365」估算';
-  const head = `<div class="asset-section-head"><h3>存款（${list.length}）</h3><div class="sec-actions"><span class="toolbar-gain dep-hint">${hint}</span><button class="btn icon-btn asset-add" id="depAddBtn" type="button" title="新增存款" aria-label="新增存款">${actIcon('plus')}</button></div></div>`;
+  const head = `<div class="asset-toolbar"><div class="sec-actions"><span class="toolbar-gain dep-hint">${hint}</span><button class="btn icon-btn asset-add" id="depAddBtn" type="button" title="新增存款" aria-label="新增存款">${actIcon('plus')}</button></div></div>`;
   if (!list.length) {
     box.innerHTML = head + emptyStateHTML({
       icon: EMPTY_ICONS.deposit,
@@ -11862,7 +11996,8 @@ function renderRvKpis() {
   if (wV) {
     wV.textContent = elig.length ? rvPct(wins / elig.length * 100, 0) : '—';
     const s = document.getElementById('rvKpiWinSub');
-    if (s) s.textContent = elig.length ? `盈利 ${wins} / 共 ${elig.length} 只` : '暂无标的';
+    // 分母含已平仓（整体口径），副标签写明，否则会被当成「当前持仓里的胜率」
+    if (s) s.textContent = elig.length ? `盈利 ${wins} / 共 ${elig.length} 只（含已平仓）` : '暂无标的';
   }
   renderRvGainKpi();
 }
@@ -11906,8 +12041,9 @@ function rvPerfRow(b, maxAbs) {
     + `<span class='rv-name'><span class='rb-dot' style='--rb-c:${RB_CLASS_COLOR[b.key] || 'var(--text-faint)'}'></span>`
       + `<span class='rv-t'>${esc(b.name)}</span>`
       + `<span class='rv-s'>${base}</span>`
-      + (short ? `<span class='rv-tag'>仅 ${Number(b.days)} 天</span>` : '')
-      + (b.note ? `<span class='rv-tag' title='${esc(b.note)}'>${b.quality === 'estimated' ? '估算' : '口径'}</span>` : '')
+      // 两个灰标此前只有文字没有解释：「仅 N 天」看不出为什么是问题，「口径」更是无从猜起。
+      + (short ? `<span class='rv-tag' title='持有不足 ${rvMinDays} 天，年化会被短期行情放大（持有越短倍数越高），仅供参考'>仅 ${Number(b.days)} 天</span>` : '')
+      + (b.note ? `<span class='rv-tag' title='${b.quality === 'estimated' ? '收益为按目标年化估算的理论值，非实际到账' : esc(b.note)}'>${b.quality === 'estimated' ? '估算' : '口径'}</span>` : '')
       + `</span>`
     + `<span class='rv-rate ${ann == null ? '' : up ? 'up' : 'down'}'>${ann == null ? '—' : rvPct(ann, 1)}</span>`
     + `<span class='rv-amt ${up ? 'up' : 'down'}'>${(up ? '+' : '') + rbYuan(gain)}</span>`

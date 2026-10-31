@@ -411,7 +411,7 @@
         </div>
         <div class="kpi-card density-standard">
           <div class="kpi-icon kpi-ico-fund"><svg viewBox="0 0 24 24"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg></div>
-          <div class="kpi-label">持仓胜率</div>
+          <div class="kpi-label">整体胜率</div>
           <div class="kpi-main"><div class="kpi-value" id="rvKpiWin">—</div></div>
           <div class="kpi-sub" id="rvKpiWinSub">—</div>
         </div>
@@ -569,9 +569,15 @@
                     <div class="cf-remind-row">
                       <span class="cf-remind-label">待还款提醒</span>
                       <label class="switch"><input type="checkbox" id="cfReminderEnabled"><span class="switch-knob"></span></label>
-                      <span class="cf-remind-time">提前一天的
-                        <input type="number" id="cfReminderHour" min="0" max="23" value="7" class="num-sm" /> 时
-                        <input type="number" id="cfReminderMinute" min="0" max="59" value="0" class="num-sm" /> 分推送
+                      <!-- 文案与输入框不能再交错成「提前一天的 [时] [分] 推送」：
+                           读起来断句破碎，且窄屏会把「时/分」挤掉。改成一句完整的话，
+                           时间选择器用 aria-label 补语义（视觉上没有可见 label）。 -->
+                      <span class="cf-remind-time">
+                        <span class="cf-remind-prefix">提前 1 天，在</span>
+                        <input type="number" id="cfReminderHour" min="0" max="23" value="7" class="num-sm" aria-label="提醒小时" />
+                        <span class="cf-remind-colon">:</span>
+                        <input type="number" id="cfReminderMinute" min="0" max="59" value="0" class="num-sm" aria-label="提醒分钟" />
+                        <span class="cf-remind-suffix">推送</span>
                       </span>
                     </div>
 
@@ -609,9 +615,11 @@
                     </div>
 
                     <div id="notifyErr" class="err"></div>
+                    <!-- 「测试通知」排在「保存配置」右侧：主操作在右、次要操作在左（与全站弹框一致），
+                         同时避免用户先点测试——测试用的是已保存的配置，未保存的新改不会生效。 -->
                     <div class="modal-actions">
-                      <button class="btn" type="button" id="notifyTestBtn">测试通知</button>
                       <button class="btn primary" type="button" id="notifySaveBtn">保存配置</button>
+                      <button class="btn" type="button" id="notifyTestBtn" title="用已保存的配置发一条测试通知">测试通知</button>
                     </div>
                   </div>
           </div>
@@ -1202,15 +1210,17 @@
         </div>
         <div id="histChartBody"></div>
         <div id="histNavBody" hidden>
-          <div class="wh-range-bar ds-t-seg hist-nav-range" id="histNavRangeBar">
-            <button data-range="7" class="active" type="button">近7天</button>
-            <button data-range="30" type="button">近30天</button>
-            <button data-range="0" type="button">全部</button>
-            <button data-range="custom" type="button">自定义</button>
-          </div>
-          <div class="wh-custom-row" id="histNavCustomRow" hidden>
-            <label>起 <input type="date" id="histNavFrom"></label>
-            <label>止 <input type="date" id="histNavTo"></label>
+          <div class="wh-range-bar hist-nav-range" id="histNavRangeBar">
+            <div class="ds-t-seg">
+              <button data-range="7" class="active" type="button">近7天</button>
+              <button data-range="30" type="button">近30天</button>
+              <button data-range="0" type="button">全部</button>
+              <button data-range="custom" type="button">自定义</button>
+            </div>
+            <span class="wh-custom-inline" id="histNavCustomRow" hidden>
+              <label>起 <input type="date" id="histNavFrom"></label>
+              <label>止 <input type="date" id="histNavTo"></label>
+            </span>
           </div>
           <div id="histNavTable" class="hist-table"></div>
         </div>
@@ -1268,8 +1278,8 @@
 
   <!-- ===== 批量新增已平仓（纯记录，不入账）===== -->
   <div id="closedBatchModal" class="modal" hidden>
-    <div class="modal-card" style="width:760px; max-width:96vw; padding:0 28px 0;">
-      <h2 style="padding-left:0;">批量新增已平仓</h2>
+    <div class="modal-card" style="width:760px; max-width:96vw;">
+      <h2>批量新增已平仓</h2>
       <p class="snap-hint">同一账户、同一类型批量录入；输入名称 / 代码可联想全市场标的，点选即回填代码。仅作记录，不计入任何账户。</p>
       <form>
         <div class="f-row">
@@ -1332,7 +1342,7 @@
 
   <!-- ===== 技术分析弹框 ===== -->
   <div id="analysisModal" class="modal" hidden>
-    <div class="modal-card" style="width:680px; max-width:94vw;">
+    <div class="modal-card" style="width:660px; max-width:94vw;">
       <h2 id="analysisTitle">技术分析</h2>
       <div id="analysisTime" class="analysis-time m-body"></div>
       <div id="analysisBody" class="analysis-body m-body"></div>
@@ -1467,7 +1477,7 @@
 
   <div id="flowModal" class="modal" hidden>
     <div class="modal-card">
-      <h2 class="m-head">添加流水</h2>
+      <h2 class="m-head" id="flowModalTitle">添加流水</h2>
       <form id="flowForm">
         <label><span>子账户</span>
           <div class="ac-picker" id="flowCashPicker">
@@ -1631,7 +1641,7 @@
 
   <div id="snapModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
-      <h2>更新理财持仓</h2>
+      <h2>理财快照 · 更新持仓</h2>
       <div id="snapBody" class="snap-body m-body"></div>
       <div class="modal-actions"><button type="button" id="snapSave" class="btn primary">保存</button></div>
     </div>
