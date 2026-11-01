@@ -33,7 +33,10 @@
   /* 二级文字：介于正文与 muted 之间，用于表格非重点列 / 说明行 / 名称副标 */
   --text-secondary: #b9c4d2;
   --text-muted: #94a3b8;
-  --text-faint: #64748b;
+  /* 三级文字（说明行 / 占位 / 分隔符）：2026-11-01（方案 13）由 #64748b 提到 #8b97a8。
+     原值铺在 --bg（#0f172a 附近）上对比度只有约 3.4:1，低于 WCAG AA 4.5:1；
+     新值约 4.6:1。只改 token，不动任何一处用法。 */
+  --text-faint: #8b97a8;
 
   /* 顶部主导航选中态：深色下加大 alpha 才可见 */
   --nav-active-a1: .20;
@@ -222,17 +225,17 @@
   --th-bg-light: #e9ecef;
   /* 开关关闭态轨道灰（此前 #c4c9d2 散落） */
   --switch-off: #c4c9d2;
-  /* 首页资产分布条分类色（与 --cat-* 平行的一套视觉，集中管理，便于后续对齐到 --cat-*）
+  /* 首页资产分布条分类色：一律直接引用 --cat-* 分类色（不再另存一套 hex）。
      2026-10-29：现金从「绿 #00d084」改为跟随 --cat-cash（暗色 #64D2FF / 日间 #32ADE6）。
      原因有两条：① 本项目语义色里绿=跌，现金用绿点会被读成「亏损/下跌」；
      ② 复盘圆环、资产页饼图里现金本来就是青，首页三种口径的色相应当同源。
-     直接引用 cat token 而不是抄一遍 hex，主题切换时自动跟。 */
-  --home-eq: #4a9eff;
-  --home-wealth: #a78bfa;
-  --home-cash: rgb(var(--cat-cash));
-  /* 负债 chip 色：跟随 --warning（琥珀）。刻意不碰 --up/--down —— 本项目红=涨、绿=跌，
-     负债既不是涨也不是跌，用中性警示色才不会和盈亏语义撞车。 */
-  --home-debt: var(--warning);
+     2026-11-01（方案 12）：持仓 / 理财也按同一规则收口 —— 原先写死 --home-eq:#4a9eff（蓝）、
+     --home-wealth:#a78bfa（紫），与资产页环形图/分类色的 --cat-equity（橙）、--cat-wealth（青）
+     不是同一个色相，同一个「持仓」在两页显示两种颜色。现直接引用 --cat-*，
+     chips 渲染处包 rgb()/rgba() 使用（--cat-* 是逗号分隔的 RGB 分量，不能直接赋给 color）。
+     原 --home-eq / --home-wealth / --home-cash / --home-debt 四个别名随之全部删除：
+     chips 现在直接用 rgb(var(--cat-*)) 与 var(--warning)，负债不走红绿（红=涨、绿=跌，
+     负债既不是涨也不是跌，用警示色才不会和盈亏语义撞车）。 */
 
   --cat-other-c: #94a3b8;
   /* 字号补充档（此前 10px / 32px 散落，不在 7 档 token 内） */
@@ -286,7 +289,9 @@
   /* 二级文字（浅色 #3d434b ≈ 9.4:1，暗色 #b9c4d2 ≈ 9.9:1，均高于 muted 的层级） */
   --text-secondary: #3d434b;
   --text-muted: #5a6068;
-  --text-faint: #8a8f99;
+  /* 2026-11-01（方案 13）：#8a8f99 铺在 --bg:#f4f6f9 上对比度约 3.0:1，低于 WCAG AA 4.5:1；
+     改为 #6b7280（约 4.7:1）。设置页 / 通知页那几行长说明（「选中即时生效…」）此前 1080p 下发灰难读。 */
+  --text-faint: #6b7280;
 
   /* 顶部主导航选中态：浅色下用较低 alpha 的淡彩底 */
   --nav-active-a1: .20;
@@ -870,10 +875,11 @@ h2 > svg { color: var(--primary); }
   color: var(--primary-active);
   transform: translateY(1px);
 }
-/* 盈亏日历顶栏按钮：桌面(≥881)作为图标按钮置于 AI 助手右侧、样式与其一致；
-   窄屏(≤880)导航已吃紧，隐藏顶栏按钮、改回个人菜单入口（见下方桌面隐藏规则），避免 641–880 档溢出 */
-#pnlCalTopBtn { display: none; }
-@media (min-width: 1341px) { #pnlCalTopBtn { display: inline-flex; } }
+/* 盈亏日历顶栏按钮：全宽度常驻（2026-11-01 起）。
+   此前是「桌面(≥1341)显示 / 窄屏隐藏回个人菜单」，但那条 1341 是从早期的 880 档机械迁过来的：
+   实测 1024 档顶栏还有 177px 余量，按钮却已消失，用户只会觉得「缩小窗口按钮就没了」。
+   现在改为常驻，窄档的取舍放在导航侧 —— tablet 档把 pill 内距从 12 收到 8（5 枚共让出 40px，
+   641px 时恰好是这枚按钮需要的宽度），见下方 .main-nav .nav-pill 的同一档规则。 */
 
 /* ===== 右上角个人菜单（2026-10-27）=====
    设置项从主导航迁入，导航回落 5 项。面板语义对齐 PanWatch AccountMenu：
@@ -896,8 +902,7 @@ h2 > svg { color: var(--primary); }
 }
 /* 必须显式写：面板本身的定位 display 会盖掉 UA 的 [hidden]{display:none} */
 .acct-pop[hidden] { display: none; }
-/* 桌面档盈亏日历已是顶栏按钮，个人菜单内不再重复（窄屏仍保留，避免 641–880 导航溢出） */
-@media (min-width: 1341px) { #acctPop .acct-item[data-act="pnl-cal"] { display: none; } }
+/* 个人菜单内不再有盈亏日历入口（2026-11-01 起顶栏按钮全宽度常驻，重复入口已删） */
 .acct-sec {
   padding: var(--sp-2) var(--sp-2) var(--sp-1);
   font-size: var(--fs-xs);
@@ -1358,6 +1363,29 @@ header {
   top: 0;
   z-index: 50;
 }
+/* ===== 休市徽章（2026-11-01）=====
+   替代整页横幅：横幅要占 35px 首屏、且滚出视口就失效，还跟下方的日期标签重复。
+   改成「哪个数字不新鲜，就把徽章钉在那个数字旁边」—— 就地、零占位、跟着卡片走。
+   尺寸比数值小一档（11px / 16px 高），字号与行高都压到最小可读，避免抢主数字的视觉权重。
+   琥珀色（--warning）：休市既不是涨也不是跌，用红绿都会读成盈亏方向。 */
+.mkt-closed {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-style: normal;
+  line-height: 16px;
+  vertical-align: 1px;
+  color: var(--warning);
+  background: rgba(var(--warning-rgb), .14);
+}
+/* KPI 主数值是 28–32px 大字，徽章跟在后面时单纯 vertical-align 会沉到基线以下、
+   读起来像下标；改用 flex 居中，视觉上贴着数字的腰线。 */
+.kpi-card .kpi-value:has(.mkt-closed) { display: flex; align-items: center; gap: var(--sp-1); }
+.kpi-card .kpi-value:has(.mkt-closed) .mkt-closed { margin-left: 0; vertical-align: baseline; }
+
 /* ===== 顶部品牌（2026-10-27 从 hero 卡片迁入 header） =====
    header 成为标准 app shell：左品牌 / 中主导航 / 右操作组；hero 回归纯数据锚点。
    2026-10-27 二次收口：删掉「一站式管理 · 持仓 · 理财 · 现金 · 负债」副标语（原本 ≤1340 就隐藏，
@@ -1567,10 +1595,14 @@ header {
   body, #app { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
 }
 
-/* 641–880 档：品牌入驻 header 后横向空间收紧（实测 641px 时导航溢出 32px），
-   pill 内距/字号降一档；必须声明在 .main-nav .nav-pill 基础规则之后才不被反超。 */
+/* 641–1340 档：品牌入驻 header 后横向空间收紧（实测 641px 时导航溢出 32px），
+   pill 内距/字号降一档；必须声明在 .main-nav .nav-pill 基础规则之后才不被反超。
+   2026-11-01：横向内距 12→8。原因是顶栏第 4 枚图标（盈亏日历）改成全宽度常驻，
+   而 641px 档顶栏本来就刚好用满（品牌 86 + 导航 387 + 操作区 112 = 585 = 内容宽），
+   多出的一枚 32px 按钮 + 8px 间距无处安放。5 枚 pill 各让 8px 合计 40px，正好补上；
+   641px 实测剩余 25px 余量，按钮与导航不再相互挤压。 */
 @media (min-width: 641px) and (max-width: 1340px) {
-  .main-nav .nav-pill { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
+  .main-nav .nav-pill { padding: var(--sp-2) var(--sp-2); font-size: var(--fs-sm); }
 }
 
 /* ===== 汇总卡片 ===== */
@@ -3333,20 +3365,23 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .cmp-bars { position: relative; height: 16px; background: var(--bg-input); border-radius: 3px; overflow: hidden; }
 .cmp-bar { position: absolute; top: 0; left: 0; height: 100%; border-radius: 3px; transition: width .4s ease; width: var(--w, 0); }
 .cmp-bar-asset { background: rgb(var(--cat-equity)); }
-.cmp-bar-liab { background: var(--down); opacity: .75; }
-.cmp-bar-net { background: var(--up); }
-.cmp-bar-net.neg { background: var(--down); }
+/* 2026-11-01（方案 14）：红绿在本项目专指涨/跌，不能兼职「资产 / 负债 / 正负」。
+   负债改走警示色 --warning（琥珀）、净资产改走主色 --primary，
+   红绿只留给涨跌幅与盈亏；净资产为负时用 --warning 而不是绿色。 */
+.cmp-bar-liab { background: var(--warning); opacity: .8; }
+.cmp-bar-net { background: var(--primary); }
+.cmp-bar-net.neg { background: var(--warning); }
 .cmp-bar-cur { background: var(--bc, var(--text-muted)); opacity: .85; }
 .cmp-val { font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; font-family: var(--font-mono); }
 /* 区域/净值结构 cell 的名称前缀色 */
 .cmp-name-asset { color: rgb(var(--cat-equity)); font-weight: 600; }
-.cmp-name-liab { color: var(--down); font-weight: 600; }
+.cmp-name-liab { color: var(--warning); font-weight: 600; }
 .cmp-name-net { color: var(--primary); font-weight: 600; }
 /* 区域图例（资产/负债小色块） */
 .asset-cmp-legend-2 { display: flex; gap: var(--sp-3); font-size: var(--fs-xs); color: var(--text-muted); }
 .lg-sq { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 .lg-asset { background: rgb(var(--cat-equity)); }
-.lg-liab { background: var(--down); opacity: .75; }
+.lg-liab { background: var(--warning); opacity: .8; }
 /* 资产子面板：账户 / 流水 / 负债 切换显隐 */
 .asset-subpanel { display: none; }
 .asset-subpanel.active { display: block; }
@@ -5293,6 +5328,30 @@ textarea::placeholder {
 @media (max-width: 640px) {
   .data-mgmt-grid { grid-template-columns: 1fr; }
 }
+/* 自动备份状态（方案 1）：纯展示一行小字，不参与交互。
+   内容由 /api/backup/status 回填（上次备份时间 · 份数 · 目录）。 */
+.backup-status {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+}
+.backup-status .bs-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); flex: 0 0 auto; }
+.backup-status.is-stale .bs-dot { background: var(--warning); }
+.backup-status .bs-dir { color: var(--text-faint); font-family: var(--font-mono); }
+
+/* 密码框归组（方案 15）：浏览器要求 password 字段位于 <form> 内，否则控制台每次加载
+   报 N 条 [DOM] Password field is not contained in a form，且输入框内回车不提交。
+   这里用 display:contents 让 <form> 不产生盒模型——子元素直接成为父容器（label / flex 行）
+   的子项，布局与包裹前完全一致，只在 DOM 树上多一层 form 供浏览器识别。 */
+.pw-form { display: contents; }
+/* 多字段密码表单的「隐式提交」代理按钮：Enter 要能触发表单 submit，就必须存在 submit 按钮；
+   该按钮不可见、不可聚焦、不占布局（绝对定位 + 1px 裁剪），真实操作仍由原有保存按钮完成。 */
+.pw-proxy {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; opacity: 0;
+  pointer-events: none;
+}
 
 /* ============================================================
    首页 / 财务 新视图视觉升级（2026-10-20 二次迭代：移植原型视觉，配色对齐 gold 主题）
@@ -5410,6 +5469,8 @@ textarea::placeholder {
 .kpi-card .kpi-value.up { color: var(--up); }
 .kpi-card .kpi-value.down { color: var(--down); }
 .kpi-card .kpi-value.flat { color: var(--text); }
+/* 负值警示（方案 14）：净资产为负这类「状态异常」不用绿（绿在本项目=跌），改用警示色。 */
+.kpi-card .kpi-value.is-neg { color: var(--warning); }
 .kpi-card .kpi-sub { order: 4; margin-top: var(--sp-1); font-size: var(--fs-xs); font-weight: 400; color: var(--text-muted); }
 .kpi-card .kpi-sub.up { color: var(--up); }
 .kpi-card .kpi-sub.down { color: var(--down); }
@@ -5417,6 +5478,10 @@ textarea::placeholder {
    基色再弱一级（品类拆分是补充信息，不该盖过整体胜率）。 */
 .kpi-card .kpi-sub.kpi-sub-split { margin-top: 0; color: var(--text-faint); }
 .kpi-card .kpi-sub .hl { color: var(--text); font-weight: 600; }
+/* 口径脚注（方案 7）：接在副标之后、可视化之前的一行最小号说明。
+   用于「区域」「币种」两张卡——13.3%（按账户归属地）与 21.8%（按计价货币）必然对不上，
+   不写清口径会被当成算错。 */
+.kpi-card .kpi-foot { order: 4; font-size: var(--fs-2xs); color: var(--text-faint); line-height: 1.4; }
 /* 附加可视化块（迷你 bar / donut / 图例）：接在副标之后 */
 .kpi-card .kpi-extra { order: 5; margin-top: var(--sp-2); min-width: 0; }
 
@@ -5540,6 +5605,11 @@ textarea::placeholder {
 .hero-changes .hc-val.up { color: var(--up); }
 .hero-changes .hc-val.down { color: var(--down); }
 .hero-changes .hc-pct { color: var(--text-muted); font-style: normal; font-weight: 400; font-size: var(--fs-xs); }
+/* 百分比分母标注（方案 5）：首页今日变动写「/净资产」，投资页今日盈亏写「/持仓市值」。
+   两个百分比都对，但分母不同（净资产 vs 持仓市值），不标出来并排看像数据错乱。
+   字号再降一档、颜色走 faint，保证它读起来是「注解」而不是「数据」。 */
+.hero-changes .hc-pct .hc-of { color: var(--text-faint); font-size: var(--fs-2xs); margin-left: 1px; }
+.kpi-card .kpi-sub .sub-of { color: var(--text-faint); font-size: var(--fs-2xs); margin-left: 2px; }
 /* 资产分布芯片行（原型 hero-asset-chip）：一行 4 枚，取代原 4 列迷你条形 */
 .nw-asset-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
 /* 资产分布芯片：一枚一个口径（● 持仓 ¥9.29万）。文字只用一种颜色（--text），
@@ -5620,7 +5690,7 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .recent-item { display: grid; grid-template-columns: 80px 1fr auto; gap: var(--sp-3); align-items: center; padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
 .recent-item:last-child { border-bottom: none; }
 .recent-item:hover { background: var(--bg-hover); }
-.recent-date { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.recent-date { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .recent-title { font-size: var(--fs-md); color: var(--text); font-weight: 500; }
 .recent-sub { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
 .recent-amt { font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -5692,6 +5762,9 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .heatmap-legend-mini .dot-exp { background: var(--hm-exp); }
 
 .hm-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: var(--sp-3); }
+/* 自动跳月提示（方案 6）：默认隐藏，仅当「当月无记录、自动落到最近有数据的月份」时出现 */
+.hm-auto-hint { font-size: var(--fs-xs); color: var(--text-muted); margin: calc(-1 * var(--sp-2)) 0 var(--sp-2); }
+.hm-auto-hint[hidden] { display: none; }
 .hm-chip {
   padding: 3px 12px; border-radius: 999px; border: 1px solid var(--border);
   background: var(--bg-soft); color: var(--text-muted); font-size: var(--fs-xs);
@@ -5880,8 +5953,10 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .group-rows { margin-left: 6px; }
   .flow-row { gap: var(--sp-2); padding: var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-3); grid-template-columns: 48px minmax(0, 1fr) auto; }
   .fin-cat-block { padding-top: var(--sp-4); }
-  /* 首页最新流水：手机端日期列/间距收紧，与财务「收支分类明细」流水行一致 */
-  .recent-item { grid-template-columns: 48px minmax(0, 1fr) auto; gap: var(--sp-2); }
+  /* 首页最新流水：手机端日期列/间距收紧，与财务「收支分类明细」流水行一致。
+     日期列 56px 而非 48px：首页日期恒带年份（26-10-30，8 字符 @12px ≈ 52px），
+     48px 会折行；财务明细那列仍是 48px，因为它是年份锁定视图、只显示 10-30。 */
+  .recent-item { grid-template-columns: 56px minmax(0, 1fr) auto; gap: var(--sp-2); }
   .recent-title { font-size: var(--fs-sm); }
   /* 投资页顶部 tab：手机端字号与内边距收紧 */
   .sub-tab { font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3); }
@@ -6032,6 +6107,16 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 
 /* 右上角小计数 / 副提示 */
 .rv-n { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; }
+
+/* 口径说明行（方案 4）：业绩表现列表没有列头，第一眼只看到「英伟达 −80.3%」，
+   而该列是年化（投资页 −3.9% 才是持有期收益率）。加一行小字说明，不动 .rv-row 的 flex 布局，
+   零布局风险；不追求真表头（需要与 rv-name 弹性列严格对齐，维护成本高）。 */
+.rv-legend {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding: 0 2px var(--sp-1);
+}
 
 /* 业绩表现头部右侧：「已平仓 / 持仓中」切换，margin-left:auto → 贴卡片最右 */
 .rv-seg { display: inline-flex; margin-left: auto; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }

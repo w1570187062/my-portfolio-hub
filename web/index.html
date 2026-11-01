@@ -32,9 +32,12 @@
       <label class="auth-field">这台设备叫什么（可选）
         <input id="authDevice" maxlength="20" placeholder="如 书房台式机" autocomplete="off">
       </label>
+      <!-- 方案 15：密码框必须位于 <form> 内（display:contents 保持原布局），回车 = 点「接入这台设备」 -->
+      <form class="pw-form" data-pwsubmit="authClaimBtn">
       <label class="auth-field">设置操作 PIN（推荐）
         <input id="authPin" type="password" inputmode="numeric" maxlength="6" placeholder="4–6 位数字，可留空" autocomplete="off">
       </label>
+      </form>
       <p class="auth-hint auth-hint-sm">这是第一台设备，将成为<b>主设备</b>：之后加设备、删账本等操作只有它能做。PIN 用于这些危险操作的二次确认，设了更安全。</p>
       <div class="auth-err" id="authClaimErr"></div>
       <button class="btn primary auth-submit" id="authClaimBtn" type="button">接入这台设备</button>
@@ -90,8 +93,9 @@
            也与相邻的日历/头像线性图标区分度更高 -->
       <button id="aiChatTopBtn" class="btn icon-btn" type="button" title="AI 助手" aria-label="AI 助手"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><!-- 星芒图形包围盒 y[3,16.4] 中心 9.7，整体下移 2.3 使视觉中心落在 viewBox 中心 12 --><g transform="translate(0 2.3)"><path d="M10.6 3.2l1.75 4.85 4.85 1.75-4.85 1.75L10.6 16.4 8.85 11.55 4 9.8l4.85-1.75z"/><path d="M18.4 3v3.2"/><path d="M20 4.6h-3.2"/></g></svg></button>
       <!-- 盈亏日历：2026-10-28 从个人菜单「提出来」为顶栏图标按钮，置于 AI 助手右侧、样式与其一致；
-           窄屏(≤880)导航吃紧，仍回归个人菜单入口（见 #acctPop [data-act="pnl-cal"] 的桌面隐藏规则） -->
-      <button id="pnlCalTopBtn" class="btn icon-btn" type="button" title="盈亏日历" aria-label="盈亏日历" onclick="openPnlModal()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></button>
+           2026-11-01 起全宽度常驻 —— 个人下拉里的重复入口已删除（缩窄窗口后按钮凭空消失，
+           只能靠下拉里那一条才能进去，入口不统一）。窄档让位靠 tablet 档收紧导航 pill 内距实现。 -->
+      <button id="pnlCalTopBtn" class="btn icon-btn" type="button" title="盈亏日历" aria-label="盈亏日历"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></button>
       <!-- 止盈止损提醒（2026-10-31）：铃铛 + 未读角标，放在盈亏日历右侧、头像左侧。
            止盈止损信号是「需要立刻处理」的信息，不能只沉在消息页，故独立成一个顶栏入口；
            面板视觉与个人菜单同源（右侧下拉 / 发丝线 / 卡片底），不新造语言。 -->
@@ -112,7 +116,7 @@
           </div>
         </div>
       </div>
-      <!-- 顶栏操作区：AI 助手 + 盈亏日历 + 头像；盈亏日历桌面档为顶栏按钮，窄屏回退到个人菜单 -->
+      <!-- 顶栏操作区：AI 助手 + 盈亏日历 + 止盈提醒 + 头像（四枚图标全宽度常驻） -->
       <!-- 右上角个人菜单（2026-10-27）：设置从主导航迁入此处，导航回落 5 项。
            样式参照 PanWatch AccountMenu：头像触发 + 右侧下拉面板 + 分组分隔线 + 激活项打勾 -->
       <div class="acct-menu" id="acctMenu">
@@ -140,10 +144,6 @@
             <span>跟随系统</span><span class="acct-check" aria-hidden="true">✓</span>
           </button>
           <div class="acct-sep"></div>
-          <button class="acct-item" type="button" data-act="pnl-cal">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
-            <span>盈亏日历</span>
-          </button>
           <!-- 2026-10-29：绑定设备 / 通知推送从设置页抽出为独立页，入口放这里 ——
                换设备、邀请家人、切钉钉推送都是常切项，不该埋在设置页第 5 屏 -->
           <button class="acct-item" type="button" data-act="ai">
@@ -252,7 +252,7 @@
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
-        <div class="kpi-label">今日盈亏</div>
+        <div class="kpi-label" id="investDayLabel">今日盈亏</div>
         <div class="kpi-main"><div class="kpi-value" id="investDayPnl">—</div></div>
         <div class="kpi-sub" id="investDayPct">—</div>
       </div>
@@ -370,6 +370,8 @@
             </div>
           </div>
           <div class="hm-chips" id="hmChips"></div>
+          <!-- 方案 6：该月无数据时会自动落到最近有记录的月份，这里说明「为什么不是你选的那个月」 -->
+          <div class="hm-auto-hint" id="hmAutoHint" hidden></div>
           <div class="hm-treemap" id="catTreemap"></div>
         </div>
       </div>
@@ -449,6 +451,9 @@
           <button type="button" id="rvTabClosed">已平仓</button>
         </span>
       </div>
+      <!-- 口径说明（方案 4）：这张列表没有列头，第一眼只看到「英伟达 −80.3%」，
+           而该列是年化（投资页 −3.9% 才是持有期收益率）。补一行小字，不动列表布局。 -->
+      <div class="rv-legend">金额 = 持有期累计盈亏 · 百分比 = 年化收益率 · 按盈亏金额排序 · 持有期不足 90 天的年化仅供参考</div>
       <div class="rv-body">
         <div class="rv-donut" id="rvDonut"><span class="rv-donut-c"><b id="rvDonutV">—</b>收益合计</span></div>
         <div class="rv-list" id="rvPerfList"></div>
@@ -520,6 +525,9 @@
               <span class="dm-sub">不可恢复</span>
             </button>
           </div>
+          <!-- 方案 1：自动备份状态（纯展示）。服务端每日 03:10 用 VACUUM INTO 出一份热备快照，
+               保留最近 30 份 + 每月 1 号永久保留；启动时会补跑当天缺的那份。 -->
+          <div class="backup-status" id="backupStatus" hidden></div>
         </div>
       </section>
 
@@ -552,9 +560,14 @@
             <section class="dev-sec" id="pinSection">
               <div class="grp-label" id="pinTitle">操作 PIN<span class="pin-state" id="pinState"></span></div>
               <div class="pin-row" id="pinRow">
+                <!-- 方案 15：两个密码框同处一个 <form>，回车等同点「保存」。
+                     多字段表单需要显式 submit 按钮才会触发隐式提交，用视觉隐藏的代理按钮承载。 -->
+                <form class="pw-form" data-pwsubmit="pinSaveBtn">
                 <input id="pinOld" type="password" inputmode="numeric" maxlength="6" placeholder="原 PIN（未设可留空）">
                 <input id="pinNew" type="password" inputmode="numeric" maxlength="6" placeholder="新 PIN，4–6 位数字">
                 <button class="btn btn-sm" type="button" id="pinSaveBtn">保存</button>
+                <button class="pw-proxy" type="submit" tabindex="-1" aria-hidden="true">保存</button>
+                </form>
               </div>
               <div class="pin-tools" id="pinTools">
                 <button class="btn btn-sm" type="button" id="pinForgotBtn">忘记 PIN</button>
@@ -628,7 +641,9 @@
                         <label>SMTP 服务器<input type="text" id="emHost" placeholder="smtp.qq.com"></label>
                         <label>端口<input type="number" id="emPort" value="465" step="1"></label>
                         <label>账号<input type="text" id="emUser" placeholder="1570187062@qq.com"></label>
-                        <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）"></label>
+                        <form class="pw-form" data-pwsubmit="notifySaveBtn">
+                        <label>授权码 / 密码<input type="password" id="emPass" placeholder="邮箱授权码（非登录密码）" autocomplete="off"></label>
+                        </form>
                         <label>发件人<input type="text" id="emFrom" placeholder="1570187062@qq.com"></label>
                         <label>收件人（逗号分隔）<input type="text" id="emTo" placeholder="a@x.com,b@y.com"></label>
                       </div>
@@ -695,12 +710,18 @@
                     </label>
                     <label>配置名称 <input id="ai_cfg_name" placeholder="如 默认 / DeepSeek / 备用"></label>
                     <label>模型名称 <input id="ai_model" placeholder="deepseek-v4-pro"></label>
+                    <form class="pw-form" data-pwsubmit="ai_save">
                     <label class="span2">API Key
                       <span class="ai-key-row">
-                        <input id="ai_apikey" type="password" placeholder="sk-...">
-                        <button type="button" id="ai_toggleKey" class="btn btn-sm">显示</button>
+                        <!-- 方案 9：已保存的 Key 一律不回显明文，输入框只做「覆盖写入」。
+                             未填写时 placeholder 显示 sk-****abcd（尾 4 位），按钮文案为「重填」。
+                             方案 15：整块包进 <form>（display:contents 不产生盒模型），消除
+                             「Password field is not contained in a form」警告，框内回车即保存。 -->
+                        <input id="ai_apikey" type="password" placeholder="sk-..." autocomplete="off">
+                        <button type="button" id="ai_toggleKey" class="btn btn-sm">重填</button>
                       </span>
                     </label>
+                    </form>
                     <label class="span2">模型地址 <input id="ai_baseurl" placeholder="https://api.deepseek.com"></label>
                     <label class="span2">提示词模板
                       <span class="ai-tpl-row">
@@ -741,9 +762,10 @@
                         </select>
                       </label>
                       <label>HTTP 监听地址 <input id="mcp_http_addr" placeholder=":9988"></label>
+                      <form class="pw-form" data-pwsubmit="mcp_save">
                       <label>鉴权令牌（可选）
                         <span class="mcp-token-row">
-                          <input id="mcp_token" type="password" placeholder="留空则不鉴权">
+                          <input id="mcp_token" type="password" placeholder="留空则不鉴权" autocomplete="off">
                           <button type="button" id="mcp_token_toggle" class="btn btn-sm mcp-eye" title="显示/隐藏令牌" aria-label="显示或隐藏令牌">
                             <svg class="eye-open" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
                             <svg class="eye-closed" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
@@ -751,6 +773,7 @@
                           <button type="button" id="mcp_gen_token" class="btn btn-sm">生成</button>
                         </span>
                       </label>
+                      </form>
                       <label>服务名 <input id="mcp_server_name" placeholder="portfolio-mcp"></label>
                       <label>版本 <input id="mcp_server_version" placeholder="1.0.0"></label>
 
@@ -1899,8 +1922,10 @@
     <h2>需要操作 PIN</h2>
     <button class="card-close" type="button" id="pinPromptClose" title="关闭" aria-label="关闭">✕</button>
     <div class="pin-prompt-wrap">
+      <form class="pw-form" data-pwsubmit="pinPromptOk">
       <input id="pinPromptInput" type="password" inputmode="numeric" maxlength="6" placeholder="输入 4–6 位操作 PIN" autocomplete="off">
       <div class="auth-err" id="pinPromptErr"></div>
+      </form>
       <div class="modal-actions">
         <button type="button" class="btn" id="pinPromptCancel">取消</button>
         <button type="button" class="btn primary" id="pinPromptOk">确认</button>
@@ -1977,12 +2002,15 @@
     <h2>用恢复码重置 PIN</h2>
     <button class="card-close" type="button" id="pinResetClose" title="关闭" aria-label="关闭">✕</button>
     <div class="m-body">
+      <form class="pw-form" data-pwsubmit="pinResetOk">
       <label class="dev-name-label">恢复码
         <input id="pinResetCode" type="text" maxlength="12" placeholder="XXXX-XXXX" autocomplete="off" spellcheck="false">
       </label>
       <label class="dev-name-label">新的操作 PIN
         <input id="pinResetNew" type="password" inputmode="numeric" maxlength="6" placeholder="4–6 位数字" autocomplete="off">
       </label>
+      <button class="pw-proxy" type="submit" tabindex="-1" aria-hidden="true">重置</button>
+      </form>
       <p class="tool-hint">重置成功后这份恢复码立即作废，记得回到设备页再生成一份新的。</p>
       <div class="auth-err" id="pinResetErr"></div>
     </div>

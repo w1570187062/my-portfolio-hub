@@ -234,28 +234,32 @@ const fmt = (n) => (n == null ? '' : Number(n).toLocaleString('zh-CN', { maximum
 // 整数与小数统一成同一「形状」，配合 tabular-nums 按小数点对齐，避免整数(432)比小数(72.42)视觉更窄被看岔。
 const fmtPnl = (n) => (n == null ? '' : (n > 0 ? '+' : n < 0 ? NEG : '') + Math.abs(Number(n)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
-// 万位压缩金额：|n| ≥ 1万 → 「x.xx万」（固定 2 位小数），不足万沿用 fmt（千分位）。
-// 表格/卡片里长金额占宽过大；压缩后由调用方挂 wanTitle，悬停还原精确值。
-const fmtWan = (n) => {
-  const v = Number(n) || 0;
-  return Math.abs(v) >= 1e4 ? (v / 1e4).toFixed(2) + '万' : fmt(v);
-};
-// 万位压缩的「强制 2 位小数」版：不足万时补齐到分位（¥183.20 而不是 ¥183.2），
-// 让整数与小数在 tabular-nums 下形状一致（组头「+¥183.2」挨着「+¥46.55」时小数点对不齐）。
-const fmtWan2 = (n) => {
+// ── 金额展示唯一入口（方案 3）────────────────────────────────────────────
+// 规则：|n| ≥ 1万 → 「x.xx万」；不足万 → 千分位 + 强制 2 位小数（¥183.20，不是 ¥183.2）。
+// 之所以强制 2 位：同一屏里「¥147,512.51 / ¥150,723.70」的小数位必须一致，
+// 否则 tabular-nums 下整数与一位小数错半格，读者还会以为是精度不同。
+// 需要精确对账的位置（导出、编辑弹窗回填）必须用原始元值，这里只做展示层转换。
+// 所有金额（含计价/成本、盈亏、汇总）都走这个函数或其包装
+// （moneyCurW / yuanOfW / signedMoneyW / fmtWanPnl / fmtPnl），禁止各页面自己 toFixed。
+const fmtMoney = (n) => {
   const v = Number(n) || 0, a = Math.abs(v);
   return a >= 1e4 ? (v / 1e4).toFixed(2) + '万'
     : v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
+// 历史别名（调用点遍布全站，语义与 fmtMoney 完全一致）：保留名字，实现只此一份。
+const fmtWan = fmtMoney;
+// 精确元值（不压缩、强制 2 位）：只用于 title / 悬停还原、编辑弹窗回填等「需要一分不差」的位置，
+// 正文一律走 fmtMoney。两者共享同一套 2 位小数规则，只是不压缩量纲。
+const fmtYuanExact = (n) => (Number(n) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // 万位压缩的盈亏版：符号 + 货币符号 + 2 位小数（+¥46.55 / −¥183.20 / ¥0.00）。
 // 符号一律提到货币符号之前（此前组头只写「+10.64」，同一屏内表格行却是「+¥10.64」）。
-const fmtWanPnl = (n, cur) => (n > 0 ? '+' : n < 0 ? NEG : '') + curSymbolJS(cur || 'cny') + fmtWan2(Math.abs(n));
+const fmtWanPnl = (n, cur) => (n > 0 ? '+' : n < 0 ? NEG : '') + curSymbolJS(cur || 'cny') + fmtMoney(Math.abs(n));
 // 万位金额悬停精确值：仅 |n| ≥ 1万 时输出 title 属性（prefix 传货币符号），配合 fmtWan 使用；
 // 负数符号提到货币符号前（-¥89,000，而不是 ¥-89,000）
 const wanTitle = (n, prefix) => {
   const v = Number(n) || 0;
   if (Math.abs(v) < 1e4) return '';
-  return ` title="${v < 0 ? NEG : ''}${prefix || ''}${fmt(Math.abs(v))}"`;
+  return ` title="${v < 0 ? NEG : ''}${prefix || ''}${fmtYuanExact(Math.abs(v))}"`;
 };
 // money / moneyCur / yuanOf 的万位压缩版（≥1万显示 x.xx万，其余同原函数）
 const moneyCurW = (n, cur) => curSymbolJS(cur) + fmtWan(n == null ? 0 : n);
@@ -291,12 +295,46 @@ const pct = (n) => (n == null ? '' : (n > 0 ? '+' : n < 0 ? NEG : '') + Math.abs
 // 全项目所有盈亏/涨跌幅着色都走这里，消除分散的 > 0 ? 'up' : 'down' 判断。
 const clsPnl = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat');
 const cat = (c) => (c === 'fund' ? '基金' : '股票');
-// 净值/成本价按类别精度显示：基金净值强制 4 位小数，股票保留最多 4 位（美股/部分基金需第 3-4 位），其余按货币默认 2 位。
-const fmtNav = (n, category) => {
+// ── 价格展示唯一入口（方案 3）：fmtPrice，历史名 fmtNav ──────────────────
+// 基金 / 理财净值：强制 4 位小数（净值本身 4 位，按 2 位展示会四舍五入失真，
+// 例如 1.0163 → 1.02，与成本价、份额三者的乘积对不上）。
+// 股票：最多 4 位（美股/部分场内基金现价需第 3-4 位，强制 2 位同样会失真），
+// 其余（无类别上下文）按金额规则 2 位。
+// 与 fmtMoney 的分工：价格是「每份」单价，不做万位压缩；金额是「总额」，≥1万压缩。
+const fmtPrice = (n, kind) => {
   if (n == null) return '';
-  if (category === 'fund') return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-  if (category === 'stock') return Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 4 });
-  return fmt(n);
+  if (kind === 'fund' || kind === 'wealth') return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  if (kind === 'stock') return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+// 注：旧名 fmtNav 已全部改为 fmtPrice，全站价格只有一个入口。
+
+// ── 流水日期唯一入口（方案 2）──────────────────────────────────────────
+// 是否显示年份，取决于「这一屏有没有别的年份锚点」，而不是「是不是今年」：
+//   mode 省略    → 同年「10-30」、跨年「25-10-30」。
+//                  用于已有年份上下文的列表：财务「收支分类明细」（顶部年份切换器锁定整年）、
+//                  资产页流水表（近 7/30/365 天，跨年窗口里老记录会自动补位）。
+//   mode='year'  → 恒带两位年份「26-10-30」。首页「最新流水」专用：它只取最近几条、
+//                  周围没有任何年份文字，只写「10-30」读者无从判断是哪一年。
+//                  （2026-11-01 修：此前按「同年省略」处理，而实盘 71 条流水全在当年，
+//                    条件永不成立 → 首页永远看不到年份，等于方案在首页没生效。）
+//   mode='full'  → 一律 YYYY-MM-DD，只给 title 用。
+const fmtFlowDate = (d, mode) => {
+  const s = String(d || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const y = s.slice(0, 4), md = s.slice(5);
+  if (mode === 'full') return s;
+  if (mode === 'year' || y !== String(new Date().getFullYear())) return y.slice(2) + '-' + md;
+  return md;
+};
+// 流水日期悬停提示：完整日期 + 记录时间（created_at 的 HH:mm；没有就只给日期）。
+// 列表里日期只有 5 个字符，具体到「几分几秒」的先后顺序只能靠悬停。
+const flowDateTitle = (f) => {
+  if (!f) return '';
+  const full = fmtFlowDate(f.date, 'full');
+  const t = String(f.created_at || f.createdAt || '');
+  const hm = /(\d{2}):(\d{2})/.exec(t);
+  return hm ? full + ' ' + hm[1] + ':' + hm[2] : full;
 };
 // 输入框小数位限制：键入时直接截断到 max 位（不四舍五入），避免超长小数点。供 index.html 内联 oninput 调用。
 function clampDecimals(el, max) {
@@ -324,6 +362,9 @@ let monthPnlCNY = 0;     // 本月累计盈亏（CNY 折算）
 let monthPnlCny = 0;     // 本月累计盈亏（CNY 原始货币）
 let todayRealizedCny = 0; // 今日已实现盈亏（减仓落库，CNY 折算），并入首页「今日盈亏」
 let monthPnlUsd = 0;     // 本月累计盈亏（USD 原始货币）
+// 当日盈亏的「归属交易日」（后端 /api/home 与 /api/asset/overview 都给）：交易日=今天，
+// 周末/法定节假日=最近一个交易日。非交易日那笔数不是今天赚的，标签必须跟着改。
+let pnlDateStr = '';
 let failedSymbols = {};  // symbol -> 失败原因（刷新失败持久标记）
 // table | card；移动端（窄屏）默认卡片视图（表格横向溢出体验差），但不强制——允许用户手动切回表格（可横向滚动）
 // 首页主区切换：持仓 / 理财（localStorage 记忆），默认持仓
@@ -373,7 +414,8 @@ async function enterApp(st) {
 function showApp() {
   $('#app').hidden = false;
   load();
-  loadAISettings();
+  // 方案 16：AI 设置（/api/ai/settings + /api/mcp/config + /api/mcp/status）不在首屏拉，
+  // 改由 showAiView() / aiChatOpen() 首次真正用到时触发（见 ensureAiSettings）。
   // #app 在 boot() 前一直 hidden，顶层 syncViewToggle() 测得 0 宽导致滑块白块不可见；
   // 此处 #app 已可见，重新定位指示器，并用 rAF / fonts.ready 兜底字体异步加载导致的位移偏差。
   syncViewToggle();
@@ -419,9 +461,14 @@ async function load() {
     monthPnlCny = hd.month_pnl_cny_ccy || 0;
     monthPnlUsd = hd.month_pnl_usd || 0;
     todayRealizedCny = hd.today_realized_cny || 0;
-    await loadManualClosed(); // 已平仓页手动补录记录（不入账）
-    await loadCustomFlowCats(); // 自定义收支分类（设置页维护，选择器/统计共用）
-    await loadDeposits(); // 存款列表（首页「存款」分段）
+    pnlDateStr = hd.pnl_date || '';
+    // 方案 16：三项互不依赖，改成并行 —— 原先串行 await 是三个串起来的往返，
+    // 首屏完成时间被拖长一个 RTT 的量级。
+    await Promise.all([
+      loadManualClosed(),   // 已平仓页手动补录记录（不入账）
+      loadCustomFlowCats(), // 自定义收支分类（设置页维护，选择器/统计共用）
+      loadDeposits(),       // 存款列表（首页「存款」分段）
+    ]);
     renderFiltered();
     loadCashflow(); // 首页紧凑卡片：本月收支计划（不阻塞主渲染）
     // 首屏数据就绪后，重渲染依赖 overview 的常驻视图（首页净资产/资产分布依赖 assetData；财务概览重渲染幂等）
@@ -1111,8 +1158,8 @@ async function syncAdjNavPrice(force) {
     if (hint) {
       // 单行短提示，避免撑高该列破坏三列节奏；完整来源放 title
       const srcLabel = d.source === 'current' ? '当前价·无历史' : (d.date === date ? '当日收盘' : '最近交易日');
-      hint.textContent = d && d.price != null ? `${(d.date || '').slice(5)} ${fmtNav(d.price, calcCat)}` : '';
-      hint.title = d && d.price != null ? `${d.date} ${srcLabel} ${fmtNav(d.price, calcCat)}` : '';
+      hint.textContent = d && d.price != null ? `${(d.date || '').slice(5)} ${fmtPrice(d.price, calcCat)}` : '';
+      hint.title = d && d.price != null ? `${d.date} ${srcLabel} ${fmtPrice(d.price, calcCat)}` : '';
     }
   } catch (_) { /* 取价失败不阻断手填 */ }
 }
@@ -1200,6 +1247,9 @@ function renderHoldingsBySource(hs) {
     if (cash === undefined) return 0; // 无匹配现金子账户
     return (poolHold[k] || 0) + cash;
   };
+  // 非交易日（周末/法定节假日）「今日」列里是最近一个交易日的涨跌，列名跟着归属日走，
+  // 否则周日看表会以为这些数字是今天产生的。
+  const pdi = pnlDayInfo(pnlDateStr);
   let html = '';
   for (const g of arr) {
     html += `<div class="collapsible source-group holdings-group" data-sid="${g.sid}">`
@@ -1208,20 +1258,20 @@ function renderHoldingsBySource(hs) {
       + `<span class="hat-side">`
       + `<span class="hat-stat hat-stat-mv" title="该账户持仓折合人民币市值"><span class="hat-stat-lbl">市值</span><b${wanTitle(g.mv, '¥')}>¥${fmtWan(g.mv)}</b></span>`
       + `<span class="hat-side-extra" title="今日 / 总盈亏（该账户合计）">`
-      + `<span class="hat-stat" title="该账户今日盈亏合计"><span class="hat-stat-lbl">今日</span><b class="${clsPnl(g.dayPnl)}"${wanTitle(g.dayPnl, '¥')}>${signedMoneyW(g.dayPnl, 'cny')}</b></span>`
+      + `<span class="hat-stat" title="${pdi.note ? esc(pdi.note) : '该账户今日盈亏合计'}"><span class="hat-stat-lbl">${pdi.label}</span><b class="${clsPnl(g.dayPnl)}"${wanTitle(g.dayPnl, '¥')}>${signedMoneyW(g.dayPnl, 'cny')}</b></span>`
       + `<span class="hat-stat" title="该账户累计盈亏合计"><span class="hat-stat-lbl">总盈亏</span><b class="${clsPnl(g.pnl)}"${wanTitle(g.pnl, '¥')}>${signedMoneyW(g.pnl, 'cny')}</b></span>`
       + `</span>`
       + `<span class="hat-chevron">▾</span></span>`
       + `</div>`
       + `<div class="collapse-body source-group-body">`
       + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
-      + `<thead><tr><th>名称</th><th class="num" title="近20日收盘价走势">近20日走势</th><th>代码</th><th class="num">现价</th><th class="num" title="今日涨跌幅：现价相对昨收（基金为昨日净值），行情口径；与「今日」列括号里的盈亏率不同——今日% 首日按买入成本计">涨跌幅</th><th class="num" title="成本价（每份）">成本价</th>`
+      + `<thead><tr><th>名称</th><th class="num" title="近20日收盘价走势">近20日走势</th><th>代码</th><th class="num">现价</th><th class="num" title="涨跌幅：现价相对昨收（基金为昨日净值），行情口径；与「${pdi.label}」列括号里的盈亏率不同——该列 % 首日按买入成本计">涨跌幅</th><th class="num" title="成本价（每份）">成本价</th>`
       + `<th class="num sortable${sortedCls('mv')}" data-sort="mv" title="持仓市值（折人民币；悬停查看原币种市值）· 点击排序">市值</th>`
       // 列名从「仓位」改为「占资金池」：分母是「同账户同币种持仓合计 + 现金子账户余额」，
       // 不是组合总市值。叫「仓位」会被读成「占我总持仓的比例」，同一张表里还能出现多个 100%，
       // 实测一直有人按总市值去核这个数（分母差一个数量级）。
       + `<th class="num" title="占该账户同币种资金池比例：持仓市值 ÷（该账户同币种持仓合计 + 现金子账户余额），不是占总持仓的比例；无匹配现金子账户时显示 —">占资金池</th>`
-      + `<th class="num" title="今日盈亏金额">今日</th>`
+      + `<th class="num" title="${pdi.note ? esc(pdi.note) : '今日盈亏金额'}">${pdi.label}</th>`
       + `<th class="num sortable${sortedCls('profit')}" data-sort="profit" title="持有期总盈亏金额 · 点击排序">盈亏</th>`
       + `<th class="num sortable${sortedCls('days')}" data-sort="days" title="持仓天数 · 点击排序">持仓</th>`
       + `<th>操作</th>`
@@ -1284,6 +1334,8 @@ function holdTypeTag(h) {
 }
 function renderGroupRow(h, i, maxItemMV, pool) {
   const isFail = !!failedSymbols[h.symbol];
+  // 非交易日这笔 day_pnl 是最近一个交易日的涨跌，行内 title 一并说明（列名已由 pdi 改）
+  const pdi = pnlDayInfo(pnlDateStr);
   const mvCny = toRmb(h, h.market_value);
   const dayCny = toRmb(h, h.day_pnl);
   const pnlCny = toRmb(h, h.pnl);
@@ -1308,12 +1360,12 @@ function renderGroupRow(h, i, maxItemMV, pool) {
     </td>
     <td class="num spark-td">${sparkCell(h.symbol, h.pnl)}</td>
     <td class="code-cell u-sm u-muted" title="${esc(h.symbol || '')}">${esc(h.symbol || '—')}</td>
-    <td class="num">${fmtNav(h.current_price, isFund(h) ? 'fund' : 'stock')}</td>
+    <td class="num">${fmtPrice(h.current_price, isFund(h) ? 'fund' : 'stock')}</td>
     <td class="num ${clsPnl(chgPct)}" title="今日涨跌幅（现价 vs 昨收${isFund(h) ? '，基金为昨日净值' : ''}）">${chgPct != null ? pct(chgPct) : '—'}</td>
-    <td class="num" title="成本价（每份）">${fmtNav(h.cost_price, isFund(h) ? 'fund' : 'stock')}</td>
+    <td class="num" title="成本价（每份）">${fmtPrice(h.cost_price, isFund(h) ? 'fund' : 'stock')}</td>
     <td class="num"${mvOrigTitle(h)}>¥${fmtWan(mvCny)}</td>
     <td class="num share${pool > 0 ? '' : ' is-empty'}"${pool > 0 ? ` style="--p:${posPct.toFixed(1)}%"` : ''} title="占该账户同币种资金池比例${pool > 0 ? ' ' + posPct.toFixed(2) + '%' : '；该账户无匹配现金子账户，无法算占比'}">${pool > 0 ? posPct.toFixed(2) + '%' : '—'}</td>
-    <td class="num ${clsPnl(h.day_pnl)}" title="今日盈亏${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）"><span${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</span></td>
+    <td class="num ${clsPnl(h.day_pnl)}" title="${pdi.note ? esc(pdi.note) : '今日盈亏'}${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）"><span${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</span></td>
     <td class="num ${clsPnl(h.pnl)}" title="持有期总盈亏${h.pnl_pct ? ' ' + pct(h.pnl_pct) : ''}"><span${wanTitle(pnlCny, '¥')}>${signedMoneyW(pnlCny, 'cny')}</span></td>
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
     <td class="row-act-cell">
@@ -1372,25 +1424,60 @@ function renderSummary(hs) {
   // 总市值 panel 主色跟随占比最高的分类色
   const topSeg = mvSegs.slice().sort((a, b) => b.v - a.v)[0];
   // 投资页 Hero（KPI 居中卡）：持仓市值 / 今日盈亏 / 本月盈亏 / 持仓收益率
+  // 方案 3：市值与成本同口径（都走 fmtMoney，≥1万压缩成「x.xx万」+ 悬停还原精确元值），
+  // 此前市值用 fmt（¥147,512.51）而成本也用 fmt 但值恰好一位小数（¥150,723.7），同屏小数位不一致。
   const invMv = document.getElementById('investMv');
-  if (invMv) invMv.textContent = '¥' + fmt(totalCNY);
+  if (invMv) {
+    invMv.textContent = '¥' + fmtMoney(totalCNY);
+    invMv.title = '¥' + fmtYuanExact(totalCNY);
+  }
   // 锚点卡副标：只数 + 成本（不重复卡片 4 的收益率）
   const invMvSub = document.getElementById('investMvSub');
-  if (invMvSub) invMvSub.innerHTML = `持仓 <span class="hl">${hs.length}</span> 只 · 成本 <span class="hl">¥${fmt(totalCostCNY)}</span>`;
+  if (invMvSub) {
+    invMvSub.innerHTML = `持仓 <span class="hl">${hs.length}</span> 只 · 成本 <span class="hl" title="¥${fmtYuanExact(totalCostCNY)}">¥${fmtMoney(totalCostCNY)}</span>`;
+  }
   // 今日盈亏口径与首页「今日」一致：持仓今日盈亏 + 今日已实现（清仓/减仓）盈亏，均折 CNY
   const invDay = document.getElementById('investDayPnl');
   if (invDay) {
-    invDay.textContent = signedCur(dayPnlCNY, 'cny');
+    // 非交易日（周末/法定节假日）这笔数其实是最近一个交易日的涨跌，抬头跟着归属日改，
+    // 否则周日打开看到「今日盈亏 −9,865」会以为今天在亏。
+    const di = pnlDayInfo(pnlDateStr);
+    // 休市徽章挂数值右侧而不是抬头：它标的是「这个数不新鲜」，不是「日期」，
+    // 所以应当跟着数字走。抬头写 10-30 盈亏已经交代了是哪天，徽章再贴上去就是两个小 pill 挨着。
+    invDay.innerHTML = signedCur(dayPnlCNY, 'cny') + closedBadge(di);
     invDay.className = 'kpi-value ' + dpCls;
+    const dayLbl = document.getElementById('investDayLabel');
+    if (dayLbl) {
+      dayLbl.textContent = di.isToday ? '今日盈亏' : di.md + ' 盈亏';
+      dayLbl.title = di.note || '现价相对昨收的变动 + 当日已实现盈亏';
+    }
     const sub = document.getElementById('investDayPct');
-    if (sub) { sub.textContent = pct(dayPnlCNY / Math.max(totalCNY - dayPnlCNY, 1) * 100); sub.className = 'kpi-sub ' + dpCls; }
+    // 方案 5：标注分母（持仓市值），否则与首页「今日 +0.04%（/净资产）」并排看像算错。
+    if (sub) {
+      sub.innerHTML = pct(dayPnlCNY / Math.max(totalCNY - dayPnlCNY, 1) * 100) + '<span class="sub-of">/持仓市值</span>';
+      sub.className = 'kpi-sub ' + dpCls;
+      sub.title = (di.note ? di.note + ' · ' : '') + '分母 = 期初持仓市值';
+    }
   }
+  // 本月是否已开市：归属日不在本月 → 本月一个交易日都还没有（月初撞上周末/长假）
+  const monthStarted = !pnlDateStr || pnlDateStr.slice(0, 7) === ymd(new Date()).slice(0, 7);
   const invMonth = document.getElementById('investMonthPnl');
   if (invMonth) {
     invMonth.textContent = signedCur(monthPnlCNY, 'cny');
     invMonth.className = 'kpi-value ' + mpCls;
     const sub = document.getElementById('investMonthPct');
-    if (sub) { sub.textContent = pct(monthPnlCNY / Math.max(totalCNY - monthPnlCNY, 1) * 100); sub.className = 'kpi-sub ' + mpCls; }
+    if (sub) {
+      if (!monthStarted) {
+        // 硬显示 0.00% 会被当成没加载出来，直接说清原因
+        sub.textContent = (new Date().getMonth() + 1) + ' 月暂无交易日';
+        sub.className = 'kpi-sub';
+        sub.title = '本月还没开市，累计盈亏从本月第一个交易日开始计';
+      } else {
+        sub.innerHTML = pct(monthPnlCNY / Math.max(totalCNY - monthPnlCNY, 1) * 100) + '<span class="sub-of">/持仓市值</span>';
+        sub.className = 'kpi-sub ' + mpCls;
+        sub.title = '分母 = 期初持仓市值';
+      }
+    }
   }
   const invPct = document.getElementById('investPct');
   if (invPct) {
@@ -2187,15 +2274,15 @@ function computeDivPreview() {
     const newShares = total / nav;
     const newQty = h.quantity + newShares;
     const newCost = newQty > 0 ? (h.quantity * h.cost_price + total) / newQty : h.cost_price;
-    box.innerHTML = `红利再投：分红总额 <b>${fmt(total)}</b>｜按净值 ${fmtNav(nav, isFund(h) ? 'fund' : 'stock')} 买入 <b>${fmt(newShares)}</b> 份` +
-      `<br>新份额 <b>${fmt(newQty)}</b>｜新成本价 <b>${fmtNav(newCost, isFund(h) ? 'fund' : 'stock')}</b>（份额增加、不出现金）`;
+    box.innerHTML = `红利再投：分红总额 <b>${fmt(total)}</b>｜按净值 ${fmtPrice(nav, isFund(h) ? 'fund' : 'stock')} 买入 <b>${fmt(newShares)}</b> 份` +
+      `<br>新份额 <b>${fmt(newQty)}</b>｜新成本价 <b>${fmtPrice(newCost, isFund(h) ? 'fund' : 'stock')}</b>（份额增加、不出现金）`;
     return;
   }
   const newCost = h.cost_price - per;
   if (newCost < 0) { box.style.display = 'block'; box.innerHTML = '<span class="warn">折算每股分红超过当前成本价，成本价不能为负</span>'; return; }
   const cut = h.cost_price > 0 ? ((per / h.cost_price) * 100).toFixed(2) : '0';
-  let html = `分红总额 <b>${fmt(total)}</b>｜折算每股 <b>${fmtNav(per, isFund(h) ? 'fund' : 'stock')}</b>｜新成本价 <b>${fmtNav(newCost, isFund(h) ? 'fund' : 'stock')}</b>` +
-    `（原 ${fmtNav(h.cost_price, isFund(h) ? 'fund' : 'stock')}，降低 ${cut}%）｜份额不变 ${fmt(h.quantity)}`;
+  let html = `分红总额 <b>${fmt(total)}</b>｜折算每股 <b>${fmtPrice(per, isFund(h) ? 'fund' : 'stock')}</b>｜新成本价 <b>${fmtPrice(newCost, isFund(h) ? 'fund' : 'stock')}</b>` +
+    `（原 ${fmtPrice(h.cost_price, isFund(h) ? 'fund' : 'stock')}，降低 ${cut}%）｜份额不变 ${fmt(h.quantity)}`;
   if (fee > 0) html += `<br>扣除费用 <b>${fmt(fee)}</b> → 现金实际入账 <b>${fmt(total - fee)}</b>（费用另记一笔「费用」流水）`;
   box.innerHTML = html;
 }
@@ -2292,10 +2379,10 @@ $('#dividendForm').onsubmit = async (e) => {
     if (!r.ok) { $('#divErr').textContent = d.error || ('操作失败 (HTTP ' + r.status + ')'); return; }
     const hh = d.holding;
     if (method === 'reinvest') {
-      toast(`红利再投成功：${hh.name} 新增份额（分红总额 ${fmt(d.dividend_total || 0)}）｜新成本价 ${fmtNav(hh.cost_price, isFund(hh) ? 'fund' : 'stock')}`, 'ok');
+      toast(`红利再投成功：${hh.name} 新增份额（分红总额 ${fmt(d.dividend_total || 0)}）｜新成本价 ${fmtPrice(hh.cost_price, isFund(hh) ? 'fund' : 'stock')}`, 'ok');
     } else {
       const feeTxt = d.fee > 0 ? `｜费用 -${fmt(d.fee)}｜净入账 ${fmt(d.net_cash || 0)}` : '';
-      toast(`分红成功：${hh.name} 入账 ${fmt(d.dividend_total || 0)}${feeTxt}｜成本价 ${fmtNav(hh.cost_price, isFund(hh) ? 'fund' : 'stock')}`, 'ok');
+      toast(`分红成功：${hh.name} 入账 ${fmt(d.dividend_total || 0)}${feeTxt}｜成本价 ${fmtPrice(hh.cost_price, isFund(hh) ? 'fund' : 'stock')}`, 'ok');
     }
     $('#adjustModal').hidden = true;
     await load();
@@ -2520,9 +2607,13 @@ $('#confirmOk').onclick = async () => {
 // 投资页原右侧按钮已按需求移除，对应入口改为：盈亏日历 / AI 助手在右上角操作区（act-group）。
 $('#dcaPlansClose').onclick = () => { $('#dcaPlansModal').hidden = true; };
 $('#dcaPlansNew').onclick = () => { $('#dcaPlansModal').hidden = true; openDCAModal(null); };
-// 右上角操作区按钮：AI 助手（盈亏日历 2026-10-28 已提为顶栏图标按钮 #pnlCalTopBtn，窄屏仍走个人菜单 pnl-cal）
+// 右上角操作区按钮：AI 助手（盈亏日历 2026-10-28 提为顶栏图标按钮 #pnlCalTopBtn；2026-11-01 起全宽度常驻，
+// 同时删掉了个人菜单里的 pnl-cal 重复入口 —— 缩窄窗口后按钮消失、只能从下拉进，入口不统一）
 const _aiTop = document.getElementById('aiChatTopBtn');
 if (_aiTop) _aiTop.onclick = () => aiChatToggle();
+// 盈亏日历与 AI 同款绑定（原先靠 HTML 内联 onclick，顶栏按钮化后改为统一在这里挂）
+const _pnlCalTop = document.getElementById('pnlCalTopBtn');
+if (_pnlCalTop) _pnlCalTop.onclick = () => openPnlModal();
 function openAddPick() {
   const wealthFirst = homeSection === 'wealth';
   const box = document.querySelector('#addPickModal .add-pick');
@@ -3257,6 +3348,31 @@ document.addEventListener('click', (e) => {
 
 // ---- P&L Calendar ----
 const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+// 当日盈亏的归属日：交易日就是今天；周末/法定节假日是最近一个交易日（后端 pnl_date 给）。
+// 非交易日那笔「今日盈亏」其实不是今天赚的 —— 基金 21:00 后拿到的是上一交易日净值，
+// 美股收盘后「现价−昨收」也是上一交易日，A 股/港股则休市没新价。仍标「今日」会让人
+// 以为休市还在赚钱，所以标签跟着归属日走（本章 chips 与投资页 KPI 共用）。
+function pnlDayInfo(dateStr) {
+  const today = ymd(new Date());
+  const d = dateStr || today;
+  const isToday = d === today;
+  return {
+    date: d,
+    md: d.slice(5),
+    isToday,
+    // chip 抬头：交易日「今日」，非交易日直接写日期（「10-30」），旁边就是金额不会误读
+    label: isToday ? '今日' : d.slice(5),
+    note: isToday ? '' : `今日休市（非交易日），显示最近交易日 ${d.slice(5)} 的涨跌`,
+  };
+}
+// 休市徽章：非交易日时跟在日内容标签后面（「10-30 休市」）。
+// 为什么不做整页横幅 —— 横幅占首屏、滚出视口就失效，还得跟下方的日期标签重复说一遍日期；
+// 徽章就地钉在数字旁边，读到哪个数就看到哪个数的状态，且完全不吃布局空间。
+// 只返回徽章本身，交易日返回空串，调用方直接拼在 label 后面即可。
+function closedBadge(di) {
+  return di && !di.isToday ? '<i class="mkt-closed" title="今日休市，该数值为最近一次收盘">休市</i>' : '';
+}
 // 统一日期输入框：允许 - / . 分隔，归一成后端要求的 YYYY-MM-DD；空值不变
 function normDateInput(el) {
   if (!el) return '';
@@ -3341,7 +3457,12 @@ async function renderHomeDashboard() {
   const ch = $('#homeNetChanges');
   if (ch) {
     const segs = [];
-    if (dayPnl) segs.push(`<span class="hc-item"><span class="hc-label">今日</span><span class="hc-val ${clsPnl(dayPnl)}">${dayPnl > 0 ? '+' : ''}${yuanOfW(dayPnl)} <em class="hc-pct">(${pct(dayPnl / Math.max(net - dayPnl, 1) * 100)})</em></span></span>`);
+    // 方案 5：百分比必须标出分母。首页分母 = 净资产，投资页分母 = 持仓市值，
+    // 同一个 +¥98.57 在两页是 +0.04% 与 +0.07%，不标出来并排看像数据错乱。
+    // 非交易日（周末/法定节假日）这笔实时盈亏是最近一个交易日的涨跌，抬头改写成日期
+    // （「10-30」），顶着「今日」会让人以为休市也在赚钱。
+    const hdi = pnlDayInfo(ov.pnl_date || pnlDateStr);
+    if (dayPnl) segs.push(`<span class="hc-item"><span class="hc-label"${hdi.note ? ` title="${esc(hdi.note)}"` : ''}>${hdi.label}</span><span class="hc-val ${clsPnl(dayPnl)}">${dayPnl > 0 ? '+' : ''}${yuanOfW(dayPnl)} <em class="hc-pct" title="分母 = 期初净资产">(${pct(dayPnl / Math.max(net - dayPnl, 1) * 100)}<span class="hc-of">/净资产</span>)</em>${closedBadge(hdi)}</span></span>`);
     if (monthPnl) segs.push(`<span class="hc-item"><span class="hc-label">本月</span><span class="hc-val ${clsPnl(monthPnl)}">${monthPnl > 0 ? '+' : ''}${yuanOfW(monthPnl)}</span></span>`);
     ch.innerHTML = segs.join('');
   }
@@ -3353,11 +3474,14 @@ async function renderHomeDashboard() {
   const bd = $('#homeAssetBreakdown');
   if (bd) {
     const lTotal = (ov.liability && ov.liability.total) || 0;
+    // 方案 12：chip 色一律引用全局分类色 token，与资产页环形图 / 复盘圆环同源。
+    // --cat-* 是逗号分隔的 RGB 分量（如 255,149,0），必须包 rgb()/rgba() 才能当颜色用。
+    // 负债不走红绿：红=涨、绿=跌，负债既不是涨也不是跌，用警示色 --warning。
     const rows = [
-      { label: '持仓', val: eqMV, color: 'var(--home-eq)' },
-      { label: '理财', val: wTotal, color: 'var(--home-wealth)' },
-      { label: '现金', val: cTotal, color: 'var(--home-cash)' },
-      { label: '负债', val: lTotal, color: 'var(--home-debt)', neg: true },
+      { label: '持仓', val: eqMV, color: 'rgb(var(--cat-equity))' },
+      { label: '理财', val: wTotal, color: 'rgb(var(--cat-wealth))' },
+      { label: '现金', val: cTotal, color: 'rgb(var(--cat-cash))' },
+      { label: '负债', val: lTotal, color: 'var(--warning)', neg: true },
     ];
     // 资产分布 → 芯片行（原型 hero-asset-chip）：一枚一个口径，金额右对齐读数
     bd.innerHTML = rows.map((r) => {
@@ -3438,10 +3562,10 @@ function renderRecentFlows() {
     const amtCls = isIn ? 'up' : 'down';
     // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
     const amt = (isIn ? '+' : '−') + moneyCurW(Math.abs(Number(f.amount) || 0), f.currency);
-    const dd = (f.date || '').slice(5);
+    const dd = fmtFlowDate(f.date, 'year');   // 首页无年份上下文 → 恒带两位年份「26-10-30」
     const sub = [f.name, f.ref_name].filter(Boolean).join(' · ');
     return `<div class="recent-item">
-      <span class="recent-date">${dd}</span>
+      <span class="recent-date" title="${esc(flowDateTitle(f))}">${dd}</span>
       <div><div class="recent-title">${cashFlowTypeTag(f)}${flowSnapshotTag(f)}</div><div class="recent-sub">${esc(sub || '')}</div></div>
       <span class="recent-amt ${amtCls}">${amt}</span></div>`;
   }).join('');
@@ -3469,6 +3593,7 @@ let finYear = String(new Date().getFullYear());
 // 财务页热力图 / 分类明细共用状态
 let finMonthsData = [];          // /api/finance/summary 的 months 数组（12 月）
 let finHmMonth = 0;             // 收支分析卡当前选中月份下标（0–11），同时驱动热力图与分类明细
+let finMonthAutoFrom = 0;       // 方案 6：自动跳月的来源月（1–12，0 = 未发生自动跳月），用于提示文案
 
 async function renderFinanceView() {
   const kpiGrid = document.getElementById('finKpiGrid');
@@ -3496,10 +3621,28 @@ async function renderFinanceView() {
       const next = document.getElementById('finYearNext');
       if (prev) prev.disabled = y <= 2000;
       if (next) next.disabled = y >= 2999;
-      // 收支分析卡（默认选中当前月，往年回落 12 月）：上半部分柱图 + 热力图，下半部分分类明细
+      // 收支分析卡：默认选中当前月；当前月没有记录时自动落到该年「最近有数据的月份」。
+      // 方案 6：原先无条件选当前月 → 11 月初打开财务页首屏就是「当月暂无收支子项」，
+      // 而数据全在 10 月，等于一进来就是空页；往年（curIdx 找不到）也不该硬跳 12 月。
       const curYm = year + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
       const curIdx = finMonthsData.findIndex((m) => m.ym === curYm);
-      finHmMonth = curIdx >= 0 ? curIdx : 11;
+      const monthHasData = (i) => {
+        const mm = finMonthsData[i];
+        return !!mm && Math.abs(Number(mm.income) || 0) + Math.abs(Number(mm.expense) || 0) > 0;
+      };
+      const withData = finMonthsData.map((_, i) => i).filter(monthHasData);
+      const hasCur = curIdx >= 0 && monthHasData(curIdx);
+      if (hasCur) {
+        finHmMonth = curIdx;
+        finMonthAutoFrom = 0;
+      } else if (withData.length) {
+        finHmMonth = Math.max(...withData);          // 最近有记录的那个月
+        finMonthAutoFrom = curIdx >= 0 ? curIdx + 1 : 0; // 0 = 该年没有「当前月」这一格
+      } else {
+        // 整年零记录：留在当前月（往年则落到 12 月），空状态只留一处
+        finHmMonth = curIdx >= 0 ? curIdx : 11;
+        finMonthAutoFrom = 0;
+      }
       if (heatmap) { heatmap.hidden = false; renderFinHeatmap(); }
     } else if (kpiGrid) {
       kpiGrid.innerHTML = '<div class="kpi-card kpi-card-err">加载失败</div>';
@@ -3590,6 +3733,13 @@ function barMoneyShort(v) {
   }
   return String(Math.round(v));
 }
+// 面积型小方块（收支热力图 / 拼块）里的金额标签：只回答「大约多少」，取整 + 万位压缩。
+// 这是全站唯一不按 2 位小数展示的金额位置 —— 方块宽度常在 50–90px，多出「.00」三个字符
+// 就会被裁掉或挤掉分类名；精确到分的数字在下方「收支分类明细」与逐笔流水里给全。
+const moneyLabelShort = (v, cur) => {
+  const n = Number(v) || 0, a = Math.abs(n);
+  return curSymbolJS(cur || 'cny') + (a >= 1e4 ? (n / 1e4).toFixed(2) + '万' : Math.round(n).toLocaleString('zh-CN'));
+};
 // 「漂亮」刻度步长：取最近的 1/2/2.5/5/10 × 10^n，让 y 轴网格线落在整数位。
 function niceStep(raw) {
   if (raw <= 0) return 1;
@@ -3648,12 +3798,32 @@ function renderYearBarChart() {
   labels.innerHTML = months.map((_, i) => `<span data-mi="${i}" class="${i === finHmMonth ? 'active' : ''}">${i + 1}</span>`).join('');
 }
 
+// 空状态文案（方案 6 / 10）：区分「这个月没记录」和「整年都没记录」。
+// 后者不能只说「当月暂无」，否则用户会一直按月翻找。
+function finEmptyText() {
+  const any = (finMonthsData || []).some((m) => (m && ((m.items || []).length > 0
+    || Math.abs(Number(m.income) || 0) + Math.abs(Number(m.expense) || 0) > 0)));
+  if (any) return '该月暂无收支记录，点上方月份可切换';
+  return `${finYear} 年还没有收支记录，先到资产页「流水」记一笔`;
+}
+
 // 右：月份 chips（选中月决定 treemap 内容）
 function renderHmChips() {
   const wrap = document.getElementById('hmChips');
   if (!wrap) return;
   wrap.innerHTML = finMonthsData.map((m, i) =>
     `<button class="hm-chip${i === finHmMonth ? ' active' : ''}" data-mi="${i}" type="button">${i + 1}月</button>`).join('');
+  // 方案 6：把「为什么不是你选的月份」写明白，否则用户会以为筛选器坏了
+  const hint = document.getElementById('hmAutoHint');
+  if (hint) {
+    if (finMonthAutoFrom) {
+      hint.hidden = false;
+      hint.textContent = `${finMonthAutoFrom} 月暂无记录，已为你切到 ${finHmMonth + 1} 月`;
+    } else {
+      hint.hidden = true;
+      hint.textContent = '';
+    }
+  }
 }
 
 // 逐笔流水折 CNY（与首页/资产页口径一致：USD/HKD 用 /api/home 下发的汇率）
@@ -3697,7 +3867,7 @@ function renderCatTreemap() {
   const narrow = window.innerWidth <= 880;
   if (!m || !m.items || !m.items.length) {
     wrap.style.setProperty('--tmh', (narrow ? 180 : 220) + 'px');
-    wrap.innerHTML = '<div class="hm-box empty">当月暂无收支子项</div>';
+    wrap.innerHTML = '<div class="hm-box empty">' + esc(finEmptyText()) + '</div>';
     return;
   }
   const monthYm = m.ym;
@@ -3716,7 +3886,7 @@ function renderCatTreemap() {
   }).filter((c) => c.amt > 0);
   if (!cats.length) {
     wrap.style.setProperty('--tmh', (narrow ? 180 : 220) + 'px');
-    wrap.innerHTML = '<div class="hm-box empty">当月暂无收支子项</div>';
+    wrap.innerHTML = '<div class="hm-box empty">' + esc(finEmptyText()) + '</div>';
     return;
   }
   // 高度随当月数据量动态调整（会触发 ResizeObserver 重画，值不变时不会循环）
@@ -3731,7 +3901,7 @@ function renderCatTreemap() {
       const c = r.i;
       const isInc = c.signed >= 0;
       const label = finCatLabel(c.category);
-      const amtStr = (isInc ? '+' : '−') + moneyCurW(c.amt, 'cny');
+      const amtStr = (isInc ? '+' : '−') + moneyLabelShort(c.amt, 'cny');
       // 窄块（手机竖排后分类多）放不下「名称 + 金额」：先砍金额（进 title），再砍名称，避免文字互相挤压/溢出
       const showCatAmt = r.w >= 92;
       const showCatName = r.w >= 46;
@@ -3758,7 +3928,7 @@ function renderCatTreemap() {
         // 只显示金额，名称/描述过长一律收进 title 悬停，避免方块内文字堆积
         // 阈值按「−¥2,352」这类最长串的实测宽度取，窄于此一律不画（手机窄屏方块普遍 40–60px）
         const showAmt = s.w >= 50 && s.h >= 18;
-        const amtStr = (isInc ? '+' : '−') + moneyCurW(s.i.amt, 'cny');
+        const amtStr = (isInc ? '+' : '−') + moneyLabelShort(s.i.amt, 'cny');
         const op = maxAmt > 0 ? 0.3 + 0.62 * Math.sqrt(s.i.amt / maxAmt) : 0.6;
         const inner = showAmt ? `<span class="hm-box-amt">${esc(amtStr)}</span>` : '';
         return `<div class="hm-sub ${isInc ? 'inc' : 'exp'}" title="${esc(s.i.title + ' ' + amtStr)}" ` +
@@ -3773,8 +3943,9 @@ function renderCatTreemap() {
 function selectHmMonth(idx) {
   if (idx < 0 || idx >= finMonthsData.length) return;
   finHmMonth = idx;
+  finMonthAutoFrom = 0;   // 用户手动选月 → 「已为你切到」的提示随即失效
   const chips = document.getElementById('hmChips');
-  if (chips) chips.querySelectorAll('.hm-chip').forEach((c, i) => c.classList.toggle('active', i === idx));
+  if (chips) renderHmChips();   // 重绘 chips：顺带把自动跳月提示收起来（点击走 document 委托，重建无副作用）
   const labels = document.getElementById('yearBarLabels');
   if (labels) labels.querySelectorAll('span').forEach((s, i) => s.classList.toggle('active', i === idx));
   renderYearBarChart();   // 重绘柱状图
@@ -3832,9 +4003,13 @@ function flowTitleOf(f, fallback) {
 // ===== 财务页 · 当月收支分类明细（合并进收支分析卡下半部分，跟随热力图选月） =====
 function renderFinCatBlock() {
   const groups = document.getElementById('finCategoryGroups');
+  const block = document.getElementById('finCatBlock');
   if (!groups) return;
+  // 方案 10：空状态只在热力图区出现一次。明细区此前又写一遍「当月暂无收支子项」，
+  // 同一屏两处同样的空文案纯属噪音 —— 无数据时整块（含标题）直接不渲染。
+  const hideBlock = (show) => { if (block) block.hidden = !show; };
   const m = finMonthsData[finHmMonth];
-  if (!m) { groups.innerHTML = '<div class="empty-hint">暂无数据</div>'; return; }
+  if (!m) { groups.innerHTML = ''; hideBlock(false); return; }
   // 分类组：基于当月子项聚合（CNY），逐笔流水从 finFlowsCache 下钻
   const monthYm = m.ym;
   const flowsOf = (cat) => (finFlowsCache || []).filter((f) =>
@@ -3865,7 +4040,7 @@ function renderFinCatBlock() {
         const acct = [f.name, f.currency ? f.currency.toUpperCase() : ''].filter(Boolean).join(' · ');
         const amt = (isIn ? '+' : '−') + moneyCurW(Math.abs(f.amount || 0), f.currency || 'cny');
         return `<div class="flow-row">
-          <span class="flow-date">${(f.date || '').slice(5)}</span>
+          <span class="flow-date" title="${esc(flowDateTitle(f))}">${fmtFlowDate(f.date)}</span>
           <div class="flow-info"><div class="flow-title">${esc(title)}</div>${acct ? `<div class="flow-account">${esc(acct)}</div>` : ''}</div>
           <span class="flow-amt ${isIn ? 'income' : 'expense'}">${esc(amt)}</span>${flowSnapshotTag(f)}
         </div>`;
@@ -3884,7 +4059,8 @@ function renderFinCatBlock() {
         <div class="group-rows-wrap"><div class="group-rows">${detailRows}</div></div>
       </div>`;
     }).join('');
-  groups.innerHTML = rows || '<div class="empty-hint">当月暂无收支子项</div>';
+  groups.innerHTML = rows;
+  hideBlock(!!rows);
 }
 
 // 分类组展开/折叠（事件冒泡到 document 委托）
@@ -4154,6 +4330,19 @@ function finCatBadge(key, cls) {
 }
 
 // brand-nav 已从 header 移除，点击回首页职责交给主导航 pills（首页 pill）
+
+// ── 密码框表单提交（方案 15）────────────────────────────────────────────
+// <input type="password"> 不在 <form> 内会触发控制台警告，且框内回车不会提交。
+// index.html 里已把 8 个密码输入框包进 <form class="pw-form" data-pwsubmit="按钮id">，
+// display:contents 保证布局不变；这里统一把 submit 转成「点该区块原有的保存按钮」，
+// 不重复实现保存逻辑，也不会出现一次回车触发两次请求。
+document.addEventListener('submit', (e) => {
+  const f = e.target && e.target.closest ? e.target.closest('form.pw-form') : null;
+  if (!f) return;
+  e.preventDefault();               // 阻止默认跳转（表单未声明 action 时会刷新当前页）
+  const btn = document.getElementById(f.dataset.pwsubmit || '');
+  if (btn) btn.click();
+});
 
 // ESC 键：从任意二级页（资产/速算/日历）返回主页
 document.addEventListener('keydown', (e) => {
@@ -4761,6 +4950,14 @@ function defaultAITemplates() {
   ];
 }
 
+// 方案 16 · AI 设置按需加载：首次进入 AI 页 / 打开聊天面板时才拉，之后复用同一个 Promise。
+// 用 Promise 而不是布尔标记，避免「连点两次」并发发两轮请求。
+let aiSettingsPromise = null;
+function ensureAiSettings() {
+  if (!aiSettingsPromise) aiSettingsPromise = loadAISettings().catch(() => {});
+  return aiSettingsPromise;
+}
+
 async function loadAISettings() {
   try {
     const r = await api('/api/ai/settings');
@@ -4802,13 +4999,36 @@ function renderModelSelect() {
   selectModel(aiModelIdx);
 }
 
+// ── API Key 掩码（方案 9）────────────────────────────────────────────────
+// 已保存的 Key 一律不回显明文：输入框只用于「覆盖写入」，未填时 placeholder 显示
+// sk-****abcd（保留前 3 位协议前缀 + 后 4 位）。目的是让多人共用一台机器 / 投屏时
+// 无法从 DOM 里翻出完整 Key（DevTools 搜 sk- 只会命中掩码）。
+const maskKey = (k) => {
+  const s = String(k || '').trim();
+  if (!s) return '';
+  // 服务端 /api/ai/settings 已经只回掩码（****abcd），原样展示，别再套一层
+  if (s.startsWith('****')) return s;
+  if (s.length <= 8) return '****';
+  return s.slice(0, 3) + '****' + s.slice(-4);
+};
+// 当前选中模型中「库里已存」的 Key（仅内存，供保存时判断是否被改动；不写回 DOM）
+let aiKeyStored = '';
+
 function selectModel(i) {
   aiModelIdx = i;
   const m = aiCfg.models[i];
   if (!m) return;
   $('#ai_cfg_name').value = m.name || '';
   $('#ai_model').value = m.model || 'deepseek-v4-pro';
-  $('#ai_apikey').value = m.api_key || '';
+  // 方案 9：绝不把 api_key 写进 input.value（写了就等于明文回显）
+  const inp = $('#ai_apikey');
+  const key = String(m.api_key || '').trim();
+  aiKeyStored = key;
+  inp.value = '';
+  inp.type = 'password';
+  inp.placeholder = key ? maskKey(key) + '（已保存，留空不改）' : 'sk-...';
+  const btn = $('#ai_toggleKey');
+  if (btn) btn.textContent = key ? '重填' : '填写';
   $('#ai_baseurl').value = m.base_url || 'https://api.deepseek.com';
 }
 
@@ -4820,7 +5040,9 @@ function syncModelFromInputs() {
   const m = aiCfg.models[aiModelIdx];
   m.name = $('#ai_cfg_name').value.trim();
   m.model = $('#ai_model').value.trim() || 'deepseek-v4-pro';
-  m.api_key = $('#ai_apikey').value.trim();
+  // 方案 9：输入框为空 = 用户没打算改，保留原 Key；只有真填了新值才覆盖。
+  const typed = $('#ai_apikey').value.trim();
+  if (typed) m.api_key = typed;
   m.base_url = $('#ai_baseurl').value.trim() || 'https://api.deepseek.com';
 }
 
@@ -4880,6 +5102,9 @@ async function aiSaveSettings() {
       return;
     }
     toast('AI 设置已保存', 'ok');
+    // 方案 9：保存后立刻把输入框复位（清空 + placeholder 换成新的掩码），
+    // 保证「刚输入的明文」不会继续留在 DOM 里。
+    selectModel(aiModelIdx);
     // 设置里改了模板名 / 增删了模型配置，总结面板的下拉立即跟随
     renderAiChatModelSelect();
   } catch (e) {
@@ -4923,10 +5148,22 @@ $('#ai_model_del').onclick = () => {
   renderModelSelect();
   renderAiChatModelSelect();
 };
+// 方案 9：原来是「显示 / 隐藏」明文切换，一点就把完整 Key 摊在屏幕上。
+// 改为「重填」：清空输入框、切到明文输入态等新值，保存后覆盖写入，全程不回读旧值。
 $('#ai_toggleKey').onclick = () => {
   const inp = $('#ai_apikey');
-  if (inp.type === 'password') { inp.type = 'text'; $('#ai_toggleKey').textContent = '隐藏'; }
-  else { inp.type = 'password'; $('#ai_toggleKey').textContent = '显示'; }
+  const btn = $('#ai_toggleKey');
+  if (inp.type === 'password') {
+    inp.value = '';                       // 旧值本来就不在框里，这里只是把可能刚输入的内容也清掉
+    inp.type = 'text';
+    inp.placeholder = aiKeyStored ? '输入新的 API Key（保存后覆盖原值）' : 'sk-...';
+    btn.textContent = '隐藏';
+    inp.focus();
+  } else {
+    inp.type = 'password';
+    inp.placeholder = aiKeyStored ? maskKey(aiKeyStored) + '（已保存，留空不改）' : 'sk-...';
+    btn.textContent = aiKeyStored ? '重填' : '填写';
+  }
 };
 $('#ai_tpl_sel').onchange = (e) => selectTpl(parseInt(e.target.value, 10));
 // ai_export_json 已迁至「账本管理」抽屉（见 wireUserUI 中绑定）
@@ -5643,13 +5880,45 @@ async function showSettingsView() {
   $('#assetView').hidden = true;
   $('#settingsView').hidden = false;
   await loadFinCatSettings(); // 收支分类：自定义分类编辑
+  loadBackupStatus();         // 方案 1：自动备份状态（不阻塞设置页渲染，失败静默隐藏）
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 方案 1 · 自动备份状态：纯展示一行小字（上次备份时间 · 份数 · 目录）。
+// 服务端每日 03:10 用 VACUUM INTO 出一份热备快照，启动时补跑当天缺的那份，
+// 保留最近 30 份 + 每月 1 号永久保留。这里只读，不提供触发按钮。
+async function loadBackupStatus() {
+  const box = document.getElementById('backupStatus');
+  if (!box) return;
+  try {
+    const r = await api('/api/backup/status');
+    if (!r.ok) { box.hidden = true; return; }
+    const d = await r.json();
+    const count = Number(d.count) || 0;
+    if (!count) {
+      box.className = 'backup-status is-stale';
+      box.innerHTML = '<span class="bs-dot"></span>还没有备份文件：服务端每日 03:10 自动备份，保留最近 30 份 + 每月 1 号那份额外保留';
+      box.hidden = false;
+      return;
+    }
+    // 超过 36 小时视为过期（日备 + 半天容差）：颜色转警示，但不弹任何提示
+    const t = d.last_at ? new Date(String(d.last_at).replace(' ', 'T')) : null;
+    const stale = !t || (Date.now() - t.getTime() > 36 * 3600e3);
+    box.className = 'backup-status' + (stale ? ' is-stale' : '');
+    box.innerHTML = '<span class="bs-dot"></span>'
+      + `上次备份：${esc(d.last_at || '—')} · 共 ${count} 份`
+      + (stale ? ' · <b>超过 36 小时未备份</b>' : '')
+      + (d.dir ? ` · <span class="bs-dir">${esc(d.dir)}</span>` : '');
+    box.hidden = false;
+  } catch (_) {
+    box.hidden = true;   // 老版本服务端没有该接口：不显示，不报错
+  }
 }
 
 // AI 设置（低频）：模型与提示词 / MCP 参数两个子页签，原「设置页第 ③ 组」整块搬来
 async function showAiView() {
   $('#aiView').hidden = false;
-  await loadAISettings(); // 模型 / 模板 / MCP 参数回填
+  await ensureAiSettings(); // 模型 / 模板 / MCP 参数回填（首次进入才拉，之后走缓存）
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -6208,7 +6477,7 @@ function renderAssetTab() {
   const triHtml = `
     <div class="cmp-row"><div class="cmp-name cmp-name-asset">资产</div><div class="cmp-bars"><div class="cmp-bar cmp-bar-asset" style="--w:${(totalA / triMax * 100).toFixed(1)}%"></div></div><div class="cmp-val">${yuanOfW(totalA)}</div></div>
     <div class="cmp-row"><div class="cmp-name cmp-name-liab">负债</div><div class="cmp-bars"><div class="cmp-bar cmp-bar-liab" style="--w:${(lTotal / triMax * 100).toFixed(1)}%"></div></div><div class="cmp-val">${yuanOfW(lTotal)}</div></div>
-    <div class="cmp-row"><div class="cmp-name cmp-name-net">净资产</div><div class="cmp-bars"><div class="cmp-bar cmp-bar-net ${net < 0 ? 'neg' : ''}" style="--w:${(Math.abs(net) / triMax * 100).toFixed(1)}%"></div></div><div class="cmp-val ${clsPnl(net)}">${yuanOfW(net)}</div></div>`;
+    <div class="cmp-row"><div class="cmp-name cmp-name-net">净资产</div><div class="cmp-bars"><div class="cmp-bar cmp-bar-net ${net < 0 ? 'neg' : ''}" style="--w:${(Math.abs(net) / triMax * 100).toFixed(1)}%"></div></div><div class="cmp-val">${yuanOfW(net)}</div></div>`;
 
   // === 4 张独立小卡（原型场景 D 的扁平版）：构成 / 区域 / 币种 / 净值结构 ===
   // 主数字各自取该维度最关心的一项：总资产 / 内地以外占比 / 外币占比 / 净资产。
@@ -6234,23 +6503,29 @@ function renderAssetTab() {
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-cash"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg></div>
-        <div class="kpi-label">资产区域</div>
+        <!-- 方案 7：标题必须能独立解释主数字。原标题「资产区域」+ 主数字 13.3% 语义错位
+             （13.3% 是「内地以外」占比，不是区域数量），改为直接点明指标。 -->
+        <div class="kpi-label">境外资产占比</div>
         <div class="kpi-main"><div class="kpi-value">${pctOf(hkA + usA, totalA)}</div></div>
-        <div class="kpi-sub">内地以外占比 · 中国内地 <span class="hl">${pctOf(cnA, totalA)}</span></div>
+        <div class="kpi-sub">中国内地 <span class="hl">${pctOf(cnA, totalA)}</span> · <span class="hl">${yuanOfW(cnA)}</span></div>
+        <div class="kpi-foot">口径：按账户归属地统计</div>
         <div class="kpi-extra asset-cmp-body">${regionBars}</div>
         <div class="asset-cmp-legend-2"><span><i class="lg-sq lg-asset"></i>资产</span><span><i class="lg-sq lg-liab"></i>负债</span></div>
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-pct"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9h6M9 13h6M12 9.5V17"/></svg></div>
-        <div class="kpi-label">资产币种</div>
+        <!-- 方案 7：同上，原标题「资产币种」的主数字是外币占比，标题改为指标本身。 -->
+        <div class="kpi-label">外币资产占比</div>
         <div class="kpi-main"><div class="kpi-value">${pctOf(totalA - cnyA, totalA)}</div></div>
-        <div class="kpi-sub">外币占比 · 人民币 <span class="hl">${pctOf(cnyA, totalA)}</span></div>
+        <div class="kpi-sub">人民币 <span class="hl">${pctOf(cnyA, totalA)}</span> · <span class="hl">${yuanOfW(cnyA)}</span></div>
+        <div class="kpi-foot">口径：按计价货币统计（与区域占比口径不同，两者不必相等）</div>
         <div class="kpi-extra asset-cmp-body">${curBars}</div>
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-equity"><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M7 21V11M12 21V4M17 21v-7"/></svg></div>
         <div class="kpi-label">净值结构</div>
-        <div class="kpi-main"><div class="kpi-value ${net < 0 ? 'down' : ''}">${yuanOfW(net)}</div></div>
+        <!-- 方案 14：净资产为正不再染红（红=涨），只在为负时用警示色 -->
+        <div class="kpi-main"><div class="kpi-value${net < 0 ? ' is-neg' : ''}">${yuanOfW(net)}</div></div>
         <div class="kpi-sub">负债 <span class="hl">${yuanOfW(lTotal)}</span> · 负债率 <span class="hl">${pctOf(lTotal, totalA)}</span></div>
         <div class="kpi-extra asset-cmp-body">${triHtml}</div>
       </div>
@@ -6441,7 +6716,7 @@ function paintFlows(body) {
       const cls = clsPnl(amt);
       const snap = !!f.snapshot;
       const undoBtn = snap ? '' : actBtn('undo', 'data-afrb="' + f.id + '"', '回退该笔资金变动');
-      return '<tr' + (snap ? ' class="snap-flow"' : '') + '><td>' + esc((f.date || '').slice(5)) + '</td><td>' + cashFlowTypeTag(f) + finCatBadge(flowCatOf(f)) + flowSourceTag(f.source) + flowSnapshotTag(f) + '</td>' +
+      return '<tr' + (snap ? ' class="snap-flow"' : '') + '><td title="' + esc(flowDateTitle(f)) + '">' + esc(fmtFlowDate(f.date)) + '</td><td>' + cashFlowTypeTag(f) + finCatBadge(flowCatOf(f)) + flowSourceTag(f.source) + flowSnapshotTag(f) + '</td>' +
         '<td class="num ' + cls + '">' + (amt >= 0 ? '+' : '−') + moneyCurW(Math.abs(amt), f.currency) + '</td>' +
         '<td class="note-cell" title="' + esc(f.note || '') + '">' + esc(f.note || '') + '</td>' +
         '<td class="row-actions">' + undoBtn + '</td></tr>';
@@ -9308,9 +9583,6 @@ function onAcctPopClick(e) {
   } else if (act === 'notify') {
     closeAcctMenu();
     navigate('notify');
-  } else if (act === 'pnl-cal') {
-    closeAcctMenu();
-    openPnlModal();
   } else if (act === 'manage-users') {
     closeAcctMenu();
     openUserSheet();
@@ -10768,6 +11040,8 @@ function aiChatOpen() {
   p.hidden = false;
   p.classList.add('open');
   if (!aiChatState.inited) { aiChatState.inited = true; aiChatLoadList(); }
+  // 方案 16：模型下拉依赖 /api/ai/settings，改为打开聊天面板时才拉（首屏不再带 3 个 AI/MCP 请求）
+  ensureAiSettings();
   const inp = document.getElementById('aiChatInput');
   if (inp) setTimeout(() => inp.focus(), 60);
 }
