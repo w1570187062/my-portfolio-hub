@@ -10,6 +10,11 @@ services:
       - PORT=9989
       - DATA_DIR=/data/portfolio.db
       - TZ=Asia/Shanghai
+      # 自动备份目录：不填则落在 /data/backups（与数据库同在一块盘）。
+      # 同盘备份只能防「误删 / 写坏」，防不了磁盘故障 —— 真要防灾，
+      # 把另一块盘或 NAS 挂到 /backup 再放开下面一行：
+      # - BACKUP_DIR=/backup
     volumes:
       - /mnt/nvme0n1-4/portfolio/data:/data
+      # - /mnt/另一块盘/portfolio-backup:/backup
     restart: unless-stopped

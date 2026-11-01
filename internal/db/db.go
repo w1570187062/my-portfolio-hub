@@ -53,6 +53,7 @@ func Init(path string) error {
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
+	dbFile = path
 	DB.SetMaxOpenConns(1)
 	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS holdings (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
