@@ -125,10 +125,11 @@ func enrich(h db.Holding, userID int64) HoldingView {
 			dayPnlPct = 0
 		}
 	}
-	// 美股 T+1：仅在美股盘中（美东 9:30–16:00）把当日盈亏视为 0（盘中浮动不算数）；
-	// 收盘后 (现价-昨收) 即最近一个已收盘美股交易日的涨跌，于下一个中国交易日体现，
-	// 因此周五美股（周末收盘）会自然合并进下周一的盈亏。
-	if h.Market == "美股" && usMarketInSession() {
+	// 美股：盈亏归属「美东交易日」，而那个交易日的收盘发生在北京时间次日凌晨，
+	// 由 doSnapshot 回填到它自己的那一格（见 usPnlDateOf）。所以「今天」这个格子里
+	// 永远还没有美股 —— 在这里计入就会与日历重复（周五夜盘曾被同时算进周五和周六）。
+	// 非交易日打开时，下面的快照回放分支会把那一格的真实值补回来，用户仍看得到数。
+	if h.Market == "美股" {
 		dayPnl = 0
 		dayPnlPct = 0
 	}
@@ -1319,6 +1320,61 @@ type symPnl struct {
 	Currency     string  `json:"currency"`
 	CurrentPrice float64 `json:"current_price"`
 	ChangePct    float64 `json:"change_pct"`
+	// Market / Category 2026-11-01 新增：日历格子要能把「美股」整组挪到它所属的交易日，
+	// 而 by_symbol 里原本只有代码，跨账户/已清仓的代码反查不到市场，故落库时直接带上。
+	// omitempty 保证老格式（无这两个字段）仍可解析，读取侧一律用 entryIsUS 兜底反查。
+	Market   string `json:"market,omitempty"`
+	Category string `json:"category,omitempty"`
+}
+
+// buildPnlDetail 由明细条目重新汇总出 detail JSON（by_category / by_currency / by_symbol）。
+// 之所以不再各处手写 Sprintf：美股条目搬行后必须按剩余条目重算小计，否则日历明细弹框
+// 的「股票/基金」小计会和总额对不上。
+func buildPnlDetail(entries []symPnl) string {
+	byCat := map[string]float64{"stock": 0, "fund": 0}
+	byCur := map[string]float64{"CNY": 0, "USD": 0, "HKD": 0}
+	for _, s := range entries {
+		cat := s.Category
+		if cat == "" {
+			cat = "stock"
+		}
+		byCat[cat] += s.Pnl
+		cur := strings.ToUpper(strings.TrimSpace(s.Currency))
+		switch cur {
+		case "USD", "$":
+			byCur["USD"] += s.Pnl
+		case "HKD", "HK$":
+			byCur["HKD"] += s.Pnl
+		default:
+			byCur["CNY"] += s.Pnl
+		}
+	}
+	return fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
+		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(entries))
+}
+
+// entryIsUS 判断一条明细是否属于美股：新版 detail 自带 market；老行（2026-11-01 之前写的）
+// 没有 market，只能拿 holdings 表的 symbol→market 反查（已清仓持仓仍在表里，故命中率足够）。
+func entryIsUS(s symPnl, usSyms map[string]bool) bool {
+	if s.Market != "" {
+		return s.Market == "美股"
+	}
+	return usSyms[s.Symbol]
+}
+
+// usPnlDateOf 返回「北京日期为 t 的那次快照，其美股盈亏应归属的日期」。
+// 美股收盘在北京时间凌晨，北京 D 日任何时点的现价对应的都是美东 D−1 的收盘；
+// 周末再往前退到最近的工作日（周五）。所以周五夜盘（北京周六凌晨收盘）落在周五格，
+// 而不是周六格 —— 这也是日历与券商对账单能对上的口径。
+func usPnlDateOf(t time.Time) string {
+	d := t.In(time.FixedZone("CST", 8*3600)).AddDate(0, 0, -1)
+	for i := 0; i < 7; i++ {
+		if wd := d.Weekday(); wd != time.Saturday && wd != time.Sunday {
+			break
+		}
+		d = d.AddDate(0, 0, -1)
+	}
+	return d.Format("2006-01-02")
 }
 
 func mustJSON(v interface{}) string {
@@ -1626,6 +1682,89 @@ func backfillSnapshots(uid int64, days int) (backfillResult, error) {
 // 断档后无法回补），改为仅记录美股；A股/港股/基金无新数据，保持"非交易日不记录"不污染日历。
 // 每条持仓的当日盈亏按其类别的"数据就绪时间"分时段计入（见下方 switch）：
 //   美股→美东收盘后(T+1)、A股→15:00后、港股→16:00后、基金→21:00后；未到时间记为 0。
+// usSymbolSet 返回该用户持仓里属于美股的 symbol 集合（含已清仓的，用来判断老 detail 条目）。
+func usSymbolSet(uid int64) map[string]bool {
+	out := map[string]bool{}
+	if hs, err := db.List(uid); err == nil {
+		for _, h := range hs {
+			if h.Market == "美股" {
+				out[h.Symbol] = true
+			}
+		}
+	}
+	return out
+}
+
+// savePnlRow 把 entries 写入某一天的 pnl_daily 行。
+//   replaceUS=true  → 只替换该行的「美股」条目，非美股条目原样保留（美股回填到它自己的交易日时用）；
+//   replaceUS=false → 整行覆盖（当天行：非美股部分整体重算，美股部分留空，等次日凌晨收盘后回填）。
+//
+// 之所以要「按组替换」而不是直接 upsert 整行：美股与 A股/基金的数据在时间上错开一整个晚上，
+// 两批数据要落进不同日期的格子，谁都不能把对方抹掉。rate / base_cny 沿用该行已有值，
+// 避免重写历史行时把当时的汇率与净资产基数换成本次的值。
+func savePnlRow(date string, uid int64, entries []symPnl, replaceUS, keepOther bool, cnyRate, hkdRate, baseFallback float64) error {
+	rate := cnyRate
+	baseCNY := 0.0
+	if old, found, err := db.GetPnlDay(date, uid); err == nil && found {
+		if old.Rate > 0 {
+			rate = old.Rate
+		}
+		baseCNY = old.BaseCNY
+		if keepOther && old.Detail != "" {
+			var det struct {
+				BySymbol []symPnl `json:"by_symbol"`
+			}
+			if json.Unmarshal([]byte(old.Detail), &det) == nil {
+				usSyms := usSymbolSet(uid)
+				for _, s := range det.BySymbol {
+					// 目标组整组丢弃（用本次算的覆盖），另一组原样带入
+					if entryIsUS(s, usSyms) == replaceUS {
+						continue
+					}
+					entries = append(entries, s)
+				}
+			}
+		}
+	}
+	if baseCNY == 0 {
+		baseCNY = baseFallback
+	}
+	var totalCNY, totalUSD float64
+	for _, s := range entries {
+		totalCNY += s.PnlCNY
+		if strings.EqualFold(strings.TrimSpace(s.Currency), "USD") {
+			totalUSD += s.Pnl
+		}
+	}
+	return db.SavePnlDaily(date, round2(totalCNY), round2(totalUSD), rate, round2(baseCNY), buildPnlDetail(entries), uid)
+}
+
+// splitUS 把明细条目按「是否美股」分成两组。
+func splitUS(entries []symPnl) (us, rest []symPnl) {
+	for _, s := range entries {
+		if s.Market == "美股" {
+			us = append(us, s)
+		} else {
+			rest = append(rest, s)
+		}
+	}
+	return us, rest
+}
+
+// nonZeroPnl 过滤掉金额为 0 的条目。
+// 用于美股回填：周末/节假日每次快照都会跑，行情源没有新收盘时 dp 记 0（staleQuote 保护），
+// 若把 0 也写进去，就会把上一个交易日已经回填好的非零值覆盖成 0 —— 10-30 那格 +98.59
+// 会被周日晚上那次快照抹平。只回填真正有新数据的标的即可。
+func nonZeroPnl(entries []symPnl) []symPnl {
+	out := entries[:0:0]
+	for _, s := range entries {
+		if round2(s.Pnl) != 0 || round2(s.PnlCNY) != 0 {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func doSnapshot(uid int64) error {
 	now := time.Now()
 	bj := now.In(time.FixedZone("CST", 8*3600))
@@ -1638,14 +1777,18 @@ func doSnapshot(uid int64) error {
 	if err != nil {
 		return err
 	}
+	// symbol→持仓，用于给「·已实现」条目补 market / category（它也要跟着美股一起搬日期）
+	holdBySym := make(map[string]db.Holding, len(hs))
+	for _, h := range hs {
+		holdBySym[h.Symbol] = h
+	}
 	cnyRate, hkdRate, fxDegraded := market.GetFXRates()
 	if fxDegraded {
 		log.Printf("[snapshot] 汇率源降级，使用上次成功汇率 CNY=%.4f HKD=%.4f", cnyRate, hkdRate)
 	}
 	today := now.Format("2006-01-02")
-	var totalCNY, totalUSD float64
-	byCat := map[string]float64{"stock": 0, "fund": 0}
-	byCur := map[string]float64{"CNY": 0, "USD": 0, "HKD": 0}
+	// 明细条目自带 market/category，总额与小计一律由条目重算（buildPnlDetail），
+	// 不再边算边累加 —— 美股要整组搬去另一天，累加式的汇总必然搬错。
 	var bySym []symPnl
 	for i := range hs {
 		h := hs[i]
@@ -1717,13 +1860,7 @@ func doSnapshot(uid int64) error {
 				dp = (h.CurrentPrice - prev) * h.Quantity
 			}
 		}
-		byCat[h.Category] += dp
-		byCur[h.Currency] += dp
-		if strings.EqualFold(h.Currency, "USD") {
-			totalUSD += dp
-		}
 		dpCNY := fxToCNY(dp, h.Currency, cnyRate, hkdRate)
-		totalCNY += dpCNY
 		// 涨跌幅：现价相对昨收，昨收优先持仓字段，兜底查历史
 		chgPct := 0.0
 		prevClose := h.PrevClose
@@ -1740,27 +1877,42 @@ func doSnapshot(uid int64) error {
 		if h.Quantity <= 0 {
 			continue
 		}
-		bySym = append(bySym, symPnl{Symbol: h.Symbol, Name: h.Name, Pnl: round2(dp), PnlCNY: round2(dpCNY), Currency: h.Currency, CurrentPrice: round4(h.CurrentPrice), ChangePct: round2(chgPct)})
+		bySym = append(bySym, symPnl{Symbol: h.Symbol, Name: h.Name, Pnl: round2(dp), PnlCNY: round2(dpCNY), Currency: h.Currency, CurrentPrice: round4(h.CurrentPrice), ChangePct: round2(chgPct), Market: h.Market, Category: h.Category})
 	}
 	// 合并当日已实现盈亏（减仓落库）：从 realized_pnl_daily 取当日记录，叠加到总盈亏与明细。
 	// 由于 doSnapshot 每次整体重算价格盈亏并重新取该表，这里天然幂等、不会被覆盖。
 	if rrows, e := db.ListRealizedPnl(uid, today); e == nil {
 		for _, rp := range rrows {
-			if strings.EqualFold(rp.Currency, "USD") {
-				totalUSD += rp.Amount
-			}
 			dpCNY := fxToCNY(rp.Amount, rp.Currency, cnyRate, hkdRate)
-			totalCNY += dpCNY
-			byCur[rp.Currency] += rp.Amount
-			bySym = append(bySym, symPnl{Symbol: rp.Symbol, Name: rp.Name + "·已实现", Pnl: round2(rp.Amount), PnlCNY: round2(dpCNY), Currency: rp.Currency, ChangePct: 0})
+			// 已实现条目也要带上 market/category：美股清仓的落袋盈亏同样属于那个美东交易日，
+			// 不带的话它会留在今天这一格，而对应的浮动盈亏已经搬到前一天了。
+			mkt, cat := "股票", "stock"
+			if h, ok := holdBySym[rp.Symbol]; ok {
+				mkt, cat = h.Market, h.Category
+			}
+			bySym = append(bySym, symPnl{Symbol: rp.Symbol, Name: rp.Name + "·已实现", Pnl: round2(rp.Amount), PnlCNY: round2(dpCNY), Currency: rp.Currency, ChangePct: 0, Market: mkt, Category: cat})
 		}
 	}
-	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
-		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
 	// 真实日收益率分母：当日净资产基数 = 持仓市值 + 理财市值 + 现金 − 负债（折算 CNY）。
 	// 盈亏日历/走势切换"盈亏率"时用 当日盈亏 / base_cny 计算，而非对金额做归一化。
 	baseCNY := computeEquityBaseCNY(uid, hs, cnyRate, hkdRate)
-	return db.SavePnlDaily(today, round2(totalCNY), round2(totalUSD), cnyRate, round2(baseCNY), detail, uid)
+	usEntries, restEntries := splitUS(bySym)
+	usEntries = nonZeroPnl(usEntries)
+	// 今天这一格只收「今天已收盘」的市场：A股/基金/港股。美股留空 —— 它今天的收盘发生
+	// 在北京时间明天凌晨，届时由 07:00 的快照回填到它所属的那一天（见下方 usDate）。
+	if err := savePnlRow(today, uid, restEntries, false, false, cnyRate, hkdRate, baseCNY); err != nil {
+		return err
+	}
+	// 美股回填：写进「美东交易日」对应的格子（北京 D 日的收盘 → D−1，周末退到周五）。
+	// 只替换那一行的美股条目，该行已有的 A股/基金部分原样保留。
+	if len(usEntries) > 0 {
+		usDate := usPnlDateOf(now)
+		if err := savePnlRow(usDate, uid, usEntries, true, true, cnyRate, hkdRate, baseCNY); err != nil {
+			return err
+		}
+		log.Printf("[snapshot] 美股 %d 条回填到 %s（今日格 %s 只留 A股/基金）", len(usEntries), usDate, today)
+	}
+	return nil
 }
 
 // computeEquityBaseCNY 计算该用户当日净资产基数（CNY），用于真实日收益率：
@@ -1972,9 +2124,6 @@ func finalizePnlFromPrices(date string, uid int64) error {
 		qtyBySym[h.Symbol] = h.Quantity
 	}
 	cnyRate, hkdRate, _ := market.GetFXRates()
-	var totalCNY, totalUSD float64
-	byCat := map[string]float64{"stock": 0, "fund": 0}
-	byCur := map[string]float64{"CNY": 0, "USD": 0, "HKD": 0}
 	var bySym []symPnl
 	for sym, close := range closes {
 		prev, ok, e := db.GetPrevClose(sym, date, uid)
@@ -1993,38 +2142,43 @@ func finalizePnlFromPrices(date string, uid int64) error {
 		cat := "stock"
 		cur := "CNY"
 		name := sym
+		mkt := ""
 		if h != nil {
 			cat = h.Category
 			cur = h.Currency
 			name = h.Name
-		}
-		byCat[cat] += dp
-		byCur[cur] += dp
-		if strings.EqualFold(cur, "USD") {
-			totalUSD += dp
+			mkt = h.Market
 		}
 		dpCNY := fxToCNY(dp, cur, cnyRate, hkdRate)
-		totalCNY += dpCNY
-		bySym = append(bySym, symPnl{Symbol: sym, Name: name, Pnl: dp, PnlCNY: dpCNY, Currency: cur})
+		bySym = append(bySym, symPnl{Symbol: sym, Name: name, Pnl: dp, PnlCNY: dpCNY, Currency: cur, Market: mkt, Category: cat})
 	}
 	// 合并当日已实现盈亏（减仓落库）：与 doSnapshot 保持一致。否则白天快照漏跑时，
 	// 午夜回填只会按价格重算、把已实现盈亏（如清仓落袋）丢掉。
 	if rrows, e := db.ListRealizedPnl(uid, date); e == nil {
 		for _, rp := range rrows {
-			if strings.EqualFold(rp.Currency, "USD") {
-				totalUSD += rp.Amount
-			}
 			rCNY := fxToCNY(rp.Amount, rp.Currency, cnyRate, hkdRate)
-			totalCNY += rCNY
-			byCur[rp.Currency] += rp.Amount
-			bySym = append(bySym, symPnl{Symbol: rp.Symbol, Name: rp.Name + "·已实现", Pnl: round2(rp.Amount), PnlCNY: round2(rCNY), Currency: rp.Currency, ChangePct: 0})
+			mkt, cat := "", ""
+			if h := holdingBySymbol(hs, rp.Symbol); h != nil {
+				mkt, cat = h.Market, h.Category
+			}
+			bySym = append(bySym, symPnl{Symbol: rp.Symbol, Name: rp.Name + "·已实现", Pnl: round2(rp.Amount), PnlCNY: round2(rCNY), Currency: rp.Currency, ChangePct: 0, Market: mkt, Category: cat})
 		}
 	}
-	detail := fmt.Sprintf(`{"by_category":{"stock":%.2f,"fund":%.2f},"by_currency":{"CNY":%.2f,"USD":%.2f,"HKD":%.2f},"by_symbol":%s}`,
-		byCat["stock"], byCat["fund"], byCur["CNY"], byCur["USD"], byCur["HKD"], mustJSON(bySym))
-	// 同 doSnapshot：补齐当日净资产基数，保证"真实日收益率"口径一致
+	// 同 doSnapshot：美股条目搬回它所属的交易日，今天只留 A股/基金/港股。
 	baseCNY := computeEquityBaseCNY(uid, hs, cnyRate, hkdRate)
-	return db.SavePnlDaily(date, totalCNY, totalUSD, cnyRate, round2(baseCNY), detail, uid)
+	usEntries, restEntries := splitUS(bySym)
+	usEntries = nonZeroPnl(usEntries)
+	if err := savePnlRow(date, uid, restEntries, false, false, cnyRate, hkdRate, baseCNY); err != nil {
+		return err
+	}
+	if len(usEntries) > 0 {
+		d, e := time.ParseInLocation("2006-01-02", date, time.FixedZone("CST", 8*3600))
+		if e != nil {
+			return e
+		}
+		return savePnlRow(usPnlDateOf(d), uid, usEntries, true, true, cnyRate, hkdRate, baseCNY)
+	}
+	return nil
 }
 
 // holdingBySymbol returns a pointer to the holding with the given symbol, or nil.

@@ -1365,7 +1365,7 @@ function renderGroupRow(h, i, maxItemMV, pool) {
     <td class="num" title="成本价（每份）">${fmtPrice(h.cost_price, isFund(h) ? 'fund' : 'stock')}</td>
     <td class="num"${mvOrigTitle(h)}>¥${fmtWan(mvCny)}</td>
     <td class="num share${pool > 0 ? '' : ' is-empty'}"${pool > 0 ? ` style="--p:${posPct.toFixed(1)}%"` : ''} title="占该账户同币种资金池比例${pool > 0 ? ' ' + posPct.toFixed(2) + '%' : '；该账户无匹配现金子账户，无法算占比'}">${pool > 0 ? posPct.toFixed(2) + '%' : '—'}</td>
-    <td class="num ${clsPnl(h.day_pnl)}" title="${pdi.note ? esc(pdi.note) : '今日盈亏'}${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）"><span${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</span></td>
+    <td class="num ${clsPnl(h.day_pnl)}" title="${pdi.note ? esc(pdi.note) : '今日盈亏'}${h.market === '美股' && pdi.isToday ? '（美股按美东交易日归属：今天的收盘要等北京时间明天凌晨，落账后会出现在对应日期那一格，所以今天这一格暂时是 0）' : ''}${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）"><span${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</span></td>
     <td class="num ${clsPnl(h.pnl)}" title="持有期总盈亏${h.pnl_pct ? ' ' + pct(h.pnl_pct) : ''}"><span${wanTitle(pnlCny, '¥')}>${signedMoneyW(pnlCny, 'cny')}</span></td>
     <td class="num u-sm u-muted">${h.holding_days > 0 ? h.holding_days + '天' : '—'}</td>
     <td class="row-act-cell">
