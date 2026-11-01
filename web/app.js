@@ -1265,7 +1265,7 @@ function renderHoldingsBySource(hs) {
       + `</div>`
       + `<div class="collapse-body source-group-body">`
       + `<div class="subtable-wrap"><table class="asset-table holdings-subtable">`
-      + `<thead><tr><th>名称</th><th class="num" title="近20日收盘价走势">近20日走势</th><th>代码</th><th class="num">现价</th><th class="num" title="涨跌幅：现价相对昨收（基金为昨日净值），行情口径；与「${pdi.label}」列括号里的盈亏率不同——该列 % 首日按买入成本计">涨跌幅</th><th class="num" title="成本价（每份）">成本价</th>`
+      + `<thead><tr><th>名称</th><th class="num" title="近20日收盘价走势">近20日走势</th><th>代码</th><th class="num">现价</th><th class="num" title="涨跌幅：现价相对昨收（基金为昨日净值），行情口径；与「${pdi.label}」列括号里的盈亏率不同——该列 % 首日按买入成本计${pdi.isToday ? '' : '。非交易日这两个数可能相差一个美股交易日：涨跌幅取最新一根日线，盈亏取最近交易日收盘落账的值'}">涨跌幅</th><th class="num" title="成本价（每份）">成本价</th>`
       + `<th class="num sortable${sortedCls('mv')}" data-sort="mv" title="持仓市值（折人民币；悬停查看原币种市值）· 点击排序">市值</th>`
       // 列名从「仓位」改为「占资金池」：分母是「同账户同币种持仓合计 + 现金子账户余额」，
       // 不是组合总市值。叫「仓位」会被读成「占我总持仓的比例」，同一张表里还能出现多个 100%，
@@ -1361,7 +1361,7 @@ function renderGroupRow(h, i, maxItemMV, pool) {
     <td class="num spark-td">${sparkCell(h.symbol, h.pnl)}</td>
     <td class="code-cell u-sm u-muted" title="${esc(h.symbol || '')}">${esc(h.symbol || '—')}</td>
     <td class="num">${fmtPrice(h.current_price, isFund(h) ? 'fund' : 'stock')}</td>
-    <td class="num ${clsPnl(chgPct)}" title="今日涨跌幅（现价 vs 昨收${isFund(h) ? '，基金为昨日净值' : ''}）">${chgPct != null ? pct(chgPct) : '—'}</td>
+    <td class="num ${clsPnl(chgPct)}" title="${pdi.isToday ? '今日涨跌幅' : '最近一个收盘交易日的涨跌幅（比左侧「' + pdi.md + ' 盈亏」可能新一个美股交易日——美股在北京时间凌晨收盘，跨过了日界）'}（现价 vs 昨收${isFund(h) ? '，基金为昨日净值' : ''}）">${chgPct != null ? pct(chgPct) : '—'}</td>
     <td class="num" title="成本价（每份）">${fmtPrice(h.cost_price, isFund(h) ? 'fund' : 'stock')}</td>
     <td class="num"${mvOrigTitle(h)}>¥${fmtWan(mvCny)}</td>
     <td class="num share${pool > 0 ? '' : ' is-empty'}"${pool > 0 ? ` style="--p:${posPct.toFixed(1)}%"` : ''} title="占该账户同币种资金池比例${pool > 0 ? ' ' + posPct.toFixed(2) + '%' : '；该账户无匹配现金子账户，无法算占比'}">${pool > 0 ? posPct.toFixed(2) + '%' : '—'}</td>

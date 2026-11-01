@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"portfolio/internal/db"
@@ -130,6 +131,29 @@ func enrich(h db.Holding, userID int64) HoldingView {
 	if h.Market == "美股" && usMarketInSession() {
 		dayPnl = 0
 		dayPnlPct = 0
+	}
+	// 非交易日：上面这套基于「此刻行情」的回算与盈亏日历必然对不上（看完快照后行情还在走），
+	// 直接换成归属日已落库的快照值 —— 必须放在上面两个闸门之后，否则基金在早上会被
+	// bjHour<21 清零、美股在盘中会被归零，把快照值又抹掉了。
+	if snap, ok := closedDayPnlBySymbol(userID, time.Now()); ok {
+		if v, hit := snap.bySym[h.Symbol]; hit {
+			// bySym 是「同标的跨账户合计」，按当日份额摊回本条持仓（同标的多账户时不翻倍）
+			if q := snap.qty[h.Symbol]; q > 0 {
+				dayPnl = v * h.Quantity / q
+			} else {
+				dayPnl = v
+			}
+		} else {
+			// 那天没有这只的行情记录（当日未持有 / 取价失败），与日历保持一致记 0
+			dayPnl = 0
+		}
+		dayPnlPct = 0
+		// 涨跌幅分母仍取昨收市值（快照只存金额，没存当时的分母）
+		if h.PrevClose > 0 {
+			if prevMv := h.PrevClose * h.Quantity; prevMv > 0 {
+				dayPnlPct = dayPnl / prevMv * 100
+			}
+		}
 	}
 	// 常规精度：金额/盈亏保留 2 位，避免浮点长小数进入 API/导出/AI 文本
 	return HoldingView{Holding: h,
@@ -1218,8 +1242,15 @@ func computeSummary(uid int64) (gin.H, error) {
 	}
 	var realizedToday []realizedItem
 	todayStr := time.Now().Format("2006-01-02")
+	// 已实现盈亏也按归属日取：周末/节假日打开时，「今日」的减仓/清仓一笔都没有（今天没开市），
+	// 但归属日那天的落库行里含这一笔 —— 不跟着改会与浮动盈亏（已回放快照）口径分裂，
+	// 表现为「本月比日历年月合计少一笔」。
+	realizedDay := todayStr
+	if !isTradingDayCN(time.Now()) {
+		realizedDay = pnlDate
+	}
 	var realizedCny, realizedUsd float64
-	if rrows, e := db.ListRealizedPnl(uid, todayStr); e == nil {
+	if rrows, e := db.ListRealizedPnl(uid, realizedDay); e == nil {
 		for _, rp := range rrows {
 			todayRealizedCNY += fxToCNY(rp.Amount, rp.Currency, cnyRate, hkdRate)
 			switch strings.ToUpper(strings.TrimSpace(rp.Currency)) {
@@ -1363,6 +1394,78 @@ func pnlDateOf(t time.Time) string {
 		return d.Format("2006-01-02")
 	}
 	return lastTradingDayCN(d).Format("2006-01-02")
+}
+
+// ===== 非交易日回放快照（2026-11-01）=====
+// 盈亏日历读的是 pnl_daily —— 当天快照时写下的历史账，写完就不再被后续行情改写；
+// 而「今日盈亏」KPI 是用此刻的最新价 − 此刻的昨收养算。非交易日两者必然不等：
+// 快照之后行情还会走一段（美股在北京时间凌晨收盘，正好跨过日历的日界），
+// 同一批涨跌于是被算进了两天。实测 2026-11-01（周日）投资页「10-30 盈亏」−229.27、
+// 日历 10-30 格 −201.60，差的那 27.63 就是 NVDA/WMT/PEP 在美东 10-30 交易日的涨跌 ——
+// 它已经由 10-31 那一行落库（+98.60 ≈ 14.81 USD）记过一次了。
+// 因此非交易日不再回算，直接回放归属日那一行的 by_symbol 明细（原币口径，与落库同源）。
+type pnlSnapEntry struct {
+	at    time.Time
+	ok    bool
+	bySym map[string]float64 // symbol → 该日浮动盈亏合计（原币）；「·已实现」条目不计入
+	qty   map[string]float64 // symbol → 当日份额合计，用于把合计值按份额分摊回各账户持仓
+}
+
+// pnlSnapTTL：快照补跑（启动补份、手动回算）后最迟 1 分钟生效，足够追上 pnl_daily 的变更节奏。
+const pnlSnapTTL = 60 * time.Second
+
+var pnlSnapCache sync.Map // "uid|date" → pnlSnapEntry
+
+// closedDayPnlBySymbol 在「今天不是交易日」时返回归属日已落库的逐标的浮动盈亏（原币）。
+// 第二个返回值 false 表示不是非交易日、或那天没有快照行 —— 调用方回退到实时计算。
+// by_symbol 里的金额是「同标的跨账户合计」，调用方需按份额分摊（见 enrich）。
+func closedDayPnlBySymbol(uid int64, now time.Time) (pnlSnapEntry, bool) {
+	d := now.In(time.FixedZone("CST", 8*3600))
+	if isTradingDayCN(d) {
+		return pnlSnapEntry{}, false
+	}
+	date := lastTradingDayCN(d).Format("2006-01-02")
+	key := fmt.Sprintf("%d|%s", uid, date)
+	if v, hit := pnlSnapCache.Load(key); hit {
+		e := v.(pnlSnapEntry)
+		if time.Since(e.at) < pnlSnapTTL {
+			return e, e.ok
+		}
+	}
+	entry := pnlSnapEntry{at: time.Now()}
+	row, found, err := db.GetPnlDay(date, uid)
+	if err == nil && found && row.Detail != "" {
+		var det struct {
+			BySymbol []struct {
+				Symbol   string  `json:"symbol"`
+				Name     string  `json:"name"`
+				Pnl      float64 `json:"pnl"`      // 原币金额
+				Realized bool    `json:"realized"` // 新行带标记；老行只能靠名字里的「·已实现」判
+			} `json:"by_symbol"`
+		}
+		if json.Unmarshal([]byte(row.Detail), &det) == nil && len(det.BySymbol) > 0 {
+			m := make(map[string]float64, len(det.BySymbol))
+			for _, s := range det.BySymbol {
+				// 已实现盈亏混在同一个数组里（名字后缀「·已实现」），它不属于某只持仓的浮动盈亏，
+				// 由 computeSummary 按归属日重新取，这里必须跳过，否则会重复计入。
+				if s.Realized || strings.Contains(s.Name, "·已实现") {
+					continue
+				}
+				m[s.Symbol] += s.Pnl
+			}
+			entry.ok, entry.bySym = true, m
+			// 同一标的可能分在多个账户（asset_sources），detail 里是合计值 —— 记下当日份额，
+			// 让 enrich 按份额把合计值摊回各条持仓，否则每条持仓都会拿到全额（总和翻倍）。
+			entry.qty = map[string]float64{}
+			if hs, e2 := db.List(uid); e2 == nil {
+				for _, h := range hs {
+					entry.qty[h.Symbol] += h.Quantity
+				}
+			}
+		}
+	}
+	pnlSnapCache.Store(key, entry)
+	return entry, entry.ok
 }
 
 // refreshAllQuotes fetches the latest quote for every holding, persists

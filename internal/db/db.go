@@ -1145,6 +1145,22 @@ func GetPnlHistory(userID int64) ([]PnlDay, error) {
 	return out, rows.Err()
 }
 
+// GetPnlDay 取某一天已落库的盈亏快照（没有该行时 found=false）。
+// 用途：非交易日展示「最近交易日收盘落账」的值 —— 与盈亏日历读的是同一行，
+// 避免用当前行情回算历史日期导致两处数字不一致。
+func GetPnlDay(date string, userID int64) (PnlDay, bool, error) {
+	var p PnlDay
+	err := DB.QueryRow(`SELECT date,user_id,total_cny,total_usd,rate,base_cny,detail FROM pnl_daily WHERE date=? AND user_id=?`, date, userID).
+		Scan(&p.Date, &p.UserID, &p.TotalCNY, &p.TotalUSD, &p.Rate, &p.BaseCNY, &p.Detail)
+	if err == sql.ErrNoRows {
+		return p, false, nil
+	}
+	if err != nil {
+		return p, false, err
+	}
+	return p, true, nil
+}
+
 // HasPnlDate reports whether a daily P&L record already exists for the date.
 func HasPnlDate(date string, userID int64) (bool, error) {
 	var n int
