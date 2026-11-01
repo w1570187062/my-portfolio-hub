@@ -490,6 +490,12 @@ func buildPortfolioStats(uid int64) (string, error) {
 
 	var b strings.Builder
 	b.WriteString("统计日期：" + today + "\n")
+	// 非交易日（周末/法定节假日）时，下面所有「今日盈亏」实为最近一个交易日的涨跌
+	// （基金 21:00 后取上一交易日净值、美股收盘后现价−昨收同为上一交易日）。
+	// 不注明会被 AI 当成「今天」的表现来描述，用户读到「今日亏了 9,865」会误解。
+	if pd := pnlDateOf(time.Now()); pd != today {
+		b.WriteString("注：今日休市（非交易日），下文「今日盈亏」均指最近交易日 " + pd[5:] + " 的涨跌。\n")
+	}
 	if rate > 0 {
 		b.WriteString("汇率：1 USD ≈ " + nf(rate) + " CNY\n")
 	}

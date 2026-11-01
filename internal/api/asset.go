@@ -285,6 +285,9 @@ func assetOverview(c *gin.Context) {
 		"region_liabilities": regLiab,
 		"rate":               cnyRate,
 		"day":                today,
+		// 权益「今日盈亏」的归属交易日：非交易日回指最近交易日（首页 chips 据此改称「最近交易日」，
+		// 避免休市日把上一交易日的涨跌读成「今天赚了」）。
+		"pnl_date": pnlDateOf(time.Now()),
 	})
 }
 
@@ -2088,6 +2091,11 @@ func buildAssetStats(uid int64) (string, error) {
 
 	var b strings.Builder
 	b.WriteString("统计日期：" + today + "\n")
+	// 非交易日（周末/法定节假日）时下文「今日盈亏」实为最近一个交易日的涨跌，
+	// 不注明会被当成「今天」的表现来解读（与首页 chips、投资页 KPI 同口径）。
+	if pd := pnlDateOf(time.Now()); pd != today {
+		b.WriteString("注：今日休市（非交易日），下文「今日盈亏」均指最近交易日 " + pd[5:] + " 的涨跌。\n")
+	}
 	if cnyRate > 0 {
 		b.WriteString("汇率：1 USD ≈ " + nf(cnyRate) + " CNY\n")
 	}

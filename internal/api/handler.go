@@ -26,7 +26,10 @@ type HoldingView struct {
 	PnlPct      float64 `json:"pnl_pct"`
 	DayPnl      float64 `json:"day_pnl"`
 	DayPnlPct   float64 `json:"day_pnl_pct"`
-	HoldingDays int     `json:"holding_days"` // 持仓天数，从 buy_date 算起
+	// DayPnl 实际归属的交易日（YYYY-MM-DD）。交易日即今天；周末/法定节假日回指最近一个交易日，
+	// 此时 DayPnl 是那个交易日的涨跌而非「今天」的（休市没有今天可言）。
+	PnlDate     string `json:"pnl_date"`
+	HoldingDays int    `json:"holding_days"` // 持仓天数，从 buy_date 算起
 	SourceName   string  `json:"source_name"`  // 所属平台/来源名称（来自 asset_sources）
 	RealizedPnl  float64 `json:"realized_pnl"` // 累计已实现盈亏（position_tx 聚合，含 SELL/DIV）
 	ClosedDate   string  `json:"closed_date"`  // 清仓日期（最后一次 SELL 的日期，YYYY-MM-DD；未清仓为空）
@@ -131,7 +134,8 @@ func enrich(h db.Holding, userID int64) HoldingView {
 	// 常规精度：金额/盈亏保留 2 位，避免浮点长小数进入 API/导出/AI 文本
 	return HoldingView{Holding: h,
 		MarketValue: round2(mv), CostValue: round2(cv), Pnl: round2(pnl), PnlPct: round2(pct),
-		DayPnl: round2(dayPnl), DayPnlPct: round2(dayPnlPct), HoldingDays: db.CalcHoldingDays(h.BuyDate)}
+		DayPnl: round2(dayPnl), DayPnlPct: round2(dayPnlPct), HoldingDays: db.CalcHoldingDays(h.BuyDate),
+		PnlDate: pnlDateOf(time.Now())}
 }
 
 // costBasisOf 返回「已平仓」盈亏率的分母（累计本金）。
@@ -247,6 +251,8 @@ func RegisterRoutes(r *gin.Engine) {
 
 		// 通知渠道：配置读写 + 测试发送
 		g.GET("/version", versionGet)
+		// 自动备份状态（设置页数据管理区展示「上次备份 / 份数 / 目录」）
+		g.GET("/backup/status", backupStatusGet)
 		g.GET("/notify/settings", notifySettingsGet)
 		g.POST("/notify/settings", notifySettingsPost)
 		g.POST("/notify/test", notifyTest)
@@ -1101,6 +1107,9 @@ func computeSummary(uid int64) (gin.H, error) {
 		usdMV, usdCV, usdPnl     float64
 		hkdMV, hkdCV, hkdPnl     float64
 		totalCNY, totalCostCNY   float64
+		todayLiveCNY             float64
+		todayLiveCny             float64
+		todayLiveUsd             float64
 		unsupported              = []string{}
 	)
 	for _, h := range hs {
@@ -1130,6 +1139,18 @@ func computeSummary(uid int64) (gin.H, error) {
 		}
 		totalCNY += fxToCNY(mv, h.Currency, cnyRate, hkdRate)
 		totalCostCNY += fxToCNY(cv, h.Currency, cnyRate, hkdRate)
+		// 今日实时盈亏：与持仓列表 / 前端「今日盈亏」完全同源（enrich 里带基金 21:00 前归零、
+		// 美股盘中归零、买入首日按成本等闸门），折算 CNY 后用于拼「本月累计」（见下方）。
+		dv := enrich(h, uid)
+		todayLiveCNY += fxToCNY(dv.DayPnl, h.Currency, cnyRate, hkdRate)
+		// 币种在存量数据里大小写混用（cny / CNY / 港币 都有），统一按 fxToCNY 的规范归一后分桶，
+		// 否则同一笔会被漏进 default，分币种合计与折人民币合计对不上。
+		switch strings.ToUpper(strings.TrimSpace(h.Currency)) {
+		case "USD", "$":
+			todayLiveUsd += dv.DayPnl
+		case "CNY", "RMB", "人民币":
+			todayLiveCny += dv.DayPnl
+		}
 	}
 	totalPnl := totalCNY - totalCostCNY
 	var totalPct float64
@@ -1146,13 +1167,32 @@ func computeSummary(uid int64) (gin.H, error) {
 	if hkdCV > 0 {
 		hkdPct = hkdPnl / hkdCV * 100
 	}
-	// 本月累计盈亏：汇总最近 pnl_daily 中本月（按数据日期）的总盈亏；
-	// 同时按币种拆分（解析 detail.by_currency，原始货币口径），供前端列出本月 CNY/USD 盈亏。
-	var monthPNL, monthPNLCny, monthPNLUsd float64
+	// 本月累计盈亏 = 本月已落库的每日盈亏（归属日那一行除外）+ 归属日的实时盈亏。
+	// 两条口径必须对齐：pnl_daily 由定时快照写入，归属日那行要么还没生成（早间/月初），
+	// 要么写的是 0（快照跑在行情更新之前）；而前端「当日盈亏」用的是实时 holdings.day_pnl。
+	// 只累加落库行会出现「今日 +X、本月 0」的自相矛盾（2026-11-01 实盘）。
+	// 关键用「归属日」而不是「今天」：周末/法定节假日打开时，实时值是最近一个交易日的涨跌
+	// （2026-11-01 周日那笔 −9,865.9 实为 10-30 周五的），按今天归月会让每月第一个周末
+	// 把上月底的涨跌记进新月。
+	ym := time.Now().Format("2006-01")
+	today := time.Now().Format("2006-01-02")
+	pnlDate := pnlDateOf(time.Now())
+	liveInMonth := strings.HasPrefix(pnlDate, ym)
+	var monthPNL, monthPNLCny, monthPNLUsd, rowPnlDate float64
+	var hasPnlDateRow bool
 	if hist, e := db.GetPnlHistory(uid); e == nil {
-		ym := time.Now().Format("2006-01")
 		for _, r := range hist {
 			if !strings.HasPrefix(r.Date, ym) {
+				continue
+			}
+			// 归属日那一行由实时值替代，避免同一笔算两次；顺手记下它的落库值作实时为 0 时的兜底。
+			if r.Date == pnlDate {
+				hasPnlDateRow = true
+				rowPnlDate = r.TotalCNY
+				continue
+			}
+			// 非交易日时「今天」那条是休市 0 行（甚至可能是快照误写的美股值），不代表当日盈亏。
+			if r.Date == today {
 				continue
 			}
 			monthPNL += r.TotalCNY
@@ -1178,13 +1218,31 @@ func computeSummary(uid int64) (gin.H, error) {
 	}
 	var realizedToday []realizedItem
 	todayStr := time.Now().Format("2006-01-02")
+	var realizedCny, realizedUsd float64
 	if rrows, e := db.ListRealizedPnl(uid, todayStr); e == nil {
 		for _, rp := range rrows {
 			todayRealizedCNY += fxToCNY(rp.Amount, rp.Currency, cnyRate, hkdRate)
+			switch strings.ToUpper(strings.TrimSpace(rp.Currency)) {
+			case "USD", "$":
+				realizedUsd += rp.Amount
+			case "CNY", "RMB", "人民币":
+				realizedCny += rp.Amount
+			}
 			realizedToday = append(realizedToday, realizedItem{
 				Symbol: rp.Symbol, Name: rp.Name, Currency: rp.Currency, Amount: rp.Amount, Date: rp.Date,
 			})
 		}
+	}
+	// 把归属日的盈亏并入本月：仅当归属日落在本月。实时值（持仓 day_pnl + 当日已实现）优先，
+	// 实时全为 0 且归属日已落库时才回落到落库值。
+	if liveInMonth {
+		dayPNL := todayLiveCNY + todayRealizedCNY
+		if dayPNL == 0 && hasPnlDateRow {
+			dayPNL = rowPnlDate
+		}
+		monthPNL += dayPNL
+		monthPNLCny += todayLiveCny + realizedCny
+		monthPNLUsd += todayLiveUsd + realizedUsd
 	}
 	return gin.H{
 		"today_realized_cny":  round2(todayRealizedCNY),
@@ -1195,6 +1253,9 @@ func computeSummary(uid int64) (gin.H, error) {
 		"month_pnl_cny":       round2(monthPNL),
 		"month_pnl_cny_ccy":   round2(monthPNLCny),
 		"month_pnl_usd":       round2(monthPNLUsd),
+		// 今日盈亏的归属交易日：非交易日回指最近交易日（前端据此把「今日」改成「最近交易日」，
+		// 并判断本月是否已开市 —— pnl_date 不在本月即本月尚无交易日）。
+		"pnl_date":            pnlDate,
 		"hkd_rate":            fxToCNY(1, "HKD", cnyRate, hkdRate),
 		"cny_market_value":    round2(cnyMV),
 		"cny_cost_value":      round2(cnyCV),
@@ -1275,6 +1336,33 @@ func isTradingDayCN(t time.Time) bool {
 	}
 	wd := t.Weekday()
 	return wd != time.Saturday && wd != time.Sunday
+}
+
+// lastTradingDayCN 返回 t 当天或之前最近的一个中国交易日（t 为交易日时即 t 本身）。
+// 用途：「当日盈亏」在非交易日拿到的其实是最近一个已收盘交易日的涨跌 —— 基金过了
+// 21:00 闸门后取的是上一个交易日净值，美股收盘后（现价 − 昨收）同样是上一个交易日，
+// A 股/港股则因休市没有新价。把它挂在「今天」名下会让人误以为休市也在赚钱，
+// 下游按归属日归月时更会把上月底的涨跌记进新月（2026-11-01 周日实盘复现）。
+// 一年里最长的连休（春节/国庆）不超过 10 天，14 天循环足以兜底，不会死循环。
+func lastTradingDayCN(t time.Time) time.Time {
+	d := t.In(time.FixedZone("CST", 8*3600))
+	for i := 0; i < 14; i++ {
+		if isTradingDayCN(d) {
+			return d
+		}
+		d = d.AddDate(0, 0, -1)
+	}
+	return t
+}
+
+// pnlDateOf 返回「此刻的实时盈亏」应归属的交易日（YYYY-MM-DD）：
+// 交易日即今天，非交易日回指最近一个交易日。
+func pnlDateOf(t time.Time) string {
+	d := t.In(time.FixedZone("CST", 8*3600))
+	if isTradingDayCN(d) {
+		return d.Format("2006-01-02")
+	}
+	return lastTradingDayCN(d).Format("2006-01-02")
 }
 
 // refreshAllQuotes fetches the latest quote for every holding, persists
