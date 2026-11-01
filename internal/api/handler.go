@@ -195,6 +195,14 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/holdings/:id/transactions", listTransactions)
 		g.POST("/holdings/:id/transactions/:txid/revert", revertTransaction)
 		g.POST("/holdings/:id/reopen", reopenHolding)
+		// 止盈止损：方案读写（持仓级参数）+ 站内提醒中心（铃铛）
+		g.GET("/holdings/:id/risk-plan", holdingRiskPlanGet)
+		g.PUT("/holdings/:id/risk-plan", holdingRiskPlanPut)
+		g.GET("/alerts", alertsList)
+		g.POST("/alerts/read", alertsRead)
+		g.POST("/alerts/scan", alertsScan)
+		g.POST("/alerts/apply-all", alertsApplyAll)
+		g.POST("/risk/preview", riskPreview)
 		// 基金定投：计划（周期/金额/限购/暂停）+ 期次记录（逐期确认、可改可撤）
 		g.GET("/dca/plans", listDCAPlans)
 		g.POST("/dca/plans", createDCAPlan)
@@ -587,6 +595,11 @@ func updateHolding(c *gin.Context) {
 		ex, e := db.Get(id)
 		if e == nil {
 			h.BuyPlan = ex.BuyPlan
+			// 止盈止损方案同理：持仓编辑表单不回传 risk_plan，必须保留旧值，
+			// 否则用户改个份额就把辛苦调好的价位清零（与 buy_plan 同一个坑）。
+			if strings.TrimSpace(h.RiskPlan) == "" {
+				h.RiskPlan = ex.RiskPlan
+			}
 			// 取旧值用于资金联动对比：仅当新旧总成本变化 ≥ 0.01 时才联动（避免误改名字/代码时触发）
 			oldCost := ex.Quantity*ex.CostPrice + ex.TransactionCost
 			newCost := h.Quantity*h.CostPrice + h.TransactionCost
@@ -636,6 +649,8 @@ func deleteHolding(c *gin.Context) {
 	}
 	// 持仓删除后其定投计划/期次一并清理（持仓已不存在，保留只会成为悬空数据）
 	_ = db.DeleteDCAPlansByHolding(id)
+	// 提醒事件同理：持仓没了，铃铛里的条目点进去无处可跳，且会永久占着未读数
+	_ = db.DeleteAlertsByHolding(id)
 	if err := db.Delete(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1019,6 +1034,9 @@ func refresh(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 手动刷新后立刻跑一轮止盈止损（异步，不拖慢响应）：用户点刷新就是想知道"现在到底该不该动"。
+	// 与定时扫描并存不会重复推——dedupe_key 唯一索引兜底。
+	go func(u int64) { _, _ = ScanAlerts(u, false) }(uid)
 	rate, degraded := market.GetUSDRate()
 	rateErr := ""
 	if degraded {
@@ -1658,6 +1676,13 @@ func runScheduledSnapshot(label string) {
 			continue
 		}
 		log.Printf("[snapshot] %s 定时盈亏记录完成(uid=%d)", label, u.ID)
+		// 止盈止损扫描排在盈亏落库之后：用同一批已刷新的收盘价判定，避免两次行情口径不一致。
+		// 非交易日照常扫（净值/美股仍有变化），重复的提醒由 dedupe_key 挡掉。
+		if rows, e := ScanAlerts(u.ID, false); e != nil {
+			log.Printf("[alert] %s 触发扫描失败(uid=%d): %v", label, u.ID, e)
+		} else if len(rows) > 0 {
+			log.Printf("[alert] %s 命中 %d 条(uid=%d)", label, len(rows), u.ID)
+		}
 		if !isTradingDayCN(time.Now()) && !strings.Contains(label, "美股") {
 			continue
 		}

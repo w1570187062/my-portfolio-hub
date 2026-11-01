@@ -92,6 +92,26 @@
       <!-- 盈亏日历：2026-10-28 从个人菜单「提出来」为顶栏图标按钮，置于 AI 助手右侧、样式与其一致；
            窄屏(≤880)导航吃紧，仍回归个人菜单入口（见 #acctPop [data-act="pnl-cal"] 的桌面隐藏规则） -->
       <button id="pnlCalTopBtn" class="btn icon-btn" type="button" title="盈亏日历" aria-label="盈亏日历" onclick="openPnlModal()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></button>
+      <!-- 止盈止损提醒（2026-10-31）：铃铛 + 未读角标，放在盈亏日历右侧、头像左侧。
+           止盈止损信号是「需要立刻处理」的信息，不能只沉在消息页，故独立成一个顶栏入口；
+           面板视觉与个人菜单同源（右侧下拉 / 发丝线 / 卡片底），不新造语言。 -->
+      <div class="bell-menu" id="bellMenu">
+        <button id="alertBellBtn" class="btn icon-btn" type="button" title="止盈止损提醒" aria-haspopup="true" aria-expanded="false" aria-label="止盈止损提醒">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 4 1 5.5 2 6.5H4c1-1 2-2.5 2-6.5"/><path d="M10.5 19a1.5 1.5 0 0 0 3 0"/></svg>
+          <span class="bell-badge" id="alertBadge" hidden>0</span>
+        </button>
+        <div class="alert-pop" id="alertPop" hidden>
+          <div class="alert-pop-head">
+            <span class="alert-pop-title">止盈止损提醒</span>
+            <button class="alert-mark" type="button" id="alertReadAll">全部已读</button>
+          </div>
+          <div class="alert-list" id="alertList"></div>
+          <div class="alert-pop-foot">
+            <button class="alert-foot-btn" type="button" data-act="scan">立即检查</button>
+            <button class="alert-foot-btn" type="button" data-act="notify">通知设置</button>
+          </div>
+        </div>
+      </div>
       <!-- 顶栏操作区：AI 助手 + 盈亏日历 + 头像；盈亏日历桌面档为顶栏按钮，窄屏回退到个人菜单 -->
       <!-- 右上角个人菜单（2026-10-27）：设置从主导航迁入此处，导航回落 5 项。
            样式参照 PanWatch AccountMenu：头像触发 + 右侧下拉面板 + 分组分隔线 + 激活项打勾 -->
@@ -624,6 +644,28 @@
                   </div>
           </div>
         </section>
+        <!-- ② 止盈止损提醒的独立投递开关（2026-10-31）：
+             与上面的「推送频率」解耦 —— 净值可以「仅收盘后」推，但止损信号必须即时到，
+             所以这里单独一份开关。站内铃铛恒可用，关掉只是不再额外走钉钉/邮件。 -->
+        <section class="settings-group">
+          <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>止盈止损提醒</span></h3>
+          <p class="settings-group-desc">触发止盈 / 止损 / 移动止盈 / 心理价位时，除站内铃铛外还要往哪里推。</p>
+          <div class="settings-group-body">
+            <div class="nt-alert-row">
+              <span class="nt-alert-name">站内铃铛（右上角）</span>
+              <label class="switch"><input type="checkbox" id="alInbox"><span class="switch-knob"></span></label>
+            </div>
+            <div class="nt-alert-row">
+              <span class="nt-alert-name">钉钉（需上方已启用）</span>
+              <label class="switch"><input type="checkbox" id="alDingtalk"><span class="switch-knob"></span></label>
+            </div>
+            <div class="nt-alert-row">
+              <span class="nt-alert-name">邮箱（需上方已启用）</span>
+              <label class="switch"><input type="checkbox" id="alEmail"><span class="switch-knob"></span></label>
+            </div>
+            <p class="tool-hint">止盈止损不走上方的推送频率策略：即使净值设为「仅收盘后」，触发信号也会单独发出。同一天同一档位只提醒一次。</p>
+          </div>
+        </section>
     </div>
   </div><!-- /notifyView -->
 
@@ -900,6 +942,58 @@
                 <input id="f_linked_code" class="linked-sym-code" placeholder="如 600519 / 00700 / AAPL" oninput="syncCatFromLinked()">
               </div>
               <label>备注 <input id="f_note" placeholder="备注（可选）"></label>
+              <!-- 止盈止损（2026-10-31）：参数按持仓保存，默认「不启用」——
+                   不给存量持仓强加风控价位，避免用户没看就把已有仓位套进机械止损。
+                   三种模式：不启用 / 自动定价（按预设 + ATR 算）/ 手动定价（自己填四档价）。 -->
+              <div class="risk-block">
+                <div class="risk-head">
+                  <span class="risk-title">止盈止损</span>
+                  <select id="f_risk_mode" class="risk-mode" aria-label="止盈止损模式">
+                    <option value="off">不启用</option>
+                    <option value="auto">自动定价</option>
+                    <option value="manual">手动定价</option>
+                  </select>
+                </div>
+                <div class="risk-body" id="riskBody" hidden>
+                  <div class="f-row">
+                    <label>预设方案
+                      <select id="f_risk_preset">
+                        <option value="steady">稳健（止损 8% / 回撤 6%）</option>
+                        <option value="balanced">均衡（止损 12% / 回撤 8%）</option>
+                        <option value="aggressive">激进（止损 18% / 回撤 12%）</option>
+                      </select>
+                    </label>
+                    <label>移动止盈回撤 % <input id="f_risk_trail" type="number" step="1" min="1" max="40" placeholder="8"></label>
+                  </div>
+                  <div class="risk-grid" id="riskGrid"></div>
+                  <div class="f-row">
+                    <label>心理价位 <input id="f_risk_psych" type="number" step="0.0001" min="0" placeholder="如 1.5000"></label>
+                    <label>备注 <input id="f_risk_psych_note" maxlength="60" placeholder="前高 / 整数关口"></label>
+                  </div>
+                  <!-- 费率阶梯独占一行：文案较长，挤在两列里会被原生 select 截断。
+                       只有 C 类份额存在「持有越短赎回费越高」，股票/场内 ETF 由 JS 整行隐藏。 -->
+                  <div class="f-row f-row-single" id="riskFeeRow">
+                    <label>赎回费率阶梯
+                      <select id="f_risk_fee">
+                        <option value="c7">C 类 · 7 天内 1.5%，之后 0</option>
+                        <option value="c7_30">C 类 · 7 天内 1.5%，30 天内 0.5%，之后 0</option>
+                        <option value="c30">C 类 · 30 天内 0.5%，之后 0</option>
+                        <option value="none">无赎回费（A 类 / 场内 ETF / 股票）</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="f-row" id="riskFeeExtraRow">
+                    <label id="riskFeeOverrideCell">实际赎回费率 % <input id="f_risk_fee_override" type="number" step="0.01" min="0" max="5" placeholder="留空 = 按阶梯算"></label>
+                    <label>提醒频率
+                      <select id="f_risk_repeat">
+                        <option value="once">每档只提醒一次</option>
+                        <option value="repeat">每天提醒一次</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="risk-hint" id="riskHint"></p>
+                </div>
+              </div>
             </div>
           </details>
           <div id="formErr" class="err"></div>
@@ -1088,8 +1182,12 @@
           <label>每期金额<input id="dcaAmount" type="number" step="0.01" min="0" placeholder="0.00" /></label>
           <label>单期上限<input id="dcaMax" type="number" step="0.01" min="0" placeholder="限购时填，可空" /></label>
         </div>
+        <!-- 每期费用：定投金额固定 → 费用本来也是固定值（基金=申购费、A 股=佣金+过户费、美股多为 0）。
+             只存一个固定金额，不做任何按费率的换算，提示行按标的类型给出常见取值参考。 -->
         <div class="df-row">
-          <label>费率（%）<span class="ua-hint">每期按 金额×费率 预填费用，可改</span><input id="dcaFeeRate" type="number" step="0.0001" min="0" placeholder="如 0.15 表示 0.15%" /></label>
+          <label><span id="dcaFeeTitle">每期费用（元）</span><span class="ua-hint" id="dcaFeeHint">按券商/渠道实际收取的固定费用填</span>
+            <input id="dcaFeeAmount" type="number" step="0.01" min="0" placeholder="0.00" />
+          </label>
         </div>
         <div class="df-field">
           <span class="df-label">定投间隔</span>
@@ -1121,10 +1219,10 @@
   </div>
 
   <!-- 定投记录：逐期确认 / 修改 / 跳过 / 撤销 -->
-  <!-- 基金定投：计划列表（顶部操作条「基金定投」入口；首页不再常驻卡片，2026-10-14） -->
+  <!-- 定投计划：计划列表（首页「快捷功能」入口；基金 / 股票标的都可挂计划） -->
   <div id="dcaPlansModal" class="modal" hidden>
     <div class="modal-card" style="width:560px; max-width:94vw;">
-      <h2>基金定投</h2>
+      <h2>定投计划</h2>
       <div id="dcaPlansBody" class="dca-list dca-plans-body"></div>
       <div class="modal-actions">
         <button class="btn ghost" id="dcaPlansNew" type="button">新建计划</button>
@@ -1691,6 +1789,23 @@
     </div>
   </div>
 </div>
+
+  <!-- ===== 提醒详情（铃铛条目点开）：列表只有两行摘要，正文与触发价位在这里看全 ===== -->
+  <div id="alertDetailModal" class="modal" hidden>
+    <div class="modal-card alert-detail-card">
+      <h2>提醒详情</h2>
+      <div class="ad-body">
+        <div class="ad-meta"><span class="alert-tag" id="alertDetailTag"></span><span id="alertDetailTime"></span></div>
+        <p class="ad-title" id="alertDetailTitle"></p>
+        <p class="ad-text" id="alertDetailText"></p>
+        <div class="ad-grid" id="alertDetailGrid"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="alertDetailClose">关闭</button>
+        <button class="btn primary" type="button" id="alertDetailGo">查看持仓</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ===== 通用确认弹框（置于根级，z-index 高于其它弹框，避免清空数据时被遮罩盖住；含「取消」以防误清空） ===== -->
   <div id="confirmModal" class="modal" hidden>

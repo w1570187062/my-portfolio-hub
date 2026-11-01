@@ -47,6 +47,15 @@ type cashflowReminderCfg struct {
 	Minute  int  `json:"minute"`  // 提醒发送时间（分）；默认 0
 }
 
+// alertChannelCfg 止盈止损提醒的独立投递开关。
+// 与 policy（净值推送频率）解耦：净值推送可以「仅收盘后」，但止损信号必须即时到。
+// inbox（站内铃铛）恒可用，这里只控制钉钉/邮件是否额外推送。
+type alertChannelCfg struct {
+	Inbox    bool `json:"inbox"`
+	Dingtalk bool `json:"dingtalk"`
+	Email    bool `json:"email"`
+}
+
 type notifyConfig struct {
 	Dingtalk dingtalkCfg `json:"dingtalk"`
 	Email    emailCfg    `json:"email"`
@@ -58,6 +67,8 @@ type notifyConfig struct {
 	// CashflowReminder 待还款提前一天提醒（如每月 10 号还款，则在 9 号 HH:MM 推送）。
 	// 提醒时间（hour/minute）可自定义，默认早上 7:00。
 	CashflowReminder cashflowReminderCfg `json:"cashflow_reminder"`
+	// Alerts 止盈止损提醒的独立渠道开关（不填 = 全开，见 loadNotifyConfig）
+	Alerts *alertChannelCfg `json:"alerts"`
 }
 
 func loadNotifyConfig() (notifyConfig, error) {
@@ -73,6 +84,12 @@ func loadNotifyConfig() (notifyConfig, error) {
 	// 便于前端首次展示与默认行为一致（用户主动设为 00:00 且开启时则保留）。
 	if !cfg.CashflowReminder.Enabled && cfg.CashflowReminder.Hour == 0 && cfg.CashflowReminder.Minute == 0 {
 		cfg.CashflowReminder.Hour = 7
+	}
+	// 止盈止损渠道：老配置里没有 alerts 字段（nil）时视为「全开」——
+	// 用户已经配好的钉钉/邮件立刻能收到风控信号，而不是静默漏掉；
+	// 想关时在前端通知页关掉即可（三个 false 就是关）。
+	if cfg.Alerts == nil {
+		cfg.Alerts = &alertChannelCfg{Inbox: true, Dingtalk: true, Email: true}
 	}
 	return cfg, nil
 }
@@ -105,6 +122,12 @@ func notifySettingsPost(c *gin.Context) {
 		len(b.Email.Password) > 500 || len(b.Email.From) > 200 || len(b.Email.To) > 2000 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "配置字段超出长度限制"})
 		return
+	}
+	// 止盈止损渠道开关：请求里没带就沿用旧值，避免"只想改钉钉 webhook"却把关掉的止盈提醒重置成全开
+	if b.Alerts == nil {
+		if old, e := loadNotifyConfig(); e == nil {
+			b.Alerts = old.Alerts
+		}
 	}
 	raw, _ := json.Marshal(b)
 	if err := db.SaveNotifyConfig(string(raw)); err != nil {

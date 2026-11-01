@@ -1873,6 +1873,9 @@ function pickSuggestion(it) {
   $('#fSuggest').hidden = true;
   $('#fSuggest').innerHTML = ''; // 清空，避免 <label> 重新聚焦输入框时下拉被 focus 处理器重开
   toggleLinkedSymbol();
+  // 换了标的就换类别：新增持仓时费率阶梯要跟着出现/消失（股票没有赎回费）
+  riskIsFund = selCat === 'fund';
+  applyRiskFeeUI();
 }
 
 // 名称/代码联想：输入防抖 220ms 请求 /api/search，点击结果即回填。
@@ -1976,6 +1979,8 @@ async function openModal(h) {
   toggleLinkedSymbol();
   $('#formErr').textContent = '';
   $('#modal').hidden = false;
+  // 止盈止损方案：编辑态异步拉取（要 basis/eval），新增态给默认「不启用」
+  loadRiskForm(h);
 }
 
 // 关联基金代码行：基金判定已统一由 linked_symbol 决定，此处恒显示该行（用户可随时补录关联代码）
@@ -2511,7 +2516,7 @@ $('#confirmOk').onclick = async () => {
 // 登录界面已移除：初始化时由 boot() 静默自动登录，无需手动输入
 // 「添加」按钮：先弹类型选择（持仓 / 理财），再打开对应弹框。
 // 默认高亮跟随顶部类别胶囊 —— 胶囊停在「理财」时默认选理财，否则默认选持仓。
-// 添加持仓 / 理财快照 / 基金定投：入口保留在首页「快捷功能」卡片（见 renderHomeDashboard）。
+// 添加持仓 / 理财快照 / 定投计划：入口保留在首页「快捷功能」卡片（见 renderHomeDashboard）。
 // 投资页原右侧按钮已按需求移除，对应入口改为：盈亏日历 / AI 助手在右上角操作区（act-group）。
 $('#dcaPlansClose').onclick = () => { $('#dcaPlansModal').hidden = true; };
 $('#dcaPlansNew').onclick = () => { $('#dcaPlansModal').hidden = true; openDCAModal(null); };
@@ -2632,6 +2637,9 @@ $('#form').onsubmit = async (e) => {
       const c = $('#f_linked_code').value.trim();
       return c ? `${m}:${c}` : '';
     })(),
+    // 止盈止损方案随持仓一起保存（后端 Update 会原样存 risk_plan）；
+    // 单独开一个保存通道会让"改了参数忘了点第二个保存"变成新的坑。
+    risk_plan: JSON.stringify(riskCollectPlan()),
   };
   let r;
   if (id) {
@@ -3366,7 +3374,7 @@ async function renderHomeDashboard() {
       { ico: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/>', label: '理财快照', fn: () => openSnapModal() },
       { ico: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', label: '记收入', fn: async () => { await openFlowModal('in'); } },
       { ico: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>', label: '记支出', fn: async () => { await openFlowModal('out'); } },
-      { ico: '<rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 9.5h16"/><path d="M8 3.2v3M16 3.2v3"/><path d="M12 11.6v4.2"/>', label: '基金定投', fn: () => openDCAPlans() },
+      { ico: '<rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 9.5h16"/><path d="M8 3.2v3M16 3.2v3"/><path d="M12 11.6v4.2"/>', label: '定投计划', fn: () => openDCAPlans() },
       { ico: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>', label: '新增平仓', fn: () => openBatchClosedModal() },
       // 「截图导入」入口已删除（2026-10-27）：该能力后续并入 AI 助手弹框，暂不实现，
       // 快捷区只保留已落地的操作，避免占位项点了只弹 toast。
@@ -8233,6 +8241,11 @@ async function loadNotifySettings() {
     $('#cfReminderEnabled').checked = !!cf.enabled;
     $('#cfReminderHour').value = (typeof cf.hour === 'number') ? cf.hour : 7;
     $('#cfReminderMinute').value = (typeof cf.minute === 'number') ? cf.minute : 0;
+    // 止盈止损的独立渠道开关（缺字段时按「开」处理，与后端 loadNotifyConfig 的默认一致）
+    const al = d.alerts || {};
+    $('#alInbox').checked = al.inbox !== false;
+    $('#alDingtalk').checked = al.dingtalk !== false;
+    $('#alEmail').checked = al.email !== false;
   } catch (e) { /* 忽略，使用默认值 */ }
   refreshChannelCollapse(); // 折叠态跟随服务端启用状态：未启用的渠道默认收起
 }
@@ -8258,6 +8271,12 @@ $('#notifySaveBtn').onclick = async () => {
       enabled: $('#cfReminderEnabled').checked,
       hour: Math.max(0, Math.min(23, parseInt($('#cfReminderHour').value, 10) || 0)),
       minute: Math.max(0, Math.min(59, parseInt($('#cfReminderMinute').value, 10) || 0)),
+    },
+    // 止盈止损独立渠道：不带上这一段后端会沿用旧值（不会重置），但显式传更符合「所见即所存」
+    alerts: {
+      inbox: $('#alInbox').checked,
+      dingtalk: $('#alDingtalk').checked,
+      email: $('#alEmail').checked,
     },
   };
   try {
@@ -9332,6 +9351,468 @@ function bindAcctMenu() {
   });
 }
 
+// ===== 止盈止损提醒（右上角铃铛 + 下拉面板，2026-10-31）=====
+// 数据来自 /api/alerts（服务端收盘后扫描已落库的事件）。轮询只负责「把已有结果拉下来」，
+// 60s 一次且仅在页面可见时执行 —— 扫描在服务端做，前端不需要关心行情。
+let alertCache = [];
+let alertUnread = 0;
+let alertBusy = false;
+
+// 类型 → 标签文案与配色类。止盈走涨色（红）、止损走跌色（绿），与全站口径一致。
+function alertKindMeta(kind) {
+  switch (kind) {
+    case 'take_profit': return { cls: 'tp', text: '止盈' };
+    case 'stop_loss': return { cls: 'sl', text: '止损' };
+    case 'trailing': return { cls: 'tp', text: '移动止盈' };
+    case 'psych': return { cls: 'psych', text: '心理价位' };
+    case 'fee_window': return { cls: 'fee', text: '费率' };
+    default: return { cls: '', text: '提醒' };
+  }
+}
+function alertDayOf(ts) {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const today = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  const day = String(ts || '').slice(0, 10);
+  return day === today ? '今天' : day;
+}
+function renderAlertList() {
+  const box = document.getElementById('alertList');
+  if (!box) return;
+  if (!alertCache.length) {
+    // 空态给一个「一键启用」入口：默认不启用是为了不擅自给存量持仓挂机械止损，
+    // 但让用户逐个进弹框开关 20 只也不现实，所以留一个显式确认的批量入口。
+    box.innerHTML = '<div class="alert-empty">暂无提醒<br>在持仓「高级选项 → 止盈止损」开启后，<br>收盘价触达价位时会出现在这里'
+      + '<br><br><button class="btn primary btn-sm" type="button" data-act="apply-all">为全部持仓套用均衡方案</button></div>';
+    return;
+  }
+  let html = '';
+  let lastDay = '';
+  alertCache.forEach((a) => {
+    const day = alertDayOf(a.created_at);
+    if (day !== lastDay) {
+      html += `<div class="alert-day">${esc(day)}</div>`;
+      lastDay = day;
+    }
+    const m = alertKindMeta(a.kind);
+    html += `<button class="alert-item${a.read_at ? '' : ' unread'}" type="button" data-aid="${a.id}" data-hid="${a.holding_id}">`
+      + '<span class="alert-dot" aria-hidden="true"></span>'
+      + '<span class="alert-main">'
+      + `<span class="alert-t">${esc(a.title || a.name || '提醒')}</span>`
+      + `<span class="alert-b">${esc(a.body || '')}</span>`
+      + '<span class="alert-meta">'
+      + `<span class="alert-tag ${m.cls}">${m.text}</span>`
+      + `<span class="alert-name">${esc(a.name || '')}</span>`
+      + `<span class="alert-time">${esc(String(a.created_at || '').slice(11, 16))}</span>`
+      + '</span></span></button>';
+  });
+  box.innerHTML = html;
+}
+function updateAlertBadge(n) {
+  const b = document.getElementById('alertBadge');
+  if (!b) return;
+  const v = Number(n) || 0;
+  b.hidden = v <= 0;
+  b.textContent = v > 99 ? '99+' : String(v);
+}
+async function loadAlerts() {
+  if (alertBusy) return;
+  alertBusy = true;
+  try {
+    const r = await api('/api/alerts?limit=50');
+    if (r.ok) {
+      const d = await r.json();
+      alertCache = d.items || [];
+      alertUnread = Number(d.unread) || 0;
+      updateAlertBadge(alertUnread);
+      renderAlertList();
+    }
+  } catch (_) { /* 未登录/离线：保留旧数据，不打断主流程 */ }
+  alertBusy = false;
+}
+async function markAlertsRead(ids) {
+  try {
+    const r = await api('/api/alerts/read', { method: 'POST', body: JSON.stringify({ ids: ids || [] }) });
+    if (r.ok) {
+      const d = await r.json();
+      updateAlertBadge(d.unread);
+      if (!ids || !ids.length) alertCache = alertCache.map((a) => ({ ...a, read_at: a.read_at || '1' }));
+      else alertCache = alertCache.map((a) => (ids.includes(a.id) ? { ...a, read_at: a.read_at || '1' } : a));
+      renderAlertList();
+    }
+  } catch (_) { /* 忽略 */ }
+}
+// 打开提醒详情：列表里只有两行摘要，完整正文与触发价位在这里看全。
+// 「看详情」即视为已读，但只在真的未读时才写库，避免每次点开都发一次请求。
+function openAlertDetail(aid) {
+  const a = alertCache.find((x) => String(x.id) === String(aid));
+  const modal = document.getElementById('alertDetailModal');
+  if (!a || !modal) return;
+  const m = alertKindMeta(a.kind);
+  const tag = document.getElementById('alertDetailTag');
+  if (tag) { tag.className = 'alert-tag' + (m.cls ? ' ' + m.cls : ''); tag.textContent = m.text; }
+  const time = document.getElementById('alertDetailTime');
+  if (time) time.textContent = a.created_at || '';
+  const title = document.getElementById('alertDetailTitle');
+  if (title) title.textContent = a.title || a.name || '提醒';
+  const text = document.getElementById('alertDetailText');
+  if (text) text.textContent = a.body || '';
+  const grid = document.getElementById('alertDetailGrid');
+  if (grid) {
+    const num = (v) => Number(v) || 0;
+    const px = (v) => (num(v) > 0 ? num(v).toFixed(4) : '');
+    const cells = [];
+    if (num(a.price) > 0) cells.push(['现价', px(a.price), '']);
+    if (num(a.target) > 0) cells.push(['触发价位', px(a.target), '']);
+    if (num(a.cost) > 0) cells.push(['成本价', px(a.cost), '']);
+    if (num(a.cost) > 0) {
+      const p = num(a.pnl_pct);
+      cells.push(['相对成本', (p >= 0 ? '+' : '') + p.toFixed(2) + '%', p >= 0 ? 'up' : 'down']);
+    }
+    // 只有场外基金才有赎回费。is_fund 由后端按持仓现算（不是事件里的冗余字段），
+    // 光看 fee_pct>0 不够：历史事件存着旧值，股票也会中招。
+    if (a.is_fund && num(a.fee_pct) > 0) cells.push(['赎回费率', num(a.fee_pct).toFixed(2) + '%', '']);
+    grid.innerHTML = cells.map((c) => `<div class="risk-cell${c[2] ? ' ' + c[2] : ''}">`
+      + `<div class="risk-cell-k">${c[0]}</div>`
+      + `<div class="risk-cell-v">${c[1]}</div></div>`).join('');
+  }
+  const go = document.getElementById('alertDetailGo');
+  if (go) { go.dataset.hid = a.holding_id || ''; go.hidden = !a.holding_id; }
+  modal.hidden = false;
+  if (!a.read_at) markAlertsRead([a.id]);
+}
+function closeAlertDetail() {
+  const modal = document.getElementById('alertDetailModal');
+  if (modal) modal.hidden = true;
+}
+// 点提醒 → 标记已读 + 跳到投资页对应持仓（不自动滚动定位：持仓行按分组重排，跳错更糟）
+function openAlertTarget(hid) {
+  closeAlertPop();
+  markAlertsRead([]);
+  if (hid) navigate('invest');
+}
+// 一键套用：给还没设过方案的持仓挂上「均衡」自动定价（已启用的不动），二次确认防误触
+function applyAllRiskPlans() {
+  openConfirm({
+    title: '套用均衡方案',
+    msg: '将为所有尚未启用的持仓按「均衡」预设开启自动止盈止损（止损 12% / 移动止盈回撤 8%），已设置过的持仓不受影响。价位由收盘价与技术波动算出，触发后只提醒、不自动卖出。',
+    okText: '全部启用',
+    onOk: async () => {
+      try {
+        const r = await api('/api/alerts/apply-all?preset=balanced', { method: 'POST' });
+        if (!r.ok) { toast('套用失败 (HTTP ' + r.status + ')', 'err'); return; }
+        const d = await r.json();
+        toast(`已为 ${d.updated || 0} 只持仓启用止盈止损`, 'ok');
+        scanAlertsNow();
+      } catch (e) { toast('套用异常：' + e.message, 'err'); }
+    },
+  });
+}
+async function scanAlertsNow() {
+  try {
+    const r = await api('/api/alerts/scan', { method: 'POST' });
+    if (!r.ok) { toast('检查失败 (HTTP ' + r.status + ')', 'err'); return; }
+    const d = await r.json();
+    const n = (d.items || []).filter((x) => x.inserted).length;
+    toast(n > 0 ? `新增 ${n} 条提醒` : '已检查，暂无新提醒', 'ok');
+    await loadAlerts();
+  } catch (e) { toast('检查异常：' + e.message, 'err'); }
+}
+function openAlertPop() {
+  const pop = document.getElementById('alertPop');
+  const btn = document.getElementById('alertBellBtn');
+  if (!pop) return;
+  pop.hidden = false;
+  if (btn) btn.setAttribute('aria-expanded', 'true');
+  loadAlerts();
+}
+function closeAlertPop() {
+  const pop = document.getElementById('alertPop');
+  const btn = document.getElementById('alertBellBtn');
+  if (pop) pop.hidden = true;
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+function bindAlertBell() {
+  const menu = document.getElementById('bellMenu');
+  const pop = document.getElementById('alertPop');
+  const btn = document.getElementById('alertBellBtn');
+  if (!menu || !pop || !btn) return;
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    if (pop.hidden) openAlertPop(); else closeAlertPop();
+  };
+  pop.addEventListener('click', (e) => e.stopPropagation());
+  pop.addEventListener('click', (e) => {
+    const item = e.target.closest('.alert-item');
+    if (item) { openAlertDetail(item.dataset.aid); return; }
+    const act = e.target.closest('[data-act]');
+    if (!act) return;
+    if (act.dataset.act === 'scan') scanAlertsNow();
+    else if (act.dataset.act === 'apply-all') applyAllRiskPlans();
+    else if (act.dataset.act === 'notify') { closeAlertPop(); navigate('notify'); }
+  });
+  const readAll = document.getElementById('alertReadAll');
+  if (readAll) readAll.onclick = (e) => { e.stopPropagation(); markAlertsRead([]); };
+  // 详情弹框：关闭 / 查看持仓 / 点遮罩关闭 / Esc 关闭
+  const dlg = document.getElementById('alertDetailModal');
+  const dClose = document.getElementById('alertDetailClose');
+  const dGo = document.getElementById('alertDetailGo');
+  if (dClose) dClose.onclick = closeAlertDetail;
+  if (dGo) dGo.onclick = () => {
+    const hid = Number(dGo.dataset.hid) || 0;
+    closeAlertDetail();
+    openAlertTarget(hid);
+  };
+  if (dlg) dlg.addEventListener('click', (e) => { if (e.target === dlg) closeAlertDetail(); });
+  document.addEventListener('click', (e) => {
+    if (pop.hidden) return;
+    // 点详情弹框内部不算「点到面板外」，否则看详情时列表会跟着消失
+    if (dlg && !dlg.hidden && dlg.contains(e.target)) return;
+    if (!menu.contains(e.target)) closeAlertPop();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (dlg && !dlg.hidden) { closeAlertDetail(); return; }
+    closeAlertPop();
+  });
+  // 首次拉一次未读数（角标要在首屏就正确，而不是等用户点开面板）
+  loadAlerts();
+  setInterval(() => { if (!document.hidden) loadAlerts(); }, 60000);
+}
+
+// ===== 持仓级止盈止损方案（高级选项内，2026-10-31）=====
+// 价位一律由后端算（ATR / MA60 / BOLL / 近 60-120 日高低点全在 Go 侧），前端只收集参数与展示结果。
+// 理由：同一套定价公式在 JS 与 Go 各写一遍，只要有一处口径差 0.01，用户看到的价和实际触发的价就不是同一个。
+// C 类份额才有「持有越短赎回费越高」这件事：7 天档最常见，其次 7+30 两档、30 天单档。
+// A 类买入时已付申购费，时间层面不再有赎回费（晨星那套 158 天临界是含申购费的总成本口径），
+// 所以 A 类与股票/场内 ETF 一起归到「无赎回费」，不做时间阶梯。
+const RISK_FEE_TIERS = {
+  c7: [{ days: 0, rate: 1.5 }, { days: 7, rate: 0 }],
+  c7_30: [{ days: 0, rate: 1.5 }, { days: 7, rate: 0.5 }, { days: 30, rate: 0 }],
+  c30: [{ days: 0, rate: 0.5 }, { days: 30, rate: 0 }],
+  none: [{ days: 0, rate: 0 }],
+};
+// 旧 plan 存的是 c / a 两个键，读回来时映射到新模板，避免下拉显示空白
+const RISK_FEE_ALIAS = { c: 'c7', a: 'none' };
+let riskIsFund = true; // 当前弹框里的持仓是否有赎回费概念（渲染表单时由持仓类别决定）
+let riskPreviewTimer = null;
+let riskBusy = false;
+
+function riskNum(id) {
+  const el = document.getElementById(id);
+  if (!el) return 0;
+  const v = parseFloat(el.value);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+// 收集当前表单里的方案（保存持仓时随 payload 一起提交，避免再开一个保存通道）
+function riskCollectPlan() {
+  const pick = (id, dft) => { const el = document.getElementById(id); return el && el.value ? el.value : dft; };
+  const rawFee = pick('f_risk_fee', 'c7');
+  // 非基金（股票 / 场内 ETF）一律落「无赎回费」，隐藏的下拉里残留值不能带进库
+  const feeKey = riskIsFund ? (RISK_FEE_ALIAS[rawFee] || rawFee) : 'none';
+  return {
+    mode: pick('f_risk_mode', 'off'),
+    preset: pick('f_risk_preset', 'balanced'),
+    stop_price: riskNum('f_risk_stop'),
+    tp1: riskNum('f_risk_tp1'),
+    tp2: riskNum('f_risk_tp2'),
+    tp3: riskNum('f_risk_tp3'),
+    trailing_pct: riskNum('f_risk_trail'),
+    break_even_pct: 0, // 留给预设默认（后端 >0 才覆盖），不在 UI 暴露
+    psych_price: riskNum('f_risk_psych'),
+    psych_note: (document.getElementById('f_risk_psych_note') || {}).value || '',
+    fee_class: feeKey,
+    fee_tiers: RISK_FEE_TIERS[feeKey] || RISK_FEE_TIERS.c7,
+    fee_override: riskIsFund ? riskNum('f_risk_fee_override') : 0,
+    repeat: pick('f_risk_repeat', 'once'),
+    cooldown_min: 0,
+    max_per_day: 3,
+  };
+}
+function riskPctText(target, base) {
+  if (!(target > 0) || !(base > 0)) return '';
+  const p = ((target - base) / base) * 100;
+  return (p >= 0 ? '+' : '') + p.toFixed(2) + '%';
+}
+// 渲染结果区（只读价卡 / 手动输入框）。manual 模式不重建 DOM，否则用户打字时输入框会被替换掉。
+function renderRiskResult(mode, basis, ev, plan) {
+  const grid = document.getElementById('riskGrid');
+  const hint = document.getElementById('riskHint');
+  if (!grid) return;
+  const px = (v) => (v > 0 ? Number(v).toFixed(4) : '—');
+  if (mode === 'manual') {
+    if (grid.dataset.mode === 'manual') { if (hint) hint.textContent = riskHintText(basis) + noteSuffix(ev); return; }
+    grid.dataset.mode = 'manual';
+    const v = (x) => (x > 0 ? Number(x).toFixed(4) : '');
+    const cell = (id, k, dflt, tone, note) => `<div class="risk-cell${tone ? ' ' + tone : ''}">`
+      + `<div class="risk-cell-k">${k}</div>`
+      + `<input id="${id}" type="number" step="0.0001" min="0" value="${v(dflt)}" placeholder="0.0000" oninput="debounceRiskPreview()">`
+      + `<div class="risk-cell-d">${note}</div></div>`;
+    grid.innerHTML = cell('f_risk_stop', '止损价', plan.stop_price || (ev && ev.stop_price), 'down', '跌破即提醒（不自动卖出）')
+      + cell('f_risk_tp1', '止盈 1 · 减 1/3', plan.tp1 || (ev && ev.tp1), 'up', '第一档落袋')
+      + cell('f_risk_tp2', '止盈 2 · 减 1/3', plan.tp2 || (ev && ev.tp2), 'up', '第二档落袋')
+      + cell('f_risk_tp3', '止盈 3 · 尾仓', plan.tp3 || (ev && ev.tp3), 'up', '趋势尾仓/心理价位');
+    if (hint) hint.textContent = riskHintText(basis) + noteSuffix(ev);
+    return;
+  }
+  grid.dataset.mode = 'auto';
+  const cost = basis ? basis.cost : 0;
+  const items = [
+    ['止损价', ev && ev.stop_price, ev && ev.stop_reason, 'down'],
+    ['止盈 1 · 减 1/3', ev && ev.tp1, '距成本 ' + riskPctText(ev && ev.tp1, cost), 'up'],
+    ['止盈 2 · 减 1/3', ev && ev.tp2, '距成本 ' + riskPctText(ev && ev.tp2, cost), 'up'],
+    ['止盈 3 · 尾仓', ev && ev.tp3, '距成本 ' + riskPctText(ev && ev.tp3, cost), 'up'],
+    ['移动止盈线', ev && ev.trailing_on ? ev.trailing_line : 0,
+      ev && ev.trailing_on ? '自持仓期高点回撤触发' : '涨幅不足以支撑回撤止盈，仍由止损线保护', ''],
+    ['距止盈 1', ev && ev.to_tp1_pct, (ev && ev.to_tp1_pct >= 0 ? '还需上涨 ' : '已越过 ') + Math.abs(Number(ev && ev.to_tp1_pct) || 0).toFixed(2) + '%', ''],
+  ];
+  grid.innerHTML = items.map((it) => `<div class="risk-cell${it[3] ? ' ' + it[3] : ''}">`
+    + `<div class="risk-cell-k">${it[0]}</div>`
+    + `<div class="risk-cell-v">${it[0].includes('距') ? (it[1] == null ? '—' : Number(it[1]).toFixed(2) + '%') : px(it[1])}</div>`
+    + `<div class="risk-cell-d">${it[2] || ''}</div></div>`).join('');
+  if (hint) hint.textContent = riskHintText(basis) + noteSuffix(ev);
+}
+function noteSuffix(ev) {
+  return ev && ev.note ? ' · ' + ev.note : '';
+}
+function riskHintText(basis) {
+  if (!basis) return '填写证券代码并保存后，才能按收盘价计算技术价位。';
+  const days = basis.holding_days || 0;
+  const fee = Number(basis.fee_pct) || 0;
+  const atr = Number(basis.atr_pct) || 0;
+  // 股票 / 场内 ETF 没有赎回费，提示里不提
+  const head = basis.is_fund === false
+    ? `持有 ${days} 天 · 日均波动 ${atr.toFixed(2)}%`
+    : `持有 ${days} 天 · 当前赎回费 ${fee.toFixed(2)}% · 日均波动 ${atr.toFixed(2)}%`;
+  let s = head;
+  if (fee > 0 && basis.next_tier_days > 0) {
+    s += `（再持有 ${basis.next_tier_days} 天降至 ${Number(basis.next_tier_rate).toFixed(2)}%）`;
+  }
+  s += basis.source === 'nav' ? ' · 基金按净值计算' : ' · 按日线收盘计算';
+  return s;
+}
+// 控件填充（只在打开弹框时用；预览刷新只动结果区，不碰控件）
+// 股票 / 场内 ETF 没有赎回费：整行隐藏费率阶梯与实际费率输入，
+// 「提醒频率」由两列降为单列占满，避免右侧空出半格。
+function applyRiskFeeUI() {
+  const feeRow = document.getElementById('riskFeeRow');
+  const overrideCell = document.getElementById('riskFeeOverrideCell');
+  const extraRow = document.getElementById('riskFeeExtraRow');
+  if (feeRow) feeRow.hidden = !riskIsFund;
+  if (overrideCell) overrideCell.hidden = !riskIsFund;
+  if (extraRow) extraRow.classList.toggle('f-row-single', !riskIsFund);
+}
+function renderRiskForm(plan, basis, ev, isFundFlag) {
+  const modeEl = document.getElementById('f_risk_mode');
+  if (!modeEl) return;
+  riskIsFund = isFundFlag !== false;
+  modeEl.value = plan.mode || 'off';
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  setVal('f_risk_preset', plan.preset || 'balanced');
+  setVal('f_risk_trail', plan.trailing_pct > 0 ? plan.trailing_pct : '');
+  setVal('f_risk_psych', plan.psych_price > 0 ? plan.psych_price : '');
+  setVal('f_risk_psych_note', plan.psych_note || '');
+  const feeCls = plan.fee_class || 'c7';
+  setVal('f_risk_fee', RISK_FEE_ALIAS[feeCls] || feeCls);
+  setVal('f_risk_fee_override', plan.fee_override > 0 ? plan.fee_override : '');
+  setVal('f_risk_repeat', plan.repeat || 'once');
+  applyRiskFeeUI();
+  const body = document.getElementById('riskBody');
+  const grid = document.getElementById('riskGrid');
+  if (grid) grid.dataset.mode = ''; // 允许重建（切换模式时布局不同）
+  if (body) body.hidden = modeEl.value === 'off';
+  if (modeEl.value !== 'off') renderRiskResult(modeEl.value, basis, ev, plan);
+}
+function debounceRiskPreview() {
+  if (riskPreviewTimer) clearTimeout(riskPreviewTimer);
+  riskPreviewTimer = setTimeout(previewRisk, 350);
+}
+async function previewRisk() {
+  const modeEl = document.getElementById('f_risk_mode');
+  const body = document.getElementById('riskBody');
+  if (!modeEl || !body) return;
+  if (modeEl.value === 'off') { body.hidden = true; return; }
+  body.hidden = false;
+  const plan = riskCollectPlan();
+  const idEl = document.getElementById('f_id');
+  const orig = allHoldings.find((x) => String(x.id) === String(idEl ? idEl.value : ''));
+  const payload = {
+    symbol: (document.getElementById('f_symbol') || {}).value || '',
+    name: (document.getElementById('f_name') || {}).value || '',
+    category: selCat || 'stock',
+    market: (document.getElementById('f_market') || {}).value || '',
+    currency: 'cny',
+    quantity: parseFloat((document.getElementById('f_quantity') || {}).value) || 0,
+    cost_price: parseFloat((document.getElementById('f_cost_price') || {}).value) || 0,
+    current_price: orig ? Number(orig.current_price) || 0 : 0,
+    buy_date: (document.getElementById('f_buy_date') || {}).value || '',
+    plan,
+  };
+  if (!payload.symbol || !(payload.cost_price > 0)) {
+    renderRiskResult(modeEl.value, null, null, plan);
+    return;
+  }
+  if (riskBusy) return;
+  riskBusy = true;
+  try {
+    const r = await api('/api/risk/preview', { method: 'POST', body: JSON.stringify(payload) });
+    if (r.ok) {
+      const d = await r.json();
+      renderRiskResult(modeEl.value, d.basis, d.eval, plan);
+    }
+  } catch (_) { /* 预览失败不打断表单填写 */ }
+  riskBusy = false;
+}
+// 打开持仓弹框时载入方案（编辑态走接口拿 basis/eval，新增态给默认值）
+async function loadRiskForm(h) {
+  const modeEl = document.getElementById('f_risk_mode');
+  if (!modeEl) return;
+  const dft = { mode: 'off', preset: 'balanced', fee_class: 'c7', repeat: 'once', trailing_pct: 0, break_even_pct: 0, psych_price: 0 };
+  // 新增持仓还没落库，只能按当前选中的类别判断；编辑态交给接口回显的 basis 更准
+  const fund = h ? isFund(h) : selCat === 'fund';
+  if (h) {
+    try {
+      const r = await api('/api/holdings/' + h.id + '/risk-plan');
+      if (r.ok) {
+        const d = await r.json();
+        const flag = d.basis && typeof d.basis.is_fund === 'boolean' ? d.basis.is_fund : fund;
+        renderRiskForm({ ...dft, ...(d.plan || {}) }, d.basis, d.eval, flag);
+        return;
+      }
+    } catch (_) { /* 回落默认 */ }
+  }
+  renderRiskForm(dft, null, null, fund);
+}
+// 一次绑定：下拉/输入变化即重算预览
+(function bindRiskBlock() {
+  const wire = () => {
+    const modeEl = document.getElementById('f_risk_mode');
+    if (!modeEl || modeEl.dataset.wired) return;
+    modeEl.dataset.wired = '1';
+    modeEl.onchange = () => {
+      const body = document.getElementById('riskBody');
+      if (body) body.hidden = modeEl.value === 'off';
+      const grid = document.getElementById('riskGrid');
+      if (grid) grid.dataset.mode = '';
+      if (modeEl.value !== 'off') previewRisk();
+    };
+    const presetEl = document.getElementById('f_risk_preset');
+    if (presetEl) presetEl.onchange = () => {
+      // 预设切换时把该档的移动止盈回撤灌进输入框（用户仍可再手改）
+      const t = { steady: 6, balanced: 8, aggressive: 12 }[presetEl.value] || 8;
+      const trail = document.getElementById('f_risk_trail');
+      if (trail) trail.value = t;
+      previewRisk();
+    };
+    ['f_risk_trail', 'f_risk_psych', 'f_risk_psych_note', 'f_risk_fee', 'f_risk_fee_override', 'f_risk_repeat'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.oninput = debounceRiskPreview;
+    });
+  };
+  wire();
+  document.addEventListener('DOMContentLoaded', wire);
+})();
+
 async function fetchUsers() {
   try {
     const r = await fetch('/api/users');
@@ -9544,6 +10025,8 @@ async function onUserDeleteConfirm() {
 (function wireUserUI() {
   // 头像按钮 -> 个人菜单（内部含「管理账本」入口打开弹框）
   bindAcctMenu();
+  // 顶栏铃铛 -> 止盈止损提醒面板（未读数角标 + 60s 轮询）
+  bindAlertBell();
   // 弹框：点遮罩关闭（.modal 铺满全屏，点到卡片以外即 e.target 是 #userSheet 本身）；
   // Esc 由全局 keydown 统一处理（.modal:not([hidden])），右上角 ✕ 由 injectModalClose 自动注入
   const sheet = document.getElementById('userSheet');
@@ -11416,7 +11899,7 @@ document.addEventListener('keydown', (e) => {
 
 
 /* ============================================================================
- * 基金定投（DCA）
+ * 定投计划（DCA）：基金 / 股票标的都可挂计划
  * 计划只排期不动账；每一期由用户确认后才加仓 + 扣款，成交价/份额可改、可撤销。
  * ========================================================================== */
 const DCA_INTERVALS = [
@@ -11513,9 +11996,10 @@ async function openDCAModal(p) {
   document.getElementById('dcaDay').value = p ? (p.day_of_month || 1) : 1;
   document.getElementById('dcaStart').value = p ? (p.start_date || '') : todayStr();
   document.getElementById('dcaEnd').value = p ? (p.end_date || '') : '';
-  document.getElementById('dcaFeeRate').value = p && p.fee_rate > 0 ? round4(p.fee_rate) : '';
+  document.getElementById('dcaFeeAmount').value = p && p.fee_amount > 0 ? String(round2(p.fee_amount)) : '';
   renderDCAInterval();
   fillDCACash(p);
+  syncDCAFeeField(); // 标的已选中，费率格按基金/股票切口径
   document.getElementById('dcaErr').textContent = '';
   document.getElementById('dcaModal').hidden = false;
 }
@@ -11538,7 +12022,7 @@ function renderDCAInterval() {
   if (dayRow) dayRow.hidden = !(dcaInterval === 'monthly' || dcaInterval === 'quarterly');
 }
 
-// 标的选「＋ 新建基金…」时露出搜索框；切回已有标的则收起。
+// 标的选「＋ 新建基金…」时露出搜索框（新建只走基金搜索，股票直接选已有持仓）；切回已有标的则收起。
 // 两个分支都做重置：确保「已选标的」确认条（dcaNewPicked）只在用户从联想列表
 // 点选完成后才出现——进入/离开新建模式时若残留上次的选中态，会让人误以为已填好。
 function resetDCANew() {
@@ -11590,6 +12074,36 @@ function fillDCACash(p) {
     const row = panel.querySelector('.ac-pick-row[data-id="' + preset.id + '"]');
     if (row) row.classList.add('on');
   }
+}
+
+// 每期费用是一个**固定金额**，不做任何按费率的换算 ——
+//   基金 → 申购费（渠道费率 × 每期金额，自己算一次填进来）
+//   A 股 → 佣金（多数券商 5 元起步）+ 过户费，小额定投基本恒为 5 元
+//   美股 → 多数券商零佣金，通常填 0；按比例算反而是凭空造出成本
+// 所以这里只给「常见取值」的文字参考，不再提供按比例试算的入口。
+function dcaFeeHint(h) {
+  const cur = String((h && h.currency) || 'CNY').toLowerCase();
+  if (!h || isFund(h)) return '申购费：渠道费率 × 每期金额，算一次填固定值';
+  if (cur === 'usd') return '美股券商多为零佣金，通常填 0';
+  if (String(h.market || '') === '沪深') return '佣金多为 5 元起步 + 过户费，小额定投基本恒为 5 元';
+  return '按券商实际收取的固定费用填';
+}
+
+// 当前选中的标的；「＋ 新建基金…」(value=0) 归到基金口径
+function currentDCAHolding() {
+  const sel = document.getElementById('dcaHolding');
+  const raw = sel ? String(sel.value) : '';
+  if (!raw || raw === '0') return null;
+  return (allHoldings || []).find((x) => String(x.id) === raw) || null;
+}
+
+function syncDCAFeeField() {
+  const titleEl = document.getElementById('dcaFeeTitle');
+  const hintEl = document.getElementById('dcaFeeHint');
+  if (!titleEl || !hintEl) return;
+  const h = currentDCAHolding();
+  titleEl.textContent = '每期费用（' + curSymbolJS((h && h.currency) || 'CNY') + '）';
+  hintEl.textContent = dcaFeeHint(h);
 }
 
 // 新增基金：名称/代码联动搜索（复用 /api/search，选中即回填名称+代码，与持仓弹框一致）
@@ -11671,7 +12185,7 @@ async function saveDCAPlan() {
     start_date: document.getElementById('dcaStart').value || '',
     end_date: document.getElementById('dcaEnd').value || '',
     max_amount: max,
-    fee_rate: parseFloat(document.getElementById('dcaFeeRate').value) || 0,
+    fee_amount: parseFloat(document.getElementById('dcaFeeAmount').value) || 0,
     cash_account_id: Number(document.getElementById('dcaCash').value) || 0,
   };
   if (!holdingID) {
@@ -11813,7 +12327,7 @@ function openDCAExec(rec, mode) {
   const amtEl = document.getElementById('dcaExecAmt');
   const feeEl = document.getElementById('dcaExecFee');
   priceEl.value = mode === 'edit' ? round4(rec.price) : round4(h && h.current_price > 0 ? h.current_price : 0);
-  feeEl.value = mode === 'edit' ? round2(rec.fee) : round2((rec.amount || 0) * ((p.fee_rate || 0) / 100));
+  feeEl.value = mode === 'edit' ? round2(rec.fee) : round2(p.fee_amount || 0);
   amtEl.value = round2(mode === 'edit' ? (rec.actual_amount || 0) : (rec.amount || 0));
   syncDCAQtyFromAmt();
   document.getElementById('dcaExecHint').textContent = esc(rec.plan_date) + ' · 第' + rec.seq + '期 · ' + esc(p.holding_name || '');
@@ -11908,7 +12422,7 @@ async function dcaDeletePlan() {
 // ---------------- 事件绑定（静态元素） ----------------
 (function bindDCA() {
   const h = document.getElementById('dcaHolding');
-  if (h) h.onchange = () => { toggleDCANew(); fillDCACash(null); };
+  if (h) h.onchange = () => { toggleDCANew(); fillDCACash(null); syncDCAFeeField(); };
   wireDcaSearch(); // 新增基金：名称/代码联动搜索（仅绑定一次）
   const save = document.getElementById('dcaSave');
   if (save) save.onclick = () => saveDCAPlan();

@@ -34,6 +34,7 @@ type Holding struct {
 	AssetType       string  `json:"asset_type"`       // 资产类型标签（红利价值/成长科技/消费/医药等，来自设置）
 	TransactionCost float64 `json:"transaction_cost"` // 交易成本/手续费，按持仓币种计，可选
 	BuyPlan         string  `json:"buy_plan"`         // 基金补仓计划 JSON（净值刷新时计算，不写 note 列）
+	RiskPlan        string  `json:"risk_plan"`        // 止盈止损方案 JSON（持仓级参数，空 = 未启用）
 	Closed          bool    `json:"closed"`           // 是否已清仓（份额已归零）
 	LastQuantity    float64 `json:"last_quantity"`    // 清仓前最后份额（供历史盈亏重算基准）
 	LastCostPrice   float64 `json:"last_cost_price"`  // 清仓前最后成本价（供历史盈亏重算基准）
@@ -119,6 +120,9 @@ func Init(path string) error {
 	if e := DB.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('holdings') WHERE name='asset_type'`).Scan(&atc); e == nil && atc == 0 {
 		_, _ = DB.Exec(`ALTER TABLE holdings ADD COLUMN asset_type TEXT NOT NULL DEFAULT ''`)
 	}
+	// 止盈止损方案：单列 JSON（模式/预设/三档止盈/止损/移动止盈/心理价位/费率阶梯/去重参数），
+	// 空串 = 未启用（不评估）。用一列而不是 N 列，避免每次调参都要 ALTER。
+	addColumnIfMissing("holdings", "risk_plan", "TEXT NOT NULL DEFAULT ''")
 	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS price_daily (
 		date    TEXT NOT NULL,
 		symbol  TEXT NOT NULL,
@@ -177,6 +181,13 @@ func Init(path string) error {
 	}
 	if err := initNotifySettings(); err != nil {
 		return fmt.Errorf("init notify_settings: %w", err)
+	}
+	if err := initAlertEvents(); err != nil {
+		return fmt.Errorf("init alert_events: %w", err)
+	}
+	// 历史提醒里固化的「赎回费率 X%」对股票是假信息，启动时顺手清掉（幂等）
+	if err := RepairAlertFeeText(); err != nil {
+		return fmt.Errorf("repair alert fee text: %w", err)
 	}
 	if err := initBuyPlanExecuted(); err != nil {
 		return fmt.Errorf("init buy_plan_executed: %w", err)
@@ -831,7 +842,7 @@ func LoadFXRate() (cny, hkd, yesterdayCny, yesterdayHkd float64, updated string,
 
 // List returns holdings for a user (userID). Pass 0 to get all (used by scheduled jobs).
 func List(userID int64) ([]Holding, error) {
-	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,transaction_cost,asset_type FROM holdings"
+	q := "SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,transaction_cost,asset_type,risk_plan FROM holdings"
 	var args []interface{}
 	if userID > 0 {
 		q += " WHERE user_id=?"
@@ -846,7 +857,7 @@ func List(userID int64) ([]Holding, error) {
 	var out []Holding
 	for rows.Next() {
 		var h Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.TransactionCost, &h.AssetType); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.TransactionCost, &h.AssetType, &h.RiskPlan); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -856,8 +867,8 @@ func List(userID int64) ([]Holding, error) {
 
 func Get(id int64) (*Holding, error) {
 	var h Holding
-	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,transaction_cost,asset_type FROM holdings WHERE id=?", id).
-		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.TransactionCost, &h.AssetType)
+	err := DB.QueryRow("SELECT id,name,symbol,category,market,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,closed,last_quantity,last_cost_price,transaction_cost,asset_type,risk_plan FROM holdings WHERE id=?", id).
+		Scan(&h.ID, &h.Name, &h.Symbol, &h.Category, &h.Market, &h.Currency, &h.SourceID, &h.Quantity, &h.CostPrice, &h.CurrentPrice, &h.PrevClose, &h.Note, &h.LinkedSymbol, &h.BuyDate, &h.BuyPlan, &h.UserID, &h.UpdatedAt, &h.Closed, &h.LastQuantity, &h.LastCostPrice, &h.TransactionCost, &h.AssetType, &h.RiskPlan)
 	if err != nil {
 		return nil, err
 	}
@@ -895,8 +906,8 @@ func Create(h *Holding) (int64, error) {
 	}
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
 	h.Currency = normCurrency(h.Currency) // 币种统一小写（人民币归一 cny），防 'usd'/'USD' 混写导致前端漏折算
-	res, err := DB.Exec("INSERT INTO holdings(name,symbol,market,category,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost,asset_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		h.Name, h.Symbol, h.Market, h.Category, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost, h.AssetType)
+	res, err := DB.Exec("INSERT INTO holdings(name,symbol,market,category,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost,asset_type,risk_plan) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		h.Name, h.Symbol, h.Market, h.Category, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost, h.AssetType, h.RiskPlan)
 	if err != nil {
 		return 0, err
 	}
@@ -930,8 +941,15 @@ func Update(h *Holding) error {
 	h.CurrentPrice = roundByCategory(cat, h.CurrentPrice)
 	h.PrevClose = roundByCategory(cat, h.PrevClose)
 	h.TransactionCost = roundByCategory(cat, h.TransactionCost)
-	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,market=?,category=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=?,transaction_cost=?,asset_type=? WHERE id=?",
-		h.Name, h.Symbol, h.Market, h.Category, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.TransactionCost, h.AssetType, h.ID)
+	_, err := DB.Exec("UPDATE holdings SET name=?,symbol=?,market=?,category=?,currency=?,source_id=?,quantity=?,cost_price=?,current_price=?,prev_close=?,note=?,linked_symbol=?,buy_date=?,buy_plan=?,user_id=?,updated_at=?,closed=?,last_quantity=?,last_cost_price=?,transaction_cost=?,asset_type=?,risk_plan=? WHERE id=?",
+		h.Name, h.Symbol, h.Market, h.Category, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.Closed, h.LastQuantity, h.LastCostPrice, h.TransactionCost, h.AssetType, h.RiskPlan, h.ID)
+	return err
+}
+
+// UpdateRiskPlan 只写止盈止损方案列，供方案弹框保存（避免整行 UPDATE 覆盖其他字段）。
+func UpdateRiskPlan(id int64, raw string) error {
+	_, err := DB.Exec("UPDATE holdings SET risk_plan=?, updated_at=? WHERE id=?",
+		raw, time.Now().Format("2006-01-02 15:04:05"), id)
 	return err
 }
 
@@ -1193,6 +1211,26 @@ func addColumnIfMissing(table, col, def string) {
 		//nolint:errcheck
 		DB.Exec("ALTER TABLE " + table + " ADD COLUMN " + col + " " + def)
 	}
+}
+
+// columnExists 判断表里是否已有某列。用于「读旧列做一次性迁移」这类场景——
+// 旧列在新库的建表语句里已经不存在，直接 UPDATE 会报 no such column。
+func columnExists(table, col string) bool {
+	rows, err := DB.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt interface{}
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err == nil && name == col {
+			return true
+		}
+	}
+	return false
 }
 
 func initAssetTables() error {

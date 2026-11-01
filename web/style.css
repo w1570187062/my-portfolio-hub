@@ -955,6 +955,171 @@ h2 > svg { color: var(--primary); }
 .acct-ver { font-variant-numeric: tabular-nums; }
 .acct-empty { padding: var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); }
 
+/* ===== 止盈止损提醒（铃铛 + 下拉面板，2026-10-31）=====
+   与个人菜单（.acct-menu/.acct-pop）同一套定位与视觉：右侧下拉、卡片底、发丝线分隔。
+   不复用 .acct-pop 本身是为了独立控制宽度（提醒正文更长）与滚动高度。 */
+.bell-menu { position: relative; display: flex; align-items: center; }
+.bell-menu .icon-btn { position: relative; }
+/* 未读角标：红色（危险色）而非主题色 —— 它是「该处理了」的信号，不是导航 */
+.bell-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.bell-badge[hidden] { display: none; }
+.alert-pop {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  max-height: min(70vh, 540px);
+  /* 透明外间距桥接按钮与面板，鼠标移入途中不穿越空隙 */
+  margin-top: var(--sp-1);
+  background: var(--bg-card-raise);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--sh-3);
+}
+.alert-pop[hidden] { display: none; }
+.alert-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.alert-pop-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.alert-mark {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--primary);
+  cursor: pointer;
+}
+.alert-mark:hover { background: rgba(var(--tint), .12); }
+.alert-mark:disabled { color: var(--text-faint); cursor: default; }
+.alert-list { flex: 1 1 auto; overflow-y: auto; padding: var(--sp-1); }
+.alert-empty {
+  padding: var(--sp-6) var(--sp-3);
+  text-align: center;
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+.alert-day {
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.alert-item {
+  display: flex;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.alert-item:hover { background: rgba(var(--tint), .1); }
+.alert-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+.alert-item.unread .alert-dot { background: var(--primary); }
+.alert-main { min-width: 0; flex: 1 1 auto; }
+.alert-t {
+  display: block;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alert-b {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.alert-meta {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: 3px;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+/* 类型标签用全局语义色：止盈=涨（红）/ 止损=跌（绿）/ 心理价位=主题色 */
+/* flex 子项默认可收缩到 min-content，而中文的 min-content 恰好是 1 个字宽：
+   名称一长（如「易方达中证海外互联网50ETF联接(QDII)(美元现汇)C」），
+   「止损」就被压成 20px 宽变成两行竖排。标签和时间必须固定不收缩，
+   由名称自己去省略号。 */
+.alert-tag { flex: 0 0 auto; white-space: nowrap; font-weight: 600; }
+.alert-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.alert-time { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
+.alert-tag.tp { color: var(--up); }
+.alert-tag.sl { color: var(--down); }
+.alert-tag.psych { color: var(--primary); }
+.alert-tag.fee { color: var(--text-secondary); }
+.alert-pop-foot { display: flex; border-top: 1px solid var(--border); }
+
+/* ---------- 提醒详情弹框（铃铛条目点开看全文：列表里只有两行摘要） ----------
+   正文可能很长（含费率与建议），中间区独立滚动，按钮常驻底部。 */
+.alert-detail-card { width: 440px; }
+/* .modal-card 的基础 width:380px 定义在后面，同权重会赢过上面的单类选择器 */
+#alertDetailModal .modal-card { width: 440px; }
+.ad-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 28px var(--sp-3); }
+.ad-meta { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--text-faint); }
+.ad-title { margin: var(--sp-1) 0 var(--sp-2); font-size: var(--fs-base); font-weight: 600; line-height: 1.5; color: var(--text); }
+.ad-text { margin: 0 0 var(--sp-3); font-size: var(--fs-sm); line-height: 1.7; color: var(--text-secondary); }
+.ad-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+.ad-grid:empty { display: none; }
+
+.alert-foot-btn {
+  flex: 1 1 0;
+  padding: var(--sp-2);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.alert-foot-btn:hover { background: rgba(var(--tint), .1); color: var(--primary); }
+.alert-foot-btn + .alert-foot-btn { border-left: 1px solid var(--border); }
+/* 手机档：面板铺满可用宽度，避免 340px 在 375 屏上贴边溢出 */
+@media (max-width: 640px) {
+  .alert-pop { width: calc(100vw - 24px); right: -40px; }
+}
+
 /* 日历弹框头部：标题 + 前后切换 */
 .cal-modal-head {
   display: flex;
@@ -3710,6 +3875,53 @@ body[data-density="compact"] .wealth-subtable td { padding-top: 4px; padding-bot
 .f-adv:not([open]) > summary .hat-chevron { transform: rotate(-90deg); }
 .f-adv-body { padding: 0 var(--sp-3) var(--sp-3); }
 
+/* ---------- 持仓高级选项内的「止盈止损」区块（2026-10-31） ----------
+   与「持仓类型 / 关联代码 / 备注」同处高级折叠，但用发丝线隔开自成一块：
+   它不是持仓的固有属性，而是风控策略，视觉上要能被一眼识别为「另一类参数」。 */
+.risk-block { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+/* 标题与模式下拉按 .f-row 的两列比例对半：左格站标题、右格站下拉，
+   与下面「预设方案 / 移动止盈回撤%」共用同一条竖线，不再一个贴左一个居中 */
+.risk-head { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); align-items: center; }
+/* 标题不许被下拉压窄：中文在窄列里会逐字断行（"止/盈/止/损"），必须 nowrap */
+.risk-title { white-space: nowrap; font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); }
+.risk-mode { min-width: 0; }
+/* #modal 下「select 一律 100% 宽」的规则优先级更高，这里必须用同权重 ID 覆盖 */
+#modal .risk-block .risk-mode { width: 100%; max-width: none; }
+.risk-body { margin-top: var(--sp-2); }
+/* 区块内的设置行统一两列：#modal .f-row 是三列（份额/成本价/交易成本），
+   两两配对时只占 2/3 宽、右边空一格，看起来就是「没对半」。Id 权重必须带 #modal 才压得过。 */
+#modal .risk-body .f-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.risk-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); margin: var(--sp-2) 0; }
+.risk-cell { padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--bg-card-raise); min-width: 0; }
+/* 标签一律单行：中文在窄列里可逐字断行，一旦被压窄就变成「止/损/价」三行竖排 */
+.risk-cell-k { font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.risk-cell-v { margin-top: 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.risk-cell-d { margin-top: 2px; font-size: var(--fs-xs); line-height: 1.5; color: var(--text-faint); overflow-wrap: anywhere; }
+/* 止盈档用涨色、止损用跌色，与全站「涨红跌绿」一致 */
+.risk-cell.up .risk-cell-v { color: var(--up); }
+.risk-cell.down .risk-cell-v { color: var(--down); }
+.risk-cell input { width: 100%; min-width: 0; margin-top: 2px; }
+.risk-hint { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); line-height: 1.6; color: var(--text-muted); }
+/* 单列行（费率阶梯等长文案控件用）：#modal 的 .f-row 恒为两列，这里显式降为一列 */
+#modal .f-row.f-row-single { grid-template-columns: minmax(0, 1fr); }
+/* .f-row 的 display:grid 会压过 [hidden] 的 UA 规则，整行隐藏必须显式声明；
+   label 同理 —— #modal .f-row > label 的 display:flex 权重(1,2,0) 高于 .modal-card label[hidden](0,2,1) */
+#modal .f-row[hidden],
+#modal .f-row > label[hidden] { display: none; }
+@media (max-width: 640px) { .risk-grid { grid-template-columns: 1fr; } }
+
+/* 通知页「止盈止损提醒」渠道行：与待还款提醒同构（左文案右开关），但独立成组 */
+.nt-alert-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.nt-alert-row:last-of-type { border-bottom: 0; }
+.nt-alert-name { font-size: var(--fs-sm); color: var(--text-secondary); }
+
 /* ---------- 导航区（.brand-nav 已移至 hero 卡片，本块保留给未来扩展） ---------- */
 
 /* =========================================================================
@@ -4765,6 +4977,13 @@ textarea::placeholder {
 
 /* ---- 计划列表弹框 ---- */
 .dca-list { display: flex; flex-direction: column; max-height: 56vh; overflow-y: auto; }
+/* 计划列表 / 期次记录没有走 .m-body，行内只有 8px，内容会直接贴到卡片左右边缘。
+   这里补齐与标题、按钮区一致的 28px 左右留白（--dca-pad-x）。
+   不用 scrollbar-gutter:stable —— 那会在内容与右内边距之间再插一道 gutter，
+   让右侧凭空多出十几像素，反而和标题、按钮对不齐；滚动条出现时直接占内边距区即可 */
+#dcaPlansModal .dca-plans-body { padding: var(--sp-1) var(--dca-pad-x) var(--sp-2); }
+#dcaHistModal .dca-hist-head { padding: 0 var(--dca-pad-x); }
+#dcaHistModal .dca-hist-body { padding: 0 var(--dca-pad-x) var(--sp-1); }
 .dca-empty { padding: var(--sp-4); text-align: center; color: var(--text-muted); font-size: var(--fs-sm); }
 .dca-row {
   display: flex;
@@ -4861,6 +5080,8 @@ textarea::placeholder {
   color: var(--text);
 }
 .df-picked b { color: rgb(var(--tint)); font-weight: 600; }
+/* display:flex 会压过 [hidden] 的 UA 默认样式 —— 未选中时否则会露出一个空的描边框 */
+.df-picked[hidden] { display: none; }
 .df-picked-x {
   margin-left: auto;
   width: 24px; height: 24px;
@@ -4942,8 +5163,25 @@ textarea::placeholder {
 }
 /* 计划弹框内容：复用 .m-body 的 28px 左右内边距 + 滚动；错误提示条同样对齐 */
 #dcaModal .dca-form { padding: var(--sp-2) var(--dca-pad-x); }
+/* 每期费用的提示行：按标的类型给出常见取值参考（基金=申购费、A 股=5 元佣金、美股=0），
+   只换文字，不改字段——不用再另起一个「成本合计」字段重复同一个数。 */
+#dcaModal .ua-hint {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  line-height: 1.5;
+  margin: 2px 0 var(--sp-1);
+}
+/* 每期费用：只留一个固定金额输入格。定投金额固定、A 股佣金 5 元起步、美股多为零佣金，
+   任何「按费率试算」的按钮都会算错，故不再提供。 */
 #dcaModal #dcaErr { padding: 0 var(--dca-pad-x); margin-bottom: var(--sp-2); }
 #dcaModal .dca-form > label:last-of-type { margin-bottom: 0; }
+/* 单期确认 / 修改弹框没有滚动容器，两行输入 + 提示 + 错误条都是卡片直接子项，
+   同样要补 28px 横缩，否则控件贴边 */
+#dcaExecModal > .modal-card > .df-row,
+#dcaExecModal #dcaExecHint,
+#dcaExecModal #dcaExecErr { padding-left: var(--dca-pad-x); padding-right: var(--dca-pad-x); }
+#dcaExecModal > .modal-card > .df-row + .df-row { margin-top: var(--sp-3); }
 
 /* ---- 一键更新余额（balanceSyncModal）：批量对账所有账户余额 ---- */
 .bsync-desc { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.7; margin: 0 0 12px; }

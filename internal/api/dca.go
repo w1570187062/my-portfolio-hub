@@ -85,7 +85,8 @@ func createDCAPlan(c *gin.Context) {
 		StartDate    string  `json:"start_date"`
 		EndDate      string  `json:"end_date"`
 		MaxAmount    float64 `json:"max_amount"`
-		FeeRate      float64 `json:"fee_rate"` // 费率（%），每期执行时按 金额×费率 预填费用，可改
+		FeeAmount    float64 `json:"fee_amount"` // 每期费用（固定金额，持仓币种），执行时按此预填、可改
+		FeeRate      float64 `json:"fee_rate"`   // 已废弃：仅兼容旧页面缓存，>0 时按 金额×费率 折成固定值
 		CashAccount  int64   `json:"cash_account_id"`
 		Note         string  `json:"note"`
 		CreateHolding *struct {
@@ -142,7 +143,7 @@ func createDCAPlan(c *gin.Context) {
 		}
 		req.HoldingID = id
 	}
-	p, bad := buildDCAPlan(uid, req.HoldingID, req.Amount, req.Interval, req.DayOfMonth, req.StartDate, req.EndDate, req.MaxAmount, req.FeeRate, req.CashAccount, req.Note)
+	p, bad := buildDCAPlan(uid, req.HoldingID, req.Amount, req.Interval, req.DayOfMonth, req.StartDate, req.EndDate, req.MaxAmount, dcaFeeAmount(req.FeeAmount, req.FeeRate, req.Amount), req.CashAccount, req.Note)
 	if bad != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": bad})
 		return
@@ -181,7 +182,8 @@ func updateDCAPlan(c *gin.Context) {
 		StartDate   string  `json:"start_date"`
 		EndDate     string  `json:"end_date"`
 		MaxAmount   float64 `json:"max_amount"`
-		FeeRate     float64 `json:"fee_rate"` // 费率（%），每期执行时按 金额×费率 预填费用，可改
+		FeeAmount   float64 `json:"fee_amount"` // 每期费用（固定金额，持仓币种），执行时按此预填、可改
+		FeeRate     float64 `json:"fee_rate"`   // 已废弃：仅兼容旧页面缓存，>0 时按 金额×费率 折成固定值
 		Status      string  `json:"status"`
 		CashAccount int64   `json:"cash_account_id"`
 		Note        string  `json:"note"`
@@ -190,7 +192,7 @@ func updateDCAPlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式错误"})
 		return
 	}
-	p, bad := buildDCAPlan(uid, old.HoldingID, req.Amount, req.Interval, req.DayOfMonth, req.StartDate, req.EndDate, req.MaxAmount, req.FeeRate, req.CashAccount, req.Note)
+	p, bad := buildDCAPlan(uid, old.HoldingID, req.Amount, req.Interval, req.DayOfMonth, req.StartDate, req.EndDate, req.MaxAmount, dcaFeeAmount(req.FeeAmount, req.FeeRate, req.Amount), req.CashAccount, req.Note)
 	if bad != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": bad})
 		return
@@ -219,7 +221,19 @@ func updateDCAPlan(c *gin.Context) {
 }
 
 // buildDCAPlan 校验并组装计划（共用新建/编辑校验）。
-func buildDCAPlan(uid, holdingID int64, amount float64, interval string, day int, start, end string, maxAmount, feeRate float64, cashID int64, note string) (*db.DCAPlan, string) {
+// dcaFeeAmount 归一每期费用。新字段 fee_amount 优先；只收到旧的 fee_rate（%）时，
+// 按当时的 金额×费率 折成固定值——老页面缓存里还留着一份按费率提交的 JS。
+func dcaFeeAmount(feeAmount, feeRate, amount float64) float64 {
+	if feeAmount > 0 {
+		return feeAmount
+	}
+	if feeRate > 0 && amount > 0 {
+		return round2(amount * feeRate / 100)
+	}
+	return 0
+}
+
+func buildDCAPlan(uid, holdingID int64, amount float64, interval string, day int, start, end string, maxAmount, feeAmount float64, cashID int64, note string) (*db.DCAPlan, string) {
 	interval = strings.TrimSpace(interval)
 	if interval == "" {
 		interval = "monthly"
@@ -259,6 +273,15 @@ func buildDCAPlan(uid, holdingID int64, amount float64, interval string, day int
 	if maxAmount < 0 {
 		maxAmount = 0
 	}
+	// 每期费用是固定金额（持仓币种）：定投金额固定，费用自然也是固定值——
+	// 基金是申购费、A 股是佣金（多数券商 5 元起步）+ 过户费、美股多数券商零佣金。
+	// 只夹住非负与离谱上限（10 万，兜手滑多敲 0），不按比例二次推算。
+	if feeAmount < 0 {
+		feeAmount = 0
+	}
+	if feeAmount > 100000 {
+		feeAmount = 100000
+	}
 	return &db.DCAPlan{
 		UserID:      uid,
 		HoldingID:   holdingID,
@@ -268,7 +291,7 @@ func buildDCAPlan(uid, holdingID int64, amount float64, interval string, day int
 		StartDate:   start,
 		EndDate:     end,
 		MaxAmount:   round2(maxAmount),
-		FeeRate:     round4(feeRate),
+		FeeAmount:   round2(feeAmount),
 		Status:      "active",
 		CashAccount: cashID,
 		Note:        strings.TrimSpace(note),

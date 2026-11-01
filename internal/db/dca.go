@@ -29,7 +29,10 @@ type DCAPlan struct {
 	StartDate   string  `json:"start_date"`   // 首期日期 YYYY-MM-DD
 	EndDate     string  `json:"end_date"`     // 截止日期 YYYY-MM-DD，空=长期
 	MaxAmount   float64 `json:"max_amount"`   // 单期限购上限，0=不限
-	FeeRate     float64 `json:"fee_rate"`     // 费率（%），每期执行时按 金额×费率 预填费用，可改
+	// FeeAmount 每期费用（固定金额，持仓币种）：定投金额固定，所以每期费用本来就是固定值。
+	// 基金=申购费（按渠道费率算一次即可），A 股=佣金（多数券商 5 元起步）+ 过户费，
+	// 美股=多数券商零佣金 → 0。执行时直接按这个数预填费用，可改。
+	FeeAmount float64 `json:"fee_amount"`
 	Status      string  `json:"status"`       // active | paused | ended
 	CashAccount int64   `json:"cash_account_id"`
 	Note        string  `json:"note"`
@@ -82,6 +85,7 @@ func initDCATables() error {
 			start_date TEXT NOT NULL DEFAULT '',
 			end_date TEXT NOT NULL DEFAULT '',
 			max_amount REAL NOT NULL DEFAULT 0,
+			fee_amount REAL NOT NULL DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'active',
 			cash_account_id INTEGER NOT NULL DEFAULT 0,
 			note TEXT NOT NULL DEFAULT '',
@@ -114,7 +118,19 @@ func initDCATables() error {
 			return err
 		}
 	}
-	addColumnIfMissing("dca_plans", "fee_rate", "REAL NOT NULL DEFAULT 0")
+	addColumnIfMissing("dca_plans", "fee_amount", "REAL NOT NULL DEFAULT 0")
+	// 旧的「费率（%）」已废弃：定投金额固定，费用存固定金额更贴合实际（A 股佣金 5 元起步、
+	// 美股零佣金，按比例算都是错的）。存量计划按当时的 金额×费率 折成固定值，只折算一次：
+	// 折完把 fee_rate 清零，这样下次启动不会再把同一个费率重复折一遍（幂等）。
+	if columnExists("dca_plans", "fee_rate") {
+		if _, err := DB.Exec(`UPDATE dca_plans SET fee_amount = ROUND(amount * fee_rate / 100.0, 2)
+			WHERE fee_rate > 0 AND fee_amount = 0`); err != nil {
+			return err
+		}
+		if _, err := DB.Exec(`UPDATE dca_plans SET fee_rate = 0 WHERE fee_rate <> 0`); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -122,9 +138,9 @@ func initDCATables() error {
 
 func CreateDCAPlan(p *DCAPlan) (int64, error) {
 	now := time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO dca_plans(user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,fee_rate,status,cash_account_id,note,created_at)
+	res, err := DB.Exec(`INSERT INTO dca_plans(user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,fee_amount,status,cash_account_id,note,created_at)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		p.UserID, p.HoldingID, p.Amount, p.Interval, p.DayOfMonth, p.StartDate, p.EndDate, p.MaxAmount, p.FeeRate, p.Status, p.CashAccount, p.Note, now)
+		p.UserID, p.HoldingID, p.Amount, p.Interval, p.DayOfMonth, p.StartDate, p.EndDate, p.MaxAmount, p.FeeAmount, p.Status, p.CashAccount, p.Note, now)
 	if err != nil {
 		return 0, err
 	}
@@ -132,8 +148,8 @@ func CreateDCAPlan(p *DCAPlan) (int64, error) {
 }
 
 func UpdateDCAPlan(p *DCAPlan) error {
-	_, err := DB.Exec(`UPDATE dca_plans SET holding_id=?,amount=?,interval=?,day_of_month=?,start_date=?,end_date=?,max_amount=?,fee_rate=?,status=?,cash_account_id=?,note=? WHERE id=? AND user_id=?`,
-		p.HoldingID, p.Amount, p.Interval, p.DayOfMonth, p.StartDate, p.EndDate, p.MaxAmount, p.FeeRate, p.Status, p.CashAccount, p.Note, p.ID, p.UserID)
+	_, err := DB.Exec(`UPDATE dca_plans SET holding_id=?,amount=?,interval=?,day_of_month=?,start_date=?,end_date=?,max_amount=?,fee_amount=?,status=?,cash_account_id=?,note=? WHERE id=? AND user_id=?`,
+		p.HoldingID, p.Amount, p.Interval, p.DayOfMonth, p.StartDate, p.EndDate, p.MaxAmount, p.FeeAmount, p.Status, p.CashAccount, p.Note, p.ID, p.UserID)
 	return err
 }
 
@@ -144,9 +160,9 @@ func SetDCAStatus(id, uid int64, status string) error {
 
 func GetDCAPlan(id int64) (*DCAPlan, error) {
 	var p DCAPlan
-	err := DB.QueryRow(`SELECT id,user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,fee_rate,status,cash_account_id,note,created_at
+	err := DB.QueryRow(`SELECT id,user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,fee_amount,status,cash_account_id,note,created_at
 		FROM dca_plans WHERE id=?`, id).
-		Scan(&p.ID, &p.UserID, &p.HoldingID, &p.Amount, &p.Interval, &p.DayOfMonth, &p.StartDate, &p.EndDate, &p.MaxAmount, &p.FeeRate, &p.Status, &p.CashAccount, &p.Note, &p.CreatedAt)
+		Scan(&p.ID, &p.UserID, &p.HoldingID, &p.Amount, &p.Interval, &p.DayOfMonth, &p.StartDate, &p.EndDate, &p.MaxAmount, &p.FeeAmount, &p.Status, &p.CashAccount, &p.Note, &p.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +170,7 @@ func GetDCAPlan(id int64) (*DCAPlan, error) {
 }
 
 func ListDCAPlans(uid int64) ([]DCAPlan, error) {
-	rows, err := DB.Query(`SELECT id,user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,fee_rate,status,cash_account_id,note,created_at
+	rows, err := DB.Query(`SELECT id,user_id,holding_id,amount,interval,day_of_month,start_date,end_date,max_amount,fee_amount,status,cash_account_id,note,created_at
 		FROM dca_plans WHERE user_id=? ORDER BY
 			CASE status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END, id DESC`, uid)
 	if err != nil {
@@ -164,7 +180,7 @@ func ListDCAPlans(uid int64) ([]DCAPlan, error) {
 	var out []DCAPlan
 	for rows.Next() {
 		var p DCAPlan
-		if err := rows.Scan(&p.ID, &p.UserID, &p.HoldingID, &p.Amount, &p.Interval, &p.DayOfMonth, &p.StartDate, &p.EndDate, &p.MaxAmount, &p.FeeRate, &p.Status, &p.CashAccount, &p.Note, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &p.HoldingID, &p.Amount, &p.Interval, &p.DayOfMonth, &p.StartDate, &p.EndDate, &p.MaxAmount, &p.FeeAmount, &p.Status, &p.CashAccount, &p.Note, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

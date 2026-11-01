@@ -252,7 +252,11 @@ func fundNAV(symbol string) (*Quote, error) {
 }
 
 // FetchFundNAVHistory returns the most recent `days` NAV records (date -> NAV) for a fund.
-// Used by snapshot backfill to reconstruct missing daily closes (price_daily) for past days.
+// Used by snapshot backfill to reconstruct missing daily closes (price_daily) for past days,
+// and by the risk-plan engine to derive ATR / MA60 / 区间高低点。
+//
+// 必须翻页：东财 f10/lsjz 会忽略 pageSize（无论传多少都只返回 20 条/页，2026-10 实测
+// pageSize=120 仍返回 20 条），所以「取 120 天」只能 pageIndex=1..6 逐页拉。
 func FetchFundNAVHistory(symbol string, days int) (map[string]float64, error) {
 	if days < 1 {
 		days = 1
@@ -260,37 +264,49 @@ func FetchFundNAVHistory(symbol string, days int) (map[string]float64, error) {
 	if days > 120 {
 		days = 120
 	}
-	url := fmt.Sprintf("https://api.fund.eastmoney.com/f10/lsjz?fundCode=%s&pageIndex=1&pageSize=%d", symbol, days)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-	req.Header.Set("Referer", "https://fundf10.eastmoney.com/")
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	var out struct {
-		Data struct {
-			LSJZList []struct {
-				FSRQ string `json:"FSRQ"`
-				DWJZ string `json:"DWJZ"`
-			} `json:"LSJZList"`
-		} `json:"Data"`
-	}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, err
-	}
 	m := map[string]float64{}
-	for _, it := range out.Data.LSJZList {
-		if it.FSRQ == "" || it.DWJZ == "" {
-			continue
+	pageSize := 20 // 接口固定页长
+	for page := 1; page <= (days+pageSize-1)/pageSize && len(m) < days; page++ {
+		u := fmt.Sprintf("https://api.fund.eastmoney.com/f10/lsjz?fundCode=%s&pageIndex=%d&pageSize=%d", symbol, page, pageSize)
+		req, _ := http.NewRequest("GET", u, nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+		req.Header.Set("Referer", "https://fundf10.eastmoney.com/")
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			if len(m) > 0 {
+				break // 已有部分数据就用，不因第 N 页失败整体报错
+			}
+			return nil, err
 		}
-		nav, e := strconv.ParseFloat(it.DWJZ, 64)
-		if e != nil || nav == 0 {
-			continue
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var out struct {
+			Data struct {
+				LSJZList []struct {
+					FSRQ string `json:"FSRQ"`
+					DWJZ string `json:"DWJZ"`
+				} `json:"LSJZList"`
+			} `json:"Data"`
 		}
-		m[it.FSRQ] = nav
+		if err := json.Unmarshal(body, &out); err != nil {
+			if len(m) > 0 {
+				break
+			}
+			return nil, err
+		}
+		if len(out.Data.LSJZList) == 0 {
+			break
+		}
+		for _, it := range out.Data.LSJZList {
+			if it.FSRQ == "" || it.DWJZ == "" {
+				continue
+			}
+			nav, e := strconv.ParseFloat(it.DWJZ, 64)
+			if e != nil || nav == 0 {
+				continue
+			}
+			m[it.FSRQ] = nav
+		}
 	}
 	if len(m) == 0 {
 		return nil, fmt.Errorf("no NAV history for %s", symbol)

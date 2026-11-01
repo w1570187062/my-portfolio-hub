@@ -161,6 +161,9 @@ func ClearUserData(userID int64) error {
 	if _, err := DB.Exec(`DELETE FROM operation_guides WHERE user_id=?`, userID); err != nil {
 		return err
 	}
+	if _, err := DB.Exec(`DELETE FROM alert_events WHERE user_id=?`, userID); err != nil {
+		return err
+	}
 	if _, err := DB.Exec(`DELETE FROM price_daily WHERE user_id=?`, userID); err != nil {
 		return err
 	}
