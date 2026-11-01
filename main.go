@@ -108,9 +108,20 @@ func main() {
 				return
 			}
 		}
+		// 静态资源缓存策略按路径分档（方案 17）：
+		//   带 ?v= 的 app.js / style.css → 一年 immutable；PWA 资源 → 1 天 / 7 天；
+		//   /ocr/ → 版本目录内 immutable；其余（含未带版本戳的 app.js）→ no-store。
+		switch {
+		// 带版本戳的主资源（app.js / style.css 由上面注入 ?v=<VERSION>）：
+		// 每次部署 VERSION 都会变 → URL 变 → 浏览器必然重新拉取，因此可以放心给一年 immutable，
+		// 二次刷新直接命中磁盘缓存（局域网 http 下没有 Service Worker，只能靠 HTTP 缓存兜）。
+		// 没带 ?v= 的请求（例如手工访问 /app.js 排查）走最后一条 no-store，避免改完文件刷不出来。
+		case (r.URL.Path == "/app.js" || r.URL.Path == "/style.css") && r.URL.Query().Get("v") != "":
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			fileServer.ServeHTTP(w, r)
+			return
 		// PWA 资源（manifest / 图标 / service worker）允许缓存：否则 Service Worker 预缓存
 		// （cache.addAll）会因 no-store 而失败，导致离线与「添加到主屏幕」失效。
-		switch {
 		case r.URL.Path == "/sw.js", r.URL.Path == "/manifest.webmanifest", r.URL.Path == "/favicon.svg":
 			if strings.HasSuffix(r.URL.Path, ".webmanifest") {
 				w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
