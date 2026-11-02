@@ -5762,9 +5762,12 @@ textarea::placeholder {
 .hm-info { color: var(--text-faint); }
 /* 收益句子：italic + faint 整体 */
 .hm-sent { color: var(--text-faint); font-style: italic; }
-/* 减速偏好 */
+/* 减速偏好：保留「内容轮播」，只去掉位移动画（瞬间换行）。
+   原先写的是 transform:none !important + JS 清 timer —— 等于完全静止。
+   开了系统「减弱动态效果」的手机用户看到的就是「跑马灯坏了」，
+   但轮播内容本身是有信息量的，不该因为不要动画就一并关掉。 */
 @media (prefers-reduced-motion: reduce) {
-  .hm-track { transform: none !important; transition: none !important; }
+  .hm-track { transition: none !important; }
 }
 /* 窄屏（≤640）：字号小一档，行高随字号重算；资产分布芯片强制一行四个 */
 @media (max-width: 640px) {

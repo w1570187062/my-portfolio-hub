@@ -3930,6 +3930,8 @@ let _hmCleanup = null;    // 上次渲染绑定的监听清理函数（重渲染
 // 跑马灯节奏常量（集中定义，别散落在多处）
 const HM_INTERVAL_MS = 2500;        // 每条停驻 2.5s（短到能一眼读完，不抢视线）
 const HM_STEP_TRANSITION = 'transform .3s cubic-bezier(.4,0,.2,1)';  // 行间过渡 0.3s
+// 系统「减弱动态效果」：仍然轮播，只是把位移过渡换成瞬间换行（见 step 与 style.css 的 reduce 块）
+const HM_REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 // 装饰性 SVG 图标：16x16 viewBox，内联到每条跑马灯之前。aria-hidden（纯装饰）。
 // 颜色靠 CSS class 注入（hm-ic-alert / hm-ic-repay / hm-ic-sent / ...）。
@@ -4075,7 +4077,8 @@ function renderHomeMarquee(sentence, todoGroups, cum30, downDays) {
     if (n <= 1) return;
     syncRowH();                     // 每跳前重测，避免行高变化后逐条累积错位
     _hmIdx = (_hmIdx + 1) % n;
-    track.style.transition = HM_STEP_TRANSITION;
+    // 系统开了「减弱动态效果」时仍轮播，只是去掉位移过渡（瞬间换行）。
+    track.style.transition = HM_REDUCED ? 'none' : HM_STEP_TRANSITION;
     track.style.transform = `translateY(${-_hmIdx * (track._hmRowH || 0)}px)`;
   };
 
@@ -4092,15 +4095,22 @@ function renderHomeMarquee(sentence, todoGroups, cum30, downDays) {
     syncRowH();                     // 回到整行对齐位置（同时校正行高）
     scheduleNext();
   };
-  // hover 暂停只绑给「真鼠标」设备。手机浏览器（iOS/Android）在 tap 与滚动时也会
-  // 合成 mouseenter/mouseover，且经常不配对派发 mouseleave —— 一旦 _hmPaused 停在 true，
-  // 跑马灯就永久不动（用户反馈的「手机端跑马灯不生效」就是这个）。
-  const canHover = !window.matchMedia
-    || window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-  if (canHover) {
-    box.onmouseenter = onEnter;
-    box.onmouseleave = onLeave;
-  }
+  // hover 暂停只认「真鼠标」（pointerType === 'mouse'）。
+  // 不再用 (hover:hover) 媒体查询判定：安卓 WebView / 微信 X5 内核常把它判成 true，
+  // 于是触摸设备也会挂上 mouseenter；而手机 tap / 滑动会合成 mouseenter、却未必派发
+  // mouseleave → _hmPaused 卡在 true，跑马灯再也不动（「手机上不生效」的真正来源）。
+  const onPointerEnter = (e) => { if (e.pointerType === 'mouse') onEnter(); };
+  const onPointerLeave = (e) => { if (e.pointerType === 'mouse') onLeave(); };
+  box.addEventListener('pointerenter', onPointerEnter);
+  box.addEventListener('pointerleave', onPointerLeave);
+  // 兜底：任何触摸动作都把暂停解开（某些老内核 pointerType 缺失 / 只发 mouse 合成事件）
+  const onTouchStart = () => {
+    if (!box._hmPaused) return;
+    box._hmPaused = false;
+    syncRowH();
+    scheduleNext();
+  };
+  box.addEventListener('touchstart', onTouchStart, { passive: true });
 
   const scheduleNext = () => {
     if (box._hmPaused) return;
@@ -4124,13 +4134,10 @@ function renderHomeMarquee(sentence, todoGroups, cum30, downDays) {
     if (_hmTimer) { clearTimeout(_hmTimer); _hmTimer = null; }
     if (_hmResizeT) { clearTimeout(_hmResizeT); _hmResizeT = null; }
     window.removeEventListener('resize', onResize);
-    box.onmouseenter = null;
-    box.onmouseleave = null;
+    box.removeEventListener('pointerenter', onPointerEnter);
+    box.removeEventListener('pointerleave', onPointerLeave);
+    box.removeEventListener('touchstart', onTouchStart);
   };
-
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    if (_hmTimer) { clearTimeout(_hmTimer); _hmTimer = null; }
-  }
 }
 
 // 所有循环计划共享一个查看月份 YYYY-MM（统一翻页：滑动任意一张，全部一起翻）；默认当前月
