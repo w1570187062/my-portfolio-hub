@@ -341,6 +341,8 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/review", reviewGet)
 		// 复盘页基准对比：近 1 年组合收益 vs 沪深300 / 标普500 / 纳指100（指数日线 6h 缓存）
 		g.GET("/review/benchmark", benchmarkGet)
+		// 复盘页收益归因：区间权益标的真实贡献（只算股票+基金，排除理财）
+		g.GET("/review/breakdown", breakdownGet)
 		// 首页「今日待办」：止盈止损 / 定投 / 待还款 / 存款到期 一次聚合（替代首页并发 4 个接口）
 		g.GET("/today/brief", todayBrief)
 		// 存款（定期存款 / 大额存单）：新增扣款、到期确认落袋后才入账利息
