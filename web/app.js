@@ -3646,9 +3646,11 @@ async function renderHomeDashboard() {
       { label: '负债', val: lTotal, color: 'var(--warning)', neg: true },
     ];
     // 资产分布 → 芯片行（原型 hero-asset-chip）：一枚一个口径，金额右对齐读数
+    // .nw-chip-t 包住「标签 + 金额」：手机档（≤640）把它改成上下两行的竖排，
+    // 这样四个芯片能在 320px 屏上挤进一行（单行文字在 320px 上放不下完整金额）。
     bd.innerHTML = rows.map((r) => {
       const valTxt = (r.neg ? '−' : '') + yuanOfW(r.val);
-      return `<span class="nw-chip"><span class="d" style="--dot-c:${r.color}"></span>${r.label} <b${r.neg ? ' class="down"' : ''}>${valTxt}</b></span>`;
+      return `<span class="nw-chip"><span class="d" style="--dot-c:${r.color}"></span><span class="nw-chip-t">${r.label} <b${r.neg ? ' class="down"' : ''}>${valTxt}</b></span></span>`;
     }).join('');
   }
 
@@ -4090,8 +4092,15 @@ function renderHomeMarquee(sentence, todoGroups, cum30, downDays) {
     syncRowH();                     // 回到整行对齐位置（同时校正行高）
     scheduleNext();
   };
-  box.onmouseenter = onEnter;
-  box.onmouseleave = onLeave;
+  // hover 暂停只绑给「真鼠标」设备。手机浏览器（iOS/Android）在 tap 与滚动时也会
+  // 合成 mouseenter/mouseover，且经常不配对派发 mouseleave —— 一旦 _hmPaused 停在 true，
+  // 跑马灯就永久不动（用户反馈的「手机端跑马灯不生效」就是这个）。
+  const canHover = !window.matchMedia
+    || window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  if (canHover) {
+    box.onmouseenter = onEnter;
+    box.onmouseleave = onLeave;
+  }
 
   const scheduleNext = () => {
     if (box._hmPaused) return;

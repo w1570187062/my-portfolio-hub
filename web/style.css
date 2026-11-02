@@ -5681,6 +5681,9 @@ textarea::placeholder {
   font-size: var(--fs-xs); font-weight: 400; color: var(--text); white-space: nowrap;
 }
 .nw-chip .d { width: 6px; height: 6px; border-radius: 50%; background: var(--dot-c, var(--primary)); flex: 0 0 auto; }
+/* 芯片文本块：桌面档 inline（标签与金额同一行，空格由文本节点提供，视觉零变化），
+   手机档在下面的 640 断点里改成竖排两行。 */
+.nw-chip-t { display: inline; }
 .nw-chip b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .nw-chip b.down { color: var(--down); }
 
@@ -5763,8 +5766,24 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   .hm-track { transform: none !important; transition: none !important; }
 }
-/* 窄屏：字号小一档，行高随字号重算 */
+/* 窄屏（≤640）：字号小一档，行高随字号重算；资产分布芯片强制一行四个 */
 @media (max-width: 640px) {
+  /* 芯片一行四个（2026-11-02 修）：原来是 flex-wrap:wrap，四个「● 持仓 ¥9.32万」
+     在 iPhone 13 上各 95–104px、合计 396px > 行宽 308px → 折成 2×2，看着像随手换行。
+     320px 机型内容宽只有 238px，单行文字四个无论怎么压都放不下（需 ~290px），
+     所以改的是芯片**内部换行**：标签一行、金额一行，等分四列（SE 上每列 58px，
+     最长的「−¥2.44万」10px 约 45px，仍有余量）。桌面档不受影响（.nw-chip-t 仍是 inline）。 */
+  .nw-left .nw-asset-row { flex-wrap: nowrap; gap: var(--sp-1); }
+  .nw-left .nw-chip {
+    flex: 1 1 0; min-width: 0; justify-content: center;
+    padding: 3px; gap: 2px; font-size: var(--fs-2xs); overflow: hidden;
+  }
+  .nw-left .nw-chip .d { width: 5px; height: 5px; }
+  .nw-left .nw-chip-t {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 0; min-width: 0; line-height: 1.25; text-align: center;
+  }
+  /* 跑马灯：行高跟字号一起缩 */
   .home-marquee { --hm-row-h: calc(var(--fs-2xs) * 1.6); }
   .hm-item { font-size: var(--fs-2xs); }
 }
