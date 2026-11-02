@@ -708,16 +708,7 @@ function renderFiltered() {
   // 明显跳变。改为四块 KPI 在同一位置互换（结构一致、卡片数一致、高度对齐）。
   // 四个 tab 共用同一块顶部区域：只切换显隐，内容等高（眉标 + 4 张 .kpi-card），
   // 因此切换时下方内容不会位移。新增 tab 只需在这里加一项。
-  const heroBySection = {
-    holdings: document.getElementById('investHero'),
-    closed: document.getElementById('closedHero'),
-    wealth: document.getElementById('wealthHero'),
-    deposits: document.getElementById('depositHero'),
-  };
-  for (const key of Object.keys(heroBySection)) {
-    const el = heroBySection[key];
-    if (el) el.hidden = (homeSection !== key);
-  }
+  applyInvestSection();
 
   // 分段控件数量徽标：持仓 = 当前筛选后持仓数；理财 = 理财条目数；存款 = 存款条数；已平仓 = 清仓持仓数 + 清合理财数
   const wProducts = (assetData.wealth || {}).products || [];
@@ -2789,6 +2780,22 @@ wireSearch();
 function syncViewToggle() {
   document.querySelectorAll('#viewToggle .sub-tab').forEach((x) => x.classList.toggle('active', x.dataset.view === homeSection));
 }
+// 四块 KPI 只切显隐（DOM 常驻、等高，切换不位移）。抽成函数是因为它必须有两个调用点：
+// renderFiltered（切 tab / 刷新数据）和 showHoldingsView（从别的页面回来）。
+// 2026-11-02 修：只在高亮上记住了 homeSection，KPI 却停在 HTML 里默认的「持仓」——
+// 顶部导航切走再回来，就出现「tab 是理财、卡片是持仓」的半状态。
+function applyInvestSection() {
+  const heroBySection = {
+    holdings: document.getElementById('investHero'),
+    closed: document.getElementById('closedHero'),
+    wealth: document.getElementById('wealthHero'),
+    deposits: document.getElementById('depositHero'),
+  };
+  for (const key of Object.keys(heroBySection)) {
+    const el = heroBySection[key];
+    if (el) el.hidden = (homeSection !== key);
+  }
+}
 // 通用：根据指定切换器内当前 active 按钮定位滑动白块（资产/日历切换器共用）
 function positionIndicatorFor(toggleId, indId) {
   const ind = document.getElementById(indId);
@@ -3591,7 +3598,8 @@ function showHoldingsView() {
   $('#devicesView').hidden = true;
   $('#notifyView').hidden = true;
   $('#holdingsView').hidden = false;
-  syncViewToggle(); // 回到主页时同步滑块选中态与白块位置
+  syncViewToggle();      // 回到主页时同步滑块选中态与白块位置
+  applyInvestSection();  // 并按记住的 homeSection 恢复对应的 KPI 区块（否则停在 HTML 默认的持仓卡）
 }
 
 // ===== 首页 Dashboard（2026-10-20 tab 重构）=====
@@ -7002,7 +7010,7 @@ function renderAssetTab() {
          完全一致的顺序与形态：同一个 .sub-tabs 组件、同一个下划线选中态、
          同一套右端视图级控件位。 -->
     <div class="sub-tabs" id="assetSubTabs">
-      <button class="sub-tab active" data-sub="accounts" type="button">账户<span class="sub-tab-count" id="assetAcctCount">${acctCount}</span></button>
+      <button class="sub-tab" data-sub="accounts" type="button">账户<span class="sub-tab-count" id="assetAcctCount">${acctCount}</span></button>
       <button class="sub-tab" data-sub="cash" type="button">现金<span class="sub-tab-count">${cashLiveCount}</span></button>
       <button class="sub-tab" data-sub="flows" type="button">流水</button>
       <button class="sub-tab" data-sub="cashflow" type="button">收支</button>
@@ -7014,13 +7022,10 @@ function renderAssetTab() {
     <!-- 顶部 4 张卡随子 tab 换内容（= 当前视图的四个关键数字）。
          眉标行（kpi-head）2026-11-02 删除：与子 tab 行重复，口径信息由各视图工具条承担。 -->
     <div class="kpi-row cols-flat asset-kpi-row" id="assetKpiRow"></div>
-    <div class="asset-subpanel active" data-sub="accounts" id="assetPanelAccounts"></div>
+    <div class="asset-subpanel" data-sub="accounts" id="assetPanelAccounts"></div>
     <div class="asset-subpanel" data-sub="cash" id="assetPanelCash"></div>
     <div class="asset-subpanel" data-sub="flows" id="assetPanelFlows"></div>
     <div class="asset-subpanel" data-sub="cashflow" id="assetPanelCashflow"></div>`;
-
-  // 顶部卡片：先按「账户」视图渲染，各子面板拿到自己的数据后再按各自口径刷新
-  renderAssetKpis('accounts');
 
   // 账户面板、现金 / 流水 / 收支面板
   renderSources($('#assetPanelAccounts'));
@@ -7028,11 +7033,37 @@ function renderAssetTab() {
   renderAssetFlowsPanel($('#assetPanelFlows'));
   renderAssetCashflowPanel($('#assetPanelCashflow'));
 
+  // 按记住的子视图统一恢复（tab 高亮 / 面板显隐 / 顶部 4 卡）。
+  // 必须在面板渲染之后：面板里会在 assetSub 匹配时补刷一次自己的 KPI 口径。
+  applyAssetSub(assetSub);
+
   // 区块层错落上浮：资产页「切换条 → 眉标 → KPI 卡 → 表格」四块依次入场。
+  // 放在 applyAssetSub 之后，否则选不到 .asset-subpanel.active。
   playRiseIn(body, '.sub-tabs, .asset-kpi-row, .asset-subpanel.active', 50);
 
   // 子 tab 切换绑定
   bindAssetSubTabs();
+}
+
+// 资产子视图统一入口：tab 高亮 + 面板显隐 + 顶部 4 卡一起切。
+// 2026-11-02 修：原先 renderAssetTab 每次都把「账户」写死成初始态，切到顶部导航
+// 再回来 tab 与 KPI 一起被重置；而 assetSub 变量还留着上次的值 —— 出现
+// 「变量是现金、页面显示账户」的半状态。现在渲染与点击走同一个函数。
+function applyAssetSub(sub) {
+  assetSub = sub || 'accounts';
+  const tabs = document.getElementById('assetSubTabs');
+  if (tabs) {
+    tabs.querySelectorAll('.sub-tab').forEach((x) => {
+      x.classList.toggle('active', x.dataset.sub === assetSub);
+    });
+    const tools = tabs.querySelector('.sub-tabs-tools');
+    // 账户操作（更新余额 / 添加账户）只对「账户」子视图有意义
+    if (tools) tools.hidden = assetSub !== 'accounts';
+  }
+  renderAssetKpis(assetSub);
+  document.querySelectorAll('#assetTabBody .asset-subpanel').forEach((p) => {
+    p.classList.toggle('active', p.dataset.sub === assetSub);
+  });
 }
 
 // 卡内分段条（2026-11-02）：一条 6px 的构成条，取代原「资产结构」折叠卡里的四组迷你图。
@@ -7485,20 +7516,7 @@ function bindAssetSubTabs() {
   const tabs = document.getElementById('assetSubTabs');
   if (!tabs) return;
   tabs.querySelectorAll('.sub-tab').forEach((b) => {
-    b.onclick = () => {
-      tabs.querySelectorAll('.sub-tab').forEach((x) => x.classList.toggle('active', x === b));
-      const sub = b.dataset.sub;
-      assetSub = sub;
-      // 顶部 4 张卡随子视图换内容（每个视图的四个关键数字）
-      renderAssetKpis(sub);
-      document.querySelectorAll('#assetTabBody .asset-subpanel').forEach((p) => p.classList.toggle('active', p.dataset.sub === sub));
-      // 账户操作（更新余额 / 添加账户）只对「账户」子视图有意义；
-      // 切到现金 / 流水 / 收支 时把 tab 行右端这组按钮收起来，别挂着一枚点不动的图标。
-      // 用类选择器而不是 getElementById：#assetTools 由 renderAssetTab 的模板生成，
-      // 不在 index.html 里，用 id 引用会被死代码门禁判成「悬空 id」。
-      const tools = tabs.querySelector('.sub-tabs-tools');
-      if (tools) tools.hidden = sub !== 'accounts';
-    };
+    b.onclick = () => applyAssetSub(b.dataset.sub);
   });
   // 兑现跨页跳转意图（首页待办点击「待还款」）：tab 绑定完成后才能安全 click()
   if (pendingAssetSub) {

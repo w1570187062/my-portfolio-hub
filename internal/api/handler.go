@@ -1848,8 +1848,13 @@ func doSnapshot(uid int64) error {
 				dp = (h.CurrentPrice - prev) * h.Quantity
 			}
 		case h.Category == "fund":
-			// 基金净值一般北京时间 21:00 后公布，此前不计入当日盈亏。
-			if bjHour < 21 {
+			// 基金净值：白天接口给的是**盘中估值**，不可信，18:00 前一律不计；
+			// 18:00 之后多数基金已出确认净值 —— 此时不再看时钟，直接按净值变化算。
+			// 2026-11-02 由「21:00 前一律 0」放宽：那天 19:53 手动刷新时 5 只基金的
+			// 新净值其实都已拿到（price_daily 已写入），却仍被时钟门槛记成 0，
+			// 用户看到的就是「刷新了但日历不动」。净值没变时相减本来就是 0，
+			// 不需要额外判断；「当前价 == 上一条已记录收盘」的情况由上面的 staleQuote 兜住。
+			if bjHour < 18 {
 				dp = 0
 			} else if h.PrevClose > 0 {
 				dp = (h.CurrentPrice - h.PrevClose) * h.Quantity
