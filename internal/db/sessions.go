@@ -51,6 +51,9 @@ type Session struct {
 	LastSeen  string `json:"last_seen"`
 	ExpiresAt string `json:"expires_at"`
 	Current   bool   `json:"current"` // 列表接口填充：是否当前请求所用会话
+	// Persist 登录保持（2026-11-02）：true=长期 Cookie（关浏览器后仍登录，现状）；
+	// false=会话 Cookie，关闭浏览器即退出（下次打开要重新配对 / PIN 登录）。
+	Persist bool `json:"persist"`
 }
 
 const (
@@ -120,6 +123,9 @@ func initSessions() error {
 	addColumnIfMissing("sessions", "label", "TEXT NOT NULL DEFAULT ''")
 	// 2026-10-29：设备角色。老库补列后默认全是 member，由 EnsureOwnerSession 提升主设备。
 	addColumnIfMissing("sessions", "role", "TEXT NOT NULL DEFAULT 'member'")
+	// 2026-11-02：登录保持。默认 1=长期 Cookie（兼容老设备行为）；0=会话 Cookie，
+	// 关闭浏览器即退出，适合不想长期留在登录态的设备。设备页可随时切换（会轮换 token）。
+	addColumnIfMissing("sessions", "persist", "INTEGER NOT NULL DEFAULT 1")
 	return nil
 }
 
@@ -201,32 +207,36 @@ func CreateSession(userID int64, ua, kind, role string) (string, *Session, error
 // ActiveSession 按 token 哈希取有效会话；不存在/过期/已吊销返回 (nil, nil)。
 func ActiveSession(tokenHash string) (*Session, error) {
 	var s Session
-	err := DB.QueryRow(`SELECT id,user_id,active_user_id,ua,label,kind,role,created_at,last_seen,expires_at
+	var persist int
+	err := DB.QueryRow(`SELECT id,user_id,active_user_id,ua,label,kind,role,created_at,last_seen,expires_at,persist
 		FROM sessions WHERE token_hash=? AND revoked=0 AND expires_at>?`,
 		tokenHash, time.Now().Format(sessionTimeFmt)).
-		Scan(&s.ID, &s.UserID, &s.ActiveUserID, &s.UA, &s.Label, &s.Kind, &s.Role, &s.CreatedAt, &s.LastSeen, &s.ExpiresAt)
+		Scan(&s.ID, &s.UserID, &s.ActiveUserID, &s.UA, &s.Label, &s.Kind, &s.Role, &s.CreatedAt, &s.LastSeen, &s.ExpiresAt, &persist)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	s.Persist = persist != 0
 	return &s, nil
 }
 
 // ActiveSessionByID 按主键取有效会话（切换账本后回读状态用）。
 func ActiveSessionByID(id int64) (*Session, error) {
 	var s Session
-	err := DB.QueryRow(`SELECT id,user_id,active_user_id,ua,label,kind,role,created_at,last_seen,expires_at
+	var persist int
+	err := DB.QueryRow(`SELECT id,user_id,active_user_id,ua,label,kind,role,created_at,last_seen,expires_at,persist
 		FROM sessions WHERE id=? AND revoked=0 AND expires_at>?`,
 		id, time.Now().Format(sessionTimeFmt)).
-		Scan(&s.ID, &s.UserID, &s.ActiveUserID, &s.UA, &s.Label, &s.Kind, &s.Role, &s.CreatedAt, &s.LastSeen, &s.ExpiresAt)
+		Scan(&s.ID, &s.UserID, &s.ActiveUserID, &s.UA, &s.Label, &s.Kind, &s.Role, &s.CreatedAt, &s.LastSeen, &s.ExpiresAt, &persist)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	s.Persist = persist != 0
 	return &s, nil
 }
 
@@ -258,6 +268,33 @@ func RevokeSession(id int64) error {
 func SetSessionLabel(id int64, label string) error {
 	_, err := DB.Exec(`UPDATE sessions SET label=? WHERE id=?`, clipRunes(label, 20), id)
 	return err
+}
+
+// SetSessionPersist 切换登录保持；只影响下次下发 Cookie 的形态（切换时会轮换 token 并重发 Cookie，见 api 层）。
+func SetSessionPersist(id int64, persist bool) error {
+	v := 0
+	if persist {
+		v = 1
+	}
+	_, err := DB.Exec(`UPDATE sessions SET persist=? WHERE id=?`, v, id)
+	return err
+}
+
+// RotateSessionToken 轮换会话 token（旧 token 立即失效）。返回新明文 token（仅此一次可见），
+// 由调用方重新下发 Cookie。用于「登录保持」切换——Cookie 的持久/会话形态只能在新 Cookie 上生效。
+func RotateSessionToken(id int64) (string, error) {
+	tok, err := RandToken(32)
+	if err != nil {
+		return "", err
+	}
+	res, err := DB.Exec(`UPDATE sessions SET token_hash=? WHERE id=? AND revoked=0`, HashToken(tok), id)
+	if err != nil {
+		return "", err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return "", errors.New("会话不存在或已失效")
+	}
+	return tok, nil
 }
 
 // ---- 设备角色（owner=主设备 / member=普通设备）----
@@ -295,8 +332,11 @@ func TransferOwnership(fromID, toID int64) error {
 	return err
 }
 
-// EnsureOwnerSession 启动迁移（2026-10-29）：老库所有会话都是 member，
-// 若有效设备里没有任何 owner，就把最早创建的那台升为主设备（等价于「第一台接入的设备」）。
+// EnsureOwnerSession 保证「只要还有活设备，就有主设备」。
+//
+// 触发时机：① 老库迁移（2026-10-29，原本全是 member）；② 吊销会话后；③ 拉会话状态时自愈。
+// 2026-11-02 改排序：原来按 created_at 选「最早接入的那台」，但主设备报废时正是最老的那台，
+// 升它等于把管理员交给一台已经不在的设备。改为按 last_seen 选**最近还活着**的那台。
 // 返回被提升的会话 id；无需提升时返回 0。
 func EnsureOwnerSession() (int64, error) {
 	if CountOwners() > 0 {
@@ -305,7 +345,7 @@ func EnsureOwnerSession() (int64, error) {
 	var id int64
 	err := DB.QueryRow(`SELECT id FROM sessions
 		WHERE revoked=0 AND expires_at>? AND kind='device'
-		ORDER BY created_at ASC, id ASC LIMIT 1`,
+		ORDER BY last_seen DESC, id DESC LIMIT 1`,
 		time.Now().Format(sessionTimeFmt)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil // 还没有任何设备，等首台认领时直接建成 owner
@@ -321,7 +361,7 @@ func EnsureOwnerSession() (int64, error) {
 
 // ListSessionsForUser 列出「可访问该账本」的全部会话（设置页设备管理）。
 func ListSessionsForUser(userID int64) ([]Session, error) {
-	rows, err := DB.Query(`SELECT s.id,s.user_id,s.active_user_id,s.ua,s.label,s.kind,s.role,s.created_at,s.last_seen,s.expires_at
+	rows, err := DB.Query(`SELECT s.id,s.user_id,s.active_user_id,s.ua,s.label,s.kind,s.role,s.created_at,s.last_seen,s.expires_at,s.persist
 		FROM sessions s JOIN session_users su ON su.session_id=s.id
 		WHERE su.user_id=? AND s.revoked=0 AND s.expires_at>?
 		ORDER BY s.last_seen DESC`, userID, time.Now().Format(sessionTimeFmt))
@@ -332,9 +372,11 @@ func ListSessionsForUser(userID int64) ([]Session, error) {
 	var out []Session
 	for rows.Next() {
 		var s Session
-		if err := rows.Scan(&s.ID, &s.UserID, &s.ActiveUserID, &s.UA, &s.Label, &s.Kind, &s.Role, &s.CreatedAt, &s.LastSeen, &s.ExpiresAt); err != nil {
+		var persist int
+		if err := rows.Scan(&s.ID, &s.UserID, &s.ActiveUserID, &s.UA, &s.Label, &s.Kind, &s.Role, &s.CreatedAt, &s.LastSeen, &s.ExpiresAt, &persist); err != nil {
 			return nil, err
 		}
+		s.Persist = persist != 0
 		out = append(out, s)
 	}
 	return out, rows.Err()

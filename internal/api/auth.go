@@ -223,10 +223,18 @@ func requestToken(c *gin.Context) (tok string, fromCookie bool) {
 	return "", false
 }
 
-func setSessionCookie(c *gin.Context, tok string) {
+// setSessionCookie 按会话的「登录保持」偏好下发 Cookie：
+//   persist=true  → Max-Age=SessionTTL，持久 Cookie，关浏览器后仍登录（默认，兼容旧行为）；
+//   persist=false → 不带 Max-Age 的会话 Cookie，关闭浏览器即失效（下次打开需重新配对 / PIN 登录）。
+// gin/http 的 MaxAge=0 表示「不下发 Max-Age 属性」= 会话 Cookie，正好利用这个语义。
+func setSessionCookie(c *gin.Context, tok string, persist bool) {
 	c.SetSameSite(http.SameSiteLaxMode)
+	maxAge := 0
+	if persist {
+		maxAge = int(db.SessionTTL.Seconds())
+	}
 	// 内网为 http，不能加 Secure；安全性靠 32 字节随机 token + HttpOnly。
-	c.SetCookie(sessionCookieName, tok, int(db.SessionTTL.Seconds()), "/", "", false, true)
+	c.SetCookie(sessionCookieName, tok, maxAge, "/", "", false, true)
 }
 
 func clearSessionCookie(c *gin.Context) {
@@ -278,6 +286,8 @@ type sessionStateResp struct {
 	HasRecovery bool `json:"has_recovery"`
 	// Recovery 明文恢复码：仅认领响应里出现一次，之后永远拿不到。
 	Recovery string `json:"recovery,omitempty"`
+	// Persist 本设备的登录保持：true=长期 Cookie / false=关浏览器即退出。
+	Persist bool `json:"persist"`
 }
 
 func buildState(s *db.Session) sessionStateResp {
@@ -310,6 +320,7 @@ func buildState(s *db.Session) sessionStateResp {
 	if list, err := db.ListSessionsForUser(uid); err == nil {
 		out.Devices = len(list)
 	}
+	out.Persist = s.Persist
 	return out
 }
 
@@ -368,6 +379,15 @@ func sessionState(c *gin.Context) {
 	}
 	if tok, _ := requestToken(c); tok != "" {
 		if s, err := db.ActiveSession(db.HashToken(tok)); err == nil && s != nil {
+			// 主设备自愈（2026-11-02）：主设备报废后会话要 180 天才过期，过期后没有任何事件
+			// 再去补 owner（EnsureOwnerSession 只在吊销会话时调），全实例会永久没有主设备 ——
+			// 改 PIN / 删清账本 / 导入一律 403，界面上还看不出原因。每次拉会话状态顺手补一次：
+			// 已有活 owner 时它只是一条 COUNT 查询，代价可忽略。
+			if promoted, _ := db.EnsureOwnerSession(); promoted == s.ID {
+				if s2, err2 := db.ActiveSessionByID(s.ID); err2 == nil && s2 != nil {
+					s = s2
+				}
+			}
 			c.JSON(http.StatusOK, buildState(s))
 			return
 		}
@@ -398,8 +418,10 @@ type claimReq struct {
 
 // sessionClaim POST /api/session/claim —— 首台设备认领已有账本（不改 user_id，数据零迁移）。
 //
-// 首台设备直接成为主设备（owner）：之后「吊销他机 / 出码加设备 / 改 PIN / 删清账本 / 导入」
-// 只有它能做。响应里带一份一次性明文恢复码，前端弹框要求用户抄下来（库里只存 bcrypt）。
+// 首台设备直接成为主设备（owner）。2026-11-02 起「主设备」只剩账本级不可逆操作的专属权
+// （改操作 PIN / 恢复码 rotate / 删账本 / 清空 / 导入 / 转移身份）；设备管理（改名 / 吊销他机 /
+// 出码加设备）改为**任意设备 + 操作 PIN**，主设备坏了也能继续运维。
+// 响应里带一份一次性明文恢复码，前端弹框要求用户抄下来（库里只存 bcrypt）。
 func sessionClaim(c *gin.Context) {
 	if !bootstrapAllowed() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "该实例不接受直接认领，请用配对码登录"})
@@ -468,7 +490,7 @@ func sessionClaim(c *gin.Context) {
 			}
 		}
 	}
-	setSessionCookie(c, tok)
+	setSessionCookie(c, tok, true) // 首台认领=主设备，默认长期登录（设备页可随时改成会话 Cookie）
 	log.Printf("[auth] 首台设备已认领账本 %v（role=%s PIN=%v 恢复码=%v UA=%s）",
 		uids, role, pin != "", st.Recovery != "", s.UA)
 	c.JSON(http.StatusOK, st)
@@ -503,6 +525,8 @@ func allowPair(ip string) bool {
 
 type pairReq struct {
 	Code string `json:"code"`
+	// Persist 可选：登录保持。nil 时按默认长期登录；false=会话 Cookie（关浏览器即退出）。
+	Persist *bool `json:"persist"`
 }
 
 // sessionPair POST /api/session/pair —— 用一次性码把当前设备接入。
@@ -553,8 +577,117 @@ func sessionPair(c *gin.Context) {
 		s.Label = pc.Label
 	}
 	db.GrantSessionUser(s.ID, pc.UserID)
-	setSessionCookie(c, tok)
-	log.Printf("[auth] 设备配对成功：uid=%d scope=%s label=%q（UA=%s）", pc.UserID, pc.Scope, pc.Label, s.UA)
+	pairPersist := b.Persist == nil || *b.Persist
+	db.SetSessionPersist(s.ID, pairPersist) // 同 PIN 登录：落库值必须与 Cookie 形态一致
+	setSessionCookie(c, tok, pairPersist)
+	log.Printf("[auth] 设备配对成功：uid=%d scope=%s label=%q persist=%v（UA=%s）", pc.UserID, pc.Scope, pc.Label, pairPersist, s.UA)
+	c.JSON(http.StatusOK, buildState(s))
+}
+
+// ---- PIN 登录（2026-11-02）----
+//
+// 场景：设备退出登录 / Cookie 过期后，原先唯一的回去方式是主设备出配对码——
+// 人不在主设备旁就被锁在外面。实例已设操作 PIN 时，允许用 PIN 直接登录：
+// PIN 本来就是全实例的危险操作口令（出码 / 删账本 / 吊销他机都要它），
+// 拿到它的人即使走配对流程也挡不住，所以用它换一个普通登录态并不放大泄漏面。
+//
+// 权限刻意压着给：role=member（管理操作仍归主设备），但授权**当前全部账本**——
+// PIN 是实例级口令，按账本拆分没有意义，反而制造「登得进去却切不过去」的死路。
+// 限流与配对同池（同一 IP 5 分钟 10 次），挡 4–6 位数字穷举。
+
+type pinLoginReq struct {
+	PIN string `json:"pin"`
+	// Persist 可选：登录保持。false=会话 Cookie（关浏览器即退出）。
+	Persist *bool `json:"persist"`
+}
+
+func sessionPinLogin(c *gin.Context) {
+	if !allowPair(c.ClientIP()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "尝试过于频繁，请 5 分钟后再试"})
+		return
+	}
+	var b pinLoginReq
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if !db.HasPIN() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "本实例未设置操作 PIN，请用配对码接入"})
+		return
+	}
+	if !db.CheckPIN(strings.TrimSpace(b.PIN)) {
+		log.Printf("[auth] PIN 登录失败（ip=%s）", c.ClientIP())
+		c.JSON(http.StatusForbidden, gin.H{"error": "PIN 不正确"})
+		return
+	}
+	users, err := db.ListUsers()
+	if err != nil || len(users) == 0 {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "尚无账本"})
+		return
+	}
+	// 授权名单在创建会话前定好：新账本不会自动跟进（重新 PIN 登录一次即可）。
+	uids := make([]int64, 0, len(users))
+	for _, u := range users {
+		uids = append(uids, u.ID)
+	}
+	// 无主设备时 PIN 登录直接接管（2026-11-02）：主设备报废、会话过期后，实例里可能一台
+	// 能管理的设备都不剩（认领要等 CountActiveSessions==0，配对码要有人出码）。PIN 是实例级
+	// 口令，用它进来的设备此时成为主设备是唯一能让实例恢复管理能力的路。
+	role := db.RoleMember
+	if db.CountOwners() == 0 {
+		role = db.RoleOwner
+	}
+	tok, s, err := db.CreateSession(uids[0], c.Request.UserAgent(), "device", role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for _, id := range uids {
+		db.GrantSessionUser(s.ID, id)
+	}
+	persist := b.Persist == nil || *b.Persist
+	db.SetSessionPersist(s.ID, persist) // CreateSession 落库默认 1，这里按请求覆盖（Cookie 形态与 DB 必须一致）
+	setSessionCookie(c, tok, persist)
+	log.Printf("[auth] PIN 登录成功：授权 %d 个账本 persist=%v（UA=%s）", len(uids), persist, s.UA)
+	c.JSON(http.StatusOK, buildState(s))
+}
+
+// ---- 登录保持切换 ----
+
+type persistReq struct {
+	Persist bool `json:"persist"`
+}
+
+// sessionPersist POST /api/session/persist —— 切换本设备的登录保持。
+// Cookie 的持久/会话形态只能在新 Cookie 上生效，所以切换时**轮换 token**：
+// 旧 Cookie 立即作废，新 Cookie 按新形态下发（顺带换来一次 token 轮换的安全收益）。
+func sessionPersist(c *gin.Context) {
+	sid := currentSessionID(c)
+	if sid <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	var b persistReq
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if err := db.SetSessionPersist(sid, b.Persist); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	tok, err := db.RotateSessionToken(sid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s, err := db.ActiveSessionByID(sid)
+	if err != nil || s == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	setSessionCookie(c, tok, b.Persist)
+	log.Printf("[auth] 登录保持已切换：sid=%d persist=%v（token 已轮换）", sid, b.Persist)
 	c.JSON(http.StatusOK, buildState(s))
 }
 
@@ -662,16 +795,12 @@ func sessionDeviceRevoke(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "设备不存在"})
 		return
 	}
-	// 2026-10-29 权限收紧：吊销「别的设备」是管理操作，只有主设备能做，且要操作 PIN
-	// （与删账本 / 清空同等级）。吊销自己等价于退出登录，任何设备都可以，不需要口令。
+	// 2026-11-02 权限放宽：吊销「别的设备」不再要求主设备身份，改成**任意设备 + 操作 PIN**。
+	// 原因：主设备坏了以后，正是最需要「把死掉那台吊销掉」的时候，而那时只剩 member 设备可用。
+	// 安全性由 PIN 承担（与删账本 / 清空同级）；吊销后会触发 EnsureOwnerSession()，
+	// 最早接入的在线设备自动升为主设备，实例不会卡在「零主设备」。
+	// 吊销自己等价于退出登录，任何设备都可以，不需要口令。
 	if id != sid {
-		if !isOwnerSession(c) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"error":          "只有主设备可以吊销其他设备",
-				"owner_required": true,
-			})
-			return
-		}
 		if !pinSatisfied(c) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "需要操作 PIN", "pin_required": true})
 			return
@@ -686,11 +815,11 @@ func sessionDeviceRevoke(c *gin.Context) {
 
 // sessionDeviceRename PATCH /api/session/devices/:id —— 改设备显示名。
 // 浏览器拿不到计算机名/系统账户名（无此 Web API，且属指纹信息），只能让用户自己命名；
-// 传空串表示恢复「按 UA 自动识别」。只允许改自己账本授权范围内的会话；
-// 改「别的设备」的名字需要主设备身份（改名不涉及凭据，故不额外要 PIN）。
+// 传空串表示恢复「按 UA 自动识别」。只允许改自己账本授权范围内的会话。
+// 2026-11-02：改「别的设备」的名字不再要求主设备身份 —— 改名不涉及凭据、可随时改回，
+// 归属「设备管理」，与吊销同级放行；只是因为无凭据变更，不额外要 PIN（免得为改个名字输一次口令）。
 func sessionDeviceRename(c *gin.Context) {
 	uid := currentUserID(c)
-	sid := currentSessionID(c)
 	id := parseID(c.Param("id"))
 	if id <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
@@ -705,13 +834,6 @@ func sessionDeviceRename(c *gin.Context) {
 	}
 	if !db.SessionHasUser(id, uid) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "设备不存在"})
-		return
-	}
-	if id != sid && !isOwnerSession(c) {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-			"error":          "只有主设备可以重命名其他设备",
-			"owner_required": true,
-		})
 		return
 	}
 	if err := db.SetSessionLabel(id, b.Label); err != nil {

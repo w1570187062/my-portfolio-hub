@@ -182,25 +182,36 @@ func RegisterRoutes(r *gin.Engine) {
 	pub := r.Group("/api")
 	{
 		pub.GET("/session", sessionState)
-		pub.POST("/session/claim", sessionClaim) // 首启认领（仅当库内无有效会话）
-		pub.POST("/session/pair", sessionPair)   // 配对码登录
+		pub.POST("/session/claim", sessionClaim)        // 首启认领（仅当库内无有效会话）
+		pub.POST("/session/pair", sessionPair)         // 配对码登录
+		pub.POST("/session/pin-login", sessionPinLogin) // 操作 PIN 登录（实例已设 PIN 时的免配对回去通道）
 	}
 
 	g := r.Group("/api")
 	g.Use(AuthGuard())
 	{
 		// 会话自助：退出 / 切换账本 / PIN / 设备管理 / 出码
-		// 2026-10-29 权限分层：管理类操作先过 OwnerGuard（只有主设备），再过 PinGuard（口令）。
+		// 2026-11-02 权限调整：**设备管理只看 PIN，不看主设备身份**。
+		// 起因：主设备一旦损坏 / 丢失，member 设备连「吊销那台死机」「加一台新设备」都做不了，
+		// 整个实例只能靠恢复码硬重置。设备类操作改由 PIN 兜底：
+		//   - 吊销他机、出码（device / invite）：任何设备 + 操作 PIN；
+		//   - 改他机显示名：任何设备（无凭据变更，不额外要 PIN）；
+		//   - 转移主设备：仍是主设备专属（TransferOwnership 只降级发起方，
+		//     member 发起会凭空多出一个 owner，破坏「全局至多一个 owner」）。
+		// 主设备真的没了也不需要人工救：RevokeSession 内部会 EnsureOwnerSession()，
+		// 吊销掉那台死机后，最早接入的在线设备自动升为主设备。
+		// 仍属主设备专属（账本级不可逆操作）：改/关操作 PIN、恢复码 rotate、删账本、清空账本、导入。
 		g.POST("/session/logout", sessionLogout)
 		g.POST("/session/switch", sessionSwitch)
+		g.POST("/session/persist", sessionPersist) // 切换本设备登录保持（会话 Cookie / 长期 Cookie）
 		g.POST("/session/pin", OwnerGuard(), sessionPIN)              // 改/关卡 PIN 只属主设备
 		g.POST("/session/pin/reset", sessionPINReset)                 // 忘记 PIN：用恢复码重置（需已登录，不需旧 PIN）
 		g.POST("/session/recovery/rotate", OwnerGuard(), PinGuard(), sessionRecoveryRotate) // 重新生成恢复码
 		g.POST("/session/transfer", OwnerGuard(), sessionTransfer)    // 把主设备身份转移给指定设备
 		g.GET("/session/devices", sessionDevices)
-		g.PATCH("/session/devices/:id", sessionDeviceRename)  // 改自己：所有设备；改他机：主设备
-		g.DELETE("/session/devices/:id", sessionDeviceRevoke) // 吊销自己：所有设备；吊销他机：主设备 + PIN
-		g.POST("/session/code", OwnerGuard(), PinGuard(), sessionCode) // 出码是新的"加设备"入口
+		g.PATCH("/session/devices/:id", sessionDeviceRename)  // 改名：本机与他机都放行
+		g.DELETE("/session/devices/:id", sessionDeviceRevoke) // 吊销自己：免 PIN；吊销他机：任意设备 + PIN
+		g.POST("/session/code", PinGuard(), sessionCode) // 出码（加设备 / 邀请家人）：任意设备 + PIN
 
 		// 多账本：账本列表/新增/删除/统计/清空（路径与字段沿用 users）
 		g.GET("/users", listUsers)
@@ -328,6 +339,10 @@ func RegisterRoutes(r *gin.Engine) {
 		// 复盘页 v6（2026-10-30）：收益率诊断三问（谁在拖累 / 现金闲置 / 谁表现好）。
 		// 与 /rebalance 是两套口径：那边是权重偏离，这边是逐标的实测年化（XIRR）。
 		g.GET("/review", reviewGet)
+		// 复盘页基准对比：近 1 年组合收益 vs 沪深300 / 标普500 / 纳指100（指数日线 6h 缓存）
+		g.GET("/review/benchmark", benchmarkGet)
+		// 首页「今日待办」：止盈止损 / 定投 / 待还款 / 存款到期 一次聚合（替代首页并发 4 个接口）
+		g.GET("/today/brief", todayBrief)
 		// 存款（定期存款 / 大额存单）：新增扣款、到期确认落袋后才入账利息
 		g.GET("/asset/deposits", listDeposits)
 		g.POST("/asset/deposits", createDeposit)
