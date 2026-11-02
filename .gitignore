@@ -100,8 +100,12 @@ Desktop.ini
 .DS_Store
 
 # 本地编译产物（go build -o pf.exe / go build 默认按模块名产出 portfolio）
+# /pf*.exe 覆盖临时验证用的 pf-e.exe / pf-smoke.exe 等；portfolio.tgz 是 scripts/deploy.sh 的打包产物
 /pf.exe
+/pf*.exe
+/pf*.exe~
 /portfolio
+/portfolio.tgz
 /.tmp_*
 # 一次性设计原型（与 docs/*-proposal.html 同策略：留在本地，不进版本库）
 /rebalance-prototype/
