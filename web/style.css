@@ -6332,10 +6332,9 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 }
 .rb-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--rb-c, var(--text-faint)); }
 
-/* ===== 复盘页 v8 · 重排（2026-11-05）=====
-   从上到下：区间切换条 → Hero 卡 → KPI 紧凑卡 → 收益归因。
-   删掉：benchmark 4 卡、闲置现金卡、业绩表现卡。
-   去卡片外边框：统一用 .rv-cardless { border: 0; box-shadow: none; }。 */
+/* ===== 复盘页 v8.1 · 再调（2026-11-02）=====
+   Hero 卡整合 KPI 三指标到底部；bench-switch 挪到 title 行右侧弱化；
+   bd-list 颜色条移到最右、名称最左、占满屏宽。 */
 
 .rv-cardless { border: 0; box-shadow: none; }
 
@@ -6363,12 +6362,10 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .rv-rb-btns button:hover:not(.on) { color: var(--text); background: var(--bg-input); }
 .rv-rb-dates { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; margin-left: auto; }
 
-/* —— Hero 卡 —— */
+/* —— Hero 卡（整合 KPI 到底部；bench-switch 在 title 行右侧弱化）—— */
 .rv-hero {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-5);
+  display: flex; flex-direction: column;
+  gap: var(--sp-3);
   padding: var(--sp-5) var(--sp-6);
   background:
     radial-gradient(ellipse at top left, rgba(var(--tint), .14), transparent 60%),
@@ -6379,45 +6376,36 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 }
 .rv-hero[hidden] { display: none; }
 .rv-hero-body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+
+/* title 行：左标题，右 bench-switch（弱化，margin-left:auto 推到最右） */
+.rv-hero-title-row { display: flex; align-items: center; gap: var(--sp-3); }
 .rv-hero-title { font-size: var(--fs-sm); color: var(--text-muted); font-weight: 500; }
+
 .rv-hero-value { font-size: var(--fs-2xl); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .rv-hero-value.up { color: var(--up); }
 .rv-hero-value.down { color: var(--down); }
 .rv-hero-sub { font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.4; }
-.rv-hero-side { flex-shrink: 0; }
 
-/* 基准切换器（hero 内部右侧） */
+/* 基准切换器（弱化，与 title 同一行右侧） */
 .rv-bench-switch {
-  display: flex; flex-direction: column; gap: var(--sp-1);
-  padding: var(--sp-2) var(--sp-3);
-  background: var(--bg-soft);
-  border: 0;
-  border-radius: var(--r-sm);
+  display: flex; flex-shrink: 0; margin-left: auto;
+  padding: 0; background: transparent; border: 0; border-radius: 0;
 }
-.rv-bs-label { font-size: var(--fs-xs); color: var(--text-faint); }
 .rv-bs-btns { display: flex; gap: 2px; }
 .rv-bs-btns button {
-  font-size: var(--fs-xs); font-weight: 600;
-  padding: 4px 8px;
+  font-size: 11px; font-weight: 500;
+  padding: 3px 8px;
   border: none;
-  background: transparent; color: var(--text-muted);
+  background: transparent; color: var(--text-faint);
   border-radius: var(--r-xs);
   cursor: pointer;
   transition: background .15s, color .15s;
 }
-.rv-bs-btns button.on { background: var(--primary-soft); color: var(--primary); }
-.rv-bs-btns button:hover:not(.on) { color: var(--text); background: var(--bg-input); }
+.rv-bs-btns button.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.rv-bs-btns button:hover:not(.on) { color: var(--text); }
 
-/* —— KPI 紧凑卡：3 指标 inline 一行 —— */
-.rv-compact-kpis {
-  padding: var(--sp-4) var(--sp-6);
-  border: 0;
-  box-shadow: none;
-  background: var(--bg-card);
-  border-radius: var(--r-md);
-}
-.rv-compact-kpis[hidden] { display: none; }
-.rv-ck-row { display: flex; align-items: stretch; gap: var(--sp-2); }
+/* —— KPI 三指标（内嵌 hero 底部）—— */
+.rv-ck-row { display: flex; align-items: stretch; gap: var(--sp-2); margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border-soft); }
 .rv-ck-item { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .rv-ck-label { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 500; }
 .rv-ck-value { font-size: var(--fs-xl); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -6426,11 +6414,10 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .rv-ck-sub { font-size: var(--fs-xs); color: var(--text-faint); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rv-ck-divider { flex: 0 0 1px; background: var(--border-soft); margin: var(--sp-1) 0; }
 
-/* —— 收益归因：上下排布 + 条形左侧 + 分割线 —— */
+/* —— 收益归因：标题上下排布 + 颜色条最右 + 名称最左 + 占满屏宽 —— */
 .rv-breakdown {
   padding: var(--sp-4) var(--sp-6);
-  border: 0;
-  box-shadow: none;
+  border: 0; box-shadow: none;
   background: var(--bg-card);
   border-radius: var(--r-md);
 }
@@ -6441,24 +6428,25 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 
 .rv-bd-list { display: flex; flex-direction: column; }
 
-/* 条目：左（色点+名称+标签）+ 中（条形）+ 右（金额+收益率）
-   清单 10：名称最左，条目间浅色分割线 */
+/* 条目：left(名称最左) → right(金额+收益率) → bar-wrap(颜色条最右)
+   CSS order 控制顺序，HTML 书写顺序不变 */
 .rv-bd-row {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) 0;
   border-bottom: 1px solid var(--border-soft);
+  width: 100%;
 }
 .rv-bd-row:last-child { border-bottom: 0; }
 
-.rv-bd-bar-wrap { flex: 0 0 120px; min-width: 0; }
+.rv-bd-bar-wrap { flex: 0 0 120px; min-width: 0; order: 3; }
+.rv-bd-left { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); order: 1; }
+.rv-bd-right { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0; order: 2; }
 
-.rv-bd-left { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); }
 .rv-bd-name { font-size: var(--fs-sm); font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .rv-bd-lbl { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 400; padding: 0 6px; background: var(--bg-soft); border-radius: 4px; flex-shrink: 0; }
 
-.rv-bd-right { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
 .rv-bd-amt { font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rv-bd-amt.up { color: var(--up); }
 .rv-bd-amt.down { color: var(--down); }
@@ -6468,12 +6456,12 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 
 /* —— 窄屏 —— */
 @media (max-width: 640px) {
-  .rv-hero { flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-4); }
-  .rv-bench-switch { align-self: flex-start; }
+  .rv-hero { gap: var(--sp-2); padding: var(--sp-4); }
+  .rv-hero-title-row { flex-wrap: wrap; }
+  .rv-bench-switch { margin-left: 0; }
   .rv-range-bar { flex-wrap: wrap; }
   .rv-rb-dates { margin-left: 0; width: 100%; order: 2; }
 
-  .rv-compact-kpis { padding: var(--sp-3) var(--sp-4); }
   .rv-ck-row { flex-wrap: wrap; gap: var(--sp-3); }
   .rv-ck-item { flex: 1 1 45%; }
   .rv-ck-divider { display: none; }

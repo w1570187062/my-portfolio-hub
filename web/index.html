@@ -436,44 +436,39 @@
       <span class="rv-rb-dates" id="rvRbDates"></span>
     </div>
 
-    <!-- ② Hero 卡：区间收益大字 + 基准对比小字 + 右侧基准指数切换器。 -->
+    <!-- ② Hero 卡：区间收益大字 + 副标题 + 底部 KPI 三指标 + 顶部右侧基准切换器。 -->
     <section class="card rv-hero rv-cardless" id="rvHero">
       <div class="rv-hero-body">
-        <div class="rv-hero-title" id="rvHeroTitle">复盘</div>
-        <div class="rv-hero-value" id="rvHeroValue">—</div>
-        <div class="rv-hero-sub" id="rvHeroSub">—</div>
-      </div>
-      <div class="rv-hero-side">
-        <div class="rv-bench-switch" id="rvBenchSwitch">
-          <div class="rv-bs-label">对标</div>
-          <div class="rv-bs-btns">
-            <button type="button" class="on" data-bench="csi300">沪深300</button>
-            <button type="button" data-bench="sp500">标普500</button>
-            <button type="button" data-bench="ndx">纳指100</button>
+        <div class="rv-hero-title-row">
+          <div class="rv-hero-title" id="rvHeroTitle">复盘</div>
+          <div class="rv-bench-switch" id="rvBenchSwitch">
+            <div class="rv-bs-btns">
+              <button type="button" class="on" data-bench="csi300">沪深300</button>
+              <button type="button" data-bench="sp500">标普500</button>
+              <button type="button" data-bench="ndx">纳指100</button>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
-
-    <!-- ③ KPI 紧凑卡：年化 + 收益合计 + 年化差距，一行呈现。 -->
-    <section class="card rv-compact-kpis rv-cardless">
-      <div class="rv-ck-row">
-        <div class="rv-ck-item">
-          <div class="rv-ck-label">组合实测年化</div>
-          <div class="rv-ck-value" id="rvKpiAnn">—</div>
-          <div class="rv-ck-sub" id="rvKpiAnnSub">—</div>
-        </div>
-        <div class="rv-ck-divider"></div>
-        <div class="rv-ck-item">
-          <div class="rv-ck-label">收益合计</div>
-          <div class="rv-ck-value" id="rvKpiGain">—</div>
-          <div class="rv-ck-sub" id="rvKpiGainSub">—</div>
-        </div>
-        <div class="rv-ck-divider"></div>
-        <div class="rv-ck-item">
-          <div class="rv-ck-label">年化差距</div>
-          <div class="rv-ck-value" id="rvKpiGap">—</div>
-          <div class="rv-ck-sub" id="rvKpiGapSub">—</div>
+        <div class="rv-hero-value" id="rvHeroValue">—</div>
+        <div class="rv-hero-sub" id="rvHeroSub">—</div>
+        <div class="rv-ck-row">
+          <div class="rv-ck-item">
+            <div class="rv-ck-label">组合实测年化</div>
+            <div class="rv-ck-value" id="rvKpiAnn">—</div>
+            <div class="rv-ck-sub" id="rvKpiAnnSub">—</div>
+          </div>
+          <div class="rv-ck-divider"></div>
+          <div class="rv-ck-item">
+            <div class="rv-ck-label">收益合计</div>
+            <div class="rv-ck-value" id="rvKpiGain">—</div>
+            <div class="rv-ck-sub" id="rvKpiGainSub">—</div>
+          </div>
+          <div class="rv-ck-divider"></div>
+          <div class="rv-ck-item">
+            <div class="rv-ck-label">年化差距</div>
+            <div class="rv-ck-value" id="rvKpiGap">—</div>
+            <div class="rv-ck-sub" id="rvKpiGapSub">—</div>
+          </div>
         </div>
       </div>
     </section>

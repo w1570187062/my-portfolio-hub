@@ -13549,10 +13549,9 @@ async function loadReview() {
 
 function renderReview() {
   if (!rvData) return;
-  renderRvHero();
-  renderRvCompactKpis();
+  renderRvHero();   // 内部会调 renderRvCompactKpis()，不再独立调用
   renderRvBreakdown();
-  playRiseIn($('#rebalanceView'), '.rv-range-bar, .rv-hero, .rv-compact-kpis, .rv-breakdown', 60);
+  playRiseIn($('#rebalanceView'), '.rv-range-bar, .rv-hero, .rv-breakdown', 60);
 }
 
 // ===== 复盘页「基准对比」（2026-11-02，v8 重排：删掉 4 卡，数据只供 hero 副标题）=====
@@ -13631,9 +13630,11 @@ function renderRvHero() {
     }
     sub.textContent = parts.length ? parts.join(' · ') : '—';
   }
+  // KPI 三指标内嵌 hero 底部，不再独立卡（清单 1）
+  renderRvCompactKpis();
 }
 
-// ===== KPI 紧凑卡：年化 + 收益合计 + 年化差距，一行呈现（清单 6）=====
+// ===== KPI：年化 + 收益合计 + 年化差距（已内嵌 hero 卡底部，函数保留只操作 id）=====
 function renderRvCompactKpis() {
   if (!rvData) return;
   // ① 组合实测年化（全持有期，benchmark 还没 range 版的年化）
