@@ -5288,34 +5288,36 @@ function openCalDay(date) {
   }
   const v = rec.total_cny;
   let rows = '';
-  let wRows = '';
   let equityCNY = 0, wealthCNY = 0;
   try {
     const det = JSON.parse(rec.detail || '{}');
     const syms = det.by_symbol || [];
-    if (syms.length) {
-      rows = '<div class="cal-detail-wrap"><table class="cal-detail-tbl"><thead><tr><th>代码</th><th>名称</th><th class="num">盈亏 (CNY)</th></tr></thead><tbody>' +
-        syms.map((s) => {
-          // 优先用快照时折算的 CNY 值；旧快照无该字段则用当前汇率回退折算
-          const cny = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl);
-          return '<tr><td class="cal-code">' + calCurSym(s.currency) + (s.symbol || '') + '</td><td>' + (s.name || '') + '</td><td class="num ' + clsPnl(cny) + '">' + fmtPnl(cny) + '</td></tr>';
-        }).join('') +
-        '</tbody></table></div>';
-      syms.forEach((s) => { const c = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl); equityCNY += c; });
-    } else rows = '<p class="u-muted">无个股明细。</p>';
-    // 理财收益（已合并进 total_cny）。代码列与持仓明细对齐；旧快照不含 code 时按产品名回查当前产品。
     const wts = det.by_wealth || [];
-    if (wts.length) {
-      const codeByName = {};
-      (((assetData || {}).wealth || {}).products || []).forEach((p) => { if (p.name && p.code) codeByName[p.name] = p.code; });
-      wRows = '<div class="cal-detail-wrap u-mt-2"><table class="cal-detail-tbl"><thead><tr><th>代码</th><th>理财</th><th class="num">盈亏 (CNY)</th></tr></thead><tbody>' +
-        wts.map((w) => {
-          const code = w.code || codeByName[w.name] || '';
-          return '<tr><td class="cal-code">' + (code ? calCurSym(w.currency) + code : '<span class="u-muted">—</span>') + '</td><td>' + (w.name || '') + '</td><td class="num ' + clsPnl(w.pnl_cny) + '">' + fmtPnl(w.pnl_cny) + '</td></tr>';
-        }).join('') +
-        '</tbody></table></div>';
-      wts.forEach((w) => { wealthCNY += (typeof w.pnl_cny === 'number') ? w.pnl_cny : 0; });
-    }
+    // 2026-11-02：原「持仓 / 理财」两张表合并成一张。两张表各自的表头（代码 / 名称 / 盈亏）
+    // 叠在同一个弹框里像两份报表，行距也被表头切碎；合表后一列到底，类型靠名称前的
+    // 小徽标区分（持仓 / 理财），顶部汇总行照旧分成权益盈亏 / 理财盈亏两个数。
+    const codeByName = {};
+    (((assetData || {}).wealth || {}).products || []).forEach((p) => { if (p.name && p.code) codeByName[p.name] = p.code; });
+    const line = (kind, codeCell, name, cny) => '<tr><td class="cal-code">' + codeCell + '</td>'
+      + '<td><span class="cal-kb' + (kind === 'wealth' ? ' is-wealth' : '') + '">' + (kind === 'wealth' ? '理财' : '持仓') + '</span>' + name + '</td>'
+      + '<td class="num ' + clsPnl(cny) + '">' + fmtPnl(cny) + '</td></tr>';
+    const lines = [];
+    syms.forEach((s) => {
+      // 优先用快照时折算的 CNY 值；旧快照无该字段则用当前汇率回退折算
+      const cny = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl);
+      equityCNY += cny;
+      lines.push(line('equity', calCurSym(s.currency) + (s.symbol || ''), s.name || '', cny));
+    });
+    // 理财收益（已合并进 total_cny）。代码列与持仓明细对齐；旧快照不含 code 时按产品名回查当前产品。
+    wts.forEach((w) => {
+      const code = w.code || codeByName[w.name] || '';
+      const cny = (typeof w.pnl_cny === 'number') ? w.pnl_cny : 0;
+      wealthCNY += cny;
+      lines.push(line('wealth', code ? calCurSym(w.currency) + code : '<span class="u-muted">—</span>', w.name || '', cny));
+    });
+    rows = lines.length
+      ? '<div class="cal-detail-wrap"><table class="cal-detail-tbl"><thead><tr><th>代码</th><th>名称</th><th class="num">盈亏 (CNY)</th></tr></thead><tbody>' + lines.join('') + '</tbody></table></div>'
+      : '<p class="u-muted">无明细。</p>';
   } catch (e) { rows = '<p class="u-danger">明细解析失败</p>'; }
   const dayRate = (rec.base_cny && rec.base_cny > 0) ? (rec.total_cny / rec.base_cny * 100) : null;
   $('#calModalBody').innerHTML = `
@@ -5325,7 +5327,7 @@ function openCalDay(date) {
       <div><div class="cal-sub">权益盈亏 (CNY)</div><div class="value ${clsPnl(equityCNY)}">${fmtPnl(equityCNY)}</div></div>
       <div><div class="cal-sub">理财盈亏 (CNY)</div><div class="value ${clsPnl(wealthCNY)}">${fmtPnl(wealthCNY)}</div></div>
       ${CAL_NAV_HTML}
-    </div>${rows}${wRows}`;
+    </div>${rows}`;
   $('#calModal').hidden = false;
 }
 
