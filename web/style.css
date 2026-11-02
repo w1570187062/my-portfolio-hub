@@ -5662,13 +5662,16 @@ textarea::placeholder {
 .hero-changes .hc-val.down { color: var(--down); }
 /* 无数字的状态项（开盘前「待开盘 · 09:30 更新」）：不参与涨跌着色，也不抢主数字重量 */
 .hero-changes .hc-item.is-idle .hc-val { color: var(--text-faint); font-weight: 400; font-size: var(--fs-sm); }
-.hero-changes .hc-pct { color: var(--text-muted); font-style: normal; font-weight: 400; font-size: var(--fs-xs); }
-/* 百分比分母标注（方案 5）：首页今日变动写「/净资产」，投资页今日盈亏写「/持仓市值」。
-   两个百分比都对，但分母不同（净资产 vs 持仓市值），不标出来并排看像数据错乱。
-   字号再降一档、颜色走 faint，保证它读起来是「注解」而不是「数据」。 */
-.hero-changes .hc-pct .hc-of { color: var(--text-faint); font-size: var(--fs-2xs); margin-left: 1px; }
 .kpi-card .kpi-sub .sub-of { color: var(--text-faint); font-size: var(--fs-2xs); margin-left: 2px; }
-/* 资产分布芯片行（原型 hero-asset-chip）：一行 4 枚，取代原 4 列迷你条形 */
+/* ≥641（桌面 / 平板）：资产分布芯片排 2×2 —— 每排 2 枚、共两排。
+   原来 4 枚靠 flex-wrap 一行铺开，芯片宽度随文字长短参差、右侧留白不稳定；
+   改成等分两列后四枚等宽对齐，读起来更像「一组数据」而不是四个零散标签。
+   手机档（≤640）在下面的 640 断点里覆盖回「一行四个」，不受影响。 */
+@media (min-width: 641px) {
+  .nw-left .nw-asset-row { display: grid; grid-template-columns: repeat(2, 1fr); }
+  .nw-left .nw-chip { justify-content: center; }
+}
+/* 资产分布芯片行（原型 hero-asset-chip）：手机档一行 4 枚，桌面档见上方 2×2 */
 .nw-asset-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
 /* 资产分布芯片：一枚一个口径（● 持仓 ¥9.29万）。文字只用一种颜色（--text），
    层级靠字重（标签 400 / 金额 600）+ 数字等宽，不再像以前那样「彩点 + 冷灰标签 + 白金额」三种色

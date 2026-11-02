@@ -3629,7 +3629,7 @@ async function renderHomeDashboard() {
     // 非交易日（周末/法定节假日）这笔实时盈亏是最近一个交易日的涨跌，抬头改写成日期
     // （「10-30」），顶着「今日」会让人以为休市也在赚钱。
     const hdi = pnlDayInfo(ov.pnl_date || pnlDateStr);
-    if (dayPnl) segs.push(`<span class="hc-item"><span class="hc-label"${hdi.note ? ` title="${esc(hdi.note)}"` : ''}>${hdi.label}</span><span class="hc-val ${clsPnl(dayPnl)}">${dayPnl > 0 ? '+' : ''}${yuanOfW(dayPnl)} <em class="hc-pct" title="分母 = 期初净资产">(${pct(dayPnl / Math.max(net - dayPnl, 1) * 100)}<span class="hc-of">/净资产</span>)</em>${dayBadge(hdi)}</span></span>`);
+    if (dayPnl) segs.push(`<span class="hc-item"><span class="hc-label"${hdi.note ? ` title="${esc(hdi.note)}"` : ''}>${hdi.label}</span><span class="hc-val ${clsPnl(dayPnl)}">${dayPnl > 0 ? '+' : ''}${yuanOfW(dayPnl)}${dayBadge(hdi)}</span></span>`);
     // 两项都是 0 → 什么都不显示会像「没加载出来」。给一条无数字的状态项，
     // 解释「不是没数据，是还没开盘 / 休市」，同时不给 0 值任何视觉重量。
     else segs.push(`<span class="hc-item is-idle" title="${esc(hdi.note || '今日盈亏为 0')}"><span class="hc-label">今日</span><span class="hc-val">${hdi.preOpen ? '待开盘 · 09:30 更新' : (hdi.isToday ? '暂无变动' : '休市 · 无新数据')}</span></span>`);
