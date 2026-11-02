@@ -6305,148 +6305,19 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
    57px = header 56 + 底边框 1；≤640 有底部导航（60px + 安全区），移动端不撑高。 */
 @media (min-width: 641px) {
   #rebalanceView:not([hidden]) { min-height: calc(100dvh - 57px); }
-  #rebalanceView > .rv-card:last-of-type { flex: 1 1 auto; }
 }
 
-/* 卡片标题行：左「标题 + 计数」，右侧控件靠 margin-left:auto 顶到卡片最右。
-   注意不能加 justify-content:space-between —— 会让中间的计数被推到行中央。 */
+/* 卡片标题行（全局通用，别删） */
 .rb-sub-head { display: flex; align-items: baseline; gap: var(--sp-3); }
 .rb-sub-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); white-space: nowrap; }
 
-/* 复盘页 v6：每张卡「标题行 + 列表」。复用全局 .card 的 flex row，
-   这里强制竖排 + 拉伸，否则标题会被挤到左侧、内容只占半宽。 */
-.rv-card {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--sp-2);
-  padding: var(--sp-4) var(--sp-5);
-}
-.rv-card .rb-sub-head { margin-bottom: 0; }
-
-/* —— 复盘页「基准对比」条（2026-11-02）——
-   四格横排：我的组合（首格用主题淡底做锚点）+ 三个指数。差额写在副标里，
-   不在主值上换算 —— 主值永远是「这东西本身这一年的收益」，可直接与指数对读。 */
-.rv-bench { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); }
-/* 元素自带 display 时必须显式兜住 [hidden]，否则 UA 的 display:none 被类规则压过（spec §6.4） */
-.rv-bench[hidden] { display: none; }
-.rv-bench-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
-.rv-bench-range { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
-.rv-bench-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-3); }
-.rv-bench-cell {
-  display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0;
-  padding: var(--sp-3); border-radius: var(--r-sm);
-  background: var(--bg-soft); border: 1px solid var(--border);
-}
-.rv-bench-cell:first-child { background: rgba(var(--tint), .07); border-color: rgba(var(--tint), .12); }
-.rv-bench-k { font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rv-bench-v { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
-.rv-bench-v.up { color: var(--up); }
-.rv-bench-v.down { color: var(--down); }
-.rv-bench-s { font-size: var(--fs-xs); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rv-bench-empty { font-size: var(--fs-sm); color: var(--text-muted); }
-.rv-bench-note { font-size: var(--fs-xs); color: var(--text-faint); line-height: 1.5; }
-@media (max-width: 1340px) {
-  /* 平板：2×2 —— 四格并排在 1024 内容宽里每格只剩 220px，差额文案会全被省略成「组合 +…」 */
-  .rv-bench-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 640px) {
-  .rv-bench { padding: var(--sp-4); }
-  .rv-bench-grid { grid-template-columns: repeat(2, 1fr); gap: var(--sp-2); }
-}
-
-/* 右上角小计数 / 副提示 */
-.rv-n { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; }
-
-/* 口径说明行（方案 4）：业绩表现列表没有列头，第一眼只看到「英伟达 −80.3%」，
-   而该列是年化（投资页 −3.9% 才是持有期收益率）。加一行小字说明，不动 .rv-row 的 flex 布局，
-   零布局风险；不追求真表头（需要与 rv-name 弹性列严格对齐，维护成本高）。 */
-.rv-legend {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  line-height: 1.5;
-  padding: 0 2px var(--sp-1);
-}
-
-/* 业绩表现头部右侧：「已平仓 / 持仓中」切换，margin-left:auto → 贴卡片最右 */
-.rv-seg { display: inline-flex; margin-left: auto; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
-.rv-seg button { border: 0; background: transparent; color: var(--text-muted); font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-3); cursor: pointer; }
-.rv-seg button.on { background: var(--primary-soft); color: var(--text); font-weight: 600; }
-
-/* 卡片主体：左「收益占比圆环」+ 右列表。圆环固定 132px 且顶部对齐，
-   列表再长也不会把它压扁或居中飘走。 */
-.rv-body { display: flex; align-items: flex-start; gap: var(--sp-5); flex: 1 1 auto; }
-
-/* 列表行：name | rate | amt | bar（条形贴最右；名称行内混排）。
-   .rv-list 必须 flex:1 撑满 .rv-body 剩余宽度 —— 不撑的话 grid 收缩到内容宽，
-   条形列（minmax(96px,1fr)）跟着缩，右侧留一截空白，条形就贴不到卡片右缘。 */
-.rv-list { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1 1 auto; min-width: 0; }
-.rv-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px auto minmax(96px, 1fr);
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-1) 0;
-  border-bottom: 1px solid var(--border);
-}
-.rv-row:last-child { border-bottom: 0; }
-.rv-name { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-.rv-name .rv-t { font-size: var(--fs-sm); font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rv-name .rv-s { flex: 0 0 auto; font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rv-rate { font-size: var(--fs-md); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.rv-rate.up { color: var(--up); }
-.rv-rate.down { color: var(--down); }
-.rv-amt { font-size: var(--fs-sm); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.rv-amt.up { color: var(--up); }
-.rv-amt.down { color: var(--down); }
-
-/* 条形：轨道 + 填充。单一口径 = 收益总额，涨红跌绿；填充最小 4px 保证小值可见 */
-.rv-bar { min-width: 0; }
+/* 条形轨道 + 填充（全局通用，投资页也用） */
 .rv-track { position: relative; display: block; height: 8px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; }
 .rv-fill { position: absolute; top: 0; bottom: 0; left: 0; width: max(var(--w), 4px); border-radius: 999px; }
 .rv-fill.is-up { background: var(--up); }
 .rv-fill.is-down { background: var(--down); opacity: .9; }
 
-/* 收益占比圆环：按类别汇总（色 = --cat-* 类别色），中心显示收益合计 */
-.rv-donut {
-  position: relative;
-  flex: 0 0 132px;
-  width: 132px;
-  height: 132px;
-  border-radius: 50%;
-  background: var(--donut, none);
-}
-.rv-donut::before { content: ''; position: absolute; inset: 26px; border-radius: 50%; background: var(--bg-card); }
-.rv-donut-c {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  line-height: 1.3;
-}
-.rv-donut-c b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); color: var(--text); font-variant-numeric: tabular-nums; }
-
-/* 展开全部 / 收起 */
-.rv-more {
-  align-self: flex-start;
-  margin-top: var(--sp-2);
-  border: 1px dashed var(--border-strong);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: 999px;
-  cursor: pointer;
-}
-.rv-more:hover { color: var(--text); border-color: var(--text-faint); }
-
-/* 空态 / 灰标 */
+/* 空态 / 灰标 / 色点（全局通用） */
 .rv-empty { font-size: var(--fs-sm); color: var(--text-muted); padding: var(--sp-2) 0; }
 .rv-tag {
   align-self: center;
@@ -6461,77 +6332,19 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 }
 .rb-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--rb-c, var(--text-faint)); }
 
-/* 窄屏（≤640）：行折成两行，避免 4 列挤压。name+rate 一行，amt+bar 一行（条形仍贴最右）；
-   圆环与列表改上下堆叠，圆环居中 */
-@media (max-width: 640px) {
-  .rv-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: 'name rate' 'amt bar';
-    gap: var(--sp-1) var(--sp-3);
-  }
-  .rv-name { grid-area: name; }
-  .rv-rate { grid-area: rate; }
-  .rv-amt { grid-area: amt; }
-  .rv-bar { grid-area: bar; }
-  .rv-body { flex-direction: column; align-items: stretch; }
-  .rv-donut { align-self: center; }
-  /* 标题行放不下「标题 + 计数 + 切换」：允许折行，切换始终贴右 */
-  .rb-sub-head { flex-wrap: wrap; }
-  .rb-sub-title, .rv-n { white-space: nowrap; }
-}
+/* ===== 复盘页 v8 · 重排（2026-11-05）=====
+   从上到下：区间切换条 → Hero 卡 → KPI 紧凑卡 → 收益归因。
+   删掉：benchmark 4 卡、闲置现金卡、业绩表现卡。
+   去卡片外边框：统一用 .rv-cardless { border: 0; box-shadow: none; }。 */
 
-/* ===== 复盘页 v7 · 叙事化改版（2026-11-02）新增样式 ===== */
+.rv-cardless { border: 0; box-shadow: none; }
 
-/* 首屏结论卡（hero 样式，高于普通 card） */
-.rv-hero {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-5);
-  padding: var(--sp-5) var(--sp-6);
-  background:
-    radial-gradient(ellipse at top left, rgba(var(--tint), .14), transparent 60%),
-    var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-}
-.rv-hero[hidden] { display: none; }
-.rv-hero-body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-.rv-hero-title { font-size: var(--fs-sm); color: var(--text-muted); font-weight: 500; }
-.rv-hero-value { font-size: var(--fs-2xl); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.rv-hero-value.up { color: var(--up); }
-.rv-hero-value.down { color: var(--down); }
-.rv-hero-sub { font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.4; }
-.rv-hero-side { flex-shrink: 0; }
-
-/* 基准切换器（hero 右侧） */
-.rv-bench-switch {
-  display: flex; flex-direction: column; gap: var(--sp-1);
-  padding: var(--sp-2) var(--sp-3);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-}
-.rv-bs-label { font-size: var(--fs-xs); color: var(--text-faint); }
-.rv-bs-btns { display: flex; gap: 2px; }
-.rv-bs-btns button {
-  font-size: var(--fs-xs); font-weight: 600;
-  padding: 4px 8px;
-  border: none;
-  background: transparent; color: var(--text-muted);
-  border-radius: var(--r-xs);
-  cursor: pointer;
-  transition: background .15s, color .15s;
-}
-.rv-bs-btns button.on { background: var(--primary-soft); color: var(--primary); }
-.rv-bs-btns button:hover:not(.on) { color: var(--text); background: var(--bg-input); }
-
-/* 全局区间切换条 */
+/* —— 区间切换条（第一行）—— */
 .rv-range-bar {
   display: flex; align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-4);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 0;
   border-radius: var(--r-sm);
 }
 .rv-rb-label { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; flex-shrink: 0; }
@@ -6550,73 +6363,126 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .rv-rb-btns button:hover:not(.on) { color: var(--text); background: var(--bg-input); }
 .rv-rb-dates { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; margin-left: auto; }
 
-/* 年化列下面的小字（持有期收益率 + 超额） */
-.rv-sub-rate {
-  display: block;
-  font-size: 10.5px;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-}
-.rv-sub-rate.up { color: var(--up); }
-.rv-sub-rate.down { color: var(--down); }
-
-/* 闲置现金卡 */
-.rv-idle { padding: var(--sp-4) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); }
-.rv-idle[hidden] { display: none; }
-.rv-idle-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
-.rv-idle-w { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
-.rv-idle-body { display: flex; gap: var(--sp-5); align-items: start; flex-wrap: wrap; }
-.rv-idle-summary { display: flex; flex-direction: column; gap: 0; min-width: 160px; }
-.rv-idle-amt { font-size: var(--fs-xl); font-weight: 600; font-variant-numeric: tabular-nums; }
-.rv-idle-cost { font-size: var(--fs-xs); color: var(--text-muted); margin-top: var(--sp-1); }
-.rv-idle-list { flex: 1 1 280px; display: flex; flex-direction: column; gap: var(--sp-1); }
-.rv-idle-row {
-  display: flex; align-items: center; gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-2);
-  border-bottom: 1px solid var(--border-soft);
-}
-.rv-idle-row:last-child { border-bottom: none; }
-.rv-idle-row-name { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rv-idle-row-amt { font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
-
-/* 归因 Top 榜 */
-.rv-breakdown { padding: var(--sp-4) var(--sp-5); }
-.rv-breakdown[hidden] { display: none; }
-.rv-bd-list { display: flex; flex-direction: column; gap: var(--sp-1); }
-.rv-bd-row {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto auto 120px;
+/* —— Hero 卡 —— */
+.rv-hero {
+  display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-2);
+  justify-content: space-between;
+  gap: var(--sp-5);
+  padding: var(--sp-5) var(--sp-6);
+  background:
+    radial-gradient(ellipse at top left, rgba(var(--tint), .14), transparent 60%),
+    var(--bg-card);
+  border: 0;
+  border-radius: var(--r-md);
+  box-shadow: none;
+}
+.rv-hero[hidden] { display: none; }
+.rv-hero-body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.rv-hero-title { font-size: var(--fs-sm); color: var(--text-muted); font-weight: 500; }
+.rv-hero-value { font-size: var(--fs-2xl); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.rv-hero-value.up { color: var(--up); }
+.rv-hero-value.down { color: var(--down); }
+.rv-hero-sub { font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.4; }
+.rv-hero-side { flex-shrink: 0; }
+
+/* 基准切换器（hero 内部右侧） */
+.rv-bench-switch {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-soft);
+  border: 0;
+  border-radius: var(--r-sm);
+}
+.rv-bs-label { font-size: var(--fs-xs); color: var(--text-faint); }
+.rv-bs-btns { display: flex; gap: 2px; }
+.rv-bs-btns button {
+  font-size: var(--fs-xs); font-weight: 600;
+  padding: 4px 8px;
+  border: none;
+  background: transparent; color: var(--text-muted);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.rv-bs-btns button.on { background: var(--primary-soft); color: var(--primary); }
+.rv-bs-btns button:hover:not(.on) { color: var(--text); background: var(--bg-input); }
+
+/* —— KPI 紧凑卡：3 指标 inline 一行 —— */
+.rv-compact-kpis {
+  padding: var(--sp-4) var(--sp-6);
+  border: 0;
+  box-shadow: none;
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+}
+.rv-compact-kpis[hidden] { display: none; }
+.rv-ck-row { display: flex; align-items: stretch; gap: var(--sp-2); }
+.rv-ck-item { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rv-ck-label { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 500; }
+.rv-ck-value { font-size: var(--fs-xl); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.rv-ck-value.up { color: var(--up); }
+.rv-ck-value.down { color: var(--down); }
+.rv-ck-sub { font-size: var(--fs-xs); color: var(--text-faint); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-ck-divider { flex: 0 0 1px; background: var(--border-soft); margin: var(--sp-1) 0; }
+
+/* —— 收益归因：上下排布 + 条形左侧 + 分割线 —— */
+.rv-breakdown {
+  padding: var(--sp-4) var(--sp-6);
+  border: 0;
+  box-shadow: none;
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+}
+.rv-breakdown[hidden] { display: none; }
+.rv-bd-title-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.rv-bd-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.rv-bd-note { font-size: var(--fs-xs); color: var(--text-faint); }
+
+.rv-bd-list { display: flex; flex-direction: column; }
+
+/* 条目：左（色点+名称+标签）+ 中（条形）+ 右（金额+收益率）
+   清单 10：名称最左，条目间浅色分割线 */
+.rv-bd-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
   border-bottom: 1px solid var(--border-soft);
 }
-.rv-bd-row:last-child { border-bottom: none; }
-.rv-bd-name { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rv-bd-extra { display: flex; flex-direction: column; align-items: flex-end; gap: 0; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
-.rv-bd-ann { color: var(--text-muted); }
-.rv-bd-hr { color: var(--text-faint); }
-.rv-bd-alpha.up { color: var(--up); font-weight: 600; }
-.rv-bd-alpha.down { color: var(--down); font-weight: 600; }
-.rv-bd-amt { font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rv-bd-row:last-child { border-bottom: 0; }
+
+.rv-bd-bar-wrap { flex: 0 0 120px; min-width: 0; }
+
+.rv-bd-left { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); }
+.rv-bd-name { font-size: var(--fs-sm); font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.rv-bd-lbl { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 400; padding: 0 6px; background: var(--bg-soft); border-radius: 4px; flex-shrink: 0; }
+
+.rv-bd-right { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
+.rv-bd-amt { font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rv-bd-amt.up { color: var(--up); }
 .rv-bd-amt.down { color: var(--down); }
-.rv-bd-bar { min-width: 100px; }
+.rv-bd-pct { font-size: var(--fs-xs); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rv-bd-pct.up { color: var(--up); }
+.rv-bd-pct.down { color: var(--down); }
 
-/* 窄屏适配 */
+/* —— 窄屏 —— */
 @media (max-width: 640px) {
   .rv-hero { flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-4); }
   .rv-bench-switch { align-self: flex-start; }
   .rv-range-bar { flex-wrap: wrap; }
   .rv-rb-dates { margin-left: 0; width: 100%; order: 2; }
-  .rv-bd-row { grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: 'dot name amt' 'dot extra bar'; gap: var(--sp-2) var(--sp-3); }
-  .rv-bd-row > .rb-dot { grid-area: dot; }
-  .rv-bd-name { grid-area: name; }
-  .rv-bd-extra { grid-area: extra; flex-direction: row; gap: 4px; align-items: center; }
-  .rv-bd-amt { grid-area: amt; }
-  .rv-bd-bar { grid-area: bar; min-width: 0; width: 100%; }
-  .rv-idle-body { flex-direction: column; gap: var(--sp-3); }
+
+  .rv-compact-kpis { padding: var(--sp-3) var(--sp-4); }
+  .rv-ck-row { flex-wrap: wrap; gap: var(--sp-3); }
+  .rv-ck-item { flex: 1 1 45%; }
+  .rv-ck-divider { display: none; }
+
+  .rv-breakdown { padding: var(--sp-3) var(--sp-4); }
+  .rv-bd-row { flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); padding: var(--sp-2) 0; }
+  .rv-bd-bar-wrap { flex: 0 0 100%; order: 3; }
+  .rv-bd-left { flex: 1 1 auto; order: 1; }
+  .rv-bd-right { flex: 0 0 auto; order: 2; }
 }
 
 /* ===== 认证层：登录闸门 / 登录与设备（2026-10-28）===== */

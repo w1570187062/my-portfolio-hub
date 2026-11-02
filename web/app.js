@@ -13522,199 +13522,74 @@ async function dcaDeletePlan() {
 // 2026-10-30 变更：闲置现金卡连同其渲染逻辑整块删除；目标配置入口早已移除，
 // 因此列表与圆环都只呈现实际收益率/实际收益额，不再出现「目标 xx%」。
 
-const rvMinDays = 90;                 // 前端灰标阈值：持有不足 90 天标「仅 N 天」
-const RV_PERF_MAX = 10;               // 业绩表现默认条数，超出可展开
-const RV_CLASS_ORDER = ['stock', 'fund', 'wealth', 'cash'];
-let rvPerfState = 'holding';          // 业绩表现视图：holding 持仓中（默认）| closed 已平仓
-let rvPerfExpanded = false;
 let rvRange = '1y';                   // 全局区间：1y/6m/3m/1m/all，驱动基准对比和归因榜
 let rvBenchKey = 'csi300';            // 基准指数：csi300/sp500/ndx，首屏结论卡对标
-let rvBdState = 'win';                // 归因榜：win 贡献最大 | lose 拖累最大
-let rvBenchData = null;               // 缓存 benchmark 接口返回（首屏卡和归因榜需要）
+let rvBenchData = null;               // 缓存 benchmark 接口返回（首屏卡副标题需要）
+let rvBdData = null;                  // 缓存 breakdown 接口返回（归因榜区间真实收益）
 
 async function showRebalanceView() {
   const v = document.getElementById('rebalanceView');
-  if (v) v.hidden = false; // hideAllViews 后必须显式恢复，否则页面空白
+  if (v) v.hidden = false;
   await loadReview();
 }
 
-// 复盘页只拉 /api/review（数据全在服务端算好）。
+// 复盘页：拉 /api/review（全持有期）+ /api/review/benchmark（区间）+ /api/review/breakdown（区间权益归因）。
 async function loadReview() {
   try {
     const rr = await api('/api/review');
     if (!rr.ok) throw new Error('HTTP ' + rr.status);
     rvData = await rr.json();
     renderReview();
+    loadBenchmark();
+    loadBreakdown();
   } catch (e) {
-    const box = document.getElementById('rvPerfList');
-    if (box) box.innerHTML = `<div class='rv-empty'>复盘计算失败：${esc(e.message)}</div>`;
+    console.error('review load failed', e);
   }
 }
 
 function renderReview() {
   if (!rvData) return;
   renderRvHero();
-  renderRvKpis();
-  renderRvIdle();
+  renderRvCompactKpis();
   renderRvBreakdown();
-  renderPerf();
-  // 基准对比独立请求：指数行情慢（3 个外网请求），不阻塞 KPI 与业绩榜的呈现
-  loadBenchmark();
-  // 区块层错落上浮：依次入场。
-  playRiseIn($('#rebalanceView'), '.rv-hero, .rv-range-bar, .kpi-section, .rv-bench, .rv-idle, .rv-breakdown, .rv-card', 60);
+  playRiseIn($('#rebalanceView'), '.rv-range-bar, .rv-hero, .rv-compact-kpis, .rv-breakdown', 60);
 }
 
-// ===== 复盘页「基准对比」（2026-11-02，v7 改版：支持区间切换）=====
-// 区间可切 1y/6m/3m/1m/all，服务端按 range 参数切片。
+// ===== 复盘页「基准对比」（2026-11-02，v8 重排：删掉 4 卡，数据只供 hero 副标题）=====
 async function loadBenchmark() {
-  const box = $('#rvBench');
-  if (!box) return;
   try {
     const r = await api('/api/review/benchmark?range=' + encodeURIComponent(rvRange));
     if (!r.ok) throw new Error(humanizeErr(r, null, 'HTTP ' + r.status));
-    renderBenchmark(await r.json());
+    rvBenchData = await r.json();
+    renderRvHero();
+    // 更新区间日期显示（区间切换条右侧）
+    const rng = rvBenchData && rvBenchData.range ? rvBenchData.range : null;
+    const rbDates = document.getElementById('rvRbDates');
+    if (rbDates && rng && rng.from) {
+      rbDates.textContent = `${rng.from} ~ ${rng.to}`;
+    } else if (rbDates) {
+      rbDates.textContent = '';
+    }
   } catch (e) {
-    box.hidden = false;
-    const grid = $('#rvBenchGrid');
-    if (grid) grid.innerHTML = `<div class="rv-bench-empty">基准数据获取失败：${esc(e.message)}</div>`;
+    console.error('benchmark load failed', e);
   }
 }
 
-function renderBenchmark(d) {
-  const box = $('#rvBench');
-  const grid = $('#rvBenchGrid');
-  const rng = $('#rvBenchRange');
-  const note = $('#rvBenchNote');
-  const rbDates = $('#rvRbDates');
-  if (!box || !grid) return;
-  box.hidden = false;
-  const pf = (d && d.portfolio) || {};
-  const bench = (d && d.bench) || [];
-  const range = (d && d.range) || {};
-  // range.label 是服务端返回的（近 1 年/近 3 月/全部），不再硬编码
-  if (rng) {
-    rng.textContent = range.label || '';
-    if (!range.full && range.from) {
-      rng.textContent += `（账本历史不足）`;
-    }
-  }
-  if (rbDates && range.from) {
-    rbDates.textContent = `${range.from} ~ ${range.to}`;
-  } else if (rbDates) {
-    rbDates.textContent = '';
-  }
-  const cell = (label, val, sub, ok) => '<div class="rv-bench-cell">'
-    + `<span class="rv-bench-k">${esc(label)}</span>`
-    + `<span class="rv-bench-v ${ok ? clsPnl(val) : ''}">${ok ? signedPct1(val) : '—'}</span>`
-    + `<span class="rv-bench-s" title="${esc(sub || '')}">${esc(sub || '')}</span></div>`;
-  const cells = [cell('我的组合', Number(pf.ret_pct) || 0,
-    pf.ok ? `${Number(pf.days) || 0} 个交易日` : (pf.note || '数据不足'), !!pf.ok)];
-  bench.forEach((b) => {
-    const ex = b.excess_pp;
-    const sub = !b.ok
-      ? (b.err || '数据不可用')
-      : (ex == null ? `${b.from_date} 起` : `组合 ${ex > 0 ? '+' : ''}${Number(ex).toFixed(2)}pp`);
-    cells.push(cell(b.label, Number(b.ret_pct) || 0, sub, !!b.ok));
-  });
-  grid.innerHTML = cells.join('');
-  if (note) {
-    note.textContent = (pf.note ? pf.note + '。' : '')
-      + '基准为指数区间价格收益（不含分红），差额 = 组合 − 指数。';
-  }
-  // 区间数据到手，刷新首屏结论卡和归因榜（它们依赖 benchmark 数据）
-  rvBenchData = d;
-  renderRvHero();
-  renderRvBreakdown();
-}
-
-// 带符号保留一位小数（与今日待办文案同款；不复用 pct() 因为它按两位小数并且带括号语义）
-function signedPct1(v) {
-  const n = Number(v) || 0;
-  return (n > 0 ? '+' : '') + n.toFixed(2) + '%';
-}
-
-// KPI 区：组合年化 / 收益合计 / 年化差距 / 闲置现金（Phase 1 改版）。
-//   gap_pp / idle / targets 后端已算好，前端不再重算。
-function renderRvKpis() {
-  const perf = (rvData && rvData.perf) || [];
-  // ① 组合实测年化
-  const ann = rvData && rvData.ann == null ? null : Number(rvData.ann);
-  const aV = document.getElementById('rvKpiAnn');
-  if (aV) {
-    aV.textContent = ann == null ? '—' : rvPct(ann, 2);
-    aV.className = 'kpi-value ' + (ann == null ? '' : ann >= 0 ? 'up' : 'down');
-    const s = document.getElementById('rvKpiAnnSub');
-    if (s) s.textContent = rvData.ann_est ? '含估算成分' : '全量实测';
-  }
-  // ② 收益合计：浮盈 + 落袋，拆解展示
-  const hold = perf.filter((b) => (b.state || 'holding') === 'holding');
-  const closed = perf.filter((b) => (b.state || 'holding') === 'closed');
-  const holdSum = hold.reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
-  const closedSum = closed.reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
-  const sum = holdSum + closedSum;
-  const gV = document.getElementById('rvKpiGain');
-  if (gV) {
-    const has = hold.length + closed.length > 0;
-    gV.textContent = has ? (sum >= 0 ? '+' : '') + rbYuan(sum) : '—';
-    gV.className = 'kpi-value ' + (has ? (sum >= 0 ? 'up' : 'down') : '');
-    const s = document.getElementById('rvKpiGainSub');
-    if (s) s.textContent = has
-      ? `浮盈 ${holdSum >= 0 ? '+' : ''}${rbYuan(holdSum)} · 落袋 ${closedSum >= 0 ? '+' : ''}${rbYuan(closedSum)}`
-      : '暂无数据';
-  }
-  // ③ 年化差距：后端 rvData.gap_pp / gap_amt 已算好
-  const gapPP = rvData && rvData.gap_pp != null ? Number(rvData.gap_pp) : null;
-  const gapAmt = rvData && rvData.gap_amt != null ? Number(rvData.gap_amt) : null;
-  const goalPP = rvData && rvData.goal_pct != null ? Number(rvData.goal_pct) : null;
-  const goalFb = rvData && rvData.goal_fallback;
-  const kV = document.getElementById('rvKpiGap');
-  if (kV) {
-    if (gapPP == null) {
-      kV.textContent = '—';
-      kV.className = 'kpi-value';
-    } else {
-      // gapPP 正 = 还差多少（目标 > 实测），红；负 = 已超出目标，绿
-      kV.textContent = (gapPP > 0 ? '−' : '+') + Math.abs(gapPP).toFixed(2) + '%';
-      kV.className = 'kpi-value ' + (gapPP > 0 ? 'down' : 'up');
-    }
-    const s = document.getElementById('rvKpiGapSub');
-    if (s) {
-      if (goalPP == null) {
-        s.textContent = '未设目标';
-      } else {
-        let txt = `目标 ${goalPP.toFixed(2)}%`;
-        if (goalFb) txt += '（内推）';
-        if (gapAmt != null) txt += ` · 每年 ${gapAmt > 0 ? '少赚' : '多赚'} ${rbYuan(Math.abs(gapAmt))}`;
-        s.textContent = txt;
-      }
-    }
-  }
-  // ④ 闲置现金：后端 rvData.idle 已算好
-  const idle = rvData && rvData.idle ? rvData.idle : {};
-  const iV = document.getElementById('rvKpiIdle');
-  if (iV) {
-    const amt = Number(idle.amount) || 0;
-    const cost = Number(idle.cost_cny) || 0;
-    const w = Number(idle.weight) || 0;
-    if (amt > 0) {
-      iV.textContent = rbYuan(amt);
-      iV.className = 'kpi-value';
-      const s = document.getElementById('rvKpiIdleSub');
-      if (s) {
-        s.textContent = `${w.toFixed(1)}% 占比 · 每年少赚 ${rbYuan(cost)}`;
-      }
-    } else {
-      iV.textContent = '—';
-      iV.className = 'kpi-value';
-      const s = document.getElementById('rvKpiIdleSub');
-      if (s) s.textContent = '无闲置现金';
-    }
+// ===== 区间权益归因（本轮重点：真区间口径，不是全持有期冒充）=====
+async function loadBreakdown() {
+  try {
+    const r = await api('/api/review/breakdown?range=' + encodeURIComponent(rvRange));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    rvBdData = await r.json();
+    renderRvBreakdown();
+  } catch (e) {
+    console.error('breakdown load failed', e);
+    rvBdData = null;
+    renderRvBreakdown();
   }
 }
 
-// ===== 首屏结论卡（Phase 2）=====
-// 一句话诊断：「区间 + 组合收益 + 跑赢/跑输某基准 X pp」
-// 依赖 benchmark 数据；benchmark 未到前先用 review 数据给一个骨架。
+// ===== 首屏结论卡（v8 重排：副标题改用区间收益金额）=====
 function renderRvHero() {
   const box = document.getElementById('rvHero');
   if (!box) return;
@@ -13722,19 +13597,18 @@ function renderRvHero() {
   const pf = rvBenchData && rvBenchData.portfolio ? rvBenchData.portfolio : null;
   const benchList = rvBenchData && rvBenchData.bench ? rvBenchData.bench : [];
   const myBench = benchList.find((b) => b.key === rvBenchKey);
+  const bdTotal = rvBdData && rvBdData.total_gain_cny != null ? Number(rvBdData.total_gain_cny) : null;
 
   const title = document.getElementById('rvHeroTitle');
   const value = document.getElementById('rvHeroValue');
   const sub = document.getElementById('rvHeroSub');
 
-  // 标题：区间 + 基准对标
   if (title) {
     const rangeLabel = rng ? (rng.label || '') : '';
     const benchLabel = myBench ? myBench.label : '基准';
     title.textContent = `${rangeLabel} · 对标 ${benchLabel}`;
   }
 
-  // 主值：组合区间收益（大字）
   if (value) {
     if (pf && pf.ok) {
       const v = Number(pf.ret_pct) || 0;
@@ -13746,196 +13620,114 @@ function renderRvHero() {
     }
   }
 
-  // 副标题：跑赢/跑输 + 组合年化 + 收益金额
   if (sub) {
     const parts = [];
     if (myBench && myBench.ok && pf && pf.ok) {
       const ex = Number(myBench.excess_pp);
       parts.push(ex > 0 ? `跑赢 ${ex.toFixed(2)}pp` : (ex < 0 ? `跑输 ${Math.abs(ex).toFixed(2)}pp` : `持平`));
     }
-    if (rvData && rvData.ann != null) {
-      parts.push(`年化 ${Number(rvData.ann).toFixed(2)}%`);
-    }
-    const perf = (rvData && rvData.perf) || [];
-    const totalGain = perf.reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
-    if (totalGain) {
-      parts.push(`收益 ${rbYuan(totalGain)}`);
+    if (bdTotal != null && bdTotal !== 0) {
+      parts.push(`权益收益 ${(bdTotal >= 0 ? '+' : '') + rbYuan(bdTotal)}`);
     }
     sub.textContent = parts.length ? parts.join(' · ') : '—';
   }
 }
 
-// ===== 闲置现金卡（Phase 1 恢复）=====
-// 数据来自后端 reviewResp.idle（已算好 amount/weight/cost_cny/items）。
-function renderRvIdle() {
-  const box = document.getElementById('rvIdle');
-  if (!box || !rvData) return;
-  const idle = rvData.idle;
-  if (!idle || Number(idle.amount) <= 0) {
-    box.hidden = true;
-    return;
+// ===== KPI 紧凑卡：年化 + 收益合计 + 年化差距，一行呈现（清单 6）=====
+function renderRvCompactKpis() {
+  if (!rvData) return;
+  // ① 组合实测年化（全持有期，benchmark 还没 range 版的年化）
+  const ann = rvData.ann == null ? null : Number(rvData.ann);
+  const aV = document.getElementById('rvKpiAnn');
+  if (aV) {
+    aV.textContent = ann == null ? '—' : rvPct(ann, 2);
+    aV.className = 'rv-ck-value ' + (ann == null ? '' : ann >= 0 ? 'up' : 'down');
+    const s = document.getElementById('rvKpiAnnSub');
+    if (s) s.textContent = rvData.ann_est ? '含估算成分' : '全量实测';
   }
-  box.hidden = false;
-  const amtEl = document.getElementById('rvIdleAmt');
-  const costEl = document.getElementById('rvIdleCost');
-  const wEl = document.getElementById('rvIdleW');
-  const listEl = document.getElementById('rvIdleList');
-  if (amtEl) amtEl.textContent = rbYuan(Number(idle.amount) || 0);
-  if (costEl) costEl.textContent = `按目标年化 ${Number(idle.target || 0).toFixed(1)}%，每年少赚 ${rbYuan(Number(idle.cost_cny) || 0)}`;
-  if (wEl) wEl.textContent = `${Number(idle.weight || 0).toFixed(1)}% 占比 · ${idle.n || 0} 个子账户`;
-  if (listEl && idle.items && idle.items.length) {
-    listEl.innerHTML = idle.items.map((it) => {
-      const n = esc(it.name) + (it.sub ? ` · ${esc(it.sub)}` : '');
-      return `<div class='rv-idle-row'><span class='rb-dot' style='--rb-c:${RB_CLASS_COLOR.cash || 'var(--text-faint)'}'></span><span class='rv-idle-row-name'>${n}</span><span class='rv-idle-row-amt'>${rbYuan(Number(it.mv_cny) || 0)}</span></div>`;
-    }).join('');
-  } else if (listEl) {
-    listEl.innerHTML = '';
+  // ② 收益合计
+  const perf = (rvData && rvData.perf) || [];
+  const holdSum = perf.filter((b) => (b.state || 'holding') === 'holding').reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
+  const closedSum = perf.filter((b) => (b.state || 'holding') === 'closed').reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
+  const sum = holdSum + closedSum;
+  const gV = document.getElementById('rvKpiGain');
+  if (gV) {
+    const has = perf.length > 0;
+    gV.textContent = has ? (sum >= 0 ? '+' : '') + rbYuan(sum) : '—';
+    gV.className = 'rv-ck-value ' + (has ? (sum >= 0 ? 'up' : 'down') : '');
+    const s = document.getElementById('rvKpiGainSub');
+    if (s) s.textContent = has
+      ? `浮盈 ${holdSum >= 0 ? '+' : ''}${rbYuan(holdSum)} · 落袋 ${closedSum >= 0 ? '+' : ''}${rbYuan(closedSum)}`
+      : '暂无数据';
+  }
+  // ③ 年化差距
+  const gapPP = rvData.gap_pp != null ? Number(rvData.gap_pp) : null;
+  const goalPP = rvData.goal_pct != null ? Number(rvData.goal_pct) : null;
+  const kV = document.getElementById('rvKpiGap');
+  if (kV) {
+    if (gapPP == null) {
+      kV.textContent = '—';
+      kV.className = 'rv-ck-value';
+    } else {
+      kV.textContent = (gapPP > 0 ? '−' : '+') + Math.abs(gapPP).toFixed(2) + '%';
+      kV.className = 'rv-ck-value ' + (gapPP > 0 ? 'down' : 'up');
+    }
+    const s = document.getElementById('rvKpiGapSub');
+    if (s) {
+      if (goalPP == null) s.textContent = '未设目标';
+      else {
+        let txt = `目标 ${goalPP.toFixed(2)}%`;
+        if (rvData.goal_fallback) txt += '（内推）';
+        if (rvData.gap_amt != null) txt += ` · 每年 ${Number(rvData.gap_amt) > 0 ? '少赚' : '多赚'} ${rbYuan(Math.abs(Number(rvData.gap_amt)))}`;
+        s.textContent = txt;
+      }
+    }
   }
 }
 
-// ===== 归因 Top 榜（Phase 2）=====
-// 不做复杂归因，只按收益金额排序（取前 5），展示每品的超额年化。
-// 数据来自 rvData.perf（持仓中 + 已平仓），按 gain_cny 绝对值排序。
+// ===== 收益归因（本轮重点：区间真实收益，不是全持有期冒充）=====
+// 数据来自 /api/review/breakdown?range=X，后端只算权益标的（股票+基金），按 |gain| 降序。
 function renderRvBreakdown() {
   const box = document.getElementById('rvBreakdown');
-  if (!box || !rvData) return;
-  const perf = (rvData && rvData.perf) || [];
-  // 只有持仓中的标的参与归因（已平仓已落袋，是历史决策）
-  const list = perf.filter((b) => (b.state || 'holding') === 'holding' && (b.key || '') !== 'cash');
-  if (!list.length) {
+  const listEl = document.getElementById('rvBdList');
+  if (!box || !listEl) return;
+
+  const items = rvBdData && rvBdData.items ? rvBdData.items : null;
+  if (!items || !items.length) {
     box.hidden = true;
     return;
   }
   box.hidden = false;
-  const sorted = list.slice().sort((a, b) => {
-    const ga = Math.abs(Number(a.gain_cny) || 0);
-    const gb = Math.abs(Number(b.gain_cny) || 0);
-    return gb - ga;
-  });
-  // win 榜单：收益 > 0 的（贡献最大）；lose 榜单：收益 < 0 的（拖累最大）
-  let filtered = rvBdState === 'win'
-    ? sorted.filter((b) => (Number(b.gain_cny) || 0) >= 0)
-    : sorted.filter((b) => (Number(b.gain_cny) || 0) < 0);
-  filtered = filtered.slice(0, 5);
-  const listEl = document.getElementById('rvBdList');
-  if (!listEl) return;
-  if (!filtered.length) {
-    listEl.innerHTML = `<div class='rv-empty'>${rvBdState === 'win' ? '暂无贡献为正的持仓' : '暂无拖累为负的持仓'}</div>`;
-    return;
-  }
-  const maxAbs = Math.max(1, ...filtered.map((b) => Math.abs(Number(b.gain_cny) || 0)));
-  listEl.innerHTML = filtered.map((b) => {
-    const gain = Number(b.gain_cny) || 0;
+
+  const maxAbs = Math.max(1, ...items.map((it) => Math.abs(Number(it.gain_range_cny) || 0)));
+
+  listEl.innerHTML = items.map((it) => {
+    const gain = Number(it.gain_range_cny) || 0;
     const up = gain >= 0;
-    const w = maxAbs > 0 ? Math.min(100, Math.abs(gain) / maxAbs * 100) : 0;
-    const ann = b.ann != null ? Number(b.ann) : null;
-    const alpha = b.alpha != null ? Number(b.alpha) : null;
-    const hr = b.holding_return != null ? Number(b.holding_return) : null;
-    const short = Number(b.days) > 0 && Number(b.days) < rvMinDays;
+    const w = Math.min(100, Math.abs(gain) / maxAbs * 100);
+    const key = it.key || '';
+    const color = RB_CLASS_COLOR[key] || 'var(--text-faint)';
+    const est = it.quality === 'estimated';
+    // 区间收益率 = 区间收益 / |起点市值|（起点市值为 0 时跳过）
+    const startMV = Number(it.start_mv_cny) || 0;
+    const retPct = startMV !== 0 ? (gain / Math.abs(startMV) * 100) : null;
+    const retTxt = retPct != null
+      ? (up ? '+' : '') + retPct.toFixed(1) + '%'
+      : '—';
     return `<div class='rv-bd-row'>
-      <span class='rb-dot' style='--rb-c:${RB_CLASS_COLOR[b.key] || 'var(--text-faint)'}'></span>
-      <span class='rv-bd-name'><span>${esc(b.name)}</span>${short ? `<span class='rv-tag'>仅 ${Number(b.days)} 天</span>` : ''}</span>
-      <span class='rv-bd-extra'>
-        ${ann != null ? `<span class='rv-bd-ann'>年化 ${rvPct(ann, 1)}</span>` : ''}
-        ${hr != null ? `<span class='rv-bd-hr'>持有 ${rvPct(hr, 1)}</span>` : ''}
-        ${alpha != null ? `<span class='rv-bd-alpha ${alpha >= 0 ? 'up' : 'down'}'>α ${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}pp</span>` : ''}
+      <span class='rv-bd-bar-wrap'>
+        <span class='rv-track'><span class='rv-fill ${up ? 'is-up' : 'is-down'}' style='--w:${w.toFixed(1)}%'></span></span>
       </span>
-      <span class='rv-bd-amt ${up ? 'up' : 'down'}'>${(up ? '+' : '') + rbYuan(gain)}</span>
-      <span class='rv-bd-bar'><span class='rv-track'><span class='rv-fill ${up ? 'is-up' : 'is-down'}' style='--w:${w.toFixed(1)}%'></span></span></span>
+      <span class='rv-bd-left'>
+        <span class='rb-dot' style='--rb-c:${color}'></span>
+        <span class='rv-bd-name'>${esc(it.name)}${it.label ? `<span class='rv-bd-lbl'>${esc(it.label)}</span>` : ''}${est ? `<span class='rv-tag' title='${esc(it.note || '起点市值按成本价估算')}'>估算</span>` : ''}</span>
+      </span>
+      <span class='rv-bd-right'>
+        <span class='rv-bd-amt ${up ? 'up' : 'down'}'>${(up ? '+' : '') + rbYuan(gain)}</span>
+        <span class='rv-bd-pct ${up ? 'up' : 'down'}'>${retTxt}</span>
+      </span>
     </div>`;
   }).join('');
-}
-
-// ===== 业绩表现单一榜（Phase 1 补持有期收益率 + 超额年化）=====
-// 持仓中金额 = (现价−成本)×数量；已平仓 = Σ realized_pnl（副标签展示本金而非市值）。
-function rvPerfRow(b, maxAbs) {
-  const gain = Number(b.gain_cny) || 0;
-  const ann = b.ann == null ? null : Number(b.ann);
-  const hr = b.holding_return != null ? Number(b.holding_return) : null;
-  const alpha = b.alpha != null ? Number(b.alpha) : null;
-  const closed = (b.state || 'holding') === 'closed';
-  const up = gain >= 0;
-  const short = Number(b.days) > 0 && Number(b.days) < rvMinDays;
-  const w = maxAbs > 0 ? Math.min(100, Math.abs(gain) / maxAbs * 100) : 0;
-  const invested = Number(b.invested_cny) || 0;
-  const base = closed
-    ? (invested > 0 ? `${esc(b.label || '')} 本金 ${rbYuan(invested)}` : `${esc(b.label || '')} 本金未知`)
-    : `${esc(b.label || '')} ${rbYuan(Number(b.mv_cny) || 0)}`;
-  // 年化列：上面大字年化，下面小字持有期 + 超额（解决"年化 vs 持有期"口径混淆）
-  const rateCell = ann == null
-    ? `<span class='rv-rate'>—</span>`
-    : `<span class='rv-rate ${up ? 'up' : 'down'}'>${rvPct(ann, 1)}</span>`
-      + (hr != null ? `<span class='rv-sub-rate'>持有 ${rvPct(hr, 1)}</span>` : '')
-      + (alpha != null ? `<span class='rv-sub-rate ${alpha >= 0 ? 'up' : 'down'}'>α ${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}pp</span>` : '');
-  return `<div class='rv-row'>`
-    + `<span class='rv-name'><span class='rb-dot' style='--rb-c:${RB_CLASS_COLOR[b.key] || 'var(--text-faint)'}'></span>`
-      + `<span class='rv-t'>${esc(b.name)}</span>`
-      + `<span class='rv-s'>${base}</span>`
-      + (short ? `<span class='rv-tag' title='持有不足 ${rvMinDays} 天，年化会被短期行情放大（持有越短倍数越高），仅供参考'>仅 ${Number(b.days)} 天</span>` : '')
-      + (b.note ? `<span class='rv-tag' title='${b.quality === 'estimated' ? '收益为按目标年化估算的理论值，非实际到账' : esc(b.note)}'>${b.quality === 'estimated' ? '估算' : '口径'}</span>` : '')
-      + `</span>`
-    + rateCell
-    + `<span class='rv-amt ${up ? 'up' : 'down'}'>${(up ? '+' : '') + rbYuan(gain)}</span>`
-    + `<span class='rv-bar'><span class='rv-track'><span class='rv-fill ${up ? 'is-up' : 'is-down'}' style='--w:${w.toFixed(1)}%'></span></span></span>`
-    + `</div>`;
-}
-
-// 圆环：按类别汇总**市值**占比（钱投在哪类），中心显示盈亏合计。
-// 之前按 |gain| 绝对值占比，中心却可能是负数——语义打架。现在两边统一：
-// 圆环 = 市值分布（所有标的都参与，包括亏损的，按正权重汇总）；
-// 中心 = 盈亏合计（正 = 总盈利，负 = 总亏损）。
-function renderPerfDonut(list) {
-  const donut = document.getElementById('rvDonut');
-  const val = document.getElementById('rvDonutV');
-  const sum = list.reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
-  if (val) val.textContent = list.length ? rbYuan(sum) : '—';
-  const byKey = {};
-  let total = 0;
-  list.forEach((b) => {
-    // 持仓中用 mv_cny（市值），已平仓用 invested_cny（本金）
-    const mv = (Number(b.state || 'holding') === 'closed') ? (Number(b.invested_cny) || 0) : (Number(b.mv_cny) || 0);
-    const v = Math.max(0, mv); // 只计正权重
-    byKey[b.key] = (byKey[b.key] || 0) + v;
-    total += v;
-  });
-  if (!donut) return;
-  if (total <= 0 || !list.length) {
-    donut.style.setProperty('--donut', 'none');
-    return;
-  }
-  let acc = 0;
-  const segs = [];
-  RV_CLASS_ORDER.forEach((k) => {
-    const v = byKey[k] || 0;
-    if (v <= 0) return;
-    const a0 = acc / total * 360;
-    acc += v;
-    segs.push(`${RB_CLASS_COLOR[k]} ${a0.toFixed(1)}deg ${(acc / total * 360).toFixed(1)}deg`);
-  });
-  donut.style.setProperty('--donut', segs.length ? `conic-gradient(${segs.join(', ')})` : 'none');
-}
-
-function renderPerf() {
-  const box = document.getElementById('rvPerfList');
-  if (!box) return;
-  const all = (rvData && rvData.perf) || [];
-  const list = all.filter((b) => (b.state || 'holding') === rvPerfState);
-  const n = document.getElementById('rvPerfN');
-  if (n) n.textContent = list.length ? list.length + ' 只' : '';
-  renderPerfDonut(list);
-  if (!list.length) {
-    box.innerHTML = `<div class='rv-empty'>${rvPerfState === 'closed' ? '还没有已平仓的记录 —— 平仓后会在这里看到落袋收益。' : '暂时没有持仓中的产品。'}</div>`;
-    return;
-  }
-  const maxAbs = Math.max(1, ...list.map((b) => Math.abs(Number(b.gain_cny) || 0)));
-  let html = list.slice(0, rvPerfExpanded ? list.length : Math.min(RV_PERF_MAX, list.length))
-    .map((b) => rvPerfRow(b, maxAbs)).join('');
-  if (list.length > RV_PERF_MAX) {
-    html += `<button type='button' class='rv-more' id='rvPerfMore'>${rvPerfExpanded ? '收起' : '展开全部 ' + list.length + ' 条'}</button>`;
-  }
-  box.innerHTML = html;
-  const btn = document.getElementById('rvPerfMore');
-  if (btn) btn.onclick = () => { rvPerfExpanded = !rvPerfExpanded; renderPerf(); };
 }
 
 // —— 金额 / 百分比格式化（复盘页专用）——
@@ -13943,53 +13735,28 @@ const rbYuan = (v) => (Number(v) < 0 ? '−¥' : '¥') + Math.abs(Math.round(Num
 const rvPct = (v, d = 2) => (Number(v) || 0).toFixed(d) + '%';
 
 (function bindReviewUI() {
-  // 业绩表现：持仓中 / 已平仓切换
-  const tabClosed = document.getElementById('rvTabClosed');
-  const tabHold = document.getElementById('rvTabHold');
-  const setPerfTab = (st) => {
-    rvPerfState = st;
-    if (tabClosed) tabClosed.classList.toggle('on', st === 'closed');
-    if (tabHold) tabHold.classList.toggle('on', st === 'holding');
-    rvPerfExpanded = false;
-    renderPerf();
-  };
-  if (tabClosed) tabClosed.onclick = () => setPerfTab('closed');
-  if (tabHold) tabHold.onclick = () => setPerfTab('holding');
-
-  // 全局区间切换：驱动 benchmark + 首屏卡 + 归因榜
+  // 区间切换：驱动 benchmark + breakdown（都是区间数据），review 不动（全持有期）
   document.querySelectorAll('#rvRangeBar .rv-rb-btns button').forEach((btn) => {
     btn.onclick = () => {
       const r = btn.dataset.range;
       if (!r || r === rvRange) return;
       rvRange = r;
       document.querySelectorAll('#rvRangeBar .rv-rb-btns button').forEach((b) => b.classList.toggle('on', b === btn));
-      // 区间变了，benchmark 要重拉（它的数据依赖 range）；review 不变（全持有期口径）
       loadBenchmark();
+      loadBreakdown();
     };
   });
 
-  // 基准指数切换：驱动首屏卡和基准对比里的"我的对标"
+  // 基准指数切换：只刷 hero 副标题
   document.querySelectorAll('#rvBenchSwitch .rv-bs-btns button').forEach((btn) => {
     btn.onclick = () => {
       const k = btn.dataset.bench;
       if (!k || k === rvBenchKey) return;
       rvBenchKey = k;
       document.querySelectorAll('#rvBenchSwitch .rv-bs-btns button').forEach((b) => b.classList.toggle('on', b === btn));
-      renderRvHero(); // 首屏卡刷新对标
+      renderRvHero();
     };
   });
-
-  // 归因榜：贡献最大 / 拖累最大切换
-  const bdWin = document.getElementById('rvBdTabWin');
-  const bdLose = document.getElementById('rvBdTabLose');
-  const setBd = (st) => {
-    rvBdState = st;
-    if (bdWin) bdWin.classList.toggle('on', st === 'win');
-    if (bdLose) bdLose.classList.toggle('on', st === 'lose');
-    renderRvBreakdown();
-  };
-  if (bdWin) bdWin.onclick = () => setBd('win');
-  if (bdLose) bdLose.onclick = () => setBd('lose');
 })();
 
 // ============================================================
