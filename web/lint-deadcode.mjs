@@ -60,7 +60,10 @@ const DEFAULT_CONFIG = {
 
   // 白名单：确定在用但静态分析看不见的符号
   ignore: {
-    classes: [],   // 例：外部脚本注入的类
+    classes: [
+      // 全局通用（investment 页 / 日历页等 SPA 模板引用，deadcode 只扫根目录三文件看不见）
+      'rb-sub-head', 'rb-sub-title', 'rv-empty',
+    ],
     tokens: [],    // 例：主题预设里的色板
     decls: [],     // 顶层函数/常量
     ids: ['authSettingsGroup'], // auth-shot.mjs 依赖，见 check-ui.mjs 注释
