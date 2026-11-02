@@ -5665,11 +5665,14 @@ textarea::placeholder {
 .kpi-card .kpi-sub .sub-of { color: var(--text-faint); font-size: var(--fs-2xs); margin-left: 2px; }
 /* ≥641（桌面 / 平板）：资产分布芯片排 2×2 —— 每排 2 枚、共两排。
    原来 4 枚靠 flex-wrap 一行铺开，芯片宽度随文字长短参差、右侧留白不稳定；
-   改成等分两列后四枚等宽对齐，读起来更像「一组数据」而不是四个零散标签。
+   改成两列后四枚对齐，读起来更像「一组数据」而不是四个零散标签。
+   列宽用 max-content（不铺满整栏）：芯片只需包住自己的内容 + 一点内边距，
+   拉成半栏宽会显得空荡。列宽取列内较宽的那枚，同列两枚仍等宽对齐。
+   （若容器过窄，max-content 会超出 → 芯片自带 max-width:100% 兜底折行。）
    手机档（≤640）在下面的 640 断点里覆盖回「一行四个」，不受影响。 */
 @media (min-width: 641px) {
-  .nw-left .nw-asset-row { display: grid; grid-template-columns: repeat(2, 1fr); }
-  .nw-left .nw-chip { justify-content: center; }
+  .nw-left .nw-asset-row { display: grid; grid-template-columns: repeat(2, max-content); }
+  .nw-left .nw-chip { justify-content: center; max-width: 100%; }
 }
 /* 资产分布芯片行（原型 hero-asset-chip）：手机档一行 4 枚，桌面档见上方 2×2 */
 .nw-asset-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
