@@ -5554,10 +5554,11 @@ textarea::placeholder {
 .kpi-card.density-hero .kpi-value { font-size: 44px; font-weight: 800; letter-spacing: -1.2px; line-height: 1.12; text-shadow: 0 0 32px rgba(var(--tint), .18); }
 .kpi-card.density-hero .kpi-sub { margin-top: var(--sp-2); font-size: var(--fs-sm); }
 
-/* 加重变体 · anchor：投资页锚点卡（更宽更大，承载"主数字"） */
+/* 加重变体 · anchor：投资页锚点卡（更宽更大，承载"主数字"）
+   2026-11-02：锚点卡的角标不再放大 —— 原来 40px（图标 20px）比其它卡大一圈，
+   同一屏里第一张卡的角标明显压过后面三张，手机上尤其突兀（卡宽只有 169px）。
+   角标属于「卡片装饰」，不承担层级信息，统一 32px / 16px。 */
 .kpi-card.anchor { padding: var(--sp-5); gap: var(--sp-2); }
-.kpi-card.anchor .kpi-icon { width: 40px; height: 40px; }
-.kpi-card.anchor .kpi-icon svg { width: 20px; height: 20px; }
 .kpi-card.anchor .kpi-value { font-size: 32px; letter-spacing: -1px; }
 .kpi-card.anchor .kpi-sub { margin-top: var(--sp-2); font-size: var(--fs-sm); }
 
@@ -5706,9 +5707,8 @@ textarea::placeholder {
      半个字顶，看起来就是「文字被遮挡」。改成同一变量后 em 不再各算各的。
      JS 渲染时会实测行高并覆盖这个变量（字体加载 / 断点变化后仍能对齐）。 */
   --hm-row-h: calc(var(--fs-xs) * 1.6);
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-2);
-  border-top: 1px solid var(--border);
+  /* 2026-11-02：位置在资产芯片之上、且**不要分割线** —— 上下留白靠 .nw-left 的 gap
+     就够了，再加一条横线反而把「净资产 → 动态 → 资产构成」切成两段。 */
   position: relative;
   line-height: 1.6;
 }
@@ -6467,6 +6467,145 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   /* 标题行放不下「标题 + 计数 + 切换」：允许折行，切换始终贴右 */
   .rb-sub-head { flex-wrap: wrap; }
   .rb-sub-title, .rv-n { white-space: nowrap; }
+}
+
+/* ===== 复盘页 v7 · 叙事化改版（2026-11-02）新增样式 ===== */
+
+/* 首屏结论卡（hero 样式，高于普通 card） */
+.rv-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  padding: var(--sp-5) var(--sp-6);
+  background:
+    radial-gradient(ellipse at top left, rgba(var(--tint), .14), transparent 60%),
+    var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.rv-hero[hidden] { display: none; }
+.rv-hero-body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.rv-hero-title { font-size: var(--fs-sm); color: var(--text-muted); font-weight: 500; }
+.rv-hero-value { font-size: var(--fs-2xl); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.rv-hero-value.up { color: var(--up); }
+.rv-hero-value.down { color: var(--down); }
+.rv-hero-sub { font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.4; }
+.rv-hero-side { flex-shrink: 0; }
+
+/* 基准切换器（hero 右侧） */
+.rv-bench-switch {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.rv-bs-label { font-size: var(--fs-xs); color: var(--text-faint); }
+.rv-bs-btns { display: flex; gap: 2px; }
+.rv-bs-btns button {
+  font-size: var(--fs-xs); font-weight: 600;
+  padding: 4px 8px;
+  border: none;
+  background: transparent; color: var(--text-muted);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.rv-bs-btns button.on { background: var(--primary-soft); color: var(--primary); }
+.rv-bs-btns button:hover:not(.on) { color: var(--text); background: var(--bg-input); }
+
+/* 全局区间切换条 */
+.rv-range-bar {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.rv-rb-label { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; flex-shrink: 0; }
+.rv-rb-btns { display: flex; gap: 2px; flex-shrink: 0; }
+.rv-rb-btns button {
+  font-size: var(--fs-xs); font-weight: 600;
+  padding: 5px 12px;
+  border: none;
+  background: transparent; color: var(--text-muted);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.rv-rb-btns button.on { background: var(--primary-soft); color: var(--primary); }
+.rv-rb-btns button:hover:not(.on) { color: var(--text); background: var(--bg-input); }
+.rv-rb-dates { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; margin-left: auto; }
+
+/* 年化列下面的小字（持有期收益率 + 超额） */
+.rv-sub-rate {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.rv-sub-rate.up { color: var(--up); }
+.rv-sub-rate.down { color: var(--down); }
+
+/* 闲置现金卡 */
+.rv-idle { padding: var(--sp-4) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); }
+.rv-idle[hidden] { display: none; }
+.rv-idle-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+.rv-idle-w { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.rv-idle-body { display: flex; gap: var(--sp-5); align-items: start; flex-wrap: wrap; }
+.rv-idle-summary { display: flex; flex-direction: column; gap: 0; min-width: 160px; }
+.rv-idle-amt { font-size: var(--fs-xl); font-weight: 600; font-variant-numeric: tabular-nums; }
+.rv-idle-cost { font-size: var(--fs-xs); color: var(--text-muted); margin-top: var(--sp-1); }
+.rv-idle-list { flex: 1 1 280px; display: flex; flex-direction: column; gap: var(--sp-1); }
+.rv-idle-row {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+.rv-idle-row:last-child { border-bottom: none; }
+.rv-idle-row-name { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-idle-row-amt { font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+
+/* 归因 Top 榜 */
+.rv-breakdown { padding: var(--sp-4) var(--sp-5); }
+.rv-breakdown[hidden] { display: none; }
+.rv-bd-list { display: flex; flex-direction: column; gap: var(--sp-1); }
+.rv-bd-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto 120px;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+.rv-bd-row:last-child { border-bottom: none; }
+.rv-bd-name { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-bd-extra { display: flex; flex-direction: column; align-items: flex-end; gap: 0; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.rv-bd-ann { color: var(--text-muted); }
+.rv-bd-hr { color: var(--text-faint); }
+.rv-bd-alpha.up { color: var(--up); font-weight: 600; }
+.rv-bd-alpha.down { color: var(--down); font-weight: 600; }
+.rv-bd-amt { font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rv-bd-amt.up { color: var(--up); }
+.rv-bd-amt.down { color: var(--down); }
+.rv-bd-bar { min-width: 100px; }
+
+/* 窄屏适配 */
+@media (max-width: 640px) {
+  .rv-hero { flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-4); }
+  .rv-bench-switch { align-self: flex-start; }
+  .rv-range-bar { flex-wrap: wrap; }
+  .rv-rb-dates { margin-left: 0; width: 100%; order: 2; }
+  .rv-bd-row { grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: 'dot name amt' 'dot extra bar'; gap: var(--sp-2) var(--sp-3); }
+  .rv-bd-row > .rb-dot { grid-area: dot; }
+  .rv-bd-name { grid-area: name; }
+  .rv-bd-extra { grid-area: extra; flex-direction: row; gap: 4px; align-items: center; }
+  .rv-bd-amt { grid-area: amt; }
+  .rv-bd-bar { grid-area: bar; min-width: 0; width: 100%; }
+  .rv-idle-body { flex-direction: column; gap: var(--sp-3); }
 }
 
 /* ===== 认证层：登录闸门 / 登录与设备（2026-10-28）===== */

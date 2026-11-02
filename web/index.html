@@ -423,6 +423,39 @@
        2026-10-30：删掉闲置现金卡（连带圆环移到业绩表现左侧做收益占比）、
        删掉头部操作区与口径说明卡；目标无设置入口，因此不再展示「目标 xx%」。 -->
   <div id="rebalanceView" hidden>
+    <!-- ① 首屏结论卡：一句话诊断（Phase 2）。基准切换器在右侧。 -->
+    <section class="card rv-hero" id="rvHero">
+      <div class="rv-hero-body">
+        <div class="rv-hero-title" id="rvHeroTitle">复盘</div>
+        <div class="rv-hero-value" id="rvHeroValue">—</div>
+        <div class="rv-hero-sub" id="rvHeroSub">—</div>
+      </div>
+      <div class="rv-hero-side">
+        <div class="rv-bench-switch" id="rvBenchSwitch">
+          <div class="rv-bs-label">对标</div>
+          <div class="rv-bs-btns">
+            <button type="button" class="on" data-bench="csi300">沪深300</button>
+            <button type="button" data-bench="sp500">标普500</button>
+            <button type="button" data-bench="ndx">纳指100</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ② 全局区间切换条：所有区块联动（Phase 1）。 -->
+    <div class="rv-range-bar" id="rvRangeBar">
+      <span class="rv-rb-label">区间</span>
+      <div class="rv-rb-btns">
+        <button type="button" class="on" data-range="1y">近 1 年</button>
+        <button type="button" data-range="6m">近 6 月</button>
+        <button type="button" data-range="3m">近 3 月</button>
+        <button type="button" data-range="1m">近 1 月</button>
+        <button type="button" data-range="all">全部</button>
+      </div>
+      <span class="rv-rb-dates" id="rvRbDates"></span>
+    </div>
+
+    <!-- ③ KPI 区：组合年化 / 收益合计 / 年化差距 / 闲置现金占比（Phase 1）。 -->
     <div class="kpi-section">
       <div class="kpi-head">
         <span class="kpi-head-label">复盘 · 收益率诊断</span>
@@ -441,34 +474,59 @@
           <div class="kpi-sub" id="rvKpiGainSub">—</div>
         </div>
         <div class="kpi-card density-standard">
-          <div class="kpi-icon kpi-ico-cash"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg></div>
-          <div class="kpi-label">累计落袋</div>
-          <div class="kpi-main"><div class="kpi-value" id="rvKpiRealized">—</div></div>
-          <div class="kpi-sub" id="rvKpiRealizedSub">—</div>
+          <div class="kpi-icon kpi-ico-target"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg></div>
+          <div class="kpi-label">年化差距</div>
+          <div class="kpi-main"><div class="kpi-value" id="rvKpiGap">—</div></div>
+          <div class="kpi-sub" id="rvKpiGapSub">—</div>
         </div>
         <div class="kpi-card density-standard">
-          <div class="kpi-icon kpi-ico-fund"><svg viewBox="0 0 24 24"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg></div>
-          <div class="kpi-label">整体胜率</div>
-          <div class="kpi-main"><div class="kpi-value" id="rvKpiWin">—</div></div>
-          <div class="kpi-sub" id="rvKpiWinSub">—</div>
+          <div class="kpi-icon kpi-ico-cash"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg></div>
+          <div class="kpi-label">闲置现金</div>
+          <div class="kpi-main"><div class="kpi-value" id="rvKpiIdle">—</div></div>
+          <div class="kpi-sub" id="rvKpiIdleSub">—</div>
         </div>
       </div>
     </div>
 
-    <!-- 基准对比（2026-11-02）：近 1 年「我的组合」vs 沪深300 / 标普500 / 纳指100。
-         数据来自 GET /api/review/benchmark（指数日线服务端 6h 缓存，一次 3 个外网请求封顶）。
-         差额（pp）= 组合 − 指数，由服务端算好随行返回，前端不重算 —— 两边各算一套必然对不上。 -->
+    <!-- ④ 基准对比卡：区间联动（Phase 1），差额 = 组合 − 指数（pp）。 -->
     <section class="card rv-bench" id="rvBench" hidden>
       <div class="rv-bench-head">
         <span class="rb-sub-title">基准对比</span>
-        <span class="rv-bench-range" id="rvBenchRange">近 1 年</span>
+        <span class="rv-bench-range" id="rvBenchRange"></span>
       </div>
       <div class="rv-bench-grid" id="rvBenchGrid"></div>
       <div class="rv-bench-note" id="rvBenchNote"></div>
     </section>
 
-    <!-- 业绩表现：单一榜按收益总额排序（赚最多在上、亏最多在下）；默认持仓中，可切已平仓。
-         左圆环 = 当前榜单按类别汇总的收益占比（色 = 类别色，与行首色点同源） -->
+    <!-- ⑤ 闲置现金卡：恢复（Phase 1），数据来自 reviewResp.idle。 -->
+    <section class="card rv-idle" id="rvIdle" hidden>
+      <div class="rv-idle-head">
+        <span class="rb-sub-title">闲置现金</span>
+        <span class="rv-idle-w" id="rvIdleW"></span>
+      </div>
+      <div class="rv-idle-body">
+        <div class="rv-idle-summary">
+          <div class="rv-idle-amt" id="rvIdleAmt">—</div>
+          <div class="rv-idle-cost" id="rvIdleCost">—</div>
+        </div>
+        <div class="rv-idle-list" id="rvIdleList"></div>
+      </div>
+    </section>
+
+    <!-- ⑥ 归因 Top 榜：贡献最大 / 拖累最大（Phase 2）。 -->
+    <section class="card rv-breakdown" id="rvBreakdown" hidden>
+      <div class="rb-sub-head">
+        <span class="rb-sub-title">收益归因</span>
+        <span class="rv-seg">
+          <button type="button" id="rvBdTabWin" class="on">贡献最大</button>
+          <button type="button" id="rvBdTabLose">拖累最大</button>
+        </span>
+      </div>
+      <div class="rv-bd-list" id="rvBdList"></div>
+    </section>
+
+    <!-- ⑦ 业绩表现：单一榜按收益总额排序，可切「持仓中/已平仓」。
+         新增持有期收益率（并列年化）+ 超额年化列（Phase 1）。 -->
     <section class="card rv-card">
       <div class="rb-sub-head">
         <span class="rb-sub-title">业绩表现</span>
@@ -478,9 +536,7 @@
           <button type="button" id="rvTabClosed">已平仓</button>
         </span>
       </div>
-      <!-- 口径说明（方案 4）：这张列表没有列头，第一眼只看到「英伟达 −80.3%」，
-           而该列是年化（投资页 −3.9% 才是持有期收益率）。补一行小字，不动列表布局。 -->
-      <div class="rv-legend">金额 = 持有期累计盈亏 · 百分比 = 年化收益率 · 按盈亏金额排序 · 持有期不足 90 天的年化仅供参考</div>
+      <div class="rv-legend">金额 = 持有期累计盈亏 · 年化 = 实测年化 XIRR · 持有 = 持有期收益率 · 按盈亏金额排序</div>
       <div class="rv-body">
         <div class="rv-donut" id="rvDonut"><span class="rv-donut-c"><b id="rvDonutV">—</b>收益合计</span></div>
         <div class="rv-list" id="rvPerfList"></div>
