@@ -38,7 +38,7 @@
         <input id="authPin" type="password" inputmode="numeric" maxlength="6" placeholder="4–6 位数字，可留空" autocomplete="off">
       </label>
       </form>
-      <p class="auth-hint auth-hint-sm">这是第一台设备，将成为<b>主设备</b>：之后加设备、删账本等操作只有它能做。PIN 用于这些危险操作的二次确认，设了更安全。</p>
+      <p class="auth-hint auth-hint-sm">这是第一台设备，将成为<b>主设备</b>：只有改 PIN、删清账本、导入这类账本级操作归它；设备管理（改名 / 吊销 / 加设备）任何设备输 PIN 都能做。建议设一个 PIN，它就是这些操作的口令。</p>
       <div class="auth-err" id="authClaimErr"></div>
       <button class="btn primary auth-submit" id="authClaimBtn" type="button">接入这台设备</button>
     </div>
@@ -48,8 +48,34 @@
       <label class="auth-field">配对码
         <input id="authCode" class="auth-code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">
       </label>
+      <!-- 登录保持（2026-11-02）：不想长期登录的设备取消勾选 → 会话 Cookie，关浏览器即退出 -->
+      <label class="auth-remember"><input id="authRemember" type="checkbox" checked>记住这台设备（关闭浏览器后仍保持登录）</label>
       <div class="auth-err" id="authPairErr"></div>
       <button class="btn primary auth-submit" id="authPairBtn" type="button">连接</button>
+    </div>
+
+    <!-- PIN 登录（2026-11-02）：实例已设操作 PIN 时的免配对回去通道。
+         退出登录后设备只能靠主设备出码，人不在主设备旁就被锁在外面；
+         PIN 本就是全实例危险操作口令，用它换一个普通（member）登录态不放大泄漏面。
+         2026-11-02 起**默认折叠**：主路径是配对码，PIN 是「主设备不在手边」的备用通道，
+         常驻展开会把主路径挤到第二屏，也让不设 PIN 的用户误以为必须输 PIN。 -->
+    <div id="authPinLogin" hidden>
+      <button type="button" class="auth-more" id="authPinToggle" aria-expanded="false" aria-controls="authPinBody">
+        <span>已有操作 PIN？用它直接进入</span>
+        <svg class="auth-more-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="auth-more-body" id="authPinBody">
+        <div class="auth-more-in">
+          <form class="pw-form" data-pwsubmit="authPinLoginBtn">
+          <label class="auth-field">操作 PIN
+            <input id="authLoginPin" type="password" inputmode="numeric" maxlength="6" placeholder="4–6 位数字" autocomplete="current-password">
+          </label>
+          </form>
+          <label class="auth-remember"><input id="authLoginRemember" type="checkbox">关闭浏览器后退出登录</label>
+          <div class="auth-err" id="authPinLoginErr"></div>
+          <button class="btn primary auth-submit" id="authPinLoginBtn" type="button">用 PIN 进入</button>
+        </div>
+      </div>
     </div>
 
     <div id="authReadonly" hidden>
@@ -189,34 +215,22 @@
               <div class="kpi-sub hero-changes" id="homeNetChanges"></div>
             </div>
             <div class="nw-asset-row" id="homeAssetBreakdown"></div>
+            <!-- 单行竖向步进跑马灯：待办 + 收益句子，每次完整跳一行。
+                 位置在 nw-left 底部、资产分布芯片之下，不抢净资产主数字的视觉锚点。 -->
+            <div class="home-marquee" id="homeMarquee" hidden aria-label="首页动态">
+              <div class="hm-viewport">
+                <div class="hm-track" id="homeMarqueeTrack">
+                  <!-- JS 渲染：每子 div 固定一行高 -->
+                </div>
+              </div>
+            </div>
           </div>
           <div class="nw-right">
             <div class="nw-spark">
-              <!-- 头部固定两行、各自两端对齐（① 标题 … 涨跌幅　② 区间切换 … 口径切换）。
-                   涨跌幅原本是 head 的第三个独立 flex 项，单行 wrap 时会被挤到下一行贴着左边、中间空一片，
-                   故收进左组与标题同一行；控件组单独一行。详见 style.css .rate-spark-head 注释。 -->
               <div class="rate-spark-head">
                 <div class="rate-spark-left">
                   <span class="rate-spark-label">权益收益曲线</span>
                   <span id="homeRateSparkTrend" class="hero-mini-trend flat">—</span>
-                </div>
-                <div class="rate-spark-right">
-                  <div class="range-tabs" id="homeRangeTabs">
-                    <button class="range-tab" data-range="7" type="button">近7天</button>
-                    <button class="range-tab active" data-range="30" type="button">近30天</button>
-                    <button class="range-tab" data-range="0" type="button">全部</button>
-                  </div>
-                  <!-- 口径切换（2026-10-29）：曲线画的是「盈亏金额」，不再是净值。
-                       净值/成本是存量，一笔大额买入就能把 Y 轴从几万撑到十几万、把盈亏压成一条直线
-                       （新增 ¥5 万债基后整条曲线只剩一级台阶），所以两条水平线都撤了，
-                       成本只在悬停弹框里作为一行读数出现。
-                       三档：日均=近几日的平均盈亏（默认，去锯齿看趋势）/ 单日=当天赚亏多少（原始值，
-                       正负天天翻，读起来像心电图）/ 累计=这一期总共赚多少。 -->
-                  <div class="spark-mode" id="homeRateMode">
-                    <button class="spark-mode-btn active" data-mode="avg" type="button">日均</button>
-                    <button class="spark-mode-btn" data-mode="day" type="button">单日</button>
-                    <button class="spark-mode-btn" data-mode="cum" type="button">累计</button>
-                  </div>
                 </div>
               </div>
               <div id="homeRateSpark" class="rate-spark-box"></div>
@@ -239,10 +253,24 @@
     </section>
   </div>
 
+  <!-- 投资页 = 视图切换条 + 内容区（2026-11-02，原型 B）。
+       视图切换条提到页面第一位（在 KPI 卡片之前），保留下划线 tab 样式 ——
+       与资产页的「账户 / 现金 / 流水 / 收支」子 tab 是同一套 .sub-tabs 组件，
+       跨页切换时是同一种控件、同一套选中态（全站统一，不另立竖排栏目形态）。
+       视图级控件（行密度 / 刷新行情）挂在切换条右端，与 tab 同一基线。 -->
   <div id="holdingsView">
+    <nav class="sub-tabs" id="viewToggle">
+      <button class="sub-tab active" data-view="holdings" type="button">持仓<span class="sub-tab-count" data-count="holdings"></span></button>
+      <button class="sub-tab" data-view="wealth" type="button">理财<span class="sub-tab-count" data-count="wealth"></span></button>
+      <button class="sub-tab" data-view="deposits" type="button">存款<span class="sub-tab-count" data-count="deposits"></span></button>
+      <button class="sub-tab" data-view="closed" type="button">平仓<span class="sub-tab-count" data-count="closed"></span></button>
+      <!-- 视图级控件（行密度 / 刷新行情）挂在本行右端，由 renderInvestToolbar 填充。
+           2026-11-02 从独立一行（#investToolbar）并入：那一行只有一个右侧控件组，
+           左侧永远是空的 —— 既浪费 44px 首屏高度，又让控件"浮"在表格上方无所依托。 -->
+      <span class="sub-tabs-tools" id="investTools"></span>
+    </nav>
   <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 3 卫星（今日 / 本月 / 收益率），统一 .kpi-card -->
   <section class="invest-hero" id="investHero">
-    <div class="kpi-head"><span class="kpi-head-label">持仓市值 · 盈亏 · 收益率</span></div>
     <div class="kpi-row cols-anchor">
       <div class="kpi-card density-standard anchor">
         <div class="kpi-icon kpi-ico-equity"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="10" width="7" height="11" rx="1"/></svg></div>
@@ -276,32 +304,18 @@
        切换 tab 会出现肉眼可见的跳变。结构刻意与 investHero 对齐（kpi-head + kpi-row），
        保证两态高度一致。 -->
   <section class="invest-hero" id="closedHero" hidden>
-    <div class="kpi-head"><span class="kpi-head-label">已平仓 · 落袋收益总览</span></div>
     <div id="closedKpiBody"></div>
   </section>
 
   <!-- 理财 / 存款 KPI：同样**占用这个顶部位置**，四个 tab 共用一块区域互换显隐。
-       每个 hero 的眉标 + 4 张 .kpi-card 与 investHero 等高，切 tab 时只有内容替换、没有位移。 -->
+       每个 hero 的 4 张 .kpi-card 与 investHero 等高，切 tab 时只有内容替换、没有位移。 -->
   <section class="invest-hero" id="wealthHero" hidden>
-    <div class="kpi-head"><span class="kpi-head-label">理财市值 · 收益 · 年化</span></div>
     <div id="wealthKpiBody"></div>
   </section>
 
   <section class="invest-hero" id="depositHero" hidden>
-    <div class="kpi-head"><span class="kpi-head-label">存款本金 · 利息 · 到期</span></div>
     <div id="depositKpiBody"></div>
   </section>
-
-  <!-- 持仓/理财切换：原型下划线样式（替代原 pill 分段控件）；必须位于内容区之前 -->
-  <div class="sub-tabs" id="viewToggle">
-    <button class="sub-tab active" data-view="holdings" type="button">持仓<span class="sub-tab-count" data-count="holdings"></span></button>
-    <button class="sub-tab" data-view="wealth" type="button">理财<span class="sub-tab-count" data-count="wealth"></span></button>
-    <button class="sub-tab" data-view="deposits" type="button">存款<span class="sub-tab-count" data-count="deposits"></span></button>
-    <button class="sub-tab" data-view="closed" type="button">平仓<span class="sub-tab-count" data-count="closed"></span></button>
-  </div>
-
-  <!-- 投资页表头工具条：复用原型 holding-toolbar（筛选 chips + 排序下拉）；持仓/理财切换时由 renderInvestToolbar 重渲染 -->
-  <div id="investToolbar" class="holding-toolbar"></div>
 
   <!-- 首页理财视图：由顶部 #viewToggle 切到「理财」时显示，复用 renderWealth 渲染（标题/操作/表格，已移除卡片展示） -->
   <div id="homeWealthBox" class="home-wealth-box" hidden></div>
@@ -322,7 +336,6 @@
     <p class="empty-desc" id="emptyMsg">添加第一笔开始记录吧。</p>
     <button class="btn primary" id="emptyAddBtn" type="button">＋ 添加第一笔持仓</button>
   </div>
-
   </div>
 
   <!-- ===== 财务（2026-10-26 卡片改造）：KPI 标题行（含年份切换）/ 4 KPI 卡 / 年度收支热力图 / 月度分类详情 ===== -->
@@ -440,6 +453,18 @@
       </div>
     </div>
 
+    <!-- 基准对比（2026-11-02）：近 1 年「我的组合」vs 沪深300 / 标普500 / 纳指100。
+         数据来自 GET /api/review/benchmark（指数日线服务端 6h 缓存，一次 3 个外网请求封顶）。
+         差额（pp）= 组合 − 指数，由服务端算好随行返回，前端不重算 —— 两边各算一套必然对不上。 -->
+    <section class="card rv-bench" id="rvBench" hidden>
+      <div class="rv-bench-head">
+        <span class="rb-sub-title">基准对比</span>
+        <span class="rv-bench-range" id="rvBenchRange">近 1 年</span>
+      </div>
+      <div class="rv-bench-grid" id="rvBenchGrid"></div>
+      <div class="rv-bench-note" id="rvBenchNote"></div>
+    </section>
+
     <!-- 业绩表现：单一榜按收益总额排序（赚最多在上、亏最多在下）；默认持仓中，可切已平仓。
          左圆环 = 当前榜单按类别汇总的收益占比（色 = 类别色，与行首色点同源） -->
     <section class="card rv-card">
@@ -543,17 +568,17 @@
              id 供 scripts/auth-check.mjs / auth-shot.mjs 定位，勿删。 -->
         <section class="settings-group" id="authSettingsGroup">
           <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.6"/></svg>绑定设备</span></h3>
-          <p class="settings-group-desc">本机凭 Cookie 记住身份，换设备用一次性配对码接入；出码 / 清空 / 删账本 / 导入等敏感操作由操作 PIN 保护。</p>
           <div class="settings-group-body">
             <!-- 2026-10-29：「当前账本 + 退出登录」整块移除——账本名在个人菜单顶部已有回显，
                  退出登录已下沉到个人菜单最底部（带二次确认），此处重复摆放既占地又容易误触。
                  剩下「设备」「操作 PIN」两组用 .dev-sec 分区 + 全宽实线衔接，不再用虚线分割。 -->
             <section class="dev-sec">
               <div class="grp-label">本账本已接入的设备<span class="pin-state" id="devRoleNote"></span></div>
-              <p class="tool-hint" id="memberHint" hidden>本机是<strong>普通设备</strong>：只能使用账本数据。吊销其他设备、添加新设备、修改 PIN 需要到主设备上操作。</p>
-              <div id="deviceList" class="device-list"><div class="auth-hint">加载中…</div></div>
+              <div id="deviceList" class="device-list"><!-- 初始占位：JS 接手后换成 shimmer 骨架 --></div>
               <div class="modal-actions" id="deviceActions">
-                <button class="btn" type="button" id="addDeviceBtn">＋ 添加设备</button>
+                <!-- 两枚同级按钮统一样式、都不带符号：早先「＋ 添加设备」比「邀请家人」多一个加号，
+                     同一排里一个像主按钮、一个像次按钮，实际两者权重相同。 -->
+                <button class="btn" type="button" id="addDeviceBtn">添加设备</button>
                 <button class="btn" type="button" id="inviteMemberBtn">邀请家人</button>
               </div>
             </section>
