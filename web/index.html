@@ -214,9 +214,10 @@
               <div class="kpi-main"><div class="kpi-value" id="homeNetWorth">—</div></div>
               <div class="kpi-sub hero-changes" id="homeNetChanges"></div>
             </div>
-            <div class="nw-asset-row" id="homeAssetBreakdown"></div>
             <!-- 单行竖向步进跑马灯：待办 + 收益句子，每次完整跳一行。
-                 位置在 nw-left 底部、资产分布芯片之下，不抢净资产主数字的视觉锚点。 -->
+                 位置在资产分布芯片**之上**（2026-11-02 调整）：净资产主数字与芯片之间
+                 夹一条动态信息带，靠 .home-marquee 自带的 border-top 当分割线，
+                 芯片留在最底部当「资产构成」的收尾。 -->
             <div class="home-marquee" id="homeMarquee" hidden aria-label="首页动态">
               <div class="hm-viewport">
                 <div class="hm-track" id="homeMarqueeTrack">
@@ -224,6 +225,7 @@
                 </div>
               </div>
             </div>
+            <div class="nw-asset-row" id="homeAssetBreakdown"></div>
           </div>
           <div class="nw-right">
             <div class="nw-spark">
