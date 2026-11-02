@@ -60,11 +60,38 @@ type benchPortfolio struct {
 	CoveredTo   string `json:"covered_to"`
 }
 
-// computeBenchmark 组合近 1 年收益 + 三个指数同期收益。
-func computeBenchmark(uid int64) gin.H {
+// benchRangeMap 区间别名 → 天数；all = 0 表示不限制。
+var benchRangeMap = map[string]int{
+	"1m":  30,
+	"3m":  90,
+	"6m":  180,
+	"1y":  365,
+	"all": 0,
+}
+
+// benchRangeLabel 区间展示名。
+var benchRangeLabel = map[string]string{
+	"1m":  "近 1 月",
+	"3m":  "近 3 月",
+	"6m":  "近 6 月",
+	"1y":  "近 1 年",
+	"all": "全部",
+}
+
+// computeBenchmark 组合区间收益 + 三个指数同期收益。
+// rangeStr: 1m/3m/6m/1y/all（默认 1y）。
+func computeBenchmark(uid int64, rangeStr string) gin.H {
 	now := time.Now().In(beijing)
 	today := now.Format("2006-01-02")
-	wantFrom := now.AddDate(-1, 0, 0).Format("2006-01-02")
+	days, ok := benchRangeMap[rangeStr]
+	if !ok {
+		days = 365 // 默认近 1 年
+		rangeStr = "1y"
+	}
+	var wantFrom string
+	if days > 0 {
+		wantFrom = now.AddDate(0, 0, -days).Format("2006-01-02")
+	}
 	from := wantFrom
 
 	// ---- 组合：区间累计盈亏 ÷ 区间每日净资产基数均值 ----
@@ -147,9 +174,15 @@ func computeBenchmark(uid int64) gin.H {
 	}
 
 	return gin.H{
-		// full=true 才是真正的「近 1 年」；账本历史更短时前端文案要跟着改，
-		// 不能顶着「近 1 年」去展示 75 天的组合收益。
-		"range":     gin.H{"from": from, "to": today, "days": 365, "full": from == wantFrom},
+		// range 对象：前端文案跟着走，不能顶着「近 1 年」去展示 75 天的组合收益。
+		"range": gin.H{
+			"key":   rangeStr,
+			"label": benchRangeLabel[rangeStr],
+			"from":  from,
+			"to":    today,
+			"days":  days,                     // 0 = all
+			"full":  days == 0 || from == wantFrom, // all 或窗口完整覆盖到今天
+		},
 		"portfolio": pf,
 		"bench":     items,
 	}
@@ -181,7 +214,8 @@ func indexWindowReturn(bars []market.IndexBar, from string) (fromDate, toDate st
 	return bars[base].Date, last.Date, ret, true
 }
 
-// benchmarkGet GET /api/review/benchmark
+// benchmarkGet GET /api/review/benchmark?range=1y（1m/3m/6m/1y/all，默认 1y）
 func benchmarkGet(c *gin.Context) {
-	c.JSON(http.StatusOK, computeBenchmark(currentUserID(c)))
+	rng := c.Query("range")
+	c.JSON(http.StatusOK, computeBenchmark(currentUserID(c), rng))
 }

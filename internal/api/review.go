@@ -112,9 +112,14 @@ type reviewItem struct {
 	// 不再用 市值×年化 造「年化金额」：那是假设复利一年的推演值，没法和任何表格对上，
 	// 而且无年化的标的（XIRR 无解）会被迫虚构或显示「—」。
 	Gain    float64 `json:"gain_cny"`
-	Days    int     `json:"days"`    // 持有天数（已平仓 = 首笔→末笔流水的跨度）
-	Quality string  `json:"quality"` // ok | partial | estimated | no_data
-	Note    string  `json:"note"`
+	// HoldingReturn 持有期收益率 %（gain / 本金），持仓中 = gain/(mv−gain)，已平仓 = gain/invested。
+	// 前端用小写字样"持有收益 X%"并列展示，避免与年化混淆。
+	HoldingReturn *float64 `json:"holding_return,omitempty"`
+	// Alpha 超额年化 = 实测年化 − 目标年化（pp）；无实测年化时按目标估算 alpha=0 不计。
+	Alpha   *float64 `json:"alpha,omitempty"`
+	Days    int      `json:"days"`    // 持有天数（已平仓 = 首笔→末笔流水的跨度）
+	Quality string   `json:"quality"` // ok | partial | estimated | no_data
+	Note    string   `json:"note"`
 }
 
 // reviewIdle 闲置现金卡片。
@@ -465,6 +470,10 @@ func computeReview(uid int64) reviewResp {
 	}
 	sort.SliceStable(idle.Items, func(i, j int) bool { return idle.Items[i].MV > idle.Items[j].MV })
 
+	// ---- 3.5) 后处理：持有期收益率 + 超额年化 ----
+	enrichReviewItems(items)
+	enrichReviewItems(closedItems)
+
 	// ---- 4) 总市值与组合年化（只含持仓中 + 现金，已平仓不占市值）----
 	total := 0.0
 	for _, it := range items {
@@ -567,6 +576,36 @@ func computeReview(uid int64) reviewResp {
 		out.Notes = append(out.Notes, "有 "+strconv.Itoa(noData)+" 只标的数据不足，无法给出年化，不进业绩榜。")
 	}
 	return out
+}
+
+// enrichReviewItems 给 items 补上持有期收益率（gain/本金 %）和超额年化（ann − target pp）。
+// 只给有意义的标的算（本金>0、年化有值），不强制给无数据的硬塞。
+func enrichReviewItems(items []reviewItem) {
+	for i := range items {
+		it := &items[i]
+		if it.Key == rbClassCash {
+			continue // 现金不参与收益率对比
+		}
+		// 持有期收益率：持仓中 = gain / (mv − gain) = gain / cost；已平仓 = gain / invested
+		switch it.State {
+		case "closed":
+			if it.Invested > 0.005 {
+				hr := round2(it.Gain / it.Invested * 100)
+				it.HoldingReturn = &hr
+			}
+		default: // holding
+			cost := it.MV - it.Gain
+			if cost > 0.005 {
+				hr := round2(it.Gain / cost * 100)
+				it.HoldingReturn = &hr
+			}
+		}
+		// 超额年化 = 实测年化 − 目标年化；只有有实测年化的才算（nil 或"估算"的不算）
+		if it.Ann != nil {
+			a := round2(*it.Ann - it.Target)
+			it.Alpha = &a
+		}
+	}
 }
 
 // reviewGet GET /api/review
