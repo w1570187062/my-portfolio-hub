@@ -4674,9 +4674,9 @@ function flowTitleOf(f, fallback) {
 // 再把同一批流水按分类列一遍纯属重复（实测占整页 65% 高度，且逐笔明细没有回退能力）。
 // 逐笔明细统一在资产页「流水」时间轴看。finFlowsCache 仍被 renderCatTreemap 使用，不能删。
 
-// 取该 plan 在某月是否已完成（一次性计划忽略月份；循环计划用共享查看月份）
+// 取该 plan 在某月是否已完成：完成记录按归属月存，
+// 循环计划 = 当前查看月，一次性计划 = one_time_date 所在月（跨月时要先 ensurePlanDoneYm）
 function _planDoneAt(p, ym) {
-  if (p.pattern === 'one_time') return !!cashflowDone[p.id];
   const dm = _planDoneCache[ym || cfViewYm || cfNowYm];
   return !!(dm && dm[p.id]);
 }
@@ -4796,6 +4796,7 @@ const CF_ICO_TRASH = '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V
 function cfPlanRowHTML(p) {
   const isIn = p.type === 'income';
   const st = cfPlanStatus(p);
+  const done = _planDoneAt(p, cfDoneYmOf(p)); // actual_amount=0（跳过）同样算已完成
   const n = cfPlanNext(p);
   const amt = Math.abs(Number(p.amount) || 0);
   const cyc = p.pattern === 'one_time' ? '一次性' : '每月 ' + cfSortDay(p) + ' 号';
@@ -4805,9 +4806,9 @@ function cfPlanRowHTML(p) {
   const liabTag = (p.type === 'expense' && p.liability_mode === 'incur') ? '<span class="cf-tag">新负债</span>'
     : (p.liability_id ? '<span class="cf-tag">负债</span>' : '');
   const selected = cfPlanSel.has(p.id);
-  return `<div class="cf-row${st === 'paused' ? ' is-paused' : ''}${st === 'expired' ? ' is-expired' : ''}${cfPlanBulk ? ' bulk' : ''}" data-id="${p.id}">
+  return `<div class="cf-row${st === 'paused' ? ' is-paused' : ''}${st === 'expired' ? ' is-expired' : ''}${done ? ' is-done' : ''}${cfPlanBulk ? ' bulk' : ''}" data-id="${p.id}">
       ${cfPlanBulk ? `<input type="checkbox" class="cf-row-cb" data-cf-act="select" data-id="${p.id}" aria-label="选择 ${esc(p.title || '')}"${selected ? ' checked' : ''} />` : ''}
-      <span class="cf-row-dot ${isIn ? 'income' : 'expense'}"></span>
+      <span class="cf-row-state ${isIn ? 'income' : 'expense'}${done ? ' is-done' : ''}" role="img" aria-label="${done ? '本期已完成' : '本期待办'}" title="${done ? '本期已完成' : '本期待办'}">${done ? '✓' : ''}</span>
       <div class="cf-row-main" data-cf-act="edit" data-id="${p.id}">
         <div class="cf-row-title">
           <button type="button" class="cf-row-name" data-cf-act="name" data-id="${p.id}" title="点击改名">${esc(p.title || '')}</button>
@@ -4916,6 +4917,15 @@ async function renderAssetCashflowPanel(body) {
   await loadCashflow();
   cfViewYm = cashflowMonth || cfNowYm;
   _planDoneCache[cashflowMonth || cfNowYm] = cashflowDone;
+  // 一次性计划的归属月可能不在当前月：列表行首状态环要用到对应月的 done map，
+  // 先把这些月份预热进缓存，否则跨月的一次性计划永远显示成待办。
+  const extraYms = new Set();
+  (cashflowPlans || []).forEach((p) => {
+    if (p.pattern !== 'one_time' || !p.one_time_date) return;
+    const ym = p.one_time_date.slice(0, 7);
+    if (ym && ym !== (cashflowMonth || cfNowYm)) extraYms.add(ym);
+  });
+  await Promise.all([...extraYms].map((ym) => ensurePlanDoneYm(ym)));
   if (assetSub === 'cashflow') renderAssetKpis('cashflow');
   // 面板只剩计划列表：标题行（.cf-head）已提到页签条下方，见 renderAssetTab。
   body.innerHTML = '<div class="cf-plan-wrap"></div>';

@@ -6684,9 +6684,33 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .cf-row.is-paused { opacity: .62; }
 .cf-row.is-expired { opacity: .72; }
 .cf-row-cb { flex: 0 0 auto; width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
-.cf-row-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
-.cf-row-dot.income { background: var(--up); }
-.cf-row-dot.expense { background: var(--down); }
+/* 行首状态环：待办 = 方向色空心环；完成 = 淡蓝底 + 蓝勾（颜色全部复用 accent 变量）。
+   与行尾暂停开关刻意拉开：环 17px、静态、淡描边；开关 32×20 实底、可点。
+   三档降级各带形态差异，不只靠透明度：完成=.9+勾，过期=.72+斜杠，暂停=.62+虚线。 */
+.cf-row-state {
+  position: relative; flex: 0 0 auto; width: 17px; height: 17px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid transparent; border-radius: 50%;
+  font-size: 10px; font-weight: 700; line-height: 1;
+}
+.cf-row-state.income { border-color: rgba(var(--up-rgb), .55); }
+.cf-row-state.expense { border-color: rgba(var(--down-rgb), .55); }
+.cf-row-state.is-done {
+  border-color: rgba(var(--tint), .4);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.cf-row.is-done { opacity: .9; }
+.cf-row.is-done .cf-row-name { color: var(--text-secondary); }
+.cf-row.is-done .cf-row-name:hover { color: var(--primary); }
+.cf-row.is-done .cf-row-meta { color: var(--text-faint); }
+.cf-row.is-paused:not(.is-done) .cf-row-state { border-style: dashed; }
+.cf-row.is-expired:not(.is-done) .cf-row-state { border-color: var(--text-faint); }
+.cf-row.is-expired:not(.is-done) .cf-row-state::before {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 12px; height: 1.5px; background: var(--text-faint);
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
 .cf-row-main { flex: 1 1 auto; min-width: 0; cursor: pointer; }
 .cf-row-title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .cf-row-name {
@@ -6813,12 +6837,12 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .cf-sort-wrap { justify-content: space-between; width: 100%; }
   .cf-row {
     display: grid; row-gap: var(--sp-2);
-    grid-template-columns: 16px 8px minmax(0, 1fr) auto;
-    grid-template-areas: "check dot main amt" "check dot when acts";
+    grid-template-columns: 16px 17px minmax(0, 1fr) auto;
+    grid-template-areas: "check state main amt" "check state when acts";
     padding: var(--sp-3);
   }
   .cf-row-cb { grid-area: check; align-self: center; }
-  .cf-row-dot { grid-area: dot; align-self: center; }
+  .cf-row-state { grid-area: state; align-self: center; }
   .cf-row-main { grid-area: main; }
   .cf-row-when { grid-area: when; align-items: flex-start; text-align: left; flex-direction: row; gap: var(--sp-2); }
   .cf-row-amt { grid-area: amt; align-self: center; }
