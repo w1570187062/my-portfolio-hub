@@ -30,13 +30,13 @@ type AlertEvent struct {
 	NetAmount float64 `json:"net_amount"` // 扣费后净到手金额（持仓币种）
 	// IsFund 是否有赎回费概念（场外基金）。列表接口按 holdings 现算，不冗余存列：
 	// 持仓的 category / linked_symbol 改过后，历史事件也能立刻跟着变对。
-	IsFund bool `json:"is_fund"`
-	Title     string  `json:"title"`
-	Body      string  `json:"body"`
-	DedupeKey string  `json:"dedupe_key"`
-	PushState string  `json:"push_state"` // none | sent | failed
-	CreatedAt string  `json:"created_at"`
-	ReadAt    string  `json:"read_at"`
+	IsFund    bool   `json:"is_fund"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	DedupeKey string `json:"dedupe_key"`
+	PushState string `json:"push_state"` // none | sent | failed
+	CreatedAt string `json:"created_at"`
+	ReadAt    string `json:"read_at"`
 }
 
 func initAlertEvents() error {
@@ -160,6 +160,15 @@ func MarkAlertsRead(uid int64, ids []int64) error {
 func SetAlertPushState(id int64, state string) error {
 	_, err := DB.Exec(`UPDATE alert_events SET push_state=? WHERE id=?`, state, id)
 	return err
+}
+
+// DeleteAlert 删除单条提醒（仅限本人）；返回实际删除行数。
+func DeleteAlert(id, uid int64) (int64, error) {
+	res, err := DB.Exec(`DELETE FROM alert_events WHERE id=? AND user_id=?`, id, uid)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // DeleteAlertsByUser 删账本时级联清理。

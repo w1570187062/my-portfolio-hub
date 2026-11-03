@@ -18,6 +18,7 @@ import (
 	"log"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,9 +55,9 @@ type RiskPlan struct {
 	// 各基金公司的 C 类规则并不统一（有的 7 天后 0，有的 7-30 天仍收 0.5%），
 	// 阶梯模板只能给典型值，用户查到自家产品的真实费率填这里即可。
 	FeeOverride float64 `json:"fee_override"`
-	Repeat       string    `json:"repeat"` // once（默认，永久一次） | repeat（每日一次）
-	CooldownMin  int       `json:"cooldown_min"`
-	MaxPerDay    int       `json:"max_per_day"`
+	Repeat      string  `json:"repeat"` // once（默认，永久一次） | repeat（每日一次）
+	CooldownMin int     `json:"cooldown_min"`
+	MaxPerDay   int     `json:"max_per_day"`
 	// BaselineAt 首次启用方案的时间。首次扫描只落库、不往钉钉/邮件推 ——
 	// 否则用户点一次「全部启用」，历史旧账会按当前价一次性推到手机（实测 7 只持仓 11 条）。
 	// 落库仍照做：铃铛里能看到「启用时这批持仓已经处于什么状态」，信息不丢、只是不打扰。
@@ -107,11 +108,11 @@ type RiskEval struct {
 }
 
 type presetParams struct {
-	MaxLossPct   float64
-	ATRK         float64
+	MaxLossPct       float64
+	ATRK             float64
 	TP1K, TP2K, TP3K float64
-	TrailPct     float64
-	BreakEvenPct float64
+	TrailPct         float64
+	BreakEvenPct     float64
 }
 
 var riskPresets = map[string]presetParams{
@@ -466,15 +467,15 @@ func computeEval(h db.Holding, plan *RiskPlan, b RiskBasis) RiskEval {
 // ---- 触发判定 ----
 
 type alertHit struct {
-	Kind     string
-	Level    int
-	Price    float64
-	Target   float64
-	PnlPct   float64
-	FeePct   float64
+	Kind      string
+	Level     int
+	Price     float64
+	Target    float64
+	PnlPct    float64
+	FeePct    float64
 	NetAmount float64
-	Title    string
-	Body     string
+	Title     string
+	Body      string
 }
 
 // evaluateHolding 把「当前价 vs 各价位」翻译成待推送条目。
@@ -810,6 +811,27 @@ func alertsRead(c *gin.Context) {
 	}
 	n, _ := db.CountUnreadAlerts(uid)
 	c.JSON(200, gin.H{"ok": true, "unread": n})
+}
+
+// alertsDelete 删除单条提醒记录（个人通知中心列表右侧的删除图标）。
+func alertsDelete(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(400, gin.H{"error": "bad id"})
+		return
+	}
+	uid := currentUserID(c)
+	n, err := db.DeleteAlert(id, uid)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	if n == 0 {
+		c.JSON(404, gin.H{"error": "提醒不存在"})
+		return
+	}
+	unread, _ := db.CountUnreadAlerts(uid)
+	c.JSON(200, gin.H{"ok": true, "unread": unread})
 }
 
 // alertsScan 手动跑一轮；dry=1 时只回预览不落库（联调用）。

@@ -239,6 +239,7 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/holdings/:id/risk-plan", holdingRiskPlanGet)
 		g.PUT("/holdings/:id/risk-plan", holdingRiskPlanPut)
 		g.GET("/alerts", alertsList)
+		g.DELETE("/alerts/:id", alertsDelete)
 		g.POST("/alerts/read", alertsRead)
 		g.POST("/alerts/scan", alertsScan)
 		g.POST("/alerts/apply-all", alertsApplyAll)
