@@ -4681,17 +4681,12 @@ function _planDoneAt(p, ym) {
   return !!(dm && dm[p.id]);
 }
 
-const FP_PREV_SVG = '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>';
-const FP_NEXT_SVG = '<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>';
-const _fpCardYm = {};         // 每张循环卡独立维护一个查看月份，箭头单独前后切换
-
-function ymShift(ym, delta) {
-  const [y, m] = (ym || '').split('-').map(Number);
-  const d = new Date(y || 2000, (m || 1) - 1 + delta, 1);
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-}
-function ymLabel(ym) { const [y, m] = (ym || '').split('-'); return y + '/' + (m || ''); }
-function sleepMs(ms) { return new Promise((r) => setTimeout(r, ms)); }
+// ===== 收支计划：按「下次发生」分组的日程式列表（2026-11-03 改版） =====
+// 数据字段：type income/expense、pattern recurring_fixed/one_time、day_of_month、one_time_date、
+// enabled 1/0、end_date。下次发生与分组在前端按本地时区算，后端只负责持久化与软删除。
+let cfPlanView = { type: 'all', status: 'all', sort: 'next' };
+let cfPlanBulk = false;
+const cfPlanSel = new Set();
 
 // 某月的完成状态（带缓存，缺失才请求）
 async function ensurePlanDoneYm(ym) {
@@ -4709,121 +4704,525 @@ async function ensurePlanDoneYm(ym) {
   if (!_planDoneCache[ym]) _planDoneCache[ym] = {};
 }
 
-// 单张月卡的内容：一个「计划 × 月份」
-function fpRowHTML(p, ym) {
-  const isRecurring = p.pattern !== 'one_time';
+// ---- 日期与分组 ----
+function cfPlanToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function cfParseDay(s) {
+  const [y, m, d] = (s || '').split('-').map(Number);
+  return (y && m && d) ? new Date(y, m - 1, d) : null;
+}
+function cfDayKey(d) {
+  return d ? d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') : '';
+}
+function cfDaysBetween(a, b) {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+// 下次发生：循环计划本月已过就顺延到下月（月末自动钳制，31 号在 2 月取 28/29）；
+// 一次性计划取具体日期，已过返回 null；有截止日期且下次晚于截止，视为已结束。
+function cfPlanNext(p) {
+  const today = cfPlanToday();
+  if (p.pattern === 'one_time') {
+    const d = cfParseDay(p.one_time_date);
+    return d && d >= today ? d : null;
+  }
+  const day = Math.max(1, Math.min(31, Number(p.day_of_month) || 1));
+  let y = today.getFullYear();
+  let m = today.getMonth();
+  for (let i = 0; i < 2; i++) {
+    const last = new Date(y, m + 1, 0).getDate();
+    const d = new Date(y, m, Math.min(day, last));
+    if (d >= today) {
+      if (p.end_date && cfDayKey(d) > p.end_date) return null;
+      return d;
+    }
+    m += 1;
+    if (m > 11) { m = 0; y += 1; }
+  }
+  return null;
+}
+function cfPlanStatus(p) {
+  if (p.enabled === 0) return 'paused';
+  return cfPlanNext(p) ? 'active' : 'expired';
+}
+function cfPlanGroup(p) {
+  if (p.enabled === 0) return 'paused';
+  const n = cfPlanNext(p);
+  if (!n) return 'expired';
+  return cfDaysBetween(cfPlanToday(), n) <= 7 ? 'soon' : 'month';
+}
+function cfPlanNextTs(p) {
+  const d = cfPlanNext(p);
+  return d ? d.getTime() : Infinity;
+}
+function cfPlanFiltered() {
+  return (cashflowPlans || []).filter((p) => {
+    if (cfPlanView.type !== 'all' && p.type !== cfPlanView.type) return false;
+    const st = cfPlanStatus(p);
+    if (cfPlanView.status === 'on' && st !== 'active') return false;
+    if (cfPlanView.status === 'paused' && st !== 'paused') return false;
+    if (cfPlanView.status === 'expired' && st !== 'expired') return false;
+    return true;
+  });
+}
+function cfPlanSorted(list) {
+  const arr = list.slice();
+  if (cfPlanView.sort === 'amount') {
+    arr.sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0) || a.id - b.id);
+  } else if (cfPlanView.sort === 'name') {
+    arr.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'zh-Hans-CN') || a.id - b.id);
+  } else {
+    arr.sort((a, b) => cfPlanNextTs(a) - cfPlanNextTs(b) || a.id - b.id);
+  }
+  return arr;
+}
+function cfCountdownText(p, n) {
+  if (p.enabled === 0) return '暂停中';
+  if (!n) return '已结束';
+  const days = cfDaysBetween(cfPlanToday(), n);
+  if (days <= 0) return '今天';
+  if (days === 1) return '明天';
+  return days + ' 天后';
+}
+function cfDateShort(d) {
+  return d ? String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') : '—';
+}
+
+// 小结只算启用中的循环计划：一次性挂在具体日期上，暂停的不占月度额度。
+// 金额统一折 CNY，与原币展示互不影响。
+function cfPlanSummaryHTML(all) {
+  const rec = all.filter((p) => p.enabled !== 0 && p.pattern !== 'one_time');
+  const sum = (type) => rec.filter((p) => p.type === type)
+    .reduce((a, p) => a + cnyOf(Math.abs(Number(p.amount) || 0), normCurJS(p.currency)), 0);
+  const sumCnt = (type) => rec.filter((p) => p.type === type).length;
+  const inc = sum('income');
+  const exp = sum('expense');
+  const net = inc - exp;
+  const onCnt = all.filter((p) => p.enabled !== 0).length;
+  const offCnt = all.filter((p) => p.enabled === 0).length;
+  return `<div class="cf-summary">
+      <div class="cf-sum"><span class="cf-sum-label">本月固定收入</span><b class="cf-sum-val income">${yuanOfW(inc)}</b><span class="cf-sum-sub">${sumCnt('income')} 项</span></div>
+      <div class="cf-sum"><span class="cf-sum-label">本月固定支出</span><b class="cf-sum-val expense">${yuanOfW(exp)}</b><span class="cf-sum-sub">${sumCnt('expense')} 项</span></div>
+      <div class="cf-sum"><span class="cf-sum-label">本月净额</span><b class="cf-sum-val ${net >= 0 ? 'income' : 'expense'}">${(net >= 0 ? '+' : '−') + yuanOfW(Math.abs(net))}</b><span class="cf-sum-sub">固定收支之差</span></div>
+      <div class="cf-sum"><span class="cf-sum-label">计划状态</span><b class="cf-sum-val">${onCnt} 启用</b><span class="cf-sum-sub">${offCnt} 暂停</span></div>
+    </div>`;
+}
+
+const CF_ICO_PENCIL = '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
+const CF_ICO_TRASH = '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+
+function cfPlanRowHTML(p) {
   const isIn = p.type === 'income';
-  const dotCls = isIn ? 'income' : 'expense';
-  const amtCur = curSymbolJS(p.currency || 'cny');
+  const st = cfPlanStatus(p);
+  const n = cfPlanNext(p);
   const amt = Math.abs(Number(p.amount) || 0);
-  const meta = p.pattern === 'one_time'
-    ? (p.one_time_date ? `一次性 · ${p.one_time_date}` : '一次性计划')
-    : `每月 ${cfSortDay(p)} 日`;
+  const cyc = p.pattern === 'one_time' ? '一次性' : '每月 ' + cfSortDay(p) + ' 号';
+  const whenDate = n ? cfDateShort(n) : (p.pattern === 'one_time' && p.one_time_date ? p.one_time_date.slice(5) : '—');
+  const cd = cfCountdownText(p, n);
+  const endMeta = (p.pattern !== 'one_time' && p.end_date) ? ' · 截止 ' + esc(p.end_date) : '';
   const liabTag = (p.type === 'expense' && p.liability_mode === 'incur') ? '<span class="cf-tag">新负债</span>'
     : (p.liability_id ? '<span class="cf-tag">负债</span>' : '');
-  // 月份信息：金额下方、卡片最右；只用淡化字色，无底色无主题色无箭头
-  const monthPill = isRecurring ? `<span class="fp-month-pill" data-ym="${ym}">${ymLabel(ym)}</span>` : '';
-  return `<div class="fp-row">
-      <span class="plan-dot ${dotCls}"></span>
-      <div class="fp-main">
-        <div class="plan-title">${esc(p.title || '')}${liabTag} ${finCatBadge(p.category || (isIn ? 'other_in' : 'other_out'))}</div>
-        <div class="plan-meta">${esc(meta)}</div>
+  const selected = cfPlanSel.has(p.id);
+  return `<div class="cf-row${st === 'paused' ? ' is-paused' : ''}${st === 'expired' ? ' is-expired' : ''}${cfPlanBulk ? ' bulk' : ''}" data-id="${p.id}">
+      ${cfPlanBulk ? `<input type="checkbox" class="cf-row-cb" data-cf-act="select" data-id="${p.id}" aria-label="选择 ${esc(p.title || '')}"${selected ? ' checked' : ''} />` : ''}
+      <span class="cf-row-dot ${isIn ? 'income' : 'expense'}"></span>
+      <div class="cf-row-main" data-cf-act="edit" data-id="${p.id}">
+        <div class="cf-row-title">
+          <button type="button" class="cf-row-name" data-cf-act="name" data-id="${p.id}" title="点击改名">${esc(p.title || '')}</button>
+          ${liabTag}${finCatBadge(p.category || (isIn ? 'other_in' : 'other_out'))}
+        </div>
+        <div class="cf-row-meta">${cyc}${endMeta}</div>
       </div>
-      <div class="fp-side">
-        <span class="plan-amt ${dotCls}">${isIn ? '+' : '-'}${amtCur}${amt.toFixed(2)}</span>
-        ${monthPill}
+      <div class="cf-row-when">
+        <button type="button" class="cf-when-btn" data-cf-act="date" data-id="${p.id}" title="改下次发生日期">${whenDate}</button>
+        <span class="cf-when-cd${st === 'expired' || st === 'paused' ? ' muted' : ''}">${cd}</span>
+      </div>
+      <button type="button" class="cf-row-amt ${isIn ? 'income' : 'expense'}" data-cf-act="amount" data-id="${p.id}" title="点击改金额">${(isIn ? '+' : '−') + curSymbolJS(p.currency || 'cny') + amt.toFixed(2)}</button>
+      <div class="cf-row-acts">
+        <button type="button" class="cf-switch${p.enabled !== 0 ? ' on' : ''}" data-cf-act="toggle" data-id="${p.id}" aria-label="${p.enabled !== 0 ? '暂停' : '启用'}" title="${p.enabled !== 0 ? '暂停' : '启用'}"><span class="cf-switch-knob"></span></button>
+        <button type="button" class="cf-act-btn cf-edit-btn" data-cf-act="edit" data-id="${p.id}" title="编辑">${CF_ICO_PENCIL}</button>
+        <button type="button" class="cf-act-btn cf-del-btn" data-cf-act="del" data-id="${p.id}" title="删除">${CF_ICO_TRASH}</button>
+        <button type="button" class="cf-act-btn cf-more-btn" data-cf-act="more" data-id="${p.id}" aria-label="更多操作">⋯</button>
       </div>
     </div>`;
 }
 
-// 右侧圆形 icon：未完成=铅笔编辑；已完成=对勾（不置灰）。计划级控件，不属于某一月，故放卡堆外
-function fpActHTML(p, ym) {
-  const done = _planDoneAt(p, ym);
-  return done
-    ? `<button class="fp-act fp-done" data-act="cf-edit" data-id="${p.id}" title="已完成 · 点击编辑计划" aria-label="已完成"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></button>`
-    : `<button class="fp-act" data-act="cf-edit" data-id="${p.id}" title="编辑计划" aria-label="编辑计划"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>`;
+function cfPlanGroupsHTML(list) {
+  const buckets = { soon: [], month: [], expired: [], paused: [] };
+  list.forEach((p) => buckets[cfPlanGroup(p)].push(p));
+  const meta = {
+    soon: { label: '即将发生', note: '7 天内' },
+    month: { label: '本月', note: '含下月顺延' },
+    expired: { label: '已过期', note: '不再发生' },
+    paused: { label: '已暂停', note: '不计入小结' },
+  };
+  return ['soon', 'month', 'expired', 'paused'].map((k) => {
+    if (!buckets[k].length) return '';
+    return `<section class="cf-group">
+        <div class="cf-group-head"><span class="cf-group-name">${meta[k].label}</span><span class="cf-group-note">${meta[k].note}</span><span class="cf-group-cnt">${buckets[k].length}</span></div>
+        <div class="cf-rows">${buckets[k].map(cfPlanRowHTML).join('')}</div>
+      </section>`;
+  }).join('');
 }
 
-// 整卡内容：recurring = 单月视图 + 左右翻月箭头（各卡独立）；one_time = 单卡，无箭头
-function fpCardHTML(p) {
-  const isRecurring = p.pattern !== 'one_time';
-  if (!isRecurring) {
-    return `<div class="fp-row">${fpRowHTML(p, '')}</div>${fpActHTML(p, '')}`;
+function cfPlanToolbarHTML() {
+  const chip = (kind, val, label, on) => `<button type="button" class="cf-chip${on ? ' on' : ''}" data-cf-act="filter" data-kind="${kind}" data-val="${val}">${label}</button>`;
+  const t = cfPlanView.type;
+  const s = cfPlanView.status;
+  return `<div class="cf-toolbar">
+      <div class="cf-filters">
+        ${chip('type', 'all', '全部', t === 'all')}${chip('type', 'income', '收入', t === 'income')}${chip('type', 'expense', '支出', t === 'expense')}
+        <span class="cf-filter-sep"></span>
+        ${chip('status', 'all', '全部状态', s === 'all')}${chip('status', 'on', '启用中', s === 'on')}${chip('status', 'paused', '已暂停', s === 'paused')}${chip('status', 'expired', '已过期', s === 'expired')}
+      </div>
+      <label class="cf-sort-wrap">排序
+        <select id="cfSortSel" class="cf-sort">
+          <option value="next"${cfPlanView.sort === 'next' ? ' selected' : ''}>下次发生</option>
+          <option value="amount"${cfPlanView.sort === 'amount' ? ' selected' : ''}>金额</option>
+          <option value="name"${cfPlanView.sort === 'name' ? ' selected' : ''}>名称</option>
+        </select>
+      </label>
+    </div>`;
+}
+
+function cfPlanBulkHTML(filtered) {
+  const allSel = filtered.length > 0 && filtered.every((p) => cfPlanSel.has(p.id));
+  return `<div class="cf-bulkbar">
+      <button type="button" class="cf-chip${allSel ? ' on' : ''}" data-cf-act="selectall">${allSel ? '取消全选' : '全选'}</button>
+      <span class="cf-bulk-cnt">已选 <b>${cfPlanSel.size}</b> 个</span>
+      <button type="button" class="btn danger-ghost sm" data-cf-act="bulkdel"${cfPlanSel.size ? '' : ' disabled'}>删除所选</button>
+      <button type="button" class="btn ghost sm" data-cf-act="bulkexit">退出批量</button>
+    </div>`;
+}
+
+// 只重绘面板内部（小结/工具条/列表），外壳与事件委托不动；乐观删除时可立即出效果。
+function paintCfPlanPanel() {
+  const wrap = document.querySelector('.cf-plan-wrap');
+  if (!wrap) return;
+  const all = cashflowPlans || [];
+  const filtered = cfPlanSorted(cfPlanFiltered());
+  const summary = cfPlanSummaryHTML(all);
+  const toolbar = all.length ? cfPlanToolbarHTML() : '';
+  const bulkbar = cfPlanBulk ? cfPlanBulkHTML(filtered) : '';
+  let listHTML = '';
+  if (!all.length) {
+    listHTML = `<div class="cf-empty">
+        <div class="cf-empty-title">还没有收支计划</div>
+        <p>先建一笔工资，再建房租。计划会按下次发生时间排好。</p>
+        <button type="button" class="btn primary" data-cf-act="add">新建第一个计划</button>
+      </div>`;
+  } else if (!filtered.length) {
+    listHTML = `<div class="cf-empty">
+        <p>这个筛选下没有计划。</p>
+        <button type="button" class="btn" data-cf-act="clearfilter">清除筛选</button>
+      </div>`;
+  } else {
+    listHTML = cfPlanGroupsHTML(filtered);
   }
-  const ym = _fpCardYm[p.id] || cfViewYm || cfNowYm;
-  return `<button class="fp-nav-btn fp-prev" data-act="fp-prev" data-id="${p.id}" aria-label="上一月" title="上一月">${FP_PREV_SVG}</button>`
-       + `<div class="fp-content">${fpRowHTML(p, ym)}</div>`
-       + fpActHTML(p, ym)
-       + `<button class="fp-nav-btn fp-next" data-act="fp-next" data-id="${p.id}" aria-label="下一月" title="下一月">${FP_NEXT_SVG}</button>`;
+  wrap.innerHTML = summary + toolbar + bulkbar + listHTML;
+  const headSub = document.querySelector('.cf-head-sub');
+  if (headSub) headSub.textContent = `${all.length} 个计划 · 启用 ${all.filter((p) => p.enabled !== 0).length} · 暂停 ${all.filter((p) => p.enabled === 0).length}`;
+  const bulkBtn = document.querySelector('.cf-bulk-btn');
+  if (bulkBtn) bulkBtn.textContent = cfPlanBulk ? '退出批量' : '批量管理';
 }
 
-// ---- 收支计划卡片：每张 recurring 卡 = 单月视图，左右箭头各自独立前后切换 ----
-// 切换只做简单的滑入/淡出过渡，不再堆叠。每张卡维护自己的查看月份 _fpCardYm[id]。
+async function renderAssetCashflowPanel(body) {
+  if (!body) return;
+  await loadCashflow();
+  cfViewYm = cashflowMonth || cfNowYm;
+  _planDoneCache[cashflowMonth || cfNowYm] = cashflowDone;
+  if (assetSub === 'cashflow') renderAssetKpis('cashflow');
+  body.innerHTML = `<div class="asset-cashflow">
+      <div class="cf-head">
+        <div class="cf-head-text">
+          <div class="section-title">收支计划</div>
+          <div class="cf-head-sub"></div>
+        </div>
+        <div class="cf-head-acts">
+          <button type="button" class="btn sm cf-bulk-btn" data-cf-act="bulk">批量管理</button>
+          <button type="button" class="btn primary sm" data-cf-act="add">＋ 新建计划</button>
+        </div>
+      </div>
+      <div class="cf-plan-wrap"></div>
+    </div>`;
+  paintCfPlanPanel();
+}
 
-// 单张卡翻到上/下一月：先按方向滑出，取数到位后换内容并滑入
-async function fpNav(cardEl, id, dir) {
-  if (cardEl.dataset.fpNavBusy === '1') return;
-  cardEl.dataset.fpNavBusy = '1';
+// ---- 行内编辑 / 暂停 / 删除撤销 ----
+async function cfPatchPlan(id, fields) {
+  const r = await api('/api/cashflow/plans/' + id, { method: 'PATCH', body: JSON.stringify(fields) });
+  if (!r.ok) {
+    let m = '没改成';
+    try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) { /* 用默认文案 */ }
+    throw new Error(m);
+  }
+  return (await r.json()).plan;
+}
+
+async function cfReloadPlans() {
+  const body = document.getElementById('assetPanelCashflow');
+  if (body) await renderAssetCashflowPanel(body);
+}
+
+async function cfPatchAndReload(id, fields, msg, undoFields) {
   try {
-    const p = (cashflowPlans || []).find((x) => x.id === Number(id));
-    if (!p) return;
-    const cur = _fpCardYm[id] || cfViewYm || cfNowYm;
-    const nextYm = ymShift(cur, dir);
-    const ready = ensurePlanDoneYm(nextYm);            // 与滑出动画并行取数
-    const content = cardEl.querySelector('.fp-content');
-    if (!content) return;
-    content.classList.add(dir < 0 ? 'fp-out-prev' : 'fp-out-next');
-    await Promise.all([ready, sleepMs(130)]);
-    _fpCardYm[id] = nextYm;
-    content.innerHTML = fpRowHTML(p, nextYm);
-    content.classList.remove('fp-out-prev', 'fp-out-next');
-    content.classList.add(dir < 0 ? 'fp-in-prev' : 'fp-in-next');
-    // 编辑按钮完成态随月份变化
-    const act = cardEl.querySelector('.fp-act');
-    if (act) act.outerHTML = fpActHTML(p, nextYm);
-    setTimeout(() => content.classList.remove('fp-in-prev', 'fp-in-next'), 200);
-  } finally {
-    delete cardEl.dataset.fpNavBusy;
+    await cfPatchPlan(id, fields);
+    await cfReloadPlans();
+    if (msg) cfUndoToast(msg, async () => { await cfPatchPlan(id, undoFields); await cfReloadPlans(); });
+  } catch (err) {
+    toast(err.message || '没改成', 'err');
+    await cfReloadPlans();
   }
 }
 
-// 渲染整个计划列表：一张 plan-item 对应一个计划（事件走 document 级委托，无需逐卡绑定）
-async function renderPlanList(box) {
-  if (!box) return;
-  const list = cashflowPlans || [];
-  if (!list.length) {
-    box.innerHTML = '<div class="plan-empty empty-hint">暂无收支计划 · 点上方「＋ 新增收支计划」建立</div>';
+function cfStartInline(btn, p, field) {
+  if (!btn || !p || btn.dataset.fnStart === '1') return;
+  btn.dataset.fnStart = '1';
+  const inp = document.createElement('input');
+  inp.className = 'cf-inline-input';
+  inp.dataset.cfInline = field;
+  inp.dataset.id = p.id;
+  if (field === 'amount') {
+    inp.type = 'number';
+    inp.step = '0.01';
+    inp.min = '0';
+    inp.value = String(Number(p.amount) || 0);
+  } else {
+    inp.type = 'text';
+    inp.maxLength = 40;
+    inp.value = p.title || '';
+  }
+  btn.replaceWith(inp);
+  inp.focus();
+  inp.select();
+}
+
+function cfCommitInline(inp) {
+  if (!inp || inp.dataset.done === '1') return;
+  inp.dataset.done = '1';
+  const field = inp.dataset.cfInline;
+  const id = Number(inp.dataset.id) || 0;
+  const p = (cashflowPlans || []).find((x) => x.id === id);
+  if (!p) return;
+  if (inp.dataset.cancel === '1') { paintCfPlanPanel(); return; }
+  if (field === 'amount') {
+    const v = Math.round((parseFloat(inp.value) || 0) * 100) / 100;
+    if (!isFinite(v) || v < 0) { toast('金额不能为负', 'err'); paintCfPlanPanel(); return; }
+    if (Math.abs(v - (Number(p.amount) || 0)) < 0.0001) { paintCfPlanPanel(); return; }
+    cfPatchAndReload(p.id, { amount: v }, `金额已改为 ${yuanOfW(v)}`, { amount: Number(p.amount) || 0 });
     return;
   }
-  await prefetchPlanMonths();                          // 先把相邻月份完成态取齐，避免显示成铅笔
-  box.innerHTML = list.map((p) => `<div class="plan-item${p.pattern !== 'one_time' ? ' fp-deck' : ''}" data-id="${p.id}">${fpCardHTML(p)}</div>`).join('');
-}
-
-// 预拉各卡当前月 ±1 的完成状态（按 ym 全局缓存，箭头切换即时生效）
-async function prefetchPlanMonths() {
-  const need = new Set();
-  need.add(cfViewYm || cfNowYm);
-  for (const id in _fpCardYm) {
-    const y = _fpCardYm[id];
-    need.add(y); need.add(ymShift(y, 1)); need.add(ymShift(y, -1));
+  if (field === 'title') {
+    const v = (inp.value || '').trim();
+    if (!v) { toast('名称不能为空', 'err'); paintCfPlanPanel(); return; }
+    if (v === p.title) { paintCfPlanPanel(); return; }
+    cfPatchAndReload(p.id, { title: v }, `名称已改为「${v}」`, { title: p.title || '' });
   }
-  const miss = [...need].filter((ym) => !_planDoneCache[ym]);
-  if (miss.length) await Promise.all(miss.map(ensurePlanDoneYm));
 }
 
-// 计划卡交互：翻月箭头 / 编辑 icon（document 级委托，卡片重渲染后仍生效）
+async function cfTogglePlan(p) {
+  if (!p) return;
+  const next = p.enabled === 0 ? 1 : 0;
+  await cfPatchAndReload(
+    p.id, { enabled: next },
+    next ? `已启用「${p.title}」` : `已暂停「${p.title}」`,
+    { enabled: p.enabled === 0 ? 0 : 1 }
+  );
+}
+
+// 乐观删除：先从列表拿掉，再发批量软删；5 秒内可整批撤销。
+// 单条也走 bulk-delete，前后端只有一条删除路径。
+async function cfDeletePlans(ids, msg) {
+  const list = ids.map(Number).filter(Boolean);
+  if (!list.length) return;
+  const before = cashflowPlans || [];
+  cashflowPlans = before.filter((p) => !list.includes(p.id));
+  cfPlanSel.clear();
+  paintCfPlanPanel();
+  try {
+    const r = await api('/api/cashflow/plans/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: list }) });
+    if (!r.ok) throw new Error('删除失败');
+    cfUndoToast(msg, async () => {
+      const rr = await api('/api/cashflow/plans/restore', { method: 'POST', body: JSON.stringify({ ids: list }) });
+      if (!rr.ok) throw new Error('恢复失败');
+      await cfReloadPlans();
+    });
+  } catch (err) {
+    toast(humanizeErr(null, err, '删除失败'), 'err');
+    await cfReloadPlans();
+  }
+}
+
+// ---- 浮层：日期编辑 / 窄屏更多 ----
+function cfShowPop(html, anchor) {
+  cfClosePop();
+  const pop = document.createElement('div');
+  pop.id = 'cfPlanPop';
+  pop.className = 'cf-plan-pop';
+  pop.innerHTML = html;
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  const w = 232;
+  let left = Math.min(window.innerWidth - w - 12, Math.max(12, r.right - w));
+  let top = r.bottom + 6;
+  if (top + 220 > window.innerHeight) top = Math.max(12, r.top - 220);
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+  pop.style.width = w + 'px';
+}
+function cfClosePop() {
+  const pop = document.getElementById('cfPlanPop');
+  if (pop) pop.remove();
+}
+function cfDatePopHTML(p) {
+  const isOne = p.pattern === 'one_time';
+  const val = isOne ? (p.one_time_date || '') : cfSortDay(p);
+  return `<div class="cf-pop-title">下次发生</div>
+    <div class="cf-pop-note">${isOne ? '一次性计划只发生一次' : '每月按这个日期顺延'}</div>
+    <label class="cf-pop-field">${isOne ? '具体日期' : '每月几号'}
+      <input id="cfPopDate" type="${isOne ? 'date' : 'number'}"${isOne ? '' : ' min="1" max="31"'} value="${val}" />
+    </label>
+    <div class="cf-pop-actions">
+      <button type="button" class="btn ghost sm" data-cf-act="pop-close">取消</button>
+      <button type="button" class="btn primary sm" data-cf-act="pop-date-save" data-id="${p.id}">保存</button>
+    </div>`;
+}
+function cfMorePopHTML(p) {
+  return `<div class="cf-pop-title">${esc(p.title || '')}</div>
+    <button type="button" class="cf-pop-item" data-cf-act="edit" data-id="${p.id}">编辑计划</button>
+    <button type="button" class="cf-pop-item" data-cf-act="toggle" data-id="${p.id}">${p.enabled === 0 ? '启用' : '暂停'}</button>
+    <button type="button" class="cf-pop-item danger" data-cf-act="del" data-id="${p.id}">删除</button>`;
+}
+
+// ---- 专用撤销 toast（5 秒），不与全局 #toast 抢定时器 ----
+let cfUndoTimer = 0;
+function cfHideUndo() {
+  clearTimeout(cfUndoTimer);
+  const box = document.getElementById('cfUndoToast');
+  if (box) box.hidden = true;
+}
+function cfUndoToast(msg, undo) {
+  const box = document.getElementById('cfUndoToast');
+  const btn = document.getElementById('cfUndoBtn');
+  const msgEl = document.getElementById('cfUndoMsg');
+  if (!box || !btn || !msgEl) return;
+  clearTimeout(cfUndoTimer);
+  msgEl.textContent = msg;
+  box.hidden = false;
+  const bar = box.querySelector('.cf-undo-bar');
+  if (bar) {
+    bar.style.animation = 'none';
+    void bar.offsetWidth;
+    bar.style.animation = 'cfUndoBar 5s linear forwards';
+  }
+  btn.onclick = async () => {
+    cfHideUndo();
+    try { await undo(); } catch (err) { toast(err.message || '撤销失败', 'err'); }
+  };
+  cfUndoTimer = setTimeout(cfHideUndo, 5000);
+}
+
+// ---- 面板交互：一次性委托在 #assetPanelCashflow 上，重绘后不重复绑定 ----
+function cfPlanById(id) {
+  return (cashflowPlans || []).find((x) => x.id === Number(id));
+}
+function cfHandlePlanAct(el) {
+  const act = el.dataset.cfAct;
+  const id = Number(el.dataset.id) || 0;
+  const p = cfPlanById(id);
+  if (act === 'add') { openCashflowModal(); return; }
+  if (act === 'bulk') {
+    cfPlanBulk = !cfPlanBulk;
+    if (!cfPlanBulk) cfPlanSel.clear();
+    paintCfPlanPanel();
+    return;
+  }
+  if (act === 'bulkexit') { cfPlanBulk = false; cfPlanSel.clear(); paintCfPlanPanel(); return; }
+  if (act === 'filter') {
+    const kind = el.dataset.kind;
+    const val = el.dataset.val;
+    if (kind === 'type') cfPlanView.type = val;
+    if (kind === 'status') cfPlanView.status = val;
+    cfPlanSel.clear();
+    paintCfPlanPanel();
+    return;
+  }
+  if (act === 'clearfilter') { cfPlanView = { type: 'all', status: 'all', sort: cfPlanView.sort }; paintCfPlanPanel(); return; }
+  if (act === 'selectall') {
+    const filtered = cfPlanFiltered();
+    const allSel = filtered.length > 0 && filtered.every((x) => cfPlanSel.has(x.id));
+    filtered.forEach((x) => { if (allSel) cfPlanSel.delete(x.id); else cfPlanSel.add(x.id); });
+    paintCfPlanPanel();
+    return;
+  }
+  if (act === 'select') {
+    if (el.checked) cfPlanSel.add(id); else cfPlanSel.delete(id);
+    paintCfPlanPanel();
+    return;
+  }
+  if (act === 'bulkdel') {
+    if (!cfPlanSel.size) return;
+    const n = cfPlanSel.size;
+    cfDeletePlans([...cfPlanSel], `已删除 ${n} 个计划`);
+    return;
+  }
+  if (act === 'pop-close') { cfClosePop(); return; }
+  if (act === 'pop-date-save') {
+    const inp = document.getElementById('cfPopDate');
+    if (!p || !inp) { cfClosePop(); return; }
+    cfClosePop();
+    if (p.pattern === 'one_time') {
+      if (!inp.value) { toast('选一个日期', 'err'); return; }
+      cfPatchAndReload(p.id, { one_time_date: inp.value }, `日期已改为 ${inp.value.slice(5)}`, { one_time_date: p.one_time_date || '' });
+    } else {
+      const day = Math.max(1, Math.min(31, parseInt(inp.value, 10) || 1));
+      cfPatchAndReload(p.id, { day_of_month: day }, `已改到每月 ${day} 号`, { day_of_month: cfSortDay(p) });
+    }
+    return;
+  }
+  if (!p) return;
+  if (act === 'edit') { cfClosePop(); openCashflowModal(p); return; }
+  if (act === 'amount') { cfStartInline(el, p, 'amount'); return; }
+  if (act === 'name') { cfStartInline(el, p, 'title'); return; }
+  if (act === 'date') { cfShowPop(cfDatePopHTML(p), el); return; }
+  if (act === 'toggle') { cfClosePop(); cfTogglePlan(p); return; }
+  if (act === 'del') { cfClosePop(); cfDeletePlans([p.id], `已删除「${p.title}」`); return; }
+  if (act === 'more') { cfShowPop(cfMorePopHTML(p), el); return; }
+}
+
 document.addEventListener('click', (e) => {
-  const card = e.target.closest ? e.target.closest('#assetPlanList .plan-item') : null;
-  if (!card) return;
-  const navBtn = e.target.closest('.fp-nav-btn');
-  if (navBtn) {
-    fpNav(card, navBtn.dataset.id, navBtn.classList.contains('fp-prev') ? -1 : 1);
+  const popEl = e.target.closest ? e.target.closest('#cfPlanPop') : null;
+  if (popEl) {
+    const btn = e.target.closest('[data-cf-act]');
+    if (btn) cfHandlePlanAct(btn);
     return;
   }
-  const actBtn = e.target.closest('.fp-act');
-  if (actBtn) {
-    openCashflowModal((cashflowPlans || []).find((p) => p.id === Number(actBtn.dataset.id)));
-  }
+  const host = e.target.closest ? e.target.closest('#assetPanelCashflow') : null;
+  if (!host) { cfClosePop(); return; }
+  const el = e.target.closest('[data-cf-act]');
+  if (el) cfHandlePlanAct(el);
+});
+
+document.addEventListener('change', (e) => {
+  const sel = e.target.closest ? e.target.closest('#cfSortSel') : null;
+  if (!sel) return;
+  cfPlanView.sort = sel.value;
+  paintCfPlanPanel();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') cfClosePop();
+  const inp = e.target.closest ? e.target.closest('[data-cf-inline]') : null;
+  if (!inp) return;
+  if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+  else if (e.key === 'Escape') { e.preventDefault(); inp.dataset.cancel = '1'; inp.blur(); }
+});
+
+document.addEventListener('focusout', (e) => {
+  const inp = e.target.closest ? e.target.closest('[data-cf-inline]') : null;
+  if (inp) cfCommitInline(inp);
 });
 
 // 财务页收支分析卡交互（document 级委托，重渲染后依旧生效）
@@ -7334,8 +7733,9 @@ function assetKpiCardsFlows() {
 
 function assetKpiCardsCashflow() {
   const plans = cashflowPlans || [];
-  const rec = plans.filter((p) => p.pattern !== 'one_time');
-  const one = plans.filter((p) => p.pattern === 'one_time');
+  // 暂停的计划不占月度额度：KPI 与面板小结同一口径，只算启用中的循环计划。
+  const rec = plans.filter((p) => p.enabled !== 0 && p.pattern !== 'one_time');
+  const one = plans.filter((p) => p.enabled !== 0 && p.pattern === 'one_time');
   const sumOf = (type) => rec.filter((p) => p.type === type)
     .reduce((a, p) => a + cnyOf(Math.abs(Number(p.amount) || 0), normCurJS(p.currency)), 0);
   const incSum = sumOf('income');
@@ -7658,35 +8058,6 @@ function flowMatch(f, t) {
   if (t === 'invest') return flowCatOf(f) === 'invest';
   if (t === 'transfer') return flowCatOf(f) === 'transfer';
   return true;
-}
-
-// 资产页「收支」子面板：迁移自财务页的收支计划卡片（新增按钮 + 卡片列表），复用同一 cashflow 弹框。
-// 取代原「负债」表格：负债的增删改仍走「账户」子面板下的子账户/负债折叠行。
-async function renderAssetCashflowPanel(body) {
-  if (!body) return;
-  // 财务页已移除收支计划，此处独立加载（含关联账户名缓存）
-  await loadCashflow();
-  // 统一查看月份：所有循环计划一起翻；并预填当前月完成态缓存，避免卡片先显示成铅笔
-  cfViewYm = cashflowMonth || cfNowYm;
-  _planDoneCache[cashflowMonth || cfNowYm] = cashflowDone;
-  const plans = cashflowPlans || [];
-  // 合计只算「循环」计划：一次性计划挂在具体日期上，混进「每月收入」会把单月总额抬高。
-  // 金额统一折 CNY（计划可设港币/美元），与表格里的原币显示互不影响。
-  const rec = plans.filter((p) => p.pattern !== 'one_time');
-  const one = plans.filter((p) => p.pattern === 'one_time');
-  const sumOf = (type) => rec.filter((p) => p.type === type)
-    .reduce((a, p) => a + cnyOf(Math.abs(Number(p.amount) || 0), normCurJS(p.currency)), 0);
-  // 计划数据是异步加载的，加载完再刷新顶部卡片（当前视图是「收支」时才刷）
-  if (assetSub === 'cashflow') renderAssetKpis('cashflow');
-  body.innerHTML = `
-    <div class="asset-cashflow">
-      <div class="section-title">收支计划</div>
-      <button class="plan-add-btn plan-add-btn-block" id="assetPlanAddBtn" type="button"><span class="plan-add-plus">+</span> 新增收支计划</button>
-      <div class="plan-list" id="assetPlanList"></div>
-    </div>`;
-  const addBtn = document.getElementById('assetPlanAddBtn');
-  if (addBtn) addBtn.onclick = () => openCashflowModal();
-  await renderPlanList(document.getElementById('assetPlanList'));
 }
 
 // 资产页流水回退：复用后端 POST /api/asset/flows/cash/:id/rollback，回退后原地刷新本面板。
@@ -11193,7 +11564,7 @@ async function switchUser(id) {
     // 按账本隔离的数据缓存全部作废，否则切换后复用上一账本的数据：
     // - assetFlowsCache / assetFlowsKey：资产页「流水」tab 命中缓存就不重新请求 → 一直显示旧账本流水
     // - homeRecentFlowsData / finFlowsCache：首页最新流水、财务页热力图细项
-    // - cashflowPlans / cashflowDone / _planDoneCache / _fpCardYm：收支计划及按月完成态（计划 id 跨账本可能撞号）
+    // - cashflowPlans / cashflowDone / _planDoneCache：收支计划及按月完成态（计划 id 跨账本可能撞号）
     assetFlowsCache = [];
     assetFlowsKey = '';
     homeRecentFlowsData = [];
@@ -11202,7 +11573,6 @@ async function switchUser(id) {
     cashflowPlans = [];
     cashflowDone = {};
     for (const k in _planDoneCache) delete _planDoneCache[k];
-    for (const k in _fpCardYm) delete _fpCardYm[k];
     closeUserSheet();
     await load();
     await loadAsset();
@@ -11507,14 +11877,30 @@ async function openCashflowModal(p) {
   renderCfLiabilitySelect(isEdit ? (p.liability_mode === 'incur' ? 'incur' : p.liability_id) : 0);
   syncCfForm();
   renderCfDoneBtn(p, isEdit);   // 「标记完成 / 撤销完成」落在保存按钮左侧
+  const closeBtn = document.getElementById('cfDrawerClose');
+  if (closeBtn) closeBtn.onclick = closeCashflowDrawer;
+  const delBtn = document.getElementById('cfDeleteBtn');
+  if (delBtn) {
+    delBtn.hidden = !isEdit;
+    delBtn.onclick = () => {
+      if (!isEdit) return;
+      closeCashflowDrawer();
+      cfDeletePlans([p.id], `已删除「${p.title}」`);
+    };
+  }
   document.getElementById('cashflowModal').hidden = false;
 }
 
-// 完成态按钮所处的月份：循环计划用该卡当前查看月（各卡独立翻月），一次性计划用归属月。
+function closeCashflowDrawer() {
+  document.getElementById('cashflowModal').hidden = true;
+  cfClosePop();
+}
+
+// 完成态按钮所处的月份：循环计划用当前查看月，一次性计划用归属月。
 function cfDoneYmOf(p) {
   if (!p) return cfViewYm || cashflowMonth || cfNowYm;
   if (p.pattern === 'one_time') return (p.one_time_date || '').slice(0, 7) || cfViewYm || cashflowMonth || cfNowYm;
-  return _fpCardYm[p.id] || cfViewYm || cashflowMonth || cfNowYm;
+  return cfViewYm || cashflowMonth || cfNowYm;
 }
 
 // 编辑弹框内的完成态按钮：已完成→「撤销完成」（反向流水冲正当初的真实出入账），

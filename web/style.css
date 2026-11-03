@@ -6034,26 +6034,6 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .recent-empty { padding: var(--sp-6) 0; text-align: center; color: var(--text-faint); font-size: var(--fs-sm); }
 .recent-sk { display: flex; flex-direction: column; gap: var(--sp-3); }
 
-/* 新增收支计划虚线按钮：边框用主题色 55% 透明度（38% 在卡片底上偏淡，用户反馈看不清）；
-   hover 转实线主题色 */
-.plan-add-btn { display: flex; width: 100%; justify-content: center; align-items: center; gap: var(--sp-1); margin: var(--sp-3) 0; padding: var(--sp-2) var(--sp-4); border: 1px dashed rgba(var(--tint), .55); background: transparent; color: var(--primary); border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-md); font-family: inherit; transition: all .15s var(--e); }
-.plan-add-btn:hover { border-color: var(--primary); background: var(--bg-hover); }
-/* 资产页「收支」子面板：新增按钮与卡片等宽、与计划卡同圆角（--r-sm）；
-   底部留 sp-3，与第一张计划卡之间形成与卡间距一致的呼吸。
-   2026-10-29：原先强制直角（0），与下方计划卡 r-sm 圆角并排时像两个时代的控件，改回 token。 */
-.plan-add-btn-block { border-radius: var(--r-sm); margin: var(--sp-2) 0 var(--sp-3); font-weight: 600; }
-.plan-add-plus { font-size: var(--fs-xl); line-height: 1; }
-.plan-list { display: flex; flex-direction: column; gap: var(--sp-2); }
-.plan-item { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-sm);}
-/* 空态不复用 .plan-item：无子元素时匿名文本会落进 10px 首列，逐字竖排 */
-.plan-empty { display: flex; align-items: center; justify-content: center; padding: var(--sp-4); background: var(--bg-card); border: 1px dashed var(--border); border-radius: var(--r-sm); }
-.plan-dot { width: 10px; height: 10px; border-radius: 50%; }
-.plan-dot.income { background: var(--up); }
-.plan-dot.expense { background: var(--down); }
-.plan-title { font-size: var(--fs-md); color: var(--text); }
-.plan-meta { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 1px; }
-.plan-amt { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
-.plan-amt.income { color: var(--up); }
 
 /* ===== 财务页 · 年度收支热力图（2026-10-23 原型） ===== */
 /* 热力图局部色：收入=绿 / 支出=红（本页专用，与全局涨红跌绿区分）。复用主题感知的 --down/--up。 */
@@ -6291,64 +6271,6 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .sub-tabs { gap: var(--sp-1); }
 }
 
-/* ===== 资产页 · 收支计划卡片（迁移自财务页） ===== */
-
-/* 单张计划卡：recurring = 左右箭头切换单月（各卡独立）；one_time = 单卡无箭头 */
-.plan-item.fp-deck { display: flex; align-items: center; gap: var(--sp-3); }
-
-/* 翻月箭头：与编辑 icon 同尺寸、弱描边；和金额 / 编辑按钮靠 flex gap 拉开间距 */
-.fp-nav-btn {
-  flex: 0 0 auto;
-  width: 28px; height: 28px; border-radius: 50%;
-  border: 1.5px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text-muted);
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; padding: 0;
-  transition: all .15s var(--e);
-}
-.fp-nav-btn:hover { border-color: var(--primary); color: var(--primary); }
-.fp-nav-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-
-/* 内容区：占满剩余空间承载月卡行；翻月时做滑动 + 淡入淡出 */
-.fp-content { flex: 1 1 auto; min-width: 0; display: flex; }
-.fp-content { transition: transform .13s ease, opacity .13s ease; }
-.fp-content.fp-out-prev { transform: translateX(18px); opacity: 0; }
-.fp-content.fp-out-next { transform: translateX(-18px); opacity: 0; }
-.fp-content.fp-in-prev { animation: fpSlideInPrev .18s ease; }
-.fp-content.fp-in-next { animation: fpSlideInNext .18s ease; }
-@keyframes fpSlideInPrev { from { transform: translateX(-18px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-@keyframes fpSlideInNext { from { transform: translateX(18px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-/* 页内行内容：dot | 标题/日期 | （金额 / 月份） */
-.fp-row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1 1 auto; }
-.fp-main { flex: 1 1 auto; min-width: 0; }
-/* 右列竖排：金额在上，月份信息在其下方并贴卡片最右 */
-.fp-side { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-
-/* 月份信息：只有淡化字色（无底色 / 无主题色 / 无箭头） */
-.fp-month-pill { display: inline-flex; align-items: center; color: var(--text-muted); opacity: .72; white-space: nowrap; }
-
-/* 右侧圆形编辑 icon：未完成=铅笔；完成=对勾（不置灰） */
-.plan-item .fp-act {
-  width: 28px; height: 28px; border-radius: 50%;
-  border: 1.5px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text-muted);
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  transition: all .15s var(--e);
-  flex-shrink: 0;
-}
-.plan-item .fp-act:hover { border-color: var(--primary); color: var(--primary); }
-.plan-item .fp-act svg { width: 14px; height: 14px; stroke-width: 1.8; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
-/* 已完成对勾用主题色（不用红：红=资金减少语义，对勾只是状态标识） */
-.plan-item .fp-act.fp-done { border-color: var(--primary); color: var(--primary); background: transparent; }
-.plan-item .fp-act.fp-done svg { stroke-width: 2.4; }
-
-/* 完成态图标提示：hover 显 tooltip 风格 */
-.plan-item .fp-act[title] { position: relative; }
 
 @media (max-width: 640px) {
   #homeHero { padding: var(--sp-5); }
@@ -6700,3 +6622,223 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
      输入框保持 52px 不被 flex 压缩（压到 27px 时数字被裁）。 */
   .cf-remind-time { white-space: normal; flex-wrap: wrap; }
 }
+
+/* ===== 资产页 · 收支计划（2026-11-03 改版：日程式分组列表） ===== */
+.asset-cashflow { display: flex; flex-direction: column; gap: var(--sp-3); }
+.cf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.cf-head-text { min-width: 0; }
+.cf-head-sub { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
+.cf-head-acts { display: flex; align-items: center; gap: var(--sp-2); flex: 0 0 auto; }
+
+/* 小结：收入红 / 支出绿，与全站收支语义一致；数字用等宽数字防跳动 */
+.cf-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); }
+.cf-sum {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r);
+}
+.cf-sum-label { font-size: var(--fs-sm); color: var(--text-muted); }
+.cf-sum-val { font-size: var(--fs-xl); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.cf-sum-val.income { color: var(--up); }
+.cf-sum-val.expense { color: var(--down); }
+.cf-sum-sub { font-size: var(--fs-xs); color: var(--text-faint); }
+
+.cf-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.cf-filters { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cf-filter-sep { width: 1px; height: 16px; background: var(--border); }
+.cf-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: var(--h-2); padding: 0 var(--sp-3);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: transparent; color: var(--text-muted);
+  font-family: inherit; font-size: var(--fs-sm); cursor: pointer;
+  transition: background .15s var(--e), border-color .15s var(--e), color .15s var(--e);
+}
+.cf-chip:hover { background: var(--bg-hover); color: var(--text); }
+.cf-chip.on { background: var(--primary-soft); border-color: rgba(var(--tint), .45); color: var(--primary); font-weight: 600; }
+.cf-sort-wrap { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); }
+.cf-sort { height: var(--h-2); font-size: var(--fs-sm); }
+
+.cf-bulkbar {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--primary-soft); border: 1px solid rgba(var(--tint), .3); border-radius: var(--r-sm);
+}
+.cf-bulk-cnt { font-size: var(--fs-sm); color: var(--text-muted); }
+.cf-bulk-cnt b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.cf-group { display: flex; flex-direction: column; gap: var(--sp-2); }
+.cf-group-head { display: flex; align-items: baseline; gap: var(--sp-2); padding: 0 var(--sp-1); }
+.cf-group-name { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.cf-group-note { font-size: var(--fs-xs); color: var(--text-faint); }
+.cf-group-cnt { margin-left: auto; font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.cf-rows { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+
+.cf-row {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--row-divider);
+  transition: background .15s var(--e), opacity .15s var(--e);
+}
+.cf-row:last-child { border-bottom: none; }
+.cf-row:hover { background: var(--bg-hover); }
+.cf-row.is-paused { opacity: .62; }
+.cf-row.is-expired { opacity: .72; }
+.cf-row-cb { flex: 0 0 auto; width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+.cf-row-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.cf-row-dot.income { background: var(--up); }
+.cf-row-dot.expense { background: var(--down); }
+.cf-row-main { flex: 1 1 auto; min-width: 0; cursor: pointer; }
+.cf-row-title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.cf-row-name {
+  min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0; border: none; background: none; color: var(--text);
+  font-family: inherit; font-size: var(--fs-md); font-weight: 600; text-align: left; cursor: text;
+}
+.cf-row-name:hover { color: var(--primary); }
+.cf-row-meta { font-size: var(--fs-xs); color: var(--text-muted); margin-top: var(--sp-1); }
+.cf-tag {
+  flex: 0 0 auto; padding: 2px var(--sp-2); border-radius: var(--r-xs);
+  background: var(--bg-soft); color: var(--text-muted); font-size: var(--fs-xs);
+}
+.cf-row-when { flex: 0 0 116px; display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+.cf-when-btn {
+  padding: 0; border: none; background: none; color: var(--text-secondary);
+  font-family: inherit; font-size: var(--fs-sm); cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.cf-when-btn:hover { color: var(--primary); }
+.cf-when-cd { font-size: var(--fs-xs); color: var(--text-muted); }
+.cf-when-cd.muted { color: var(--text-faint); }
+.cf-row-amt {
+  flex: 0 0 120px; padding: 0; border: none; background: none; text-align: right;
+  font-family: var(--font-mono); font-size: var(--fs-md); font-weight: 600;
+  font-variant-numeric: tabular-nums; cursor: text; white-space: nowrap;
+}
+.cf-row-amt.income { color: var(--up); }
+.cf-row-amt.expense { color: var(--down); }
+.cf-row-acts { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-1); }
+
+.cf-switch {
+  position: relative; flex: 0 0 auto; width: 32px; height: 20px; padding: 0;
+  border: none; border-radius: 999px; background: var(--switch-off);
+  cursor: pointer; transition: background .15s var(--e);
+}
+.cf-switch.on { background: var(--primary); }
+.cf-switch-knob {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background: #fff; box-shadow: var(--sh-1);
+  transition: transform .15s var(--e);
+}
+.cf-switch.on .cf-switch-knob { transform: translateX(12px); }
+.cf-act-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border: 1px solid transparent; border-radius: var(--r-xs);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  transition: background .15s var(--e), color .15s var(--e), border-color .15s var(--e);
+}
+.cf-act-btn:hover { background: var(--bg-soft); border-color: var(--border); color: var(--text); }
+.cf-del-btn:hover { color: var(--danger); border-color: rgba(var(--danger-rgb), .35); background: var(--danger-soft); }
+.cf-act-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.cf-more-btn { display: none; font-size: var(--fs-lg); line-height: 1; }
+
+.cf-empty {
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-4); text-align: center;
+  background: var(--bg-card); border: 1px dashed var(--border); border-radius: var(--r);
+}
+.cf-empty-title { font-size: var(--fs-base); font-weight: 600; color: var(--text); }
+.cf-empty p { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
+
+.cf-inline-input {
+  width: 100%; max-width: 160px; height: var(--h-2); padding: 0 var(--sp-2);
+  border: none; border-radius: var(--r-xs); background: var(--bg-input);
+  box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text);
+  font-family: inherit; font-size: var(--fs-md); min-width: 0;
+}
+.cf-inline-input[data-cf-inline="amount"] { max-width: 112px; text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.cf-inline-input[data-cf-inline="title"] { max-width: 240px; font-weight: 600; }
+.cf-inline-input:focus { outline: none; box-shadow: inset 0 0 0 1px var(--primary), 0 0 0 3px var(--primary-soft); }
+
+.cf-plan-pop {
+  position: fixed; z-index: 80;
+  padding: var(--sp-2); border-radius: var(--r-sm);
+  background: var(--bg-card-solid); border: 1px solid var(--border-strong); box-shadow: var(--sh-3);
+}
+.cf-pop-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); padding: var(--sp-1) var(--sp-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-pop-note { font-size: var(--fs-xs); color: var(--text-muted); padding: 0 var(--sp-2) var(--sp-2); }
+.cf-pop-field { display: block; font-size: var(--fs-sm); color: var(--text-muted); padding: 0 var(--sp-2); }
+.cf-pop-field input { display: block; width: 100%; margin-top: var(--sp-1); }
+.cf-pop-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) 0; }
+.cf-pop-item {
+  display: block; width: 100%; padding: var(--sp-2) var(--sp-3);
+  border: none; border-radius: var(--r-xs); background: transparent;
+  color: var(--text); font-family: inherit; font-size: var(--fs-md); text-align: left; cursor: pointer;
+}
+.cf-pop-item:hover { background: var(--bg-hover); }
+.cf-pop-item.danger { color: var(--danger); }
+.cf-pop-item.danger:hover { background: var(--danger-soft); }
+
+/* 撤销 toast：底部居中，5 秒进度条从右往左收完即失效 */
+.cf-undo-toast {
+  position: fixed; left: 50%; bottom: var(--sp-6); transform: translateX(-50%);
+  z-index: 90; display: flex; align-items: center; gap: var(--sp-3);
+  max-width: 420px; padding: var(--sp-2) var(--sp-4);
+  background: var(--bg-card-solid); border: 1px solid var(--border-strong);
+  border-radius: var(--r); box-shadow: var(--sh-3); overflow: hidden;
+}
+.cf-undo-toast[hidden] { display: none; }
+.cf-undo-msg { font-size: var(--fs-sm); color: var(--text); }
+.cf-undo-bar {
+  position: absolute; left: 0; bottom: 0; width: 100%; height: 2px;
+  background: var(--primary); transform-origin: left center;
+}
+@keyframes cfUndoBar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* 弹窗改右侧抽屉：保留原表单与 id，只换承载方式；遮罩仍复用 .modal */
+.modal.cf-drawer { align-items: stretch; justify-content: flex-end; padding: 0; }
+.modal-card.cf-drawer-card {
+  position: relative; width: 460px; max-width: 94vw;
+  height: 100vh; max-height: 100vh; overflow-y: auto;
+  border-radius: 0; box-shadow: var(--sh-3);
+}
+.cf-drawer-close {
+  position: absolute; top: var(--sp-4); right: var(--sp-4); z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg-soft); color: var(--text-muted);
+  font-family: inherit; font-size: var(--fs-base); cursor: pointer;
+}
+.cf-drawer-close:hover { color: var(--text); border-color: var(--border-strong); }
+.cf-drawer-card h2 { padding-right: var(--sp-8); }
+.cf-delete-btn { margin-right: auto; }
+
+@media (max-width: 640px) {
+  .cf-head { align-items: center; }
+  .cf-head-acts { gap: var(--sp-1); }
+  .cf-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cf-sum { padding: var(--sp-3); }
+  .cf-sum-val { font-size: var(--fs-lg); }
+  .cf-toolbar { align-items: stretch; }
+  .cf-sort-wrap { justify-content: space-between; width: 100%; }
+  .cf-row {
+    display: grid; row-gap: var(--sp-2);
+    grid-template-columns: 16px 8px minmax(0, 1fr) auto;
+    grid-template-areas: "check dot main amt" "check dot when acts";
+    padding: var(--sp-3);
+  }
+  .cf-row-cb { grid-area: check; align-self: center; }
+  .cf-row-dot { grid-area: dot; align-self: center; }
+  .cf-row-main { grid-area: main; }
+  .cf-row-when { grid-area: when; align-items: flex-start; text-align: left; flex-direction: row; gap: var(--sp-2); }
+  .cf-row-amt { grid-area: amt; align-self: center; }
+  .cf-row-acts { grid-area: acts; justify-self: end; }
+  .cf-switch, .cf-edit-btn, .cf-del-btn { display: none; }
+  .cf-more-btn { display: inline-flex; }
+  .cf-row-title { flex-wrap: wrap; row-gap: var(--sp-1); }
+  .modal.cf-drawer { align-items: flex-end; }
+  .modal-card.cf-drawer-card { width: 100%; max-width: 100%; height: 92vh; max-height: 92vh; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+  .cf-undo-toast { left: var(--sp-3); right: var(--sp-3); bottom: var(--sp-4); transform: none; max-width: none; }
+}
+

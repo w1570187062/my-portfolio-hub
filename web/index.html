@@ -1059,8 +1059,9 @@
     </div>
   </div>
 
-  <div id="cashflowModal" class="modal" hidden>
-    <div class="modal-card" style="width:460px; max-width:94vw;">
+  <div id="cashflowModal" class="modal cf-drawer" hidden>
+    <div class="modal-card cf-drawer-card">
+      <button type="button" class="cf-drawer-close" id="cfDrawerClose" aria-label="关闭">✕</button>
       <h2 id="cfModalTitle">收支计划</h2>
       <form id="cashflowForm">
         <input type="hidden" id="cf_id" />
@@ -1117,6 +1118,7 @@
         </label>
         <div id="cfErr" class="err"></div>
         <div class="modal-actions">
+          <button class="btn danger-ghost cf-delete-btn" type="button" id="cfDeleteBtn" hidden>删除计划</button>
           <span class="cf-done-slot" id="cfDoneBtnSlot"></span>
           <button class="btn primary" type="submit">保存</button>
         </div>
@@ -2002,6 +2004,11 @@
 </div>
 
 <div id="toast" class="toast"></div>
+<div id="cfUndoToast" class="cf-undo-toast" hidden>
+  <span class="cf-undo-msg" id="cfUndoMsg"></span>
+  <button type="button" class="btn sm primary" id="cfUndoBtn">撤销</button>
+  <span class="cf-undo-bar"></span>
+</div>
 <script src="/app.js" defer></script>
 </body>
 </html>
