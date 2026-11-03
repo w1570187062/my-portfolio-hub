@@ -123,7 +123,7 @@ func GetStockQuote(symbol string) (*Quote, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	body = decodeGBK(body)
 	m := tencentRe.FindSubmatch(body)
 	if m == nil {
@@ -174,7 +174,7 @@ func fundEstimate(symbol string) (*Quote, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	m := fundRe.FindSubmatch(body)
 	if m == nil {
 		return nil, fmt.Errorf("no estimate for %s", symbol)
@@ -213,7 +213,7 @@ func fundNAV(symbol string) (*Quote, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	var out struct {
 		Data struct {
 			LSJZList []struct {
@@ -278,7 +278,7 @@ func FetchFundNAVHistory(symbol string, days int) (map[string]float64, error) {
 			}
 			return nil, err
 		}
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		resp.Body.Close()
 		var out struct {
 			Data struct {
@@ -327,7 +327,7 @@ func fundName(symbol string) (string, error) {
 	req.Header.Set("Referer", "https://fund.eastmoney.com/")
 	if resp, err := httpClient.Do(req); err == nil {
 		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		inner := jsonpUnwrap(body)
 		var data struct {
 			Datas []struct {
@@ -350,7 +350,7 @@ func fundName(symbol string) (string, error) {
 		return "", err
 	}
 	defer resp2.Body.Close()
-	body2, _ := io.ReadAll(resp2.Body)
+	body2, _ := io.ReadAll(io.LimitReader(resp2.Body, 8<<20))
 	m := fundRe.FindSubmatch(body2)
 	if m == nil {
 		return "", fmt.Errorf("no name for %s", symbol)
@@ -470,7 +470,7 @@ func fetchFXNow() (cny, hkd float64, err error) {
 		return 0, 0, e
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	var out struct {
 		Rates map[string]float64 `json:"rates"`
 	}
@@ -499,7 +499,7 @@ func fetchFXSina() (cny, hkd float64, err error) {
 		return 0, 0, e
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	body := decodeGBK(raw)
 	lines := strings.Split(string(body), "\n")
 	var cnyS, hkdS string

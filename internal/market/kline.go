@@ -69,7 +69,7 @@ func fetchAShareKline(symbol string) ([]KlineBar, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read kline: %w", err)
 	}
@@ -152,7 +152,7 @@ func fetchUSKline(symbol string) ([]KlineBar, error) {
 		return nil, fmt.Errorf("Sina US API returned %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read kline: %w", err)
 	}

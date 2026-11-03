@@ -5939,17 +5939,14 @@ function ensureAiSettings() {
 }
 
 async function loadAISettings() {
+  // 安全：旧版本把 AI API Key 明文写进 localStorage（任何 XSS 或共用设备都能读到），
+  // 这里启动时一次性清理，之后只由服务端保管（接口只回掩码）。
+  try { localStorage.removeItem('pf_ai_key'); } catch (_) {}
   try {
     const r = await api('/api/ai/settings');
     if (!r.ok) return;
     const d = await r.json();
     aiCfg = Object.assign({ api_key: '', model: 'deepseek-v4-pro', base_url: 'https://api.deepseek.com', templates: [] }, d);
-    // Fall back to the locally saved key if the DB config has none (e.g. key lost
-    // after a backend reset), so the user doesn't have to retype it.
-    if (!aiCfg.api_key) {
-      const lk = (localStorage.getItem('pf_ai_key') || '').trim();
-      if (lk) aiCfg.api_key = lk;
-    }
     if (!aiCfg.templates || !aiCfg.templates.length) aiCfg.templates = defaultAITemplates();
     // 多模型：兼容旧单条配置，迁移为 models 数组（旧版仅存 api_key/model/base_url）
     if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) {
@@ -6049,15 +6046,11 @@ async function aiSaveSettings() {
   syncModelFromInputs();
   const boxKey = $('#ai_apikey').value.trim();
   if (boxKey) {
-    // 框内有值：用框内 key 并写入 localStorage
+    // 框内有值：用框内 key。只随设置提交到服务端库，绝不落 localStorage（明文凭据不该留在浏览器）。
     aiCfg.api_key = boxKey;
-    localStorage.setItem('pf_ai_key', boxKey);
-  } else {
-    // 框为空：绝不清成空串。优先沿用 localStorage，再沿用已加载的原值（库里的 key）
-    const lsKey = (localStorage.getItem('pf_ai_key') || '').trim();
-    if (lsKey) aiCfg.api_key = lsKey;
-    // 否则保持 aiCfg.api_key 不变（来自库的旧值），避免覆盖成空导致下次生成 401
   }
+  // 框为空：保持 aiCfg.api_key 不变（上一轮已是掩码时由服务端 mergeMaskedAIKeys 回填原文），
+  // 避免覆盖成空导致下次生成 401。
   // 保持单字段与当前选中模型一致（向后兼容生成路径读取 aiCfg.model/api_key/base_url）
   const cur = aiCfg.models[aiModelIdx];
   if (cur) {
@@ -12436,7 +12429,8 @@ function getAiChatModel() {
   const m = aiCfg.models[i] || {};
   const editing = (aiChatModelIdx === aiModelIdx);
   const boxKey = ($('#ai_apikey') ? $('#ai_apikey').value : '').trim();
-  const localKey = (aiCfg.models.length === 1) ? ((localStorage.getItem('pf_ai_key') || '').trim() || (aiCfg.api_key || '').trim()) : '';
+  // Key 不再落 localStorage；单模型时回退到顶层 api_key（服务端负责掩码回填）。
+  const localKey = (aiCfg.models.length === 1) ? (aiCfg.api_key || '').trim() : '';
   return {
     name: m.name || '默认',
     model: (m.model || '').trim() || 'deepseek-chat',

@@ -270,12 +270,12 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/manual-closed", createManualClosed)
 		g.PUT("/manual-closed/:id", updateManualClosed)
 		g.DELETE("/manual-closed/:id", deleteManualClosed)
-		g.GET("/ai/settings", aiSettingsGet)
-		g.POST("/ai/settings", aiSettingsPost)
-		g.GET("/mcp/config", mcpConfigGet)
-		g.PUT("/mcp/config", mcpConfigPut)
+		g.GET("/ai/settings", aiSettingsGet) // 按账本隔离且只回掩码，member 可读自己的配置
+		g.POST("/ai/settings", OwnerGuard(), PinGuard(), aiSettingsPost)
+		g.GET("/mcp/config", OwnerGuard(), mcpConfigGet) // 含 Bearer 令牌（响应里做掩码）：仅主设备
+		g.PUT("/mcp/config", OwnerGuard(), PinGuard(), mcpConfigPut)
 		g.GET("/mcp/status", mcpConfigStatus)
-		g.POST("/mcp/restart", mcpConfigRestart)
+		g.POST("/mcp/restart", OwnerGuard(), PinGuard(), mcpConfigRestart)
 		g.POST("/ai/summary", aiSummary)
 		g.GET("/ai/data", aiData)
 
@@ -291,9 +291,9 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/version", versionGet)
 		// 自动备份状态（设置页数据管理区展示「上次备份 / 份数 / 目录」）
 		g.GET("/backup/status", backupStatusGet)
-		g.GET("/notify/settings", notifySettingsGet)
-		g.POST("/notify/settings", notifySettingsPost)
-		g.POST("/notify/test", notifyTest)
+		g.GET("/notify/settings", OwnerGuard(), notifySettingsGet) // webhook/邮箱凭据：仅主设备
+		g.POST("/notify/settings", OwnerGuard(), PinGuard(), notifySettingsPost)
+		g.POST("/notify/test", OwnerGuard(), PinGuard(), notifyTest) // 服务端会 POST 到配置的 URL：防 SSRF/内网探测
 
 		// 数据导入（格式与「导出数据」一致）
 		g.POST("/import", OwnerGuard(), PinGuard(), importData)
@@ -458,6 +458,10 @@ func userStats(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	if !canAccessUser(c, id) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "账本不存在"})
 		return
 	}
 	stats, err := db.CountUserData(id)
@@ -647,6 +651,13 @@ func updateHolding(c *gin.Context) {
 	uid := currentUserID(c)
 	// 编辑时表单不回传 buy_plan / user_id：先取旧行保留，避免保存时被清空（#修复：编辑持仓导致所属账本被重置为 0、从当前账本列表消失）
 	ex, e := db.Get(id)
+	if e != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
+		return
+	}
+	if !owned(c, ex.UserID) {
+		return
+	}
 	if e == nil {
 		h.BuyPlan = ex.BuyPlan
 		// 止盈止损方案同理：持仓编辑表单不回传 risk_plan，必须保留旧值，
@@ -702,6 +713,14 @@ func deleteHolding(c *gin.Context) {
 		return
 	}
 	// 持仓删除后其定投计划/期次一并清理（持仓已不存在，保留只会成为悬空数据）
+	h, gErr := db.Get(id)
+	if gErr != nil || h == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
+		return
+	}
+	if !owned(c, h.UserID) {
+		return
+	}
 	_ = db.DeleteDCAPlansByHolding(id)
 	// 提醒事件同理：持仓没了，铃铛里的条目点进去无处可跳，且会永久占着未读数
 	_ = db.DeleteAlertsByHolding(id)
@@ -785,6 +804,12 @@ func adjustHolding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
+	if cur, gErr := db.Get(id); gErr != nil || cur == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
+		return
+	} else if !owned(c, cur.UserID) {
+		return
+	}
 	h, realized, err := db.AdjustHolding(id, req.Type, req.Quantity, req.Price, req.Fee, strings.TrimSpace(req.Note), strings.TrimSpace(req.Date))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -854,6 +879,12 @@ func dividendHolding(c *gin.Context) {
 	}
 	uid := currentUserID(c)
 	// mode=total：由总额反推每股（先取持仓校验，避免除以 0）
+	if cur, gErr := db.Get(id); gErr != nil || cur == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
+		return
+	} else if !owned(c, cur.UserID) {
+		return
+	}
 	perShare := req.PerShare
 	if strings.TrimSpace(req.Mode) == "total" {
 		cur, gErr := db.Get(id)
@@ -927,6 +958,12 @@ func listTransactions(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	if h, gErr := db.Get(id); gErr != nil || h == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
+		return
+	} else if !owned(c, h.UserID) {
 		return
 	}
 	txs, err := db.ListPositionTx(id)
@@ -2535,6 +2572,9 @@ func holdingPnlHistory(c *gin.Context) {
 	h, err := db.Get(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
+		return
+	}
+	if !owned(c, h.UserID) {
 		return
 	}
 	// 历史盈亏重算基准：未清仓用当前份额/成本；已清仓或份额/成本已清零的老数据，

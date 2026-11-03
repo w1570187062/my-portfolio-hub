@@ -1614,6 +1614,21 @@ func ListSources(userID int64) ([]AssetSource, error) {
 	return out, rows.Err()
 }
 
+// GetSource 按 id 取单个来源（供 API 层做跨账本归属校验）。
+func GetSource(id int64) (*AssetSource, error) {
+	var s AssetSource
+	err := DB.QueryRow("SELECT id,user_id,name,type,region,currencies,account_no,note,created_at FROM asset_sources WHERE id=?", id).
+		Scan(&s.ID, &s.UserID, &s.Name, &s.Type, &s.Region, &s.Currencies, &s.AccountNo, &s.Note, &s.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+
 // 数量上限：可切换的账本总数 5 个；账户/子账户/持仓/理财/负债/消费等数据每账本 200 条。
 const MaxUsers = 5
 const MaxEntities = 200

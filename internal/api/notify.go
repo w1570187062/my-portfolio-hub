@@ -193,6 +193,10 @@ func dingtalkSignedURL(webhook, secret string) string {
 	return webhook + sep + "timestamp=" + url.QueryEscape(timestamp) + "&sign=" + url.QueryEscape(sign)
 }
 
+// 通知外发统一走带超时的 client：原来用 http.Post（默认 client 无超时），
+// 上游无响应会永久挂住一个 goroutine。
+var notifyHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 func sendDingtalk(cfg dingtalkCfg, title, markdown string) error {
 	u := dingtalkSignedURL(cfg.Webhook, cfg.Secret)
 	payload := map[string]interface{}{
@@ -206,12 +210,12 @@ func sendDingtalk(cfg dingtalkCfg, title, markdown string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.Post(u, "application/json", bytes.NewReader(b))
+	resp, err := notifyHTTPClient.Post(u, "application/json", bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}

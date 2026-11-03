@@ -31,7 +31,7 @@ func SearchSecurities(q string) ([]SearchResult, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	var data struct {
 		QuotationCodeTable struct {
 			Data []struct {

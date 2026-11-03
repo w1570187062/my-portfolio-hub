@@ -498,6 +498,12 @@ func updateSource(c *gin.Context) {
 		s.Type = "bank"
 	}
 	s.Region = db.NormRegion(s.Region)
+	if ex, gErr := db.GetSource(id); gErr != nil || ex == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "来源不存在"})
+		return
+	} else if !owned(c, ex.UserID) {
+		return
+	}
 	s.UserID = currentUserID(c)
 	// 币种集合联动：仅作为「该账户允许的子账户币种」元数据（新增/编辑子账户时反向同步补全）；
 	// 编辑时不自动补建子账户（新建账户会按勾选币种自动生成，见 createSource）。
@@ -513,6 +519,14 @@ func deleteSource(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	src, gErr := db.GetSource(id)
+	if gErr != nil || src == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "来源不存在"})
+		return
+	}
+	if !owned(c, src.UserID) {
 		return
 	}
 	if err := db.DeleteSource(id); err != nil {
@@ -575,6 +589,12 @@ func updateWealth(c *gin.Context) {
 	w.Name = strings.TrimSpace(w.Name)
 	if w.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
+		return
+	}
+	if ex, gErr := db.GetWealthProduct(id); gErr != nil || ex == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "理财产品不存在"})
+		return
+	} else if !owned(c, ex.UserID) {
 		return
 	}
 	w.UserID = currentUserID(c)
@@ -868,6 +888,12 @@ func updateCash(c *gin.Context) {
 		return
 	}
 	cc.ID = id
+	if ex, gErr := db.GetCash(id); gErr != nil || ex == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "账户不存在"})
+		return
+	} else if !owned(c, ex.UserID) {
+		return
+	}
 	if probe.Excluded != nil {
 		cc.Excluded = *probe.Excluded
 	} else if fresh, e := db.GetCash(id); e == nil && fresh != nil {
@@ -1862,6 +1888,12 @@ func assetWealthHistory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
 	}
+	if w, gErr := db.GetWealthProduct(id); gErr != nil || w == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "理财产品不存在"})
+		return
+	} else if !owned(c, w.UserID) {
+		return
+	}
 	snaps, err := db.ListWealthSnapshots(id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2019,6 +2051,14 @@ func deleteLiability(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	li, gErr := db.GetLiability(id)
+	if gErr != nil || li == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "负债不存在"})
+		return
+	}
+	if !owned(c, li.UserID) {
 		return
 	}
 	if err := db.DeleteLiability(id); err != nil {

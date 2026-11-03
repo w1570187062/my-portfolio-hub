@@ -11,6 +11,9 @@ import (
 // mcpConfigGet 返回当前持久化的 MCP 配置（不含环境变量覆盖），供前端「AI 设置 → MCP 参数」页展示与编辑。
 func mcpConfigGet(c *gin.Context) {
 	cfg, exists := mcp.ReadConfigFile()
+	// 跨设备泄漏面（2026-11-03）：该接口此前任何 member 都能读到明文 Bearer 令牌。
+	// 与 aiSettingsGet 一致，只回掩码；写入时由下面 mcpConfigPut 回填原文。
+	cfg.Token = maskSecret(cfg.Token)
 	c.JSON(http.StatusOK, gin.H{
 		"config": cfg,
 		"exists": exists,
@@ -24,6 +27,11 @@ func mcpConfigPut(c *gin.Context) {
 	if err := c.ShouldBindJSON(&cfg); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if isMaskedSecret(cfg.Token) {
+		if old, ok := mcp.ReadConfigFile(); ok {
+			cfg.Token = old.Token
+		}
 	}
 	if cfg.Transport == "" {
 		cfg.Transport = "http"

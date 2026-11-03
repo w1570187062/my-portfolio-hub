@@ -102,6 +102,9 @@ func getAnalysis(c *gin.Context) {
 		return
 	}
 
+	if !owned(c, h.UserID) {
+		return
+	}
 	resp := AnalysisResponse{
 		ID:       int(h.ID),
 		Name:     h.Name,

@@ -179,6 +179,10 @@ func aiChatPost(c *gin.Context) {
 	if base == "" {
 		base = "https://api.deepseek.com"
 	}
+	if !aiGuardBaseURL(c, uid, base) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅主设备可以使用自定义 AI 地址", "owner_required": true})
+		return
+	}
 
 	chatID := b.ChatID
 	isNew := false
@@ -494,7 +498,7 @@ func postChat(baseURL, apiKey, model string, msgs []map[string]interface{}, tool
 		return nil, 0, fmt.Errorf("调用模型失败: %w", err)
 	}
 	defer resp.Body.Close()
-	rb, _ := io.ReadAll(resp.Body)
+	rb, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	return rb, resp.StatusCode, nil
 }
 

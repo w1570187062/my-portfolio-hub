@@ -197,6 +197,21 @@ type aiSummaryReq struct {
 	Resolved bool `json:"resolved"`
 }
 
+// aiGuardBaseURL 约束客户端可指定的模型地址（SSRF，2026-11-03）：
+// /api/ai/summary 与 /api/ai/chat 都会按请求里的 base_url 让服务端发 HTTP 请求，
+// 若不设限，任一已配对设备都能把本服务当成访问内网的代理（扫端口 / 打内网元数据服务）。
+// 规则：空值、官方默认地址、以及本账本已保存的地址一律放行；其余要求主设备身份。
+func aiGuardBaseURL(c *gin.Context, uid int64, base string) bool {
+	b := strings.TrimRight(strings.TrimSpace(base), "/")
+	if b == "" || b == "https://api.deepseek.com" {
+		return true
+	}
+	if cfg, err := loadAIConfig(uid); err == nil && strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/") == b {
+		return true
+	}
+	return isOwnerSession(c)
+}
+
 func aiSummary(c *gin.Context) {
 	uid := currentUserID(c)
 	var b aiSummaryReq
@@ -229,6 +244,10 @@ func aiSummary(c *gin.Context) {
 	}
 	if b.APIKey == "" || b.BaseURL == "" || b.Model == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先在「AI 设置」中填写 API Key、模型名称与模型地址"})
+		return
+	}
+	if !aiGuardBaseURL(c, uid, b.BaseURL) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅主设备可以使用自定义 AI 地址", "owner_required": true})
 		return
 	}
 	stats, err := buildPortfolioStats(uid)
@@ -328,7 +347,7 @@ func callChatCompletions(baseURL, apiKey, model, prompt string) (string, error) 
 		return "", fmt.Errorf("调用模型失败: %w", err)
 	}
 	defer resp.Body.Close()
-	rb, _ := io.ReadAll(resp.Body)
+	rb, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("模型返回 %d: %s", resp.StatusCode, truncate(string(rb), 600))
 	}

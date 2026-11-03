@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -202,6 +203,11 @@ func sameOrigin(c *gin.Context) bool {
 		origin = c.GetHeader("Referer")
 	}
 	if origin == "" {
+		// 浏览器发起的请求必带 Sec-Fetch-Site；两者都缺说明不是浏览器（curl/MCP），放行。
+		// 带了 Sec-Fetch-Site 却没有 Origin/Referer，是不符合规范的构造，按跨站处理。
+		if site := c.GetHeader("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+			return false
+		}
 		return true
 	}
 	host := c.Request.Host
@@ -251,19 +257,18 @@ func legacyHeaderUserID(c *gin.Context) int64 {
 }
 
 func parseID(raw string) int64 {
-	var id int64
 	raw = strings.TrimSpace(raw)
-	if raw == "" {
+	// 手写十进制解析会整数溢出（19 位以上绕回成另一个有效 id），改用 ParseInt 并限长。
+	if raw == "" || len(raw) > 18 {
 		return 0
 	}
-	for _, ch := range raw {
-		if ch < '0' || ch > '9' {
-			return 0
-		}
-		id = id*10 + int64(ch-'0')
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		return 0
 	}
 	return id
 }
+
 
 // ---- 状态 ----
 type sessionUserView struct {
@@ -289,6 +294,7 @@ type sessionStateResp struct {
 	// Persist 本设备的登录保持：true=长期 Cookie / false=关浏览器即退出。
 	Persist bool `json:"persist"`
 }
+
 
 func buildState(s *db.Session) sessionStateResp {
 	out := sessionStateResp{Authed: true, Mode: "ok", HasPIN: db.HasPIN(), HasRecovery: db.HasRecovery()}
@@ -423,6 +429,10 @@ type claimReq struct {
 // 出码加设备）改为**任意设备 + 操作 PIN**，主设备坏了也能继续运维。
 // 响应里带一份一次性明文恢复码，前端弹框要求用户抄下来（库里只存 bcrypt）。
 func sessionClaim(c *gin.Context) {
+	// 认领是「实例级一次性」操作，检查（无会话/无 owner）与建会话必须串行，
+	// 否则两个并发 claim 会各建一个 owner（2026-11-03）。
+	claimMu.Lock()
+	defer claimMu.Unlock()
 	if !bootstrapAllowed() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "该实例不接受直接认领，请用配对码登录"})
 		return
@@ -499,6 +509,7 @@ func sessionClaim(c *gin.Context) {
 // ---- 配对 ----
 
 var (
+	claimMu     sync.Mutex
 	pairMu       sync.Mutex
 	pairAttempts = map[string][]time.Time{}
 )
@@ -508,6 +519,22 @@ func allowPair(ip string) bool {
 	pairMu.Lock()
 	defer pairMu.Unlock()
 	cut := time.Now().Add(-5 * time.Minute)
+	// 定期清理过期条目：只清理「被访问到的 key」会让 map 随伪造/轮换的 IP 无界增长
+	// （配合 SetTrustedProxies(nil) 之前，X-Forwarded-For 可任意伪造）。
+	if len(pairAttempts) > 512 {
+		for k, v := range pairAttempts {
+			alive := false
+			for _, t := range v {
+				if t.After(cut) {
+					alive = true
+					break
+				}
+			}
+			if !alive {
+				delete(pairAttempts, k)
+			}
+		}
+	}
 	list := pairAttempts[ip]
 	kept := list[:0]
 	for _, t := range list {
@@ -801,6 +828,17 @@ func sessionDeviceRevoke(c *gin.Context) {
 	// 最早接入的在线设备自动升为主设备，实例不会卡在「零主设备」。
 	// 吊销自己等价于退出登录，任何设备都可以，不需要口令。
 	if id != sid {
+		// 防夺权（2026-11-03）：pinSatisfied 在「未设置 PIN」时恒为 true，而吊销主设备后
+		// EnsureOwnerSession 会按 last_seen 提升一台活设备 —— 任意 member 吊销 owner 就等于
+		// 把自己升成 owner。这里对「吊销主设备」单独要求：必须先设过 PIN 且输入正确。
+		if !authModeOff() && !readOnlyMode() {
+			if target, tErr := db.ActiveSessionByID(id); tErr == nil && target != nil && target.Role == db.RoleOwner {
+				if !db.HasPIN() || !db.CheckPIN(c.GetHeader(pinHeader)) {
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "吊销主设备需要先设置操作 PIN，并输入正确的 PIN", "pin_required": true, "pin_unset": !db.HasPIN()})
+					return
+				}
+			}
+		}
 		if !pinSatisfied(c) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "需要操作 PIN", "pin_required": true})
 			return
@@ -930,6 +968,11 @@ type pinResetReq struct {
 // 恢复码不能用来加设备（那需要浏览器里没有的 Cookie），只换一个改 PIN 的机会，
 // 所以泄漏面很窄；成功即焚，前端随即提示重新生成一份。
 func sessionPINReset(c *gin.Context) {
+	// 恢复码尝试与配对码共用限流池：owner 会话被劫持时也不能离线穷举恢复码。
+	if !allowPair(c.ClientIP()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "尝试过于频繁，请 5 分钟后再试"})
+		return
+	}
 	if !isOwnerSession(c) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 			"error":          "只有主设备可以重置操作 PIN",

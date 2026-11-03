@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"flag"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"portfolio/internal/api"
 	"portfolio/internal/db"
@@ -158,6 +163,13 @@ func main() {
 	})
 
 	r := gin.Default()
+	// 默认不信任 X-Forwarded-For：gin 默认「信任所有代理」，导致 c.ClientIP() 可被伪造，
+	// 配对码 / PIN 登录的按 IP 限流形同虚设（2026-11-03）。反代部署时用 TRUSTED_PROXIES 显式声明网段。
+	if proxies := strings.TrimSpace(os.Getenv("TRUSTED_PROXIES")); proxies != "" {
+		_ = r.SetTrustedProxies(strings.Split(proxies, ","))
+	} else {
+		_ = r.SetTrustedProxies(nil)
+	}
 	// 启用 HTTP 响应 gzip 压缩（JS/CSS/HTML/JSON 均受益；客户端未带 Accept-Encoding: gzip 时自动透传）。
 	// 例外：/ocr/ 下的 *.traineddata.gz 本身已是 deflate 过的字库，再压一遍纯烧 CPU（20MB 级），
 	// 且 tesseract 要靠魔数判断是否需要解压，必须保持原始字节流。
@@ -176,9 +188,30 @@ func main() {
 		addr = "9989"
 	}
 	addr = ":" + addr
-	log.Printf("portfolio listening on %s", addr)
-	if err := r.Run(addr); err != nil {
-		log.Fatalf("server: %v", err)
+	// 显式超时 + 优雅退出：原来直接 r.Run（等价 http.ListenAndServe），
+	// 既没有 ReadHeaderTimeout（慢连接可拖死进程），进程被 kill 时正在写 SQLite 的请求也会被硬切。
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: 15 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      300 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	go func() {
+		log.Printf("portfolio listening on %s", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server: %v", err)
+		}
+	}()
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Printf("[server] 收到退出信号，等待进行中的请求完成（最多 15s）")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("[server] 优雅退出超时：%v", err)
 	}
 }
 
