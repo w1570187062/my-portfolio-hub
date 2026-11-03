@@ -34,8 +34,9 @@ func daysInMonth(t time.Time) int {
 
 // todayItem 一条待办（前端只渲染两行文字 + 跳转，不在后端拼货币符号）。
 type todayItem struct {
-	Title string `json:"title"`
-	Sub   string `json:"sub"`
+	Title  string  `json:"title"`
+	Sub    string  `json:"sub"`
+	Amount float64 `json:"amount"` // 本条折 CNY 金额（0 = 该类型无金额）
 }
 
 // todayGroup 一类待办。
@@ -110,15 +111,17 @@ func todayBrief(c *gin.Context) {
 					continue
 				}
 				g.Count += p.PendingCount
-				g.Amount += fxToCNY(p.Amount*float64(p.PendingCount), p.Currency, cnyRate, hkdRate)
+				amt := fxToCNY(p.Amount*float64(p.PendingCount), p.Currency, cnyRate, hkdRate)
+				g.Amount += amt
 				if len(g.Items) < 4 {
 					name := strings.TrimSpace(p.HoldingName)
 					if name == "" {
 						name = strings.TrimSpace(p.HoldingSymbol)
 					}
 					g.Items = append(g.Items, todayItem{
-						Title: name,
-						Sub:   strconv.Itoa(p.PendingCount) + " 期待确认",
+						Title:  name,
+						Sub:    strconv.Itoa(p.PendingCount) + " 期待确认",
+						Amount: amt,
 					})
 				}
 			}
@@ -183,9 +186,10 @@ func todayBrief(c *gin.Context) {
 					continue
 				}
 				gRepay.Count++
-				gRepay.Amount += fxToCNY(p.Amount, p.Currency, cnyRate, hkdRate)
+				amt := fxToCNY(p.Amount, p.Currency, cnyRate, hkdRate)
+				gRepay.Amount += amt
 				if len(gRepay.Items) < 4 {
-					gRepay.Items = append(gRepay.Items, todayItem{Title: strings.TrimSpace(p.Title), Sub: sub})
+					gRepay.Items = append(gRepay.Items, todayItem{Title: strings.TrimSpace(p.Title), Sub: sub, Amount: amt})
 				}
 			}
 
@@ -236,9 +240,10 @@ func todayBrief(c *gin.Context) {
 					continue
 				}
 				gIncome.Count++
-				gIncome.Amount += fxToCNY(p.Amount, p.Currency, cnyRate, hkdRate)
+				amt := fxToCNY(p.Amount, p.Currency, cnyRate, hkdRate)
+				gIncome.Amount += amt
 				if len(gIncome.Items) < 4 {
-					gIncome.Items = append(gIncome.Items, todayItem{Title: strings.TrimSpace(p.Title), Sub: sub})
+					gIncome.Items = append(gIncome.Items, todayItem{Title: strings.TrimSpace(p.Title), Sub: sub, Amount: amt})
 				}
 			}
 		}
@@ -261,13 +266,14 @@ func todayBrief(c *gin.Context) {
 				continue
 			}
 			g.Count++
-			g.Amount += fxToCNY(d.Amount, d.Currency, cnyRate, hkdRate)
+			amt := fxToCNY(d.Amount, d.Currency, cnyRate, hkdRate)
+			g.Amount += amt
 			if len(g.Items) < 4 {
 				sub := d.EndDate + " 到期"
 				if d.EndDate <= today {
 					sub = "已到期 · 待确认落袋"
 				}
-				g.Items = append(g.Items, todayItem{Title: strings.TrimSpace(d.Name), Sub: sub})
+				g.Items = append(g.Items, todayItem{Title: strings.TrimSpace(d.Name), Sub: sub, Amount: amt})
 			}
 		}
 		if g.Count > 0 {
