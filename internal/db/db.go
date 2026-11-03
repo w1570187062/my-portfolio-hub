@@ -1109,6 +1109,35 @@ func SavePnlDaily(date string, totalCNY, totalUSD, rate, baseCNY float64, detail
 	return err
 }
 
+// FirstPnlDate returns the earliest pnl_daily date for a user ("" = no ledger yet).
+// Unlike filtering ListPnlDailyFrom by range, this is the GLOBAL ledger start and is not
+// affected by the queried range.
+func FirstPnlDate(userID int64) string {
+	var d string
+	_ = DB.QueryRow(`SELECT MIN(date) FROM pnl_daily WHERE user_id=?`, userID).Scan(&d)
+	return d
+}
+
+// ListPnlDailyFrom returns the user's pnl_daily rows with date >= from
+// (from empty = all), ascending by date. Used by the review breakdown to
+// reuse the daily P&L ledger instead of recomputing from transactions.
+func ListPnlDailyFrom(from string, userID int64) ([]PnlDay, error) {
+	rows, err := DB.Query(`SELECT date,user_id,total_cny,total_usd,rate,base_cny,detail FROM pnl_daily WHERE user_id=? AND (?='' OR date>=?) ORDER BY date ASC`, userID, from, from)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PnlDay
+	for rows.Next() {
+		var p PnlDay
+		if err := rows.Scan(&p.Date, &p.UserID, &p.TotalCNY, &p.TotalUSD, &p.Rate, &p.BaseCNY, &p.Detail); err != nil {
+			return out, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // PnlDay is one day's P&L record.
 type PnlDay struct {
 	Date       string  `json:"date"`
