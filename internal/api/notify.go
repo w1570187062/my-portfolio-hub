@@ -330,17 +330,89 @@ func scopeFromLabel(label string) string {
 	return ""
 }
 
+// pnlSymRow 是 pnl_daily.detail.by_symbol 的单条明细（通知展示用）。
+type pnlSymRow struct {
+	Symbol       string  `json:"symbol"`
+	Name         string  `json:"name"`
+	Pnl          float64 `json:"pnl"`
+	PnlCNY       float64 `json:"pnl_cny"`
+	Currency     string  `json:"currency"`
+	CurrentPrice float64 `json:"current_price"`
+	ChangePct    float64 `json:"change_pct"`
+}
+
+// parsePnlDetail 解析 pnl_daily.detail 里的 by_symbol 明细。
+func parsePnlDetail(detail string) []pnlSymRow {
+	if detail == "" {
+		return nil
+	}
+	var d struct {
+		BySymbol []pnlSymRow `json:"by_symbol"`
+	}
+	if json.Unmarshal([]byte(detail), &d) != nil {
+		return nil
+	}
+	return d.BySymbol
+}
+
+// rowHasScopeData 判断某一行里是否存在「该范围内、当日盈亏非零」的标的。
+func rowHasScopeData(row *db.PnlDay, scope string, hmap map[string]db.Holding) bool {
+	if row == nil {
+		return false
+	}
+	for _, s := range parsePnlDetail(row.Detail) {
+		if h, ok := hmap[s.Symbol]; ok && !inScope(h, scope) {
+			continue
+		}
+		if math.Abs(s.PnlCNY) > 1e-6 || math.Abs(s.Pnl) > 1e-6 {
+			return true
+		}
+	}
+	return false
+}
+
+// pnlRowForScope 选本次通知要读的那一行 pnl_daily。
+// 美股当日盈亏自「按美东交易日归日」之后落在它自己的格子（usPnlDateOf，通常是昨天），
+// 而 GetPnlLatest 取的是日期最大的一行（= 今天），今天那一格按设计只留 A股/基金/港股。
+// 若一律读 GetPnlLatest，scope=us 时永远过滤不出条目 → hasData 恒为 false →
+// 07:00 的美股推送被当成「无有效数据」静默丢弃（2026-11-03 复盘确认）。
+func pnlRowForScope(uid int64, scope string, hmap map[string]db.Holding) *db.PnlDay {
+	now := time.Now()
+	if scope == "us" {
+		// 美股：先取归属日那一格（07:00 快照刚把美股写进这里，而今天那格是空的）。
+		if row, found, err := db.GetPnlDay(usPnlDateOf(now), uid); err == nil && found && rowHasScopeData(&row, scope, hmap) {
+			return &row
+		}
+	}
+	latest, err := db.GetPnlLatest(uid)
+	if err != nil || latest == nil {
+		return nil
+	}
+	if rowHasScopeData(latest, scope, hmap) {
+		return latest
+	}
+	// 兜底：向前找 7 天，取第一行在该范围内有非零数据的记录
+	// （跨天补跑 / 美股回填到更早的周五 / 手动刷新后没有今天这一行）。
+	d := now.In(time.FixedZone("CST", 8*3600))
+	for i := 1; i <= 7; i++ {
+		ds := d.AddDate(0, 0, -i).Format("2006-01-02")
+		row, found, e := db.GetPnlDay(ds, uid)
+		if e != nil || !found {
+			continue
+		}
+		if rowHasScopeData(&row, scope, hmap) {
+			return &row
+		}
+	}
+	return latest
+}
+
 // buildNetValueNotifyText 构造通知正文：触发来源 + 更新范围 + 日期 + 当日盈亏概览。
 // scope 限定只列出该范围内（美股/A股/基金）的持仓盈亏；"" / "all" 为全量（手动刷新）。
 func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool) {
-	date := time.Now().Format("2006-01-02")
 	label := scopeLabelCN(scope)
 	var sb strings.Builder
 	hasData := false // 是否有真实持仓行；无任何有效数据时不发送
-	sb.WriteString("## 持仓净值已更新\n\n")
-	sb.WriteString(fmt.Sprintf("- **触发**：%s\n", triggeredBy))
-	sb.WriteString(fmt.Sprintf("- **更新范围**：%s\n", label))
-	sb.WriteString(fmt.Sprintf("- **日期**：%s\n", date))
 
 	// 持仓范围映射，用于按 scope 过滤明细中的按标的盈亏
 	hmap := map[string]db.Holding{}
@@ -350,86 +422,76 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool
 		}
 	}
 
-	if row, err := db.GetPnlLatest(uid); err == nil && row != nil {
-		if row.Detail != "" {
-			// 解析明细中的按标的盈亏，按更新范围过滤，最多列 15 条
-			var d struct {
-				BySymbol []struct {
-					Symbol       string  `json:"symbol"`
-					Name         string  `json:"name"`
-					Pnl          float64 `json:"pnl"`
-					PnlCNY       float64 `json:"pnl_cny"`
-					Currency     string  `json:"currency"`
-					CurrentPrice float64 `json:"current_price"`
-					ChangePct    float64 `json:"change_pct"`
-				} `json:"by_symbol"`
-			}
-			if json.Unmarshal([]byte(row.Detail), &d) == nil {
-				scoped := make([]struct {
-					Symbol       string  `json:"symbol"`
-					Name         string  `json:"name"`
-					Pnl          float64 `json:"pnl"`
-					PnlCNY       float64 `json:"pnl_cny"`
-					Currency     string  `json:"currency"`
-					CurrentPrice float64 `json:"current_price"`
-					ChangePct    float64 `json:"change_pct"`
-				}, 0, len(d.BySymbol))
-				var sCNY float64
-				for _, s := range d.BySymbol {
-					if h, ok := hmap[s.Symbol]; ok && !inScope(h, scope) {
-						continue
-					}
-					scoped = append(scoped, s)
-					sCNY += s.PnlCNY
-					// 「有数据」必须以真实盈亏变动为准，而非「存在持仓行」。
-					// 周末/休市期美股快照往往全为 0（staleQuote 命中、无新交易日），
-					// 若只要有行就推送，会发出"为0的净值更新"；故仅当该范围内存在
-					// 非零当日盈亏（含减仓落袋的「·已实现」）时才算有效数据，否则跳过推送。
-					if strings.HasSuffix(s.Name, "·已实现") {
-						if s.PnlCNY != 0 || s.Pnl != 0 {
-							hasData = true
-						}
-						continue
-					}
-					if math.Abs(s.PnlCNY) > 1e-6 || math.Abs(s.Pnl) > 1e-6 {
-						hasData = true
-					}
-				}
-				sb.WriteString(fmt.Sprintf("- **今日总盈亏（%s）**：¥%s\n", label, moneyFmt(sCNY)))
-				if len(scoped) > 0 {
-					sb.WriteString(fmt.Sprintf("\n**%s 今日盈亏（按原币种）**：\n", label))
-					n := 0
-			for _, s := range scoped {
-				// 减仓/清仓落袋的「XX·已实现」条目不是真实持仓，没有实时行情（现价/涨跌无意义），
-				// 其金额已计入上方「当日总盈亏」，逐行持仓列表里跳过，避免出现「现价¥0.00 涨跌—」的诡异行。
-				if strings.HasSuffix(s.Name, "·已实现") {
+	// 按范围挑行：美股读归属日那一格，日期也用它（推的是「11-02 美股收盘」而不是今天）。
+	row := pnlRowForScope(uid, scope, hmap)
+	date := time.Now().Format("2006-01-02")
+	if row != nil && row.Date != "" && scope == "us" {
+		date = row.Date
+	}
+	sb.WriteString("## 持仓净值已更新\n\n")
+	sb.WriteString(fmt.Sprintf("- **触发**：%s\n", triggeredBy))
+	sb.WriteString(fmt.Sprintf("- **更新范围**：%s\n", label))
+	sb.WriteString(fmt.Sprintf("- **日期**：%s\n", date))
+
+	if row != nil {
+		if rows := parsePnlDetail(row.Detail); rows != nil {
+			// 按更新范围过滤，最多列 15 条
+			scoped := make([]pnlSymRow, 0, len(rows))
+			var sCNY float64
+			for _, s := range rows {
+				if h, ok := hmap[s.Symbol]; ok && !inScope(h, scope) {
 					continue
 				}
-				if n >= 15 {
-					sb.WriteString(fmt.Sprintf("- （其余 %d 只未列出）\n", len(scoped)-15))
-					break
+				scoped = append(scoped, s)
+				sCNY += s.PnlCNY
+				// 「有数据」必须以真实盈亏变动为准，而非「存在持仓行」。
+				// 周末/休市期美股快照往往全为 0（staleQuote 命中、无新交易日），
+				// 若只要有行就推送，会发出"为0的净值更新"；故仅当该范围内存在
+				// 非零当日盈亏（含减仓落袋的「·已实现」）时才算有效数据，否则跳过推送。
+				if strings.HasSuffix(s.Name, "·已实现") {
+					if s.PnlCNY != 0 || s.Pnl != 0 {
+						hasData = true
+					}
+					continue
 				}
-				// 基金净值单价小、波动以基点计，保留 4 位小数；股票/其他保留 2 位
-				dec := 2
-				if h, ok := hmap[s.Symbol]; ok && h.Category == "fund" {
-					dec = 4
+				if math.Abs(s.PnlCNY) > 1e-6 || math.Abs(s.Pnl) > 1e-6 {
+					hasData = true
 				}
-				amt := s.PnlCNY
-				if strings.EqualFold(s.Currency, "USD") || strings.EqualFold(s.Currency, "HKD") {
-					amt = s.Pnl
-				}
-				priceStr := fmt.Sprintf("%s%."+strconv.Itoa(dec)+"f", curSymbol(s.Currency), s.CurrentPrice)
-				chgStr := "—"
-				if s.ChangePct >= 0.005 || s.ChangePct <= -0.005 {
-					chgStr = moneyFmtPrec(s.ChangePct, 2) + "%"
-				}
-				sb.WriteString(fmt.Sprintf("- %s %s：现价%s 涨跌%s 今日%s%s\n",
-					s.Symbol, s.Name, priceStr, chgStr, curSymbol(s.Currency), moneyFmtPrec(amt, dec)))
-				n++
 			}
-				} else {
-					sb.WriteString(fmt.Sprintf("\n> %s 本次无持仓盈亏变动\n", label))
+			sb.WriteString(fmt.Sprintf("- **今日总盈亏（%s）**：¥%s\n", label, moneyFmt(sCNY)))
+			if len(scoped) > 0 {
+				sb.WriteString(fmt.Sprintf("\n**%s 今日盈亏（按原币种）**：\n", label))
+				n := 0
+				for _, s := range scoped {
+					// 减仓/清仓落袋的「XX·已实现」条目不是真实持仓，没有实时行情（现价/涨跌无意义），
+					// 其金额已计入上方「当日总盈亏」，逐行持仓列表里跳过，避免出现「现价¥0.00 涨跌—」的诡异行。
+					if strings.HasSuffix(s.Name, "·已实现") {
+						continue
+					}
+					if n >= 15 {
+						sb.WriteString(fmt.Sprintf("- （其余 %d 只未列出）\n", len(scoped)-15))
+						break
+					}
+					// 基金净值单价小、波动以基点计，保留 4 位小数；股票/其他保留 2 位
+					dec := 2
+					if h, ok := hmap[s.Symbol]; ok && h.Category == "fund" {
+						dec = 4
+					}
+					amt := s.PnlCNY
+					if strings.EqualFold(s.Currency, "USD") || strings.EqualFold(s.Currency, "HKD") {
+						amt = s.Pnl
+					}
+					priceStr := fmt.Sprintf("%s%."+strconv.Itoa(dec)+"f", curSymbol(s.Currency), s.CurrentPrice)
+					chgStr := "—"
+					if s.ChangePct >= 0.005 || s.ChangePct <= -0.005 {
+						chgStr = moneyFmtPrec(s.ChangePct, 2) + "%"
+					}
+					sb.WriteString(fmt.Sprintf("- %s %s：现价%s 涨跌%s 今日%s%s\n",
+						s.Symbol, s.Name, priceStr, chgStr, curSymbol(s.Currency), moneyFmtPrec(amt, dec)))
+					n++
 				}
+			} else {
+				sb.WriteString(fmt.Sprintf("\n> %s 本次无持仓盈亏变动\n", label))
 			}
 		}
 	}
@@ -471,12 +533,12 @@ func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 			log.Printf("[notify] 按推送策略(%s)跳过本次推送（触发：%s）", policyName(cfg.Policy), triggeredBy)
 			return
 		}
-	text, hasData := buildNetValueNotifyText(uid, triggeredBy, scope)
-	if !hasData {
-		log.Printf("[notify] 本次推送无有效持仓/信号数据，取消发送（触发：%s）", triggeredBy)
-		return
-	}
-	sendToChannels(cfg, "持仓净值更新", text)
+		text, hasData := buildNetValueNotifyText(uid, triggeredBy, scope)
+		if !hasData {
+			log.Printf("[notify] 本次推送无有效持仓/信号数据，取消发送（触发：%s）", triggeredBy)
+			return
+		}
+		sendToChannels(cfg, "持仓净值更新", text)
 	}()
 }
 

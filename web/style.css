@@ -3398,6 +3398,95 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .asset-flow-card { padding: 0; overflow: hidden; }
 .asset-table th:first-child { text-align: left; }
 
+/* ===== 资产页「流水」· 竖向时间轴（2026-11-03，原型 a-timeline）=====
+   原来那张 5 列表格把「日期 / 类型 / 金额 / 说明 / 回退」摊成一排：说明列恒被挤到 260px
+   上限里截断，而日期、类型、操作三列各占 60～80px 还大段留白。
+   改成时间轴后一笔流水读起来是「什么 · 多少钱 / 什么时候 · 账户 · 说明」：
+   圆点染方向色（涨红跌绿）、标题独占一行、日期与说明退到第二行、金额贴右。 */
+
+/* .card 是 display:flex（行向、align-items:center），里面的块级子元素会被当成 flex item
+   收缩成内容宽度 —— 原先靠 <table> 撑开，换成 div 时间轴后卡片只剩 860px，
+   右侧留出一大片空白。这里显式取满卡片宽度。 */
+.flow-tl { width: 100%; padding: var(--sp-2) var(--sp-4) var(--sp-4); }
+/* 四栏：轨道 / 正文 / 金额 / 回退。回退栏固定 28px（.row-act 的 --h-2），
+   没有回退按钮的快照行也留同宽，保证各行金额右对齐在一条线上。 */
+.tl-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto 28px;
+  gap: var(--sp-2);
+  align-items: start;
+  padding: var(--sp-3) var(--sp-2) var(--sp-3) 0;
+  border-radius: var(--r-sm);
+  transition: background .15s;
+}
+.tl-row:hover { background: var(--bg-hover); }
+/* 轨道竖线：贯穿整行。首行从圆点（圆心距行顶 22px）起、末行到圆点止，
+   两端不留悬空线头；线在圆点之下（圆点 z-index:1），穿过圆点的部分自然被盖住。 */
+.tl-row::before { content: ""; position: absolute; left: 11px; top: 0; bottom: 0; width: 1px; background: var(--border); }
+.tl-row:first-child::before { top: 22px; }
+.tl-row:last-child::before { bottom: calc(100% - 22px); }
+.tl-rail { display: flex; justify-content: center; padding-top: 5px; }
+.tl-dot {
+  position: relative;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  box-shadow: 0 0 0 2px var(--bg-card);
+}
+.tl-dot.in { background: var(--up); }
+.tl-dot.out { background: var(--down); }
+/* 最新一笔：圆点外套一圈同色细环，起「最新」标记作用且不额外占位 */
+.tl-row.latest .tl-dot.in { color: var(--up); }
+.tl-row.latest .tl-dot.out { color: var(--down); }
+.tl-row.latest .tl-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid currentColor; opacity: .5; }
+
+.tl-body { min-width: 0; }
+.tl-line1 { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.tl-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+/* 分类徽标在标题行里紧跟名称：.flow-tag.cat 带的左外边距与行内 gap 会叠成双倍，这里清零 */
+.tl-line1 .flow-tag { flex: 0 0 auto; }
+.tl-line1 .flow-tag.cat { margin-left: 0; }
+.tl-meta { display: flex; align-items: center; gap: var(--sp-1); margin-top: 3px; min-width: 0; font-size: var(--fs-xs); color: var(--text-faint); }
+.tl-when { flex: 0 0 auto; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.tl-sep { flex: 0 0 auto; width: 1px; height: 9px; background: var(--border); }
+.tl-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-amt { font-size: var(--fs-lg); font-weight: 600; line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.tl-amt.up { color: var(--up); }
+.tl-amt.down { color: var(--down); }
+.tl-act { display: flex; justify-content: flex-end; }
+.tl-act .tl-undo { margin: 0; }
+/* 回退按钮默认只在行悬停时露出，避免 60 行流水每行挂一个图标变成噪声；
+   触屏没有 hover 语义（@media (hover: hover) 不命中）→ 常显，功能不丢。 */
+@media (hover: hover) {
+  .tl-undo { opacity: 0; }
+  .tl-row:hover .tl-undo,
+  .tl-undo:focus-visible { opacity: 1; }
+}
+.flow-tl .tl-empty { padding: var(--sp-6) 0; text-align: center; color: var(--text-faint); font-size: var(--fs-sm); }
+/* 工具条左侧成组：区间下拉 + 类型筛选（列表已无表头，漏斗从 th 挪到这儿） */
+.tl-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.flow-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--toolbar-row-h);
+  padding: 5px var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.flow-filter-btn:hover { color: var(--text); border-color: var(--border-strong); }
+.flow-filter-btn.active { color: var(--primary); background: var(--primary-soft); border-color: rgba(var(--tint), .34); }
+.flow-filter-btn svg { width: 13px; height: 13px; flex: 0 0 auto; }
+
 /* ===== 资产页「现金」子面板（2026-10-29）=====
    回答一个问题：现金都散落在哪儿。所以不做编辑表（增删改仍在「账户」tab），
    只按「折 CNY」降序把现金账户排出来，右侧条形给出占比 —— 币种不同不能直接比原币。
@@ -3865,16 +3954,6 @@ body[data-density="compact"] .holdings-table .hn-meta { margin-top: 0; }
 .ac-picker-panel .ac-pick-search:focus { outline: none; box-shadow: none; background: transparent; }
 .ac-pick-search::placeholder { color: var(--text-muted); }
 
-/* 资产页流水：类型筛选入口挂在表头「类型」右侧（2026-11-03）。
-   24px 触控块，激活（有勾选类型）时染主色并在右上角亮一个小圆点。 */
-.th-type { white-space: nowrap; }
-.th-filter-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: var(--sp-1); padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-faint); cursor: pointer; vertical-align: middle; transition: color .15s, background .15s; }
-.th-filter-btn:hover { color: var(--text); background: var(--bg-soft); }
-.th-filter-btn.active { color: var(--primary); background: rgba(var(--tint), .12); }
-.th-filter-btn.active::after { content: ""; position: absolute; top: 2px; right: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--primary); }
-.th-filter-btn svg { width: 14px; height: 14px; }
-/* 筛选后无结果时，表头仍保留（否则表头的漏斗入口会跟着消失），空态占一整行 */
-.asset-table td.flow-empty-cell { padding: var(--sp-6) var(--sp-3); text-align: center; color: var(--text-faint); }
 /* 搜索过滤用的隐藏类：.ac-pick-row / .ac-pick-group 的 display 会压过 UA 的 [hidden]，故用工具类 */
 .ac-hide { display: none !important; }
 
@@ -5842,12 +5921,18 @@ textarea::placeholder {
    投资页与资产页的差别只剩位置（一个在页面顶部、一个在卡片下方），
    而非形态。
 
-   视图级控件（行密度 / 刷新）挂在切换条右端（.sub-tabs-tools），
-   与 tab 同一基线 —— 与资产页的账户操作按钮同一套做法。 */
-/* 视图级控件组（行密度 / 刷新行情）：贴在本行右端，与 tab 同一基线。
-   2026-11-02 由独立工具条并入 —— 独立成行时左侧恒空，控件孤立在最右侧，
-   且白占 44px 首屏高度。并入后「视图」与「视图的显示设置」在同一行，语义也更顺。 */
+   视图级控件（行密度 / 刷新）**不再**挂在这条 tab 行右端（见 .invest-tools-row）。 */
+/* 视图级控件组（行密度 / 刷新行情）：资产页子 tab 行右端的落点。
+   2026-11-02 投资页曾并入 tab 行，2026-11-03 又移出到卡片与表格之间 —— 原因是
+   tab 行与表格之间隔着一整排 KPI 卡片，控件离它作用的表格太远，看不出从属关系。 */
 .sub-tabs-tools { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
+/* 投资页视图工具条：KPI 卡片与表格之间的一行控件（2026-11-03）。
+   与资产页流水工具条（.holding-toolbar + .tl-tools）同一套排布：右对齐、不加底框、
+   不占一整行高度（行内只有控件本身）。上下各留一档间距，与卡片/表格都不贴边。
+   min-height 锁 --h-3：理财 tab 只有「紧凑/标准」分段（24px），持仓/平仓还有 32px 的
+   图标按钮 —— 不锁高度的话切 tab 时整张表会上下跳 8px。 */
+.invest-tools-row { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); min-height: var(--h-3); margin-bottom: var(--sp-3); }
+.invest-tools-row[hidden] { display: none; }
 .sub-tabs-tools:empty { display: none; }
 .sub-tabs-tools[hidden] { display: none; }
 .sub-tab {
@@ -5990,21 +6075,53 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 /* 左栏：柱状图铺满本栏（原先 max-width:560 会让栏内左右各留 ~70px 空白），
    水平 + 垂直居中；内层宽度已由栏宽决定，x 轴 12 等分与柱槽天然对齐 */
 .bar-chart-wrap { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; }
-.bar-chart-inner { width: 100%; }
+/* 浮层以本容器定位（absolute），所以这里必须是定位上下文 */
+.bar-chart-inner { width: 100%; position: relative; }
 .bar-chart-svg { display: block; width: 100%; aspect-ratio: 9 / 5; }
-.bar-chart-xlabels { display: grid; grid-template-columns: repeat(12, 1fr); font-size: var(--fs-xs); color: var(--text-muted); text-align: center; margin-top: 6px; }
+/* 12 等分必须让出 y 轴占的横向空间：柱槽是从 PAD_LEFT(36/360=10%) 起、到 PAD_RIGHT(8/360≈2.22%) 止，
+   整幅等分会让月份标签比柱子整体右移一格（中段恰好重合，只有首尾看得出来）。 */
+.bar-chart-xlabels { display: grid; grid-template-columns: repeat(12, 1fr); font-size: var(--fs-xs); color: var(--text-muted); text-align: center; margin-top: 6px; padding: 0 2.22% 0 10%; }
 .bar-chart-xlabels span { cursor: pointer; padding: var(--sp-1) 0; border-radius: var(--r-xs); }
 .bar-chart-xlabels span:hover { background: var(--bg-hover); color: var(--text); }
 .bar-chart-xlabels span.active { color: var(--primary); font-weight: 600; }
+/* 「悬停看明细」提示：只是发现性说明，窄屏没有 hover 语义，直接收掉 */
+.bar-hint { margin-left: var(--sp-2); font-size: var(--fs-xs); font-weight: 400; color: var(--text-faint); }
 #yearBarChart .bar-exp { fill: var(--hm-exp); }
 #yearBarChart .bar-inc { fill: var(--hm-inc); }
+/* 整列命中区：淡底铺满绘图高度，指针扫过即可读数（不必精确压在细柱上），同时是选月的落点 */
+#yearBarChart .bar-col { cursor: pointer; }
+#yearBarChart .bar-band { fill: var(--text); opacity: 0; }
+#yearBarChart .bar-col.is-hover .bar-band { opacity: .07; }
+/* 选中月柱顶的小圆点：只标位置、不读数 */
+#yearBarChart .bar-sel-dot { fill: var(--primary); }
+/* 悬停引导虚线：从浮层垂到柱顶，钉死「这组数字属于哪根柱子」；不能吃指针事件，否则会自我打断 */
+#yearBarChart .bar-stem { stroke: var(--text-muted); stroke-width: .9; stroke-dasharray: 3 3; opacity: .75; pointer-events: none; }
+#yearBarChart .bar-stem.is-off { display: none; }
+/* 悬停读数浮层（替代原先柱顶常显的 12 个合计数字）。
+   贴本列右侧、放不下就翻到左侧；实色底 + 描边，避免透出背后的柱子。
+   宽度按「两列 × (2 字标签 + 6 字金额)」定死并禁止折行 —— 折行会把「收入 ¥2.59万」拆成四行。 */
+.bar-tip {
+  position: absolute; z-index: 5; top: 2px; left: 2px; width: max-content; max-width: min(248px, calc(100% - 4px));
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--r);
+  background: var(--bg-card-solid); border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 26px -10px rgba(0, 0, 0, .5);
+  pointer-events: none; opacity: 0; visibility: hidden; transform: translateY(2px);
+  transition: opacity .12s, transform .12s;
+}
+.bar-tip.is-on { opacity: 1; visibility: visible; transform: translateY(0); }
+.bar-tip-month { font-size: var(--fs-xs); font-weight: 700; color: var(--text); margin-bottom: var(--sp-1); }
+/* 列宽按内容自适应（不再写死 1fr 等宽）：金额含千分位/万制缩写时，
+   不再被过窄的固定列宽挤压溢出框外（典型是 11 月这类大数值月数字跑到边框外）。 */
+.bar-tip-grid { display: grid; grid-template-columns: max-content max-content; gap: var(--sp-1) var(--sp-3); align-items: baseline; }
+.bar-tip-cell { display: flex; align-items: baseline; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap; }
+.bar-tip-cell b { margin-left: auto; font-weight: 600; font-size: var(--fs-xs); color: var(--text); font-variant-numeric: tabular-nums; }
+.bar-tip-inc b { color: var(--hm-inc); }
+.bar-tip-exp b { color: var(--hm-exp); }
 /* y 轴：网格线 + 刻度竖线 + 左侧数值标签（CNY，万制缩写）；
    文字 fill 走 CSS 类，可随主题切换；字号用 SVG 用户单位（随 viewBox 缩放）。 */
 #yearBarChart .bar-grid { stroke: var(--border); stroke-width: 1; opacity: .28; }
 #yearBarChart .bar-axis { stroke: var(--border); stroke-width: 1; opacity: .6; }
 #yearBarChart .bar-tick { fill: var(--text-muted); font-size: 7.5px; text-anchor: end; dominant-baseline: middle; }
-#yearBarChart .bar-val { fill: var(--text-muted); font-size: var(--fs-2xs); text-anchor: middle; font-weight: 600; }
-#yearBarChart .bar-val.sel { fill: var(--primary); }
 
 .heatmap-right { display: flex; flex-direction: column; min-width: 0; }
 .heatmap-right-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sp-2); }
@@ -6081,65 +6198,6 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .hm-sub.inc { background: rgba(var(--up-rgb), var(--op, .85)); }
 .hm-sub.exp { background: rgba(var(--down-rgb), var(--op, .85)); }
 
-/* ===== 财务页 · 收支分类明细块（2026-10-23 合并进收支分析卡下半部分，默认展开） ===== */
-.fin-cat-block { padding-top: var(--sp-5); border-top: 1px solid var(--border); }
-.fin-cat-block.collapsed #finCategoryGroups { display: none; }
-.fin-cat-block:not(.collapsed) .fin-cat-head { margin-bottom: var(--sp-3); }
-.fin-cat-head {
-  display: flex; justify-content: space-between; align-items: center;
-  width: 100%; padding: 0; border: none; background: transparent;
-  cursor: pointer; font-family: inherit; color: inherit; text-align: left;
-}
-.fin-cat-head-right { display: flex; align-items: center; gap: var(--sp-3); }
-.fin-cat-chevron { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1; transition: transform .15s var(--e); }
-.fin-cat-block.collapsed .fin-cat-chevron { transform: rotate(-90deg); }
-
-.category-group { margin-bottom: var(--sp-3); }
-.category-group:last-child { margin-bottom: 0; }
-.group-header {
-  /* 第 2 列 minmax(0,1fr)：分类名过长时压缩自己而不是把合计/占比顶出容器 */
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--sp-3);
-  align-items: center; padding: var(--sp-3) var(--sp-4);
-  background: var(--bg-soft); border-radius: var(--r-sm); cursor: pointer;
-  transition: .15s; user-select: none;
-}
-.group-header:hover { background: var(--bg-hover); }
-.group-toggle {
-  width: 20px; height: 20px; border-radius: 4px;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--bg-card); transition: .2s; color: var(--text-muted);
-}
-.group-toggle svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2.5; stroke-linecap: round; }
-.category-group.collapsed .group-toggle { transform: rotate(-90deg); }
-.category-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
-.category-dot.income { background: var(--up); }
-.category-dot.expense { background: var(--down); }
-.category-name { font-size: var(--fs-md); font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.cat-head-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.category-count { font-size: var(--fs-sm); color: var(--text-muted); margin-left: 4px; font-weight: 400; }
-.category-total { font-size: var(--fs-md); font-weight: 700; font-variant-numeric: tabular-nums; }
-.category-total.income { color: var(--up); }
-.category-total.expense { color: var(--down); }
-.category-pct { font-size: var(--fs-sm); color: var(--text-muted); min-width: 40px; text-align: right; }
-/* 展开动画用 grid-template-rows 0fr→1fr：不猜内容高度，绝不裁剪（原 max-height:--mh 方案
-   在单行高度 >52px（标题折行/带账户副行）时会把底部流水切掉） */
-.group-rows-wrap { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .25s var(--e); }
-.category-group.collapsed .group-rows-wrap { grid-template-rows: 0fr; }
-.group-rows { overflow: hidden; min-height: 0; border-left: 2px solid var(--border); margin-left: 12px; }
-.flow-row {
-  /* 中间列用 minmax(0,1fr)：1fr 的 min-content 下限会让长标题把金额列顶出容器（body 是 overflow-x:clip，直接裁掉） */
-  display: grid; grid-template-columns: 60px minmax(0, 1fr) auto; gap: var(--sp-3);
-  align-items: center; padding: var(--sp-3) var(--sp-4) var(--sp-3) 20px;
-  font-size: var(--fs-sm); border-bottom: 1px solid var(--border);
-}
-.flow-row:last-child { border-bottom: none; }
-.flow-date { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.flow-title { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flow-account { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flow-amt { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.flow-amt.income { color: var(--up); }
-.flow-amt.expense { color: var(--down); }
-
 /* ===== 财务页 · 顶部年份切换（放在 .kpi-head 行内，右对齐） ===== */
 .year-switcher {
   display: flex; align-items: center; gap: var(--sp-2); flex: 0 0 auto;
@@ -6203,14 +6261,17 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .hm-chip { flex: 0 0 auto; }
   /* 12 个月标签在窄屏每格仅 ~26px 宽，加高点击区补偿触控精度 */
   .bar-chart-xlabels span { padding: 6px 0; }
-  /* 分类明细：窄屏把固定占位（日期列 / 分类笔数 / 两侧内边距）全部收紧，
-     否则分类名会被挤成逐字竖排、流水标题只剩 2～3 个字 */
-  .group-header { gap: var(--sp-2); padding: var(--sp-3) var(--sp-2); }
-  .category-count { display: none; }
-  .category-pct { min-width: 32px; }
-  .group-rows { margin-left: 6px; }
-  .flow-row { gap: var(--sp-2); padding: var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-3); grid-template-columns: 48px minmax(0, 1fr) auto; }
-  .fin-cat-block { padding-top: var(--sp-4); }
+  /* 触屏没有 hover 语义（点一下直接选月），这行提示只会挤占小标题位置 */
+  .bar-hint { display: none; }
+  /* 资产页流水时间轴：轨道 22→20、左右内边距收一档，金额降一档；
+     375px 上「标题 + 金额」并排还有 ~170px 给标题，长基金名才不至于只剩 3 个字。 */
+  .flow-tl { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+  .tl-row { grid-template-columns: 20px minmax(0, 1fr) auto 28px; padding: var(--sp-3) var(--sp-1) var(--sp-3) 0; }
+  .tl-row::before { left: 10px; }
+  .tl-amt { font-size: var(--fs-md); }
+  /* 窄屏把分类徽标收掉：390px 上它要吃 55px 宽度，长基金名就只剩 9 个字；
+     收支语义由金额颜色 + 说明开头的动作词（「分红入账 …」）承担，信息不丢。 */
+  .tl-line1 .flow-tag.cat { display: none; }
   /* 首页最新流水（方案 B）：手机端收紧分组缩进与行内边距，
      时间轴节点与竖线同步左移，保持对齐。 */
   .recent-filter { padding: var(--sp-3); }

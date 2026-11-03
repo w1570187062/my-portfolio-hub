@@ -254,18 +254,13 @@
   <!-- 投资页 = 视图切换条 + 内容区（2026-11-02，原型 B）。
        视图切换条提到页面第一位（在 KPI 卡片之前），保留下划线 tab 样式 ——
        与资产页的「账户 / 现金 / 流水 / 收支」子 tab 是同一套 .sub-tabs 组件，
-       跨页切换时是同一种控件、同一套选中态（全站统一，不另立竖排栏目形态）。
-       视图级控件（行密度 / 刷新行情）挂在切换条右端，与 tab 同一基线。 -->
+       跨页切换时是同一种控件、同一套选中态（全站统一，不另立竖排栏目形态）。 -->
   <div id="holdingsView">
     <nav class="sub-tabs" id="viewToggle">
       <button class="sub-tab active" data-view="holdings" type="button">持仓<span class="sub-tab-count" data-count="holdings"></span></button>
       <button class="sub-tab" data-view="wealth" type="button">理财<span class="sub-tab-count" data-count="wealth"></span></button>
       <button class="sub-tab" data-view="deposits" type="button">存款<span class="sub-tab-count" data-count="deposits"></span></button>
       <button class="sub-tab" data-view="closed" type="button">平仓<span class="sub-tab-count" data-count="closed"></span></button>
-      <!-- 视图级控件（行密度 / 刷新行情）挂在本行右端，由 renderInvestToolbar 填充。
-           2026-11-02 从独立一行（#investToolbar）并入：那一行只有一个右侧控件组，
-           左侧永远是空的 —— 既浪费 44px 首屏高度，又让控件"浮"在表格上方无所依托。 -->
-      <span class="sub-tabs-tools" id="investTools"></span>
     </nav>
   <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 3 卫星（今日 / 本月 / 收益率），统一 .kpi-card -->
   <section class="invest-hero" id="investHero">
@@ -315,6 +310,16 @@
     <div id="depositKpiBody"></div>
   </section>
 
+  <!-- 视图工具条（行密度 / 定投计划 / 补录平仓 / 刷新行情，由 renderInvestToolbar 填充）。
+       2026-11-03 从 tab 行右端移到这里：贴在 tab 行最右端时，控件与它作用的表格之间隔着
+       一整排 KPI 卡片，读不出「这些按钮管的是下面这张表」；现在落在卡片与表格之间，
+       上下各留 12–16px 间距，行内右对齐（与资产页流水工具条 .tl-tools 同一套排布）。
+       不加 label：行密度自带「紧凑/标准」文字、图标按钮都有 title，tab 名已经说明是哪个视图，
+       再补一个「工具」只会多一份噪音。 -->
+  <div class="invest-tools-row" id="investToolsRow">
+    <span class="sub-tabs-tools" id="investTools"></span>
+  </div>
+
   <!-- 首页理财视图：由顶部 #viewToggle 切到「理财」时显示，复用 renderWealth 渲染（标题 / 操作 / 表格） -->
   <div id="homeWealthBox" class="home-wealth-box" hidden></div>
 
@@ -359,7 +364,7 @@
       <div class="heatmap-layout">
         <div class="heatmap-left">
           <div class="heatmap-subtitle">
-            <span class="heatmap-sub-title">月度收支合计</span>
+            <span class="heatmap-sub-title">月度收支合计<span class="bar-hint">悬停看明细</span></span>
             <span class="heatmap-sub-legend">
               <span><span class="dot dot-inc"></span>收入</span>
               <span><span class="dot dot-exp"></span>支出</span>
@@ -368,6 +373,8 @@
           <div class="bar-chart-wrap">
             <div class="bar-chart-inner">
               <svg id="yearBarChart" class="bar-chart-svg" viewBox="0 0 360 200"></svg>
+              <!-- 悬停浮层：柱顶不再常显 12 个合计数字，读数改由整列高亮 + 浮层承担 -->
+              <div class="bar-tip" id="yearBarTip" role="tooltip"></div>
               <div class="bar-chart-xlabels" id="yearBarLabels"></div>
             </div>
           </div>
@@ -386,20 +393,9 @@
           <div class="hm-treemap-scroll"><div class="hm-treemap" id="catTreemap"></div></div>
         </div>
       </div>
-      <!-- 下半部分：当月收支分类明细（跟随热力图选月；默认展开） -->
-      <div class="fin-cat-block" id="finCatBlock">
-        <button class="fin-cat-head" type="button" aria-expanded="true">
-          <span class="heatmap-sub-title"><span id="catBlockMonth">—</span> 收支分类明细</span>
-          <span class="fin-cat-head-right">
-            <span class="heatmap-sub-legend">
-              <span><span class="dot dot-inc"></span>收入</span>
-              <span><span class="dot dot-exp"></span>支出</span>
-            </span>
-            <span class="fin-cat-chevron" aria-hidden="true">▾</span>
-          </span>
-        </button>
-        <div id="finCategoryGroups"></div>
-      </div>
+      <!-- 2026-11-03 下线「收支分类明细」：上半部分的热力图已经把「分类 → 逐笔金额」
+           完整画出来了，下半部分再把同一批流水按分类列一遍纯属重复（实测占整页 65% 高度），
+           逐笔明细统一去资产页「流水」看。 -->
     </section>
   </div>
 
@@ -1597,6 +1593,23 @@
       <div class="modal-actions">
         <button type="button" class="btn" id="flowFilterReset">重置</button>
         <button type="button" class="btn primary" id="flowFilterApply">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 流水区间「自定义」：选起止日期后按该区间重新取数（预设区间只到近 1 年） -->
+  <div id="flowRangeModal" class="modal" hidden>
+    <div class="modal-card" style="width:420px; max-width:94vw;">
+      <h2 class="m-head">自定义时间段</h2>
+      <div class="m-body">
+        <p class="tool-hint">只显示该区间内的流水，含起止两天。</p>
+        <label>起始日期 <input id="flowRangeFrom" type="date"></label>
+        <label>结束日期 <input id="flowRangeTo" type="date"></label>
+        <div id="flowRangeErr" class="err"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="flowRangeCancel">取消</button>
+        <button type="button" class="btn primary" id="flowRangeApply">应用</button>
       </div>
     </div>
   </div>

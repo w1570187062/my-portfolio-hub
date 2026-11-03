@@ -617,9 +617,10 @@ func txCreatedAt(date string) string {
 // `date` (YYYY-MM-DD) back-dates the transaction's created_at and (for SELL) the
 // realized-P&L ledger entry.
 //   - BUY:  new_qty = qty + quantity;
-//           new_cost = (qty*cost + quantity*price + fee) / new_qty   (摊薄后的平均成本)
+//     new_cost = (qty*cost + quantity*price + fee) / new_qty   (摊薄后的平均成本)
 //   - SELL: realized = (price - cost)*quantity - fee;
-//           remaining cost basis unchanged; if qty hits 0 the cost basis resets to 0.
+//     remaining cost basis unchanged; if qty hits 0 the cost basis resets to 0.
+//
 // Returns the updated holding and the realized P&L of THIS transaction.
 func AdjustHolding(id int64, txType string, quantity, price, fee float64, note, date string) (h *Holding, realizedPnl float64, err error) {
 	cur, err := Get(id)
@@ -1760,7 +1761,7 @@ type Cash struct {
 	// IsDefault：已废弃的「默认子账户」标记。2026-10-16 移除默认子账户概念（所有子账户
 	// 均可单独删除、资金兜底改按余额最大选取），列与字段保留仅为兼容存量数据，不再读写、
 	// 不输出到 API（json:"-"）。
-	IsDefault bool   `json:"-"`
+	IsDefault bool `json:"-"`
 	// Excluded：日常开销账户（2026-10-27）。true = 不参与再平衡口径 —— 既不计入现金类市值，
 	// 也不计入再平衡的总市值分母。记账/转账/流水/兜底选账户一律照旧，只有再平衡会跳过它。
 	Excluded  bool   `json:"excluded"`
@@ -1784,7 +1785,7 @@ type CashFlow struct {
 	// Category 收支语义分类（工资/消费/资本开支/投资分红…，见 fincat.go）。
 	// 空值 = 未显式选择，展示与统计时按 type 自动推导（AutoCategory）。
 	Category  string `json:"category"`
-	Source    string `json:"source"` // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
+	Source    string `json:"source"`   // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
 	Snapshot  bool   `json:"snapshot"` // 仅快照：计入汇总分析但不改动账户真实余额
 	CreatedAt string `json:"created_at"`
 }
@@ -2027,11 +2028,98 @@ func SyncSourceCurrency(userID, sourceID int64, currency string) error {
 
 // ---- 现金流水 ----
 
+// CleanFlowNote 去掉说明开头与「类型徽标」重复的动词（如「理财存入 理财存入 …」
+// 「手动调整：旧→新」），说明只保留对象与明细。必须在 AutoCategory 之后调用，
+// 因为自动分类依赖 note 里的关键词。
+func CleanFlowNote(typ, note string) string {
+	n := strings.TrimSpace(note)
+	if n == "" {
+		return ""
+	}
+	// 同一动作的现金/负债流水共用一套前缀规则
+	switch typ {
+	case "wealth_deposit":
+		n = strings.TrimPrefix(n, "理财存入 ")
+	case "wealth_redeem":
+		n = strings.TrimPrefix(n, "理财回款 ")
+		n = strings.TrimPrefix(n, "减仓回款 ")
+	case "wealth_clear":
+		n = strings.TrimPrefix(n, "清仓回款 ")
+	case "wealth_reverse":
+		n = strings.TrimPrefix(n, "理财冲正 ")
+	case "adjust_buy":
+		n = strings.TrimPrefix(n, "加仓付款 ")
+	case "adjust_sell":
+		n = strings.TrimPrefix(n, "减仓回款 ")
+	case "dividend":
+		n = strings.TrimPrefix(n, "分红入账 ")
+	case "manual_adjust":
+		n = strings.TrimPrefix(n, "手动调整：")
+	case "cf_income":
+		if s, ok := cutNote(n, "待入账「", "」入账"); ok {
+			return s
+		}
+	case "cf_repay", "repay":
+		if typ == "repay" {
+			if s, ok := cutNote(n, "待还款完成「", "」"); ok {
+				return s
+			}
+			break
+		}
+		// 「待还款「X」扣款」→ X；指定去向的「待还款「X」还款扣款（还款至Y）」→ X｜还款至Y
+		if strings.HasPrefix(n, "待还款「") {
+			if i := strings.Index(n, "」"); i > 0 {
+				name := n[len("待还款「"):i]
+				rest := strings.TrimSpace(n[i+len("」"):])
+				rest = strings.TrimPrefix(rest, "还款扣款")
+				rest = strings.TrimPrefix(rest, "扣款")
+				rest = strings.TrimSpace(strings.Trim(rest, "（）()"))
+				rest = strings.TrimSpace(strings.TrimPrefix(rest, "还款至"))
+				if rest == "" {
+					return strings.TrimSpace(name)
+				}
+				return strings.TrimSpace(name) + "｜还款至" + rest
+			}
+		}
+	case "cf_reverse":
+		// 「撤销「X」」→「「X」」，类型已显示“计划冲正”
+		if s, ok := cutNote(n, "撤销「", "」"); ok {
+			return "「" + s + "」"
+		}
+	case "deposit_out", "deposit_back":
+		if s, ok := cutNote(n, "存款存入「", "」"); ok {
+			return s
+		}
+		if s, ok := cutNote(n, "存款提前支取「", "」"); ok {
+			return s
+		}
+		if s, ok := cutNote(n, "存款支取「", "」"); ok {
+			return s
+		}
+	case "loan":
+		if s, ok := cutNote(n, "一次性购物负债产生「", "」"); ok {
+			return "「" + s + "」"
+		}
+	}
+	return n
+}
+
+// cutNote 取 prefix 与 suffix 之间的正文（两端都必须是完整包裹）。
+func cutNote(n, prefix, suffix string) (string, bool) {
+	if !strings.HasPrefix(n, prefix) || !strings.HasSuffix(n, suffix) {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(n, prefix), suffix)), true
+}
+
+// AddCashFlow 写一条现金流水。
 func AddCashFlow(f *CashFlow) error {
 	f.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
 	if strings.TrimSpace(f.Category) == "" {
 		f.Category = AutoCategory(f.Type, f.Amount, f.Note)
 	}
+	// 分类推导依赖 note 关键词，必须在推导之后再去掉类型重复前缀
+	f.Note = CleanFlowNote(f.Type, f.Note)
 	_, err := DB.Exec(`INSERT INTO cash_flow(user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,category,source,snapshot,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		f.UserID, f.CashID, f.Date, f.Type, f.Amount, f.Balance, f.RefType, f.RefID, f.RefName, f.Note, f.Category, f.Source, boolToInt(f.Snapshot), f.CreatedAt)
 	return err
@@ -2073,9 +2161,10 @@ type AggFlow struct {
 	Balance   float64 `json:"balance"`
 	Direction string  `json:"direction"` // "in" | "out"
 	Note      string  `json:"note"`
-	Category  string  `json:"category"` // 收支语义分类（空=按 type 自动推导）
-	Source    string  `json:"source"`   // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
-	Snapshot  bool   `json:"snapshot"` // 仅快照：计入汇总分析但不改动账户真实余额
+	Category  string  `json:"category"`            // 收支语义分类（空=按 type 自动推导）
+	Source    string  `json:"source"`              // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
+	Snapshot  bool    `json:"snapshot"`            // 仅快照：计入汇总分析但不改动账户真实余额
+	LiabType  string  `json:"liab_type,omitempty"` // 负债类型（仅 kind=liability）：购物负债/消费贷/房贷，前端据此区分「新增负债」与「借入」
 }
 
 // ListFlowYears 返回该用户存在收支数据的年份（YYYY，降序去重）。
@@ -2146,8 +2235,8 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		out = append(out, f)
 	}
 	rows.Close()
-	// 负债流水：贷款/还款，关联 liabilities 取币种与名称；分类由 type 推导（loan=融资借贷 / repay=负债偿还）
-	q2 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.note, COALESCE(l.name,''), COALESCE(l.currency,'cny'), 0
+	// 负债流水：贷款/还款，关联 liabilities 取币种、名称与负债类型；分类由 type 推导（loan=融资借贷 / repay=负债偿还）
+	q2 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.note, COALESCE(l.name,''), COALESCE(l.currency,'cny'), 0, COALESCE(l.type,'')
 	       FROM liability_flows f LEFT JOIN liabilities l ON l.id=f.liability_id
 	       WHERE f.user_id=? AND f.date>=? AND f.date<=?`
 	rows2, err := DB.Query(q2, userID, start, end)
@@ -2159,7 +2248,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		var f AggFlow
 		var amt float64
 		var snap int
-		if e := rows2.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.Note, &f.Name, &f.Currency, &snap); e != nil {
+		if e := rows2.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.Note, &f.Name, &f.Currency, &snap, &f.LiabType); e != nil {
 			return nil, e
 		}
 		f.Kind = "liability"
@@ -2672,6 +2761,7 @@ func InsertLiabilityFlow(f *LiabilityFlow) (int64, error) {
 		f.Date = time.Now().Format("2006-01-02")
 	}
 	f.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+	f.Note = CleanFlowNote(f.Type, f.Note)
 	res, err := DB.Exec(`INSERT INTO liability_flows(user_id,liability_id,date,type,amount,balance,note,created_at) VALUES(?,?,?,?,?,?,?,?)`,
 		f.UserID, f.LiabilityID, f.Date, f.Type, f.Amount, f.Balance, f.Note, f.CreatedAt)
 	if err != nil {
@@ -3002,7 +3092,7 @@ func UpdateCashFlowRecord(id, newCashID int64, newAmount float64, newNote, newCa
 	if old.Snapshot {
 		bal := old.Balance
 		if _, err := DB.Exec(`UPDATE cash_flow SET cash_id=?, amount=?, balance=?, note=?, category=? WHERE id=?`,
-			newCashID, newAmount, bal, strings.TrimSpace(newNote), category, id); err != nil {
+			newCashID, newAmount, bal, CleanFlowNote(old.Type, newNote), category, id); err != nil {
 			return nil, err
 		}
 		return GetCashFlow(id)
@@ -3017,7 +3107,7 @@ func UpdateCashFlowRecord(id, newCashID int64, newAmount float64, newNote, newCa
 		return nil, err
 	}
 	if _, err := DB.Exec(`UPDATE cash_flow SET cash_id=?, amount=?, balance=?, note=?, category=? WHERE id=?`,
-		newCashID, newAmount, bal, strings.TrimSpace(newNote), category, id); err != nil {
+		newCashID, newAmount, bal, CleanFlowNote(old.Type, newNote), category, id); err != nil {
 		return nil, err
 	}
 	return GetCashFlow(id)
@@ -3072,7 +3162,7 @@ func UpdateLiabilityFlowRecord(id int64, newType string, newAmount float64, newN
 	}
 	newBal := math.Round((l.Amount-liabilityEffect(old.Type, old.Amount)+liabilityEffect(newType, newAmount))*100) / 100
 	if _, err := DB.Exec(`UPDATE liability_flows SET type=?, amount=?, balance=?, note=? WHERE id=?`,
-		newType, newAmount, newBal, strings.TrimSpace(newNote), id); err != nil {
+		newType, newAmount, newBal, CleanFlowNote(newType, newNote), id); err != nil {
 		return nil, err
 	}
 	if err := SetLiabilityAmount(old.LiabilityID, newBal); err != nil {

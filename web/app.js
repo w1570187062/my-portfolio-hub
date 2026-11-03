@@ -461,10 +461,12 @@ const isFund = (h) => !!(h && (h.category === 'fund' || (h.linked_symbol && Stri
 // 投资页表头工具条状态（复用原型 holding-toolbar 的筛选 chips + 排序下拉）
 let holdingsSort = 'mv';        // 持仓排序：mv 市值 | profit 盈亏 | days 持仓天数（点击表头切换，见 renderHoldingsBySource）
 let holdingsSortDir = 'desc';   // 排序方向：desc 降序 | asc 升序（再次点击同一表头 toggle）
-let flowRangeDays = 30;         // 资产页流水区间：7 | 30 | 365
+let flowRangeDays = 30;         // 资产页流水区间：365 | 30 | 7 | 0（0 = 自定义区间，见 flowRangeCustom）
+let flowRangeCustom = null;     // 自定义区间 {from:'YYYY-MM-DD', to:'YYYY-MM-DD'}；仅当 flowRangeDays === 0 时生效
 let homeNetVal = 0;             // 首页净资产走势区间收益率基准（= 净资产）
 let flowTypeFilters = [];       // 资产页流水类型多选：in | out | dividend | trade | invest | transfer；空数组 = 全部
-let assetFlowsCache = [];       // 资产页流水全量缓存（供筛选/区间重渲染，避免重复请求）
+let assetFlowsCache = [];       // 资产页流水缓存（供筛选/区间重渲染，避免重复请求）
+let assetFlowsKey = '';         // 上面这份缓存对应的取数区间标识；变了就要重新请求（'' = 尚未加载）
 let homeRecentFilter = 'all';    // 首页最新流水类型过滤：all | in | out | neutral
 let homeRecentFlowsData = [];    // 首页最新流水全量缓存（近 45 天最近 8 笔，供类型过滤重渲染）
 let homeRateHoverData = null;    // 权益曲线 hover 弹框所需序列（由 renderRateSpark 赋值）
@@ -1061,17 +1063,20 @@ function bindClosedActions(box) {
 }
 
 function renderInvestToolbar() {
-  // 视图级控件渲染在子 tab 行右端（#investTools）。2026-11-02 之前是独立一行 .holding-toolbar，
-  // 但持仓/理财/平仓三态下左侧恒为空，控件孤零零贴在最右 —— 既浪费一行高度，也没有归属感。
+  // 视图级控件渲染在 KPI 卡片与表格之间的工具条里（#investTools，2026-11-03 从 tab 行右端移出）。
   const bar = document.getElementById('investTools');
   if (!bar) return;
-  // 存款视图：存款表不参与行密度，也没有行情可刷 → 整组不渲染（.sub-tabs-tools:empty 自动收起占位）
+  const row = document.getElementById('investToolsRow');
+  // 存款视图：存款表不参与行密度，也没有行情可刷 → 整组不渲染
+  // （只藏控件不够，外层 .invest-tools-row 会留下一段空行距，所以连行一起收起）
   if (homeSection === 'deposits') {
     bar.innerHTML = '';
     bar.hidden = true;
+    if (row) row.hidden = true;
     return;
   }
   bar.hidden = false;
+  if (row) row.hidden = false;
   const dens = localStorage.getItem('pf_row_density') || 'standard';
   // 「刷新行情」只对证券持仓有意义：理财走净值（行内「净值」按钮逐条录入/抓取），存款是固定利率。
   const refresh = homeSection === 'holdings'
@@ -4286,12 +4291,11 @@ function changeFinYear(delta) {
   renderFinanceView();
 }
 
-// ===== 财务页 · 年度收支分析卡（上：左月度柱 / 右子项热力图；下：当月分类明细） =====
+// ===== 财务页 · 年度收支分析卡（左月度柱 / 右子项热力图） =====
 function renderFinHeatmap() {
   renderYearBarChart();
   renderHmChips();
   renderCatTreemap();
-  renderFinCatBlock();
 }
 
 // 左：12 月合并堆叠柱（收入绿在底 + 支出红在顶，总长=收入+支出）
@@ -4332,6 +4336,75 @@ function niceStep(raw) {
   if (f <= 1) nf = 1; else if (f <= 2) nf = 2; else if (f <= 2.5) nf = 2.5; else if (f <= 5) nf = 5; else nf = 10;
   return nf * base;
 }
+// 柱图悬停态：_barGeo 存下本次几何（指针换算要用），_barHover 记当前高亮列。
+// 悬停只切 class / 挪浮层位置，绝不重绘 SVG —— 12 根柱子 + 网格每次重绘会闪。
+let _barGeo = null;   // { padLeft, slot, w, topY[] }
+let _barHover = -1;
+
+// 悬浮读数浮层：柱顶不再常显 12 个合计（数字盖过柱形、小金额还贴着 0 线飘），
+// 改由「整列淡底 + 引导虚线 + 2×2 读数」承担；选中月只在柱顶留一个小圆点定位。
+function showBarTip(i) {
+  const svg = document.getElementById('yearBarChart');
+  const tip = document.getElementById('yearBarTip');
+  const m = finMonthsData[i];
+  if (!svg || !tip || !m || !_barGeo) return;
+  if (_barHover !== i) {
+    _barHover = i;
+    svg.querySelectorAll('.bar-col').forEach((g) => g.classList.toggle('is-hover', Number(g.dataset.mi) === i));
+    const inc = Number(m.income) || 0, exp = Number(m.expense) || 0, net = inc - exp;
+    tip.innerHTML = `<div class="bar-tip-month">${i + 1} 月</div>
+      <div class="bar-tip-grid">
+        <span class="bar-tip-cell bar-tip-inc"><span>收入</span><b>${moneyCurW(inc, 'cny')}</b></span>
+        <span class="bar-tip-cell bar-tip-exp"><span>支出</span><b>${moneyCurW(exp, 'cny')}</b></span>
+        <span class="bar-tip-cell"><span>合计</span><b>${moneyCurW(inc + exp, 'cny')}</b></span>
+        <span class="bar-tip-cell"><span>结余</span><b>${(net < 0 ? NEG : '+') + moneyCurW(Math.abs(net), 'cny')}</b></span>
+      </div>`;
+  }
+  const stem = document.getElementById('barStem');
+  const cx = _barGeo.padLeft + _barGeo.slot * i + _barGeo.slot / 2;
+  if (stem) {
+    stem.setAttribute('x1', cx.toFixed(1));
+    stem.setAttribute('x2', cx.toFixed(1));
+    stem.setAttribute('y2', (_barGeo.topY[i] || 0).toFixed(1));
+    stem.classList.remove('is-off');
+  }
+  // 浮层贴在本列右侧（右侧放不下就翻到左侧），左右都不压住正在看的那根柱子
+  const box = svg.getBoundingClientRect();
+  const x = (cx / _barGeo.w) * box.width;
+  tip.classList.add('is-on');
+  const tw = tip.offsetWidth;
+  let left = x + 12;
+  if (left + tw > box.width - 2) left = x - tw - 12;
+  tip.style.left = Math.max(2, left) + 'px';
+  tip.style.top = '2px';
+}
+
+function hideBarTip() {
+  const tip = document.getElementById('yearBarTip');
+  const stem = document.getElementById('barStem');
+  if (_barHover >= 0) {
+    const svg = document.getElementById('yearBarChart');
+    if (svg) svg.querySelectorAll('.bar-col.is-hover').forEach((g) => g.classList.remove('is-hover'));
+    _barHover = -1;
+  }
+  if (tip) tip.classList.remove('is-on');
+  if (stem) stem.classList.add('is-off');
+}
+
+// 指针事件绑在 svg 自身上（不是每根柱子）：柱图每次都整体重绘，
+// 逐柱绑监听会随 innerHTML 一起被丢掉；委托在 svg 上则一次绑定长期有效。
+function bindBarChartHover(svg) {
+  if (svg.dataset.barHover === '1') return;
+  svg.dataset.barHover = '1';
+  svg.addEventListener('pointerover', (e) => {
+    const col = e.target.closest ? e.target.closest('.bar-col') : null;
+    // 触屏没有 hover 语义：按下只会走 click 选月，不弹浮层（否则浮层会赖着不走）
+    if (!col || e.pointerType === 'touch') { hideBarTip(); return; }
+    showBarTip(Number(col.dataset.mi));
+  });
+  svg.addEventListener('pointerleave', () => hideBarTip());
+}
+
 function renderYearBarChart() {
   const svg = document.getElementById('yearBarChart');
   const labels = document.getElementById('yearBarLabels');
@@ -4342,21 +4415,29 @@ function renderYearBarChart() {
   const plotH = H - PAD_TOP - PAD_BOT;
   const baseY = PAD_TOP + plotH;
   const months = finMonthsData;
-  if (!months.length) { svg.innerHTML = ''; labels.innerHTML = ''; return; }
+  hideBarTip();
+  if (!months.length) { svg.innerHTML = ''; labels.innerHTML = ''; _barGeo = null; return; }
   const totals = months.map((m) => (m.income || 0) + (m.expense || 0));
   const maxVal = Math.max(1, ...totals);
-  // y 轴：4 等分网格，步长取整到「漂亮」值，顶线 = step×4（略高于最大值，不裁顶）。
-  const step = niceStep(maxVal / 4);
-  const top = step * 4;
+  // y 轴：步长取「漂亮」值，顶线 = step × 等分数（略高于最大值、不裁顶）。
+  // 等分数不写死 4：最大值刚过一档时（4.1 万 ÷ 4 → 步长 2 万 → 顶线 8 万），
+  // 柱子只剩一半高、顶部大片空白。多试 5/6 等分取顶线最低的一套，柱形通常能长到 80%+。
+  let divs = 4;
+  let step = niceStep(maxVal / divs);
+  for (const d of [5, 6]) {
+    const s = niceStep(maxVal / d);
+    if (s * d < step * divs) { step = s; divs = d; }
+  }
+  const top = step * divs;
   const slot = plotW / Math.max(1, months.length);
   const bw = slot * 0.62;
+  const topY = [];
   const paths = [];
-  // 网格线 + y 轴刻度标签（自下而上 0, step, 2step, 3step, 4step）
-  for (let k = 0; k <= 4; k++) {
-    const val = top * k / 4;
-    const y = baseY - plotH * k / 4;
+  // 网格线 + y 轴刻度标签（自下而上 0, step, 2step …）
+  for (let k = 0; k <= divs; k++) {
+    const y = baseY - plotH * k / divs;
     paths.push(`<line class="bar-grid" x1="${PAD_LEFT}" y1="${y.toFixed(1)}" x2="${W - PAD_RIGHT}" y2="${y.toFixed(1)}"/>`);
-    paths.push(`<text class="bar-tick" x="${PAD_LEFT - 5}" y="${(y + 2.6).toFixed(1)}">${barMoneyShort(val)}</text>`);
+    paths.push(`<text class="bar-tick" x="${PAD_LEFT - 5}" y="${(y + 2.6).toFixed(1)}">${barMoneyShort(step * k)}</text>`);
   }
   // y 轴竖线
   paths.push(`<line class="bar-axis" x1="${PAD_LEFT}" y1="${PAD_TOP}" x2="${PAD_LEFT}" y2="${baseY}"/>`);
@@ -4369,14 +4450,23 @@ function renderYearBarChart() {
     const x = cx - bw / 2;
     const yExp = baseY - totalH;          // 支出段在上
     const yInc = yExp + expH;             // 收入段在下贴基线
-    if (expH > 0.5) paths.push(`<path class="bar-hit bar-exp" data-mi="${i}" opacity="0.9" d="${barSegPath(x, yExp, bw, expH, R, true, incH <= 0.5)}"/>`);
-    if (incH > 0.5) paths.push(`<path class="bar-hit bar-inc" data-mi="${i}" opacity="0.9" d="${barSegPath(x, yInc, bw, incH, R, expH <= 0.5, true)}"/>`);
-    // 每柱合计标签（月度收支合计），选中月高亮；零值不画。
-    if (total > 0.5) {
-      paths.push(`<text class="bar-val${i === finHmMonth ? ' sel' : ''}" x="${cx.toFixed(1)}" y="${(yExp - 3).toFixed(1)}">${barMoneyShort(total)}</text>`);
+    topY[i] = yExp;
+    // 整列命中区：淡底铺满整个绘图高度（等宽 slot 而不留缝），
+    // 指针扫过列就触发读数，不必精确压在细柱子上；也是 click 选月的落点。
+    paths.push(`<g class="bar-col" data-mi="${i}">`);
+    paths.push(`<rect class="bar-band" x="${(PAD_LEFT + slot * i).toFixed(1)}" y="${PAD_TOP}" width="${slot.toFixed(1)}" height="${plotH}" rx="${R}"/>`);
+    if (expH > 0.5) paths.push(`<path class="bar-exp" opacity="0.9" d="${barSegPath(x, yExp, bw, expH, R, true, incH <= 0.5)}"/>`);
+    if (incH > 0.5) paths.push(`<path class="bar-inc" opacity="0.9" d="${barSegPath(x, yInc, bw, incH, R, expH <= 0.5, true)}"/>`);
+    // 选中月只在柱顶留一个小圆点：标位置而不读数，12 个数字不再抢视线。
+    if (i === finHmMonth && total > 0.5) {
+      paths.push(`<circle class="bar-sel-dot" cx="${cx.toFixed(1)}" cy="${(yExp - 5).toFixed(1)}" r="2.2"/>`);
     }
+    paths.push('</g>');
   });
-  svg.innerHTML = paths.join('');
+  // 引导虚线：悬停时从浮层垂到柱顶，把「这组数字属于哪根柱子」钉死
+  svg.innerHTML = paths.join('') + `<line class="bar-stem is-off" id="barStem" x1="0" y1="${PAD_TOP}" x2="0" y2="${PAD_TOP}"/>`;
+  _barGeo = { padLeft: PAD_LEFT, slot, w: W, topY };
+  bindBarChartHover(svg);
   labels.innerHTML = months.map((_, i) => `<span data-mi="${i}" class="${i === finHmMonth ? 'active' : ''}">${i + 1}</span>`).join('');
 }
 
@@ -4443,8 +4533,6 @@ function renderCatTreemap() {
   const m = finMonthsData[finHmMonth];
   const cur = document.getElementById('hmCurMonth');
   if (cur) cur.textContent = (finHmMonth + 1) + '月';
-  const blockMonth = document.getElementById('catBlockMonth');
-  if (blockMonth) blockMonth.textContent = (finHmMonth + 1) + '月';
   // 窄屏判据与 .heatmap-layout 竖排断点（880px）一致：竖排时 treemap 独占一行，高度区间收紧
   const narrow = window.innerWidth <= 880;
   if (!m || !m.items || !m.items.length) {
@@ -4532,7 +4620,6 @@ function selectHmMonth(idx) {
   if (labels) labels.querySelectorAll('span').forEach((s, i) => s.classList.toggle('active', i === idx));
   renderYearBarChart();   // 重绘柱状图
   renderCatTreemap();
-  renderFinCatBlock();
 }
 
 // squarified treemap：输入 [{amt,...}]，在 (x,y,w,h) 内按面积布局，返回 {i,x,y,w,h}
@@ -4582,74 +4669,10 @@ function flowTitleOf(f, fallback) {
   return parts.join(' · ') || (fallback || '');
 }
 
-// ===== 财务页 · 当月收支分类明细（合并进收支分析卡下半部分，跟随热力图选月） =====
-function renderFinCatBlock() {
-  const groups = document.getElementById('finCategoryGroups');
-  const block = document.getElementById('finCatBlock');
-  if (!groups) return;
-  // 方案 10：空状态只在热力图区出现一次。明细区此前又写一遍「当月暂无收支子项」，
-  // 同一屏两处同样的空文案纯属噪音 —— 无数据时整块（含标题）直接不渲染。
-  const hideBlock = (show) => { if (block) block.hidden = !show; };
-  const m = finMonthsData[finHmMonth];
-  if (!m) { groups.innerHTML = ''; hideBlock(false); return; }
-  // 分类组：基于当月子项聚合（CNY），逐笔流水从 finFlowsCache 下钻
-  const monthYm = m.ym;
-  const flowsOf = (cat) => (finFlowsCache || []).filter((f) =>
-    (f.date || '').slice(0, 7) === monthYm && flowCatOf(f) === cat);
-  // 占比分母 = 该方向「各分类金额绝对值之和」，不能用后端给的净额合计：
-  // 支出分类里若混入冲正/退款（如撤销信用卡还款 +¥1,623.51），净额合计会被抵消变小，
-  // 单分类占比就会超过 100%（实测「其他支出 110% + 负债偿还 10% = 120%」）。
-  const sumAbs = (type) => (m.items || [])
-    .filter((it) => (it.type === 'income') === (type === 'income') && Math.abs(it.amount) > 0)
-    .reduce((a, it) => a + Math.abs(it.amount), 0);
-  const incBase = Math.max(1, sumAbs('income'));
-  const expBase = Math.max(1, sumAbs('expense'));
-  const rows = (m.items || []).filter((it) => Math.abs(it.amount) > 0)
-    .map((it) => {
-      // isInc = 分类归属（收入组 / 支出组），只看 type，不随金额符号漂移；
-      // 否则某支出分类因退款净额转正会被整块搬到「收入」侧显示（负债偿还踩过）。
-      const isInc = it.type === 'income';
-      // signed = 资金方向（正=流入、负=流出），决定金额前的 +/−；冲正会让支出分类净额转正，这是对的。
-      const signed = isInc ? (it.amount || 0) : -(it.amount || 0);
-      const sign = signed >= 0 ? '+' : NEG;
-      const total = Math.abs(it.amount);
-      const base = isInc ? incBase : expBase;
-      const pct = Math.round(total / base * 100);
-      const flows = flowsOf(it.category);
-      const detailRows = flows.map((f) => {
-        const isIn = f.direction === 'in';
-        const title = flowTitleOf(f, finCatLabel(it.category));
-        const acct = [f.name, f.currency ? f.currency.toUpperCase() : ''].filter(Boolean).join(' · ');
-        const amt = (isIn ? '+' : '−') + moneyCurW(Math.abs(f.amount || 0), f.currency || 'cny');
-        return `<div class="flow-row">
-          <span class="flow-date" title="${esc(flowDateTitle(f))}">${fmtFlowDate(f.date)}</span>
-          <div class="flow-info"><div class="flow-title">${esc(title)}</div>${acct ? `<div class="flow-account">${esc(acct)}</div>` : ''}</div>
-          <span class="flow-amt ${isIn ? 'income' : 'expense'}">${esc(amt)}</span>${flowSnapshotTag(f)}
-        </div>`;
-      }).join('') || '<div class="flow-row"><span class="flow-date"></span><div class="flow-title empty-hint">无逐笔记录</div></div>';
-      return `<div class="category-group" data-dir="${isInc ? 'income' : 'expense'}">
-        <div class="group-header" role="button" tabindex="0">
-          <div class="group-toggle"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></div>
-          <span class="cat-head-name">
-            <span class="category-dot ${isInc ? 'income' : 'expense'}"></span>
-            <span class="category-name">${esc(finCatLabel(it.category))}</span>
-            <span class="category-count">· ${flows.length} 笔</span>
-          </span>
-          <span class="category-total ${isInc ? 'income' : 'expense'}">${sign}${moneyCurW(total, 'cny')}</span>
-          <span class="category-pct">${pct}%</span>
-        </div>
-        <div class="group-rows-wrap"><div class="group-rows">${detailRows}</div></div>
-      </div>`;
-    }).join('');
-  groups.innerHTML = rows;
-  hideBlock(!!rows);
-}
-
-// 分类组展开/折叠（事件冒泡到 document 委托）
-function toggleFinGroup(header) {
-  const g = header.closest('.category-group');
-  if (g) g.classList.toggle('collapsed');
-}
+// ===== 财务页 · 当月收支分类明细（2026-11-03 下线） =====
+// 上半部分的热力图已经把「分类 → 逐笔金额」完整画出来了（.hm-cat / .hm-sub），
+// 再把同一批流水按分类列一遍纯属重复（实测占整页 65% 高度，且逐笔明细没有回退能力）。
+// 逐笔明细统一在资产页「流水」时间轴看。finFlowsCache 仍被 renderCatTreemap 使用，不能删。
 
 // 取该 plan 在某月是否已完成（一次性计划忽略月份；循环计划用共享查看月份）
 function _planDoneAt(p, ym) {
@@ -4807,27 +4830,13 @@ document.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   const t = e.target;
   if (!t.closest) return;
-  // 月度柱 / x 轴标签 / 月份 chip → 选月（热力图与分类明细同步）
-  const bar = t.closest('#yearBarChart .bar-hit');
+  // 月度柱（整列命中区）/ x 轴标签 / 月份 chip → 选月（热力图与分类明细同步）
+  const bar = t.closest('#yearBarChart .bar-col');
   if (bar) { selectHmMonth(Number(bar.dataset.mi)); return; }
   const xl = t.closest('#yearBarLabels span');
   if (xl) { selectHmMonth(Number(xl.dataset.mi)); return; }
   const hmChip = t.closest('#hmChips .hm-chip');
   if (hmChip) { selectHmMonth(Number(hmChip.dataset.mi)); return; }
-  // 分类组展开 / 折叠
-  const gh = t.closest('#finCategoryGroups .group-header');
-  if (gh) { toggleFinGroup(gh); return; }
-  // 分类明细块整体折叠 / 展开（默认展开，点击标题行切换）
-  const catHead = t.closest('#finCatBlock .fin-cat-head');
-  if (catHead) {
-    const blk = document.getElementById('finCatBlock');
-    if (blk) {
-      const willOpen = blk.classList.contains('collapsed');
-      blk.classList.toggle('collapsed', !willOpen);
-      catHead.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
-    }
-    return;
-  }
   // 顶部年份切换器：‹ / ›
   const yPrev = t.closest('#finYearPrev');
   if (yPrev) { changeFinYear(-1); return; }
@@ -7267,7 +7276,11 @@ const ASSET_FLOW_FILTER_LABEL = { in: '入账', out: '支出', dividend: '分红
 // 当前筛选口径下的流水列表（KPI 与表格必须同源，故抽成同一个函数）
 function currentFlowList() {
   let list = assetFlowsCache;
-  if (flowRangeDays > 0) {
+  if (flowRangeDays === 0 && flowRangeCustom) {
+    // 自定义区间：含首尾两天，按日期字符串比较（ISO 格式可直接比大小）
+    const { from, to } = flowRangeCustom;
+    list = list.filter((f) => { const d = f.date || ''; return d >= from && d <= to; });
+  } else if (flowRangeDays > 0) {
     const cutoff = new Date(Date.now() - flowRangeDays * 864e5).toISOString().slice(0, 10);
     list = list.filter((f) => (f.date || '') >= cutoff);
   }
@@ -7296,7 +7309,10 @@ function assetKpiCardsFlows() {
     if (v >= 0) { inSum += v; inCnt += 1; } else { outSum += -v; outCnt += 1; }
   });
   const net = inSum - outSum;
-  const rangeLabel = flowRangeDays === 7 ? '近 7 天' : flowRangeDays === 365 ? '近 1 年' : '近 30 天';
+  // 卡片副标只放得下一行，自定义区间用紧凑写法（09/01–11/03），完整日期在下拉 title 里
+  const rangeLabel = flowRangeDays === 0
+    ? flowRangeChip().replace(/^自定义 ?/, '')
+    : (flowRangeDays === 7 ? '近 7 天' : flowRangeDays === 365 ? '近 1 年' : '近 30 天');
   return {
     cards: [
       { ico: 'kpi-ico-pct', icon: 'list', label: '笔数', value: list.length + ' 笔',
@@ -7375,9 +7391,10 @@ function renderAssetKpis(sub) {
   row.innerHTML = d.cards.map(assetKpiCardHTML).join('');
 }
 
-// 资产页「流水」子面板：复用 /api/asset/flows（近 180 天），表格沿用现金流样式；
-// 行内「回退」复用后端 rollback，回退后原地刷新本面板（不与理财历史弹框耦合）。
-// 资产页「流水」子面板：首次加载全量（近 180 天）入 assetFlowsCache，之后用 paintFlows 按工具条筛选/区间重渲染。
+// 资产页「流水」子面板：复用 /api/asset/flows，行内「回退」复用后端 rollback，
+// 回退后原地刷新本面板（不与理财历史弹框耦合）。
+// 取数区间见 flowsQuery()：预设区间按近 1 年取一次入 assetFlowsCache，
+// 改「区间/类型」只是本地重渲染（paintFlows）；自定义区间则按所选起止日期重新取数。
 // 资产页「现金」子面板（2026-10-29）：回答「现金都散落在哪儿」。
 // 只读展示 —— 增删改仍在「账户」tab，这里不重复做管理入口。
 // 排序与占比统一按折 CNY（港币/美元账户不能拿原币直接跟人民币比大小），
@@ -7436,64 +7453,183 @@ function renderAssetCashPanel(body) {
   if (zb) zb.onclick = () => { cashShowZero = !cashShowZero; renderAssetCashPanel(body); };
 }
 
+// 预设区间统一按「近 1 年」取数：三个预设里最长的是 365 天，取 180 天会让「近 1 年」
+// 实际只显示半年（历史遗留）。自定义区间则按用户选的起止日期取，不受这个窗口限制。
+const FLOWS_FETCH_DAYS = 365;
+function flowsQuery() {
+  const fmtD = (d) => d.toISOString().slice(0, 10);
+  if (flowRangeDays === 0 && flowRangeCustom) {
+    const { from, to } = flowRangeCustom;
+    return { start: from, end: to, key: 'c:' + from + ':' + to };
+  }
+  const end = new Date();
+  const start = new Date(end.getTime() - FLOWS_FETCH_DAYS * 864e5);
+  return { start: fmtD(start), end: fmtD(end), key: 'd' + FLOWS_FETCH_DAYS };
+}
+
+// 按当前区间取数（缓存命中就直接用）。返回 false 表示请求失败。
+async function ensureAssetFlows() {
+  const q = flowsQuery();
+  if (assetFlowsKey === q.key) return true;
+  const r = await api('/api/asset/flows?start=' + q.start + '&end=' + q.end);
+  if (!r.ok) return false;
+  const d = await r.json();
+  assetFlowsCache = (d.flows || []).slice().sort((a, b) => a.date < b.date ? 1 : -1);
+  assetFlowsKey = q.key;
+  return true;
+}
+
 async function renderAssetFlowsPanel(body) {
   if (!body) return;
-  if (!assetFlowsCache.length) {
-    body.innerHTML = '<p class="u-muted">加载中…</p>';
-    try {
-      const end = new Date();
-      const start = new Date(end.getTime() - 180 * 864e5);
-      const fmtD = (d) => d.toISOString().slice(0, 10);
-      const r = await api('/api/asset/flows?start=' + fmtD(start) + '&end=' + fmtD(end));
-      if (!r.ok) { body.innerHTML = '<p class="u-muted">流水加载失败</p>'; return; }
-      const d = await r.json();
-      assetFlowsCache = (d.flows || []).slice().sort((a, b) => a.date < b.date ? 1 : -1);
-    } catch (_) { body.innerHTML = '<p class="u-muted">流水加载失败</p>'; return; }
-  }
+  // 区间变了才显示「加载中」，否则切筛选条件时闪一下很吵
+  if (assetFlowsKey !== flowsQuery().key) body.innerHTML = '<p class="u-muted">加载中…</p>';
+  let ok = false;
+  try { ok = await ensureAssetFlows(); } catch (_) { ok = false; }
+  if (!ok) { body.innerHTML = '<p class="u-muted">流水加载失败</p>'; return; }
   paintFlows(body);
 }
 
-// 资产页流水：区间下拉留在工具条，类型筛选入口改挂到表头「类型」右侧（2026-11-03）。
+// 流水类型的纯文本（分类徽标之外还要写「理财存入 / 加仓付款」这类动作名时用）。
+// 唯一真源仍是 flowTypeTagRaw 的 switch，这里只把标签壳剥掉，不另抄一份映射。
+const flowTypePlain = (f) => flowTypeTagRaw(f).replace(/<[^>]*>/g, '');
+
+// 资产页流水单行（原型 a-timeline）：左轨道圆点（涨红跌绿、0 变动中性灰）、
+// 标题 = 关联标的/账户名，第二行 = 日期 · 账户 · 说明，右侧金额与回退。
+// 表格里「类型」那一列不再单独占列：流水说明本身就以类型词开头（「理财存入 xxx｜…」），
+// 只有说明为空时才把它补进第二行，避免同一句动作在同一行里出现两次。
+function flowTlRow(f, latest) {
+  const amt = Number(f.amount) || 0;
+  const cls = clsPnl(amt);
+  const dir = amt > 0 ? 'in' : (amt < 0 ? 'out' : 'neutral');
+  const title = f.ref_name || f.name || flowTypePlain(f) || '—';
+  const acct = f.name && f.name !== title ? f.name : '';
+  const note = String(f.note || '').trim() || flowTypePlain(f);
+  const meta = [acct, note].filter(Boolean).join(' · ');
+  // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
+  const amtTxt = amt === 0 ? moneyCurW(0, f.currency) : (amt > 0 ? '+' : NEG) + moneyCurW(Math.abs(amt), f.currency);
+  const undoBtn = f.snapshot ? '' : actBtn('undo', 'data-afrb="' + f.id + '"', '回退该笔资金变动', { cls: 'tl-undo' });
+  return '<div class="tl-row' + (latest ? ' latest' : '') + '">' +
+    '<span class="tl-rail"><span class="tl-dot ' + dir + '"></span></span>' +
+    '<div class="tl-body">' +
+      '<div class="tl-line1"><span class="tl-title" title="' + esc(title) + '">' + esc(title) + '</span>' +
+        finCatBadge(flowCatOf(f)) + flowSnapshotTag(f) + flowSourceTag(f.source) + '</div>' +
+      '<div class="tl-meta"><span class="tl-when" title="' + esc(flowDateTitle(f)) + '">' + esc(fmtFlowDate(f.date)) + '</span>' +
+        '<span class="tl-sep"></span>' +
+        '<span class="tl-note" title="' + esc(meta) + '">' + esc(meta) + '</span></div>' +
+    '</div>' +
+    '<span class="tl-amt ' + cls + '">' + amtTxt + '</span>' +
+    '<span class="tl-act">' + undoBtn + '</span>' +
+    '</div>';
+}
+
+// 资产页流水：区间下拉 + 类型筛选都在工具条（列表已无表头，漏斗不再挂 th）。
 function paintFlows(body) {
   if (!body) return;
   const list = currentFlowList();
 
   // 合计条已上提为顶部 4 张卡（renderAssetKpis('flows')），这里不再重复一遍。
-  let html = '<div class="holding-toolbar"><select class="sort-select" id="flowRange">' +
+  // 类型筛选中时按钮直接写出已选类型，比只给漏斗图标 + 小圆点更容易读懂。
+  const picked = flowTypeFilters.map((k) => ASSET_FLOW_FILTER_LABEL[k]).filter(Boolean);
+  const filterTitle = picked.length ? '筛选类型：' + picked.join('、') : '筛选流水类型';
+  const filterBtn = '<button type="button" class="flow-filter-btn' + (picked.length ? ' active' : '') + '" id="flowTypeFilterBtn" title="' + esc(filterTitle) + '" aria-label="' + esc(filterTitle) + '">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>' +
+    '<span>' + esc(picked.length ? picked.join('、') : '类型') + '</span></button>';
+
+  // 区间下拉：三个预设 + 「自定义」；自定义生效时直接把所选区间写在选项上，
+  // 不必为了「现在到底筛的哪一段」再点开弹框确认。
+  let html = '<div class="holding-toolbar"><div class="tl-tools">' +
+    '<select class="sort-select" id="flowRange"' + (flowRangeDays === 0 ? ' title="' + esc(flowRangeText()) + '"' : '') + '>' +
     toolbarOpt('7', '近7天', flowRangeDays === 7) +
     toolbarOpt('30', '近30天', flowRangeDays === 30) +
     toolbarOpt('365', '近1年', flowRangeDays === 365) +
-    '</select></div>';
+    toolbarOpt('0', flowRangeDays === 0 ? flowRangeChip() : '自定义…', flowRangeDays === 0) +
+    '</select>' + filterBtn + '</div></div>';
 
-  // 表头漏斗：筛选中时染主色 + 右上角蓝点，title 里回显已勾选的类型
-  const picked = flowTypeFilters.map((k) => ASSET_FLOW_FILTER_LABEL[k]).filter(Boolean);
-  const filterTitle = picked.length ? '筛选类型：' + picked.join('、') : '筛选流水类型';
-  const filterBtn = '<button type="button" class="th-filter-btn' + (picked.length ? ' active' : '') + '" id="flowTypeFilterBtn" title="' + esc(filterTitle) + '" aria-label="' + esc(filterTitle) + '">' +
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg></button>';
+  const emptyText = flowTypeFilters.length ? '当前筛选类型下暂无资金流水，点「类型」可改回全部。' : '该时间段内暂无资金流水。';
+  const rows = list.length
+    ? list.map((f, i) => flowTlRow(f, i === 0)).join('')
+    : '<div class="tl-empty">' + emptyText + '</div>';
 
-  // 空结果也保留表头，否则筛选入口会一起消失，用户没法改回全部类型
-  const emptyText = flowTypeFilters.length ? '当前筛选类型下暂无资金流水，点表头漏斗可改回全部类型。' : '该范围内暂无资金流水。';
-  const rows = list.length ? list.map((f) => {
-    const amt = f.amount || 0;
-    const cls = clsPnl(amt);
-    const snap = !!f.snapshot;
-    const undoBtn = snap ? '' : actBtn('undo', 'data-afrb="' + f.id + '"', '回退该笔资金变动');
-    return '<tr' + (snap ? ' class="snap-flow"' : '') + '><td title="' + esc(flowDateTitle(f)) + '">' + esc(fmtFlowDate(f.date)) + '</td><td>' + cashFlowTypeTag(f) + finCatBadge(flowCatOf(f)) + flowSourceTag(f.source) + flowSnapshotTag(f) + '</td>' +
-      '<td class="num ' + cls + '">' + (amt >= 0 ? '+' : '−') + moneyCurW(Math.abs(amt), f.currency) + '</td>' +
-      '<td class="note-cell" title="' + esc(f.note || '') + '">' + esc(f.note || '') + '</td>' +
-      '<td class="row-actions">' + undoBtn + '</td></tr>';
-  }).join('') : '<tr><td colspan="5" class="flow-empty-cell">' + emptyText + '</td></tr>';
-
-  html += '<div class="card asset-flow-card"><table class="asset-table flow-hist"><thead><tr><th>日期</th><th class="th-type">类型' + filterBtn + '</th><th class="num">金额</th><th>说明</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  html += '<div class="card asset-flow-card"><div class="flow-tl">' + rows + '</div></div>';
   body.innerHTML = html;
 
   body.querySelectorAll('[data-afrb]').forEach((b) => { b.onclick = () => rollbackAssetFlow(Number(b.dataset.afrb), body); });
   const filterBtnEl = body.querySelector('#flowTypeFilterBtn');
   if (filterBtnEl) filterBtnEl.onclick = () => openFlowFilterModal(body);
   const rng = body.querySelector('#flowRange');
-  if (rng) rng.onchange = () => { flowRangeDays = parseInt(rng.value, 10) || 30; paintFlows(body); };
-  // 顶部卡片与表格同源：筛选 / 区间一变，卡片里的合计跟着变
+  if (rng) {
+    rng.onchange = async () => {
+      const v = parseInt(rng.value, 10);
+      // parseInt('0') 是 0（不是 NaN），不能沿用 `|| 30` 兜底，否则「自定义」会被读回 30 天
+      if (Number.isNaN(v)) return;
+      if (v === 0) { openFlowRangeModal(body, rng); return; }
+      flowRangeDays = v;
+      flowRangeCustom = null;
+      await renderAssetFlowsPanel(body);   // 从自定义切回预设要重新取数（缓存区间不同）
+    };
+  }
+  // 顶部卡片与列表同源：筛选 / 区间一变，卡片里的合计跟着变
   if (assetSub === 'flows') renderAssetKpis('flows');
+}
+
+// 区间的人话描述（KPI 副标 / 下拉 title / 自定义 chip 共用一套口径）
+function flowRangeText() {
+  if (flowRangeDays === 0 && flowRangeCustom) {
+    return flowRangeCustom.from + ' 至 ' + flowRangeCustom.to;
+  }
+  return flowRangeDays === 7 ? '近 7 天' : flowRangeDays === 365 ? '近 1 年' : '近 30 天';
+}
+// 下拉里「自定义」那一项的文字：同年只写 月/日（09/01–11/03），跨年补年份（25/09/01–26/03/01）
+function flowRangeChip() {
+  const c = flowRangeCustom;
+  if (!c) return '自定义…';
+  const f = c.from || '';
+  const t = c.to || '';
+  const lbl = f.slice(0, 4) === t.slice(0, 4)
+    ? f.slice(5).replace('-', '/') + '–' + t.slice(5).replace('-', '/')
+    : f.slice(2).replace(/-/g, '/') + '–' + t.slice(2).replace(/-/g, '/');
+  return '自定义 ' + lbl;
+}
+
+// 自定义时间段弹框：选起止日期后按该区间重新取数（不走 180 天全量缓存的过滤，
+// 否则选到一年前会被静默筛成空列表）。
+function openFlowRangeModal(body, sel) {
+  const modal = $('#flowRangeModal');
+  if (!modal) return;
+  const from = document.getElementById('flowRangeFrom');
+  const to = document.getElementById('flowRangeTo');
+  const err = document.getElementById('flowRangeErr');
+  const today = new Date().toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  // 再次打开时回填上次选过的区间，改一半就取消也不丢；首次打开默认「近 30 天」
+  const cur = flowRangeCustom || { from: monthAgo, to: today };
+  from.value = cur.from;
+  to.value = cur.to;
+  from.max = today;
+  to.max = today;
+  // 程序化赋值不会触发 input/change，原生日期占位的 .date-empty 得手动同步一次，
+  // 否则输入框里日期已填好、画面却是一片空白（只剩右侧日历图标）
+  syncDateHint(from);
+  syncDateHint(to);
+  if (err) err.textContent = '';
+  modal.hidden = false;
+  const close = () => {
+    modal.hidden = true;
+    // 取消时把下拉恢复原状：否则它会停在「自定义」上，而列表其实还是旧区间
+    if (sel) sel.value = String(flowRangeDays);
+  };
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+  document.getElementById('flowRangeCancel').onclick = close;
+  document.getElementById('flowRangeApply').onclick = async () => {
+    const f = from.value;
+    const t = to.value;
+    if (!f || !t) { if (err) err.textContent = '请把起始和结束日期都选上'; return; }
+    if (f > t) { if (err) err.textContent = '起始日期不能晚于结束日期'; return; }
+    flowRangeDays = 0;
+    flowRangeCustom = { from: f, to: t };
+    modal.hidden = true;
+    await renderAssetFlowsPanel(body);
+  };
 }
 
 // 表头漏斗打开的筛选弹框：勾选为草稿，点「完成」才落到 flowTypeFilters 并重绘
@@ -7565,6 +7701,7 @@ async function rollbackAssetFlow(id, body) {
         if (!r.ok) { let m = '回退失败'; try { const dd = await r.json(); if (dd && dd.error) m = dd.error; } catch (_) {} toast(m, 'err'); return; }
         toast('已回退该笔资金变动', 'ok');
         assetFlowsCache = [];
+        assetFlowsKey = '';
         await renderAssetFlowsPanel(body);
       } catch (e) { toast(humanizeErr(null, e, '回退失败')); }
     }
@@ -8284,7 +8421,11 @@ function flowTypeTagRaw(f) {
     case 'wealth_reverse': return '<span class="flow-tag manual">理财冲正</span>';
     case 'dividend': return '<span class="flow-tag in">分红入账</span>';
     case 'fee': return '<span class="flow-tag manual">费用</span>';
-    case 'loan': return '<span class="flow-tag in">借入</span>';
+    case 'loan':
+      // 购物/消费类负债（一次性支出「产生新负债」）本质是新增负债，不是融资借入，
+      // 标签与颜色都不按收入处理（标签来自后端 listFlows 带出的负债类型）。
+      if (typeof f === 'object' && /购物|消费/.test(f.liab_type || '')) return '<span class="flow-tag manual">购物负债</span>';
+      return '<span class="flow-tag in">借入</span>';
     case 'repay': return '<span class="flow-tag out">还款</span>';
     // 一次性还款（/api/asset/cash/repay-liability）：现金侧出账 + 负债侧减记各一条，
     // 列表层已在 db.ListFlows 去重，只剩现金这条，类型标签也补齐在这里。
@@ -9075,7 +9216,10 @@ function renderFlowHistTable(body) {
     let html = '<table class="asset-table flow-hist"><thead><tr><th>日期</th><th>类型</th><th class="num">变动</th><th class="num">变动后余额</th><th>说明</th><th>操作</th></tr></thead><tbody>';
     for (const f of filtered) {
       const isLoan = f.type === 'loan';
-      html += `<tr><td>${esc(f.date)}</td><td><span class="adj-tag ${isLoan ? 'buy' : 'sell'}">${isLoan ? '增加贷款' : '还款'}</span></td>
+      // 购物/消费类负债记「新增负债」，别把刷卡赊账叫成「增加贷款」
+      const isShopping = /购物|消费/.test((l.type || ''));
+      const typeLabel = isLoan ? (isShopping ? '新增负债' : '增加贷款') : '还款';
+      html += `<tr><td>${esc(f.date)}</td><td><span class="adj-tag ${isLoan ? 'buy' : 'sell'}">${typeLabel}</span></td>
         <td class="num ${isLoan ? 'down' : 'up'}">${isLoan ? '-' : '+'}${money(f.amount || 0)}</td>
         <td class="num down">${liabBal(f.balance)}</td><td class="note-cell" title="${esc(f.note || '')}">${esc(f.note || '')}</td>
         <td class="row-actions">${opCell(f)}</td></tr>`;
@@ -11047,10 +11191,11 @@ async function switchUser(id) {
     renderAcctUsers();
     calData = {};  // 清空权益曲线(pnl/history)缓存，切换账本后重新拉取，否则复用上一账本数据导致近30日曲线不刷新
     // 按账本隔离的数据缓存全部作废，否则切换后复用上一账本的数据：
-    // - assetFlowsCache：资产页「流水」tab 非空时 renderAssetFlowsPanel 不重新请求 → 一直显示旧账本流水
-    // - homeRecentFlowsData / finFlowsCache：首页最新流水、财务页收支明细
+    // - assetFlowsCache / assetFlowsKey：资产页「流水」tab 命中缓存就不重新请求 → 一直显示旧账本流水
+    // - homeRecentFlowsData / finFlowsCache：首页最新流水、财务页热力图细项
     // - cashflowPlans / cashflowDone / _planDoneCache / _fpCardYm：收支计划及按月完成态（计划 id 跨账本可能撞号）
     assetFlowsCache = [];
+    assetFlowsKey = '';
     homeRecentFlowsData = [];
     finFlowsCache = [];
     homeMarqueeData = null;  // 跑马灯里的待办数据按账本隔离
@@ -11359,7 +11504,7 @@ async function openCashflowModal(p) {
   setPickerHTML($('#cfCashPanel'), buildFlowPicker());
   cfSetSelection(isEdit && p.account_id ? (cashAccountsCache || []).find((x) => x.id === p.account_id) : null);
   await loadLiabilitiesForCf();
-  renderCfLiabilitySelect(isEdit ? p.liability_id : 0);
+  renderCfLiabilitySelect(isEdit ? (p.liability_mode === 'incur' ? 'incur' : p.liability_id) : 0);
   syncCfForm();
   renderCfDoneBtn(p, isEdit);   // 「标记完成 / 撤销完成」落在保存按钮左侧
   document.getElementById('cashflowModal').hidden = false;
@@ -11433,13 +11578,17 @@ function syncCfForm() {
   const isExp = type === 'expense';
   document.getElementById('cfDayWrap').hidden = isOneTime;
   document.getElementById('cfDateWrap').hidden = !isOneTime;
-  document.getElementById('cfLiabilityWrap').style.display = (isExp && !isOneTime) ? '' : 'none';
+  // 支出一律显示「关联负债」：一次性支出也要能选还款负债，否则只能被记成新增负债
+  document.getElementById('cfLiabilityWrap').style.display = isExp ? '' : 'none';
   document.getElementById('cfEndWrap').style.display = isOneTime ? 'none' : '';
-  // 子账户字段按方向改名：支出=还款账户，入账=入账账户
+  // 负债方式：仅显式选「产生新负债」才 incur（购物赊账、不扣现金），其余一律 repay（还款/账户扣款）。
+  // 原「支出+一次性→incur」会让用户记还款时被当成新增负债，现金不扣、支出也不入账。
+  const liabSel = document.getElementById('cf_liability_id').value;
+  const liabMode = isExp ? (liabSel === 'incur' ? 'incur' : 'repay') : '';
+  document.getElementById('cf_liability_mode').value = liabMode;
+  // 子账户字段按方向/方式改名：支出=还款账户，产生新负债=负债归属账户，入账=入账账户
   const cap = document.getElementById('cfCashCap');
-  if (cap) cap.textContent = isExp ? '还款账户' : '入账账户';
-  // 负债方式：支出+一次性→产生新负债(incur)，其余→还款已有(repay)
-  document.getElementById('cf_liability_mode').value = (isExp && isOneTime) ? 'incur' : 'repay';
+  if (cap) cap.textContent = isExp ? (liabMode === 'incur' ? '负债归属账户' : '还款账户') : '入账账户';
   // 分类胶囊：方向决定候选集；当前选择不合法时回落该方向第一项
   renderCfCatPills(document.getElementById('cf_category').value);
 }
@@ -11482,7 +11631,9 @@ function buildLiabilityPicker() {
   const bySrc = {};
   liabs.forEach((l) => { (bySrc[l.source_id] = bySrc[l.source_id] || []).push(l); });
   const sources = (assetSources || []).filter((s) => bySrc[s.id] && bySrc[s.id].length);
-  let html = '';
+  // 显式「产生新负债」入口：一次性支出要记购物赊账（不扣现金）才选它；
+  // 不选则按还款/账户扣款记账。
+  let html = '<div class="ac-pick-group"><button type="button" class="ac-pick-row" data-v="incur">产生新负债（购物赊账）<span class="ac-pick-bal">不扣现金</span></button></div>';
   if (sources.length) {
     html += sources.map((s) => {
       const rows = bySrc[s.id].map((l) =>
@@ -11508,10 +11659,16 @@ function renderCfLiabilitySelect(selId) {
     h.onclick = () => { const body = h.nextElementSibling; if (body) body.hidden = !body.hidden; };
   });
   panel.querySelectorAll('.ac-pick-row').forEach((b) => {
-    b.onclick = () => { setVal(b.dataset.v, b.textContent.trim()); panel.hidden = true; };
+    b.onclick = () => {
+      const isIncur = b.dataset.v === 'incur';
+      setVal(b.dataset.v, isIncur ? '产生新负债（购物赊账）' : b.textContent.trim());
+      panel.hidden = true;
+      syncCfForm();   // 切换负债方式会改变账户名与负债方式，立即回显
+    };
   });
   const sel = (cashflowLiabilities || []).find((l) => String(l.id) === String(selId));
-  setVal(selId ? String(selId) : '0', sel ? sel.name : '不关联');
+  if (String(selId) === 'incur') setVal('incur', '产生新负债（购物赊账）');
+  else setVal(selId ? String(selId) : '0', sel ? sel.name : '不关联');
 }
 
 // ---- 事件绑定 ----
