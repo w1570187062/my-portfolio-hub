@@ -227,7 +227,7 @@
   /* 首页资产分布条分类色：一律直接引用 --cat-* 分类色（不再另存一套 hex）。
      2026-10-29：现金从「绿 #00d084」改为跟随 --cat-cash（暗色 #64D2FF / 日间 #32ADE6）。
      原因有两条：① 本项目语义色里绿=跌，现金用绿点会被读成「亏损/下跌」；
-     ② 复盘圆环、资产页饼图里现金本来就是青，首页三种口径的色相应当同源。
+     ② 资产页饼图里现金本来就是青，首页三种口径的色相应当同源。
      2026-11-01（方案 12）：持仓 / 理财也按同一规则收口 —— 原先写死 --home-eq:#4a9eff（蓝）、
      --home-wealth:#a78bfa（紫），与资产页环形图/分类色的 --cat-equity（橙）、--cat-wealth（青）
      不是同一个色相，同一个「持仓」在两页显示两种颜色。现直接引用 --cat-*，
@@ -393,8 +393,7 @@
 
 :root[data-theme="light"] .asset-table .up { color: var(--up); }
 :root[data-theme="light"] .asset-table .down { color: var(--down); }
-/* 日间模式：日历色块改由 `--cal-*` token 提供（见 :root[data-theme="light"]），
-   原先此处 20 行 `.lg-up1 { background: #ffe1e1 }` 选择器级覆盖已删除 —— 背景色只在一处定义 */
+/* 日间模式：日历色块由 `--cal-*` token 提供（见 :root[data-theme="light"]） */
 :root[data-theme="light"] .cal-cell.lg-none .cal-day,
 :root[data-theme="light"] .cal-cell.lg-zero .cal-day,
 :root[data-theme="light"] .cal-cell.cal-future .cal-day { color: var(--cal-text-dim); }
@@ -585,7 +584,7 @@ w {
 .adj-preview .warn { color: var(--warning); }
 
 /* 组头来源图标（持仓/理财/平仓三张单表共用 .hg-l）：命中银行券商 → 品牌色首字 monogram，
-   srcLogo() 生成。原先挂在 .holdings-group / .closed-group 上，单表化后那两个类不再输出。 */
+   srcLogo() 生成。 */
 .hg-l .src-ico { color: var(--primary); margin-right: 2px; }
 .hg-l .src-ico.src-logo {
   display: inline-flex; align-items: center; justify-content: center;
@@ -641,9 +640,8 @@ w {
 .holdings-table :is(th, td).ht-price { width: 120px; }
 .holdings-table :is(th, td).ht-mv { width: 140px; }
 .holdings-table :is(th, td).ht-share { width: 112px; }
-/* 占比列细条（2026-11-02 B2 迁表后补）：这条规则原本只挂在旧的 .holdings-subtable 上，
-   合成单表后旧选择器不再命中 —— 「裸数字 + 2px 细条」只剩裸数字，条静默消失。
-   与 .atbl td.share 同一表达：条铺满单元格后按 --pn 横向缩放。 */
+/* 占比列细条：条铺满单元格后按 --pn 横向缩放。
+   与 .atbl td.share 同一表达。 */
 .holdings-table td.share { position: relative; color: var(--text-muted); }
 .holdings-table td.share::after {
   content: '';
@@ -863,7 +861,7 @@ w {
 }
 
 
-/* 行内 hover popover 已移除（2026-10-10）：首页持仓/理财表格名称列不再悬停弹框 */
+/* 首页持仓 / 理财表格名称列不悬停弹框 */
 
 /* 小号按钮 */
 .btn-sm {
@@ -966,7 +964,7 @@ h2 > svg { color: var(--primary); }
 }
 /* 必须显式写：面板本身的定位 display 会盖掉 UA 的 [hidden]{display:none} */
 .acct-pop[hidden] { display: none; }
-/* 个人菜单内不再有盈亏日历入口（2026-11-01 起顶栏按钮全宽度常驻，重复入口已删） */
+/* 个人菜单不含盈亏日历入口（顶栏按钮全宽度常驻） */
 .acct-sec {
   padding: var(--sp-2) var(--sp-2) var(--sp-1);
   font-size: var(--fs-xs);
@@ -1098,10 +1096,11 @@ h2 > svg { color: var(--primary); }
   color: var(--text-muted);
 }
 .alert-item {
+  position: relative;
   display: flex;
   gap: var(--sp-2);
   width: 100%;
-  padding: var(--sp-2);
+  padding: var(--sp-2) 34px var(--sp-2) var(--sp-2);
   border: 0;
   border-radius: var(--r-xs);
   background: transparent;
@@ -1109,7 +1108,32 @@ h2 > svg { color: var(--primary); }
   text-align: left;
   cursor: pointer;
 }
-.alert-item:hover { background: rgba(var(--tint), .1); }
+.alert-item:hover,
+.alert-item:focus-visible { background: rgba(var(--tint), .1); outline: none; }
+.alert-del {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.alert-item:hover .alert-del,
+.alert-item:focus-within .alert-del,
+.alert-del:focus-visible { opacity: 1; pointer-events: auto; }
+.alert-del:hover,
+.alert-del:focus-visible { color: var(--danger); background: var(--danger-soft); outline: none; }
 .alert-dot {
   flex: 0 0 auto;
   width: 6px;
@@ -1344,7 +1368,7 @@ tr.snap-flow > td { background: var(--bg-soft); }
   color: var(--btn-primary-hover);
 }
 
-/* 主页按钮已改用通用 .btn-action 统一样式，不再单独定义 .home-btn */
+/* 主页按钮统一使用通用 .btn-action 样式 */
 
 /* ===== 日历导航按钮 ===== */
 /* ===== 日历导航按钮（固定尺寸，视觉由 .btn 统一提供） ===== */
@@ -1495,7 +1519,7 @@ header {
    放在 header 下方、holdingsView 之前，全局可见，不跟随 view 的 hidden 切换。
    尺寸全落 4px 网格；hover/动效遵守 spec §3.2（不做 transform 位移，只升 shadow/边框色）。 */
 /* v3.3 Hero Banner：双 panel 承载总市值+收益率完整内容 + 下方 sparkline 横条 */
-/* 左侧：状态 badge + slogan（已移除 hero-title，去重 header 品牌标题） */
+/* 左侧：状态 badge + slogan */
 /* v3.3 Hero 右栏：总市值 + 收益率 双 panel + 下方 sparkline 横条 */
 /* v3.5：三栏中栏 — 撑满高度（spark-wrap 吃剩余空间，跟右栏 cf-hero 等高） */
 /* ===== 手机窄屏（≤ 640px）：三栏 → 上中下三行，banner 高度由内容撑开 ===== */
@@ -1554,7 +1578,7 @@ header {
   height: 100%; font-size: var(--fs-sm); color: var(--text-muted);
 }
 
-/* 视图级 padding 已由统一块（style.css:5830）提供；早期逐页声明已移除，避免覆盖误导（审计 §三） */
+/* 视图级 padding 由统一块（style.css:5830）提供 */
 
 .act-group {
   display: flex;
@@ -2109,7 +2133,7 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   flex-wrap: wrap;
   gap: var(--sp-2);
   /* 行节奏统一后：描述 label（.field-label，mb 0）+ 本容器 margin-top:sp-1 → 「描述→控件」4px；
-     底部 12px 为行间距。原 -8px 负值是为抵消描述 label 的 12px 而存在的，口径统一后删除。 */
+     底部 12px 为行间距。 */
   margin: var(--sp-1) 0 var(--sp-3);
 }
 .cur-check {
@@ -2259,8 +2283,6 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 }
 .toast.ok::before { background: var(--success); }
 .toast.err::before { background: var(--danger); }
-
-/* 首页顶部更新时间+汇率行（.market-bar / .mb-time / .mb-left / .hf-*）已整体下线（2026-10-09），样式随之移除 */
 
 /* 盈亏日历弹框宽度：900 → 760（2026-10-27）
    900px 时月视图单格 115×115、整卡 774px 高，格子比内容更需要留白，比例失衡；
@@ -2450,7 +2472,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 }
 .cal-detail-tbl th { background: rgba(255, 255, 255, .03); color: var(--text-muted); }
 .cal-detail-tbl .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* 代码列：币种符号（¥/$/HK$）以弱化色挂在代码前，替代已删除的「币种」列 */
+/* 代码列：币种符号（¥/$/HK$）以弱化色挂在代码前，省去单独的「币种」列 */
 .cal-detail-tbl td.cal-code { font-family: var(--font-mono); font-size: var(--fs-sm); white-space: nowrap; }
 .cal-detail-tbl .cal-cur { color: var(--text-faint); margin-right: 2px; }
 /* 类型徽标（2026-11-02）：盈亏明细把「持仓 / 理财」两张表并成一张，类型改由名称前的
@@ -2789,7 +2811,6 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 #wealthHistTable .flow-hist th:last-child,
 #wealthHistTable .flow-hist td:last-child { text-align: center; white-space: nowrap; }
 .snap-body { max-height: 62vh; overflow: auto; }
-/* （更新理财持仓弹框底部合计市值已删除：按银行分组的组头已含各组合计） */
 /* 按来源分组：外层一个银行框，组内产品行改用分隔线（不再各自描边，避免双层边框嵌套） */
 .snap-group { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: var(--sp-3); background: rgba(255, 255, 255, .02); }
 .snap-group:last-child { margin-bottom: 0; }
@@ -2849,8 +2870,6 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 #snapConfirmBody .snap-cash-note { white-space: normal; }
 .empty { color: var(--text-muted); font-size: var(--fs-md); padding: var(--sp-2) 2px; }
 
-/* 理财卡片样式（.asset-card / .asset-list / .wealth-card）已随卡片视图移除（2026-10-19） */
-
 /* ===== 统一按钮风格（资产全景模块） ===== */
 /* 新系统已在顶部定义，此处保留旧样式以兼容 */
 .asset-add { margin-left: auto; }
@@ -2879,8 +2898,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .holdings-table tr.holding-archived td { opacity: .55; }
 
 /* ===== 已平仓汇总视图 ===== */
-/* 落袋总览：改走统一 KPI 体系（眉标行 + 锚点卡 + 卫星卡），与财务/资产页同一套壳。
-   原先「金额/笔数/天数」六项混排 + 36px 竖线切分的临时布局已下线。 */
+/* 落袋总览：改走统一 KPI 体系（眉标行 + 锚点卡 + 卫星卡），与财务/资产页同一套壳。 */
 /* KPI 主值后的单位（如「天」）：比数值小一号、中性色，不抢主数字 */
 .kpi-card .kpi-unit { font-size: var(--fs-sm); font-weight: 500; color: var(--text-muted); margin-left: 3px; letter-spacing: 0; }
 
@@ -2925,7 +2943,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 
 /* 批量录入网格：表头 + 数据行共用同一栅格；窄屏整体横向滚动 */
 .batch-grid { display: flex; flex-direction: column; gap: var(--sp-2); overflow-x: auto; margin-bottom: var(--sp-3); }
-.batch-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 116px 76px 34px; gap: var(--sp-2); align-items: center; min-width: 440px; }
+.batch-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 116px 84px 76px 34px; gap: var(--sp-2); align-items: center; min-width: 520px; }
 .batch-row.head { font-size: var(--fs-xs); font-weight: 600; color: var(--text-faint); }
 .batch-row.head > span:not(:last-child) { padding: 0 var(--sp-1); }
 .batch-row input { width: 100%; min-width: 0; margin-top: 0; }
@@ -3097,7 +3115,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .adj-calc .tool-actions { margin-bottom: var(--sp-5); }
 .adj-calc .tool-actions .btn[disabled] { opacity: .5; cursor: not-allowed; }
 
-/* 补仓成本计算器已并入「加减仓」弹框（.adj-calc），原 #calcCostModal 样式已移除 */
+/* 补仓成本计算器已并入「加减仓」弹框（.adj-calc） */
 
 /* 小工具页：手机端适配（窄屏 ≤ 640px） */
 @media (max-width: 640px) {
@@ -3313,7 +3331,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .cal-month-summary .cal-ms-val.flat { color: var(--text-muted); }
 
 /* ===== 行情时效性标识（P0-1） ===== */
-/* 行情更新时间已并入 header 左侧第二行（.hf-time），原 .fx-quote-* 废弃移除。 */
+/* 行情更新时间由 header 左侧第二行 .hf-time 展示。 */
 
 /* ===== 刷新失败持久标记（P0-2） ===== */
 tr.row-failed { background: rgba(var(--warning-rgb), .16); }
@@ -3353,8 +3371,8 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
    此前 .asset-kpi-row 没有下边距、.asset-subpanel 也没有上边距 →
    卡片底部直接贴住表格上沿（实测 0～1px），四个子视图里三个如此，
    视觉上像「一张大卡被劈成两半」。
-   对齐口径：财务页 / 复盘页的卡片→内容间距是 20px（--sp-5，来自
-   #financeView / #rebalanceView 的 flex gap），资产页表格同样是带边框的
+   对齐口径：财务页的卡片→内容间距是 20px（--sp-5，来自
+   #financeView 的 flex gap），资产页表格同样是带边框的
    卡片壳（.as-card / .card asset-flow-card），故取同一个 20px。
    流水子视图卡片与表格之间还夹着一行筛选工具条（.holding-toolbar，
    自带 16px 下边距），所以那一档总间距是 20 + 16 = 36px。 */
@@ -3374,8 +3392,7 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 /* 资产子面板：账户 / 流水 / 负债 切换显隐 */
 .asset-subpanel { display: none; }
 .asset-subpanel.active { display: block; }
-/* 资产子 tab 条：2026-11-02 起与投资页共用 .sub-tabs 基础样式（原 .asset-subtabs
-   专用类已删除 —— 类名零引用时 CSS 必须同步删，否则触发死 class 硬门）。
+/* 资产子 tab 条：与投资页共用 .sub-tabs 基础样式。
    tab 行现在在页面第一位，间距由 .sub-tabs 自带的 margin-bottom 承担。 */
 /* 流水 / 负债 卡片表格贴边（去卡片内边距），与账户卡内表格一致；overflow:hidden 让表格圆角与卡片 12px 干净对齐 */
 .asset-flow-card { padding: 0; overflow: hidden; }
@@ -3386,10 +3403,9 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
    只按「折 CNY」降序把现金账户排出来，右侧条形给出占比 —— 币种不同不能直接比原币。
    条形按相对最大账户归一（同资产区域卡的 cmp-bar）：满格 = 最集中的那个账户，
    真实占比以右侧数字为准，这样几千块的小账户之间也看得出差异。 */
-/* 资产页三个子 tab（现金 / 流水 / 收支）原先在表格上方各有一条合计条（.asset-sum），
-   2026-11-02 全部上提为顶部 4 张 KPI 卡（.kpi-card），该组件与配套规则一并下线。
-   理由：页面曾是「4 张卡 → tab → 又 4 个数字 → 表格」两段摘要叠在一起，
-   现在顶部卡位固定 4 张、内容随子视图切换，表格上方只剩数据。 */
+/* 资产页三个子 tab（现金 / 流水 / 收支）的合计已上提为顶部 4 张 KPI 卡（.kpi-card），
+   表格上方只保留数据。
+   理由：此前页面是「4 张卡 → tab → 又 4 个数字 → 表格」两段摘要叠在一起。 */
 /* 固定布局 + 首行定宽：auto 布局下「币种」列会被摊到 170px 宽，CNY 飘到半个屏外，
    和账户名之间空出一大片。fixed 后账户名拿大头，币种列就是标签宽度。 */
 .cash-tbl { table-layout: fixed; }
@@ -3849,13 +3865,16 @@ body[data-density="compact"] .holdings-table .hn-meta { margin-top: 0; }
 .ac-picker-panel .ac-pick-search:focus { outline: none; box-shadow: none; background: transparent; }
 .ac-pick-search::placeholder { color: var(--text-muted); }
 
-/* 资产页流水工具条：类型筛选下拉（2026-11-02，复用 ac-picker 组件取代七枚胶囊）。
-   表单里 .ac-picker-btn 是 width:100%，工具条里要按钮自适应宽度；
-   面板不再左右撑满父级（left:0;right:0），按内容收窄到 min-width。 */
-.flow-type-pick { flex: 0 0 auto; }
-.flow-type-pick .ac-picker-btn { width: auto; display: inline-flex; align-items: center; gap: var(--sp-2); }
-.flow-type-pick .ac-pick-chev { margin-left: var(--sp-1); }
-.flow-type-pick .ac-picker-panel { right: auto; min-width: 112px; }
+/* 资产页流水：类型筛选入口挂在表头「类型」右侧（2026-11-03）。
+   24px 触控块，激活（有勾选类型）时染主色并在右上角亮一个小圆点。 */
+.th-type { white-space: nowrap; }
+.th-filter-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: var(--sp-1); padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-faint); cursor: pointer; vertical-align: middle; transition: color .15s, background .15s; }
+.th-filter-btn:hover { color: var(--text); background: var(--bg-soft); }
+.th-filter-btn.active { color: var(--primary); background: rgba(var(--tint), .12); }
+.th-filter-btn.active::after { content: ""; position: absolute; top: 2px; right: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--primary); }
+.th-filter-btn svg { width: 14px; height: 14px; }
+/* 筛选后无结果时，表头仍保留（否则表头的漏斗入口会跟着消失），空态占一整行 */
+.asset-table td.flow-empty-cell { padding: var(--sp-6) var(--sp-3); text-align: center; color: var(--text-faint); }
 /* 搜索过滤用的隐藏类：.ac-pick-row / .ac-pick-group 的 display 会压过 UA 的 [hidden]，故用工具类 */
 .ac-hide { display: none !important; }
 
@@ -4409,7 +4428,7 @@ textarea::placeholder {
 .cf-edit { opacity: 1; transition: opacity .12s ease; }
 @media (hover: hover) {
 }
-/* 空状态统一走 .empty-state（见 .empty-state 区块）；cf 空态原 .cf-empty 内联样式已弃用 */
+/* 空状态统一走 .empty-state（见 .empty-state 区块） */
 /* 金额弹框：内容（实际金额输入）以 label 形式作为 .modal-card 直接子元素，
    不走 form/.m-body 的 28px 内缩，需手动补齐左右内缩，避免贴边。 */
 #cfAmtModal .modal-card > label {
@@ -4502,8 +4521,6 @@ textarea::placeholder {
 .u-gap-2 { gap: var(--sp-2); }
 .u-gap-3 { gap: var(--sp-3); }
 .u-gap-6 { gap: var(--sp-6); }
-/* .u-mt-2 已随之删除：它唯一的用处是盈亏明细里「理财」第二张表的间距，
-   2026-11-02 两张表合并成一张后不再需要（未引用的 utility 不留）。 */
 .u-mb-2 { margin-bottom: var(--sp-2); }
 .u-mb-3 { margin-bottom: var(--sp-3); }
 .u-py-2 { padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
@@ -5058,7 +5075,6 @@ textarea::placeholder {
 /* ==========================================================================
    基金定投（DCA）
    计划列表弹框（顶部操作条 #dcaBtn 入口）+ 计划弹框 + 期次记录弹框 + 单期确认弹框
-   —— 首页常驻卡片 2026-10-14 已下线
    ========================================================================== */
 
 /* ---- 计划列表弹框 ---- */
@@ -5286,9 +5302,8 @@ textarea::placeholder {
 .bsync-hint { font-size: var(--fs-sm); color: var(--primary); margin-top: 8px; }
 
 /* ===== 2026-10-18 设置/工具页重构新增样式 ===== */
-/* 工具页「决策分析」「即时换算」分组标题已改用设置页同款
-   h3.settings-group-title + .grp-title-main + .grp-ico 结构（fs-lg/700），
-   旧小号大写 .grp-label 标签已删除。 */
+/* 工具页「决策分析」「即时换算」分组标题与设置页同款
+   （h3.settings-group-title + .grp-title-main + .grp-ico，fs-lg/700）。 */
 /* ===== 2026-10-18 通知渠道（钉钉/邮箱）可折叠分组 ===== */
 .nt-channel {
   border: var(--card-border);
@@ -5475,7 +5490,7 @@ textarea::placeholder {
 /* 首页 / 资产 / 投资 / 设置（含 AI / 设备 / 通知三个子页）/ 财务 / 再平衡：统一占满可用宽度
    （2026-10-23 起与财务页一致，超宽屏不再 1920 收边）
    页级 padding 也在这里统一，漏加会让该页卡片顶到屏幕边缘、顶部紧贴顶栏（2026-10-27 再平衡页踩过） */
-#homeView, #assetView, #holdingsView, #settingsView, #aiView, #devicesView, #notifyView, #financeView, #rebalanceView {
+#homeView, #assetView, #holdingsView, #settingsView, #aiView, #devicesView, #notifyView, #financeView {
   max-width: none;
   margin: 0 auto;
   padding: var(--sp-4) var(--sp-5) var(--sp-8);
@@ -5542,19 +5557,11 @@ textarea::placeholder {
   border-radius: 2px; overflow: hidden; background: var(--bg-input);
 }
 .kpi-card .kpi-bar i { flex: 0 0 auto; width: var(--w); background: var(--bc, var(--primary)); }
-/* 2026-11-02：`.kpi-foot`（口径脚注）与 `.kpi-extra`（卡内迷你可视化）两个槽位已下线。
-   卡内可视化改由 `.kpi-bar`（6px 分段条，order:5）承担——比 kpi-extra 的分组迷你图矮一个量级，
-   一张卡一条、不需要图例，正好替代原「资产结构」折叠卡。
+/* 卡内可视化由 `.kpi-bar`（6px 分段条，order:5）承担，不需要图例。 */
 
 /* 密度 · standard：投资页卫星卡 / 财务页 4 KPI（默认档，无需 modifier） */
 .kpi-card.density-standard .kpi-label { padding-right: var(--sp-8); }
 .kpi-card.density-standard .kpi-value { font-size: var(--fs-2xl); }
-
-/* 密度 · mini（曾用于资产页 4 张摘要卡）：2026-11-02 随资产页卡复归 standard 而整档下线。
-   保留原因记录：那档把卡压到 57px 高（无角标、无可视化），但资产页是全站唯一
-   「四张卡横排 + 下面一张主表」的页面，卡一矮就跟财务 / 复盘两页风格脱节，
-   用户反馈「高度骤降、风格不一」。**不要**为了省高度再把它捡回来 ——
-   要省高度应该删重复内容，而不是把卡变薄。 */
 
 /* 密度 · hero：首页净资产（全站唯一视觉锚点） */
 .kpi-card.density-hero { padding: 0; background: none; border: none; gap: var(--sp-1); }
@@ -5636,12 +5643,12 @@ textarea::placeholder {
      .nw-left 行距 16→20，hero 卡内部行距 4→8，「本月」行 11/13px→12/16px，
      芯片 4×8px 内距/11px 字→8×12px/12px 字、圆点 6→7px（元素尺寸 ≤30px 豁免）、芯片间距 8→12px */
   /* 注意：.nw-left 基础规则在本 media 块之后声明（同为 0,1,0 会反超），行距用两级类提高特异性 */
-  .networth-hero .nw-left { gap: var(--sp-5); }
+  .networth-hero .nw-left { gap: var(--sp-6); }
   .nw-left .kpi-card.density-hero { gap: var(--sp-2); }
   .nw-left .kpi-card.density-hero .hero-changes { margin-top: var(--sp-3); }
   .nw-left .hero-changes .hc-label { font-size: var(--fs-sm); }
   .nw-left .hero-changes .hc-val { font-size: var(--fs-lg); }
-  .nw-left .nw-asset-row { gap: var(--sp-3); }
+  /* 芯片列间距在下方 2×2 规则之后按档位统一声明，避免被反超 */
   .nw-left .nw-chip { padding: 8px 12px; gap: var(--sp-2); font-size: var(--fs-sm); }
   .nw-left .nw-chip .d { width: 7px; height: 7px; }
 }
@@ -5649,7 +5656,6 @@ textarea::placeholder {
    左列资产芯片让空间，保住曲线 + 跑马灯在右栏不被挤没。
    本块在 ≥1341 块之后、同特异性靠源码顺序生效，故无需再加一级类 */
 @media (min-width: 641px) and (max-width: 1340px) {
-  .nw-left .nw-asset-row { gap: var(--sp-2); }
   .nw-left .nw-chip { padding: var(--sp-1) var(--sp-2); gap: var(--sp-1); font-size: var(--fs-xs); }
   .nw-left .nw-chip .d { width: 6px; height: 6px; }
 }
@@ -5658,7 +5664,7 @@ textarea::placeholder {
    2026-10-27：内容在栏内**整体居中**（横 + 纵）。子项保持整栏宽（.nw-left > *），
    真正居中的是它们内部的内容 —— 否则 flex 网格项会缩到 fit-content，
    .nw-asset-row 的芯片会被压成多行。 */
-.nw-left { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; justify-content: center; align-items: center; text-align: center; }
+.nw-left { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; justify-content: center; align-items: center; text-align: center; }
 .nw-left > * { width: 100%; }
 .nw-left .kpi-card.density-hero { align-items: center; }
 .nw-left .kpi-card.density-hero .kpi-eyebrow { justify-content: center; }
@@ -5683,8 +5689,17 @@ textarea::placeholder {
    （若容器过窄，max-content 会超出 → 芯片自带 max-width:100% 兜底折行。）
    手机档（≤640）在下面的 640 断点里覆盖回「一行四个」，不受影响。 */
 @media (min-width: 641px) {
-  .nw-left .nw-asset-row { display: grid; grid-template-columns: repeat(2, max-content); }
+  .nw-left .nw-asset-row { display: grid; grid-template-columns: repeat(2, max-content); column-gap: var(--sp-5); row-gap: var(--sp-2); }
   .nw-left .nw-chip { justify-content: center; max-width: 100%; }
+}
+/* 两列芯片的列间距按档位递进 —— 必须写在上方 2×2 规则之后，
+   否则同特异性会被基础 column-gap 反超（≥1341 曾经因此只剩 16px）。
+   641–1340：20px；≥1341：32px，四枚芯片左右彻底分开。 */
+@media (min-width: 641px) and (max-width: 1340px) {
+  .nw-left .nw-asset-row { column-gap: var(--sp-5); row-gap: var(--sp-2); }
+}
+@media (min-width: 1341px) {
+  .nw-left .nw-asset-row { column-gap: var(--sp-8); row-gap: var(--sp-3); }
 }
 /* 资产分布芯片行（原型 hero-asset-chip）：手机档一行 4 枚，桌面档见上方 2×2 */
 .nw-asset-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
@@ -5887,29 +5902,52 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 
 /* 入场轻微上浮：2026-11-02 起统一走 .rise-in（见文件前段「全站统一加载动画」），
    延迟由 JS 写入的 --d 顺序给出，不再用写死的 nth-child 硬编码。
-   ⚠ hero-in 动画已删除 —— .rise-in 与它是同一条曲线（opacity + translateY(8px)），
-   两套并存会让首页元素动两遍。
    ⚠ 不要给 .shortcut 补 opacity:0 —— rise-in 的 fill-mode:both 会在动画结束后
    停在 to（opacity:1），但 reduced-motion 下动画被停用、元素会永久透明。 */
 .shortcut { will-change: opacity; }
 
-/* —— 最新流水 —— */
+/* —— 最新流水（2026-11-03 方案 B：日期分组 + 竖向时间轴） —— */
+/* 过滤胶囊独立成卡头：与列表之间用分隔线 + 16px 内边距拉开呼吸，
+   不再像旧版那样胶囊紧贴第一行流水。 */
 .card.recent-card { display: block; padding: 0; }
-/* 首页最新流水类型过滤胶囊：紧贴列表上方，左缘与列表对齐 */
-.recent-filter { display: flex; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-3) var(--sp-3) 0; }
-.rf-pill { border: 1px solid var(--border); background: var(--bg-input); color: var(--text-muted); font-size: var(--fs-sm); padding: 3px var(--sp-3); border-radius: 999px; cursor: pointer; transition: background .15s, color .15s, border-color .15s; font-family: inherit; }
-.rf-pill:hover { color: var(--text); }
-.rf-pill.active { background: var(--primary-soft); color: var(--primary); border-color: transparent; }
-.recent-list { padding: var(--sp-1) var(--sp-3); display: flex; flex-direction: column; width: 100%; }
-.recent-item { display: grid; grid-template-columns: 80px 1fr auto; gap: var(--sp-3); align-items: center; padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
-.recent-item:last-child { border-bottom: none; }
-.recent-item:hover { background: var(--bg-hover); }
-.recent-date { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.recent-title { font-size: var(--fs-md); color: var(--text); font-weight: 500; }
-.recent-sub { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
-.recent-amt { font-variant-numeric: tabular-nums; font-weight: 600; }
+.recent-filter { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-4); border-bottom: 1px solid var(--border); }
+.rf-pill { border: 1px solid var(--border); background: var(--bg-input); color: var(--text-muted); font-size: var(--fs-sm); min-height: 30px; padding: 5px var(--sp-3); border-radius: 999px; cursor: pointer; transition: background .15s, color .15s, border-color .15s; font-family: inherit; }
+.rf-pill:hover { color: var(--text); border-color: var(--border-strong); }
+.rf-pill.active { background: var(--primary-soft); color: var(--primary); border-color: rgba(var(--tint), .34); }
+.recent-count { margin-left: auto; font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* 列表：左侧一条贯穿全卡的细线，按日期分组的空心节点挂在线上 */
+.recent-list { position: relative; padding: var(--sp-4); width: 100%; }
+.recent-list::before { content: ""; position: absolute; left: calc(var(--sp-4) + 13px); top: calc(var(--sp-4) + 6px); bottom: var(--sp-5); width: 1px; background: linear-gradient(180deg, var(--border-strong) 0, var(--border) 22%, var(--border) 100%); opacity: .7; }
+.recent-group { position: relative; padding-left: 40px; }
+.recent-group + .recent-group { margin-top: var(--sp-4); }
+.rg-node { position: absolute; left: 8px; top: 3px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--primary); background: var(--bg-card); box-shadow: 0 0 0 3px var(--bg-card); }
+.rg-head { display: flex; align-items: baseline; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.rg-date { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.rg-week { font-size: var(--fs-xs); color: var(--text-faint); }
+.rg-net { margin-left: auto; font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rg-net b { font-weight: 600; }
+.rg-net b.up { color: var(--up); }
+.rg-net b.down { color: var(--down); }
+.rg-rows { background: rgba(255, 255, 255, .03); border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+:root[data-theme="light"] .rg-rows { background: rgba(15, 23, 42, .028); }
+/* 组内单笔：小圆点 + 类型标签/说明 + 金额 */
+.rg-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: var(--sp-3); align-items: center; padding: var(--sp-3); }
+.rg-row + .rg-row { border-top: 1px solid var(--border); }
+.rg-row:hover { background: var(--bg-hover); }
+.rg-dot { width: 7px; height: 7px; border-radius: 50%; margin-left: 1px; }
+.rg-dot.in { background: var(--up); }
+.rg-dot.out { background: var(--down); }
+.rg-dot.neutral { background: var(--text-faint); }
+.rg-main { min-width: 0; }
+.rg-main .flow-tag { padding: 3px 6px; }
+.recent-title { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.recent-sub { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-amt { font-size: var(--fs-base); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
 .recent-amt.up { color: var(--up); }
 .recent-amt.down { color: var(--down); }
+.recent-empty { padding: var(--sp-6) 0; text-align: center; color: var(--text-faint); font-size: var(--fs-sm); }
+.recent-sk { display: flex; flex-direction: column; gap: var(--sp-3); }
 
 /* 新增收支计划虚线按钮：边框用主题色 55% 透明度（38% 在卡片底上偏淡，用户反馈看不清）；
    hover 转实线主题色 */
@@ -5990,9 +6028,16 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 /* treemap：方块面积=金额；+资金（收入）红 / −资金（支出）绿。
    高度由当月数据量动态决定（JS 设 --tmh，分类/细项越多越高，钳制在区间内），
    切换月份即重算；默认 400px 仅用于 JS 尚未设置的瞬间。 */
+.hm-treemap-scroll { overflow-x: auto; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.hm-treemap-scroll::-webkit-scrollbar { height: 6px; }
+.hm-treemap-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
 .hm-treemap {
   position: relative; width: 100%; height: var(--tmh, 400px);
   border-radius: var(--r-sm); overflow: hidden; background: var(--bg-soft);
+}
+/* 窄屏不牺牲热力图宽度：保留最小宽度，超出部分横向滚动而非压扁方块 */
+@media (max-width: 640px) {
+  .hm-treemap { min-width: 420px; }
 }
 .hm-box {
   position: absolute; left: var(--l, 0); top: var(--t, 0); width: var(--w, 0); height: var(--h, 0);
@@ -6134,8 +6179,7 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 #app:has(#aiView:not([hidden])),
 #app:has(#devicesView:not([hidden])),
 #app:has(#notifyView:not([hidden])),
-#app:has(#financeView:not([hidden])),
-#app:has(#rebalanceView:not([hidden])) { max-width: none; }
+#app:has(#financeView:not([hidden])) { max-width: none; }
 #finHeatmap[hidden] { display: none !important; }
 
 @media (max-width: 1340px) {
@@ -6167,11 +6211,16 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .group-rows { margin-left: 6px; }
   .flow-row { gap: var(--sp-2); padding: var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-3); grid-template-columns: 48px minmax(0, 1fr) auto; }
   .fin-cat-block { padding-top: var(--sp-4); }
-  /* 首页最新流水：手机端日期列/间距收紧，与财务「收支分类明细」流水行一致。
-     日期列 56px 而非 48px：首页日期恒带年份（26-10-30，8 字符 @12px ≈ 52px），
-     48px 会折行；财务明细那列仍是 48px，因为它是年份锁定视图、只显示 10-30。 */
-  .recent-item { grid-template-columns: 56px minmax(0, 1fr) auto; gap: var(--sp-2); }
-  .recent-title { font-size: var(--fs-sm); }
+  /* 首页最新流水（方案 B）：手机端收紧分组缩进与行内边距，
+     时间轴节点与竖线同步左移，保持对齐。 */
+  .recent-filter { padding: var(--sp-3); }
+  .recent-count { display: none; }
+  .recent-list { padding: var(--sp-3); }
+  .recent-list::before { left: calc(var(--sp-3) + 13px); top: calc(var(--sp-3) + 6px); }
+  .recent-group { padding-left: 32px; }
+  .rg-row { grid-template-columns: 14px minmax(0, 1fr) auto; gap: var(--sp-2); padding: 10px var(--sp-2); }
+  .recent-amt { font-size: var(--fs-md); }
+  .rg-net-prefix { display: none; }
   /* 投资页顶部 tab：手机端字号与内边距收紧。
      **这里只有这一处定义**（别再在 640 大段里重复写一遍 .sub-tab —— 后出现的同特异性规则会静默盖掉前者，
      2026-11-02 就因此把 tab 又撑回 76px，计数徽标被迫换行、tab 高 50 而非 36）。
@@ -6243,7 +6292,6 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 @media (max-width: 640px) {
   #homeHero { padding: var(--sp-5); }
   .nw-main { display: flex; flex-direction: column; gap: var(--sp-5); }
-  .recent-sub { max-width: 160px; }
 }
 
 /* —— 内联样式合规化所需的 helper（2026-10-20） —— */
@@ -6277,7 +6325,7 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 /* 操作列贴表格最右 + 悬停显隐（.row-act-cell，与持仓子表同款）；收窄右内边距让按钮贴到表格右缘 */
 .dep-table :is(th, td):last-child { text-align: right; }
 .dep-table td:last-child { padding-right: 2px; }
-/* 存款空态统一走 .empty-state，原 .dep-empty 内联 padding 已弃用 */
+/* 存款空态统一走 .empty-state */
 .dep-due { color: var(--down); font-size: var(--fs-xs); }
 .dep-settle-desc { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.7; margin: 0 0 var(--sp-3); }
 
@@ -6289,189 +6337,6 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .fincat-add { display: flex; gap: var(--sp-2); align-items: center; margin-bottom: var(--sp-3); }
 .fincat-add input { flex: 1 1 auto; min-width: 0; width: 100%; }
 #settingsView .fincat-add select { flex: 0 0 auto; width: auto; min-width: 0; }
-
-/* ===== 复盘页 v6 · 收益率诊断（2026-10-30）=====
-   口径：股票 / 基金 / 理财 / 现金 四大类，沿用 --cat-* 既有分类色（与资产构成卡同源，
-   跨页看到同一类别永远是同一个色）。布局参考财务页：KPI 段 + 主卡两栏 + 列表卡。 */
-/* display 必须挂在 :not([hidden]) 上：无条件写 #rebalanceView{display:flex} 会以 ID 特异性
-   压掉 UA 的 [hidden]{display:none}，导致该页在任何路由下都永久显示（2026-10-27 踩过）。
-   其余属性（方向/间距）保持无条件，不影响显隐。 */
-/* 复盘页 v6：卡片竖排。区块间距与财务/首页一致 —— 容器 flex gap 20px
-   （KPI 段与首卡、卡与卡之间同距）；.kpi-head 自带 margin-bottom 12px 只管段内标题行→KPI 行。 */
-#rebalanceView { flex-direction: column; gap: var(--sp-5); }
-#rebalanceView:not([hidden]) { display: flex; }
-/* 业绩表现卡（末位 .rv-card）吃满视口剩余高度：数据少时页面不显空、
-   已平仓/持仓中切换不跳变（列表更长时依旧自然向下撑开）。
-   57px = header 56 + 底边框 1；≤640 有底部导航（60px + 安全区），移动端不撑高。 */
-@media (min-width: 641px) {
-  #rebalanceView:not([hidden]) { min-height: calc(100dvh - 57px); }
-}
-
-/* 卡片标题行（全局通用，别删） */
-.rb-sub-head { display: flex; align-items: baseline; gap: var(--sp-3); }
-.rb-sub-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); white-space: nowrap; }
-
-/* 条形轨道 + 填充（全局通用，投资页也用） */
-.rv-track { position: relative; display: block; height: 8px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; }
-.rv-fill { position: absolute; top: 0; bottom: 0; left: 0; width: max(var(--w), 4px); border-radius: 999px; }
-.rv-fill.is-up { background: var(--up); }
-.rv-fill.is-down { background: var(--down); opacity: .9; }
-
-/* 空态 / 灰标 / 色点（全局通用） */
-.rv-empty { font-size: var(--fs-sm); color: var(--text-muted); padding: var(--sp-2) 0; }
-.rv-tag {
-  align-self: center;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 1px 8px;
-  white-space: nowrap;
-}
-.rb-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--rb-c, var(--text-faint)); }
-
-/* ===== 复盘页 v8.1 · 再调（2026-11-02）=====
-   Hero 卡整合 KPI 三指标到底部；bench-switch 挪到 title 行右侧弱化；
-   bd-list 颜色条移到最右、名称最左、占满屏宽。 */
-
-.rv-cardless { border: 0; box-shadow: none; }
-
-/* —— 区间切换条（第一行）—— */
-.rv-range-bar {
-  display: flex; align-items: center; gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-4);
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-sm);
-}
-.rv-rb-label { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; flex-shrink: 0; }
-.rv-rb-btns { display: flex; gap: 2px; flex-shrink: 0; }
-.rv-rb-btns button {
-  font-size: var(--fs-xs); font-weight: 600;
-  padding: 5px 12px;
-  border: none;
-  background: transparent; color: var(--text-muted);
-  border-radius: var(--r-xs);
-  cursor: pointer;
-  transition: background .15s, color .15s;
-  white-space: nowrap;
-}
-.rv-rb-btns button.on { background: var(--primary-soft); color: var(--primary); }
-.rv-rb-btns button:hover:not(.on) { color: var(--text); background: var(--bg-input); }
-.rv-rb-dates { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; margin-left: auto; }
-
-/* —— Hero 卡（整合 KPI 到底部；bench-switch 在 title 行右侧弱化）—— */
-.rv-hero {
-  display: flex; flex-direction: column;
-  gap: var(--sp-3);
-  padding: var(--sp-5) var(--sp-6);
-  background:
-    radial-gradient(ellipse at top left, rgba(var(--tint), .14), transparent 60%),
-    var(--bg-card);
-  border: 0;
-  border-radius: var(--r-md);
-  box-shadow: none;
-}
-.rv-hero[hidden] { display: none; }
-.rv-hero-body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-
-/* title 行：左标题，右 bench-switch（弱化，margin-left:auto 推到最右） */
-.rv-hero-title-row { display: flex; align-items: center; gap: var(--sp-3); }
-.rv-hero-title { font-size: var(--fs-sm); color: var(--text-muted); font-weight: 500; }
-
-.rv-hero-value { font-size: var(--fs-2xl); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.rv-hero-value.up { color: var(--up); }
-.rv-hero-value.down { color: var(--down); }
-.rv-hero-sub { font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.4; }
-
-/* 基准切换器（弱化，与 title 同一行右侧） */
-.rv-bench-switch {
-  display: flex; flex-shrink: 0; margin-left: auto;
-  padding: 0; background: transparent; border: 0; border-radius: 0;
-}
-.rv-bs-btns { display: flex; gap: 2px; }
-.rv-bs-btns button {
-  font-size: 11px; font-weight: 500;
-  padding: 3px 8px;
-  border: none;
-  background: transparent; color: var(--text-faint);
-  border-radius: var(--r-xs);
-  cursor: pointer;
-  transition: background .15s, color .15s;
-}
-.rv-bs-btns button.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
-.rv-bs-btns button:hover:not(.on) { color: var(--text); }
-
-/* —— KPI 三指标（内嵌 hero 底部）—— */
-.rv-ck-row { display: flex; align-items: stretch; gap: var(--sp-2); margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border-soft); }
-.rv-ck-item { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.rv-ck-label { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 500; }
-.rv-ck-value { font-size: var(--fs-xl); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.rv-ck-value.up { color: var(--up); }
-.rv-ck-value.down { color: var(--down); }
-.rv-ck-sub { font-size: var(--fs-xs); color: var(--text-faint); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rv-ck-divider { flex: 0 0 1px; background: var(--border-soft); margin: var(--sp-1) 0; }
-
-/* —— 收益归因：标题上下排布 + 颜色条最右 + 名称最左 + 占满屏宽 —— */
-.rv-breakdown {
-  padding: var(--sp-4) var(--sp-6);
-  border: 0; box-shadow: none;
-  background: var(--bg-card);
-  border-radius: var(--r-md);
-}
-.rv-breakdown[hidden] { display: none; }
-.rv-bd-title-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
-.rv-bd-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
-.rv-bd-note { font-size: var(--fs-xs); color: var(--text-faint); }
-
-.rv-bd-list { display: flex; flex-direction: column; }
-
-/* 条目：left(名称最左) → right(金额+收益率) → bar-wrap(颜色条最右)
-   CSS order 控制顺序，HTML 书写顺序不变 */
-.rv-bd-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--border-soft);
-  width: 100%;
-}
-.rv-bd-row:last-child { border-bottom: 0; }
-
-.rv-bd-bar-wrap { flex: 0 0 120px; min-width: 0; order: 3; }
-.rv-bd-left { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); order: 1; }
-.rv-bd-right { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0; order: 2; }
-
-.rv-bd-name { font-size: var(--fs-sm); font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
-.rv-bd-lbl { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 400; padding: 0 6px; background: var(--bg-soft); border-radius: 4px; flex-shrink: 0; }
-
-.rv-bd-amt { font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rv-bd-amt.up { color: var(--up); }
-.rv-bd-amt.down { color: var(--down); }
-.rv-bd-pct { font-size: var(--fs-xs); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rv-bd-pct.up { color: var(--up); }
-.rv-bd-pct.down { color: var(--down); }
-
-/* —— 窄屏 —— */
-@media (max-width: 640px) {
-  .rv-hero { gap: var(--sp-2); padding: var(--sp-4); }
-  .rv-hero-title-row { flex-wrap: wrap; }
-  .rv-bench-switch { margin-left: 0; }
-  .rv-range-bar { flex-wrap: wrap; }
-  .rv-rb-dates { margin-left: 0; width: 100%; order: 2; }
-
-  .rv-ck-row { flex-wrap: wrap; gap: var(--sp-3); }
-  .rv-ck-item { flex: 1 1 45%; }
-  .rv-ck-divider { display: none; }
-
-  .rv-breakdown { padding: var(--sp-3) var(--sp-4); }
-  .rv-bd-row { flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); padding: var(--sp-2) 0; }
-  .rv-bd-bar-wrap { flex: 0 0 100%; order: 3; }
-  .rv-bd-left { flex: 1 1 auto; order: 1; }
-  .rv-bd-right { flex: 0 0 auto; order: 2; }
-}
 
 /* ===== 认证层：登录闸门 / 登录与设备（2026-10-28）===== */
 /* 闸门：未认证设备的首屏。z-index 低于弹框(100)，高于普通内容。 */

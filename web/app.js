@@ -4,7 +4,6 @@ const $ = (s) => document.querySelector(s);
 // pf_theme 存的是「模式」而不是最终主题：light | dark | system。
 // system 由 prefers-color-scheme 解析成 light/dark，并在系统切换时实时跟随（做法同 PanWatch 的 useTheme）。
 // 默认 dark：保持既有观感，没存过偏好的老用户不会突然变浅色。
-// 2026-10-27：顶栏的日/夜快捷切换按钮已删除，入口统一收进右上角个人菜单。
 const THEME_MODES = ['light', 'dark', 'system'];
 const darkMq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 let themeMode = 'dark'; // 用户选择的模式（记忆态，事实源仍是 localStorage + dataset.theme）
@@ -127,22 +126,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ---- 视图路由（hash）：每个常驻视图都有后缀 URL，刷新保持当前路径 ----
-// 2026-10-27：新增 rebalance（再平衡）独立页；settings 仍在 VIEWS 内可直达 #/settings，
-// 只是不再占据主导航——入口已迁到右上角个人菜单。
-// 2026-10-29：设置页过载，把高频内容拆成独立页 devices（绑定设备）/ notify（通知推送），
-// 低频的 AI 配置（模型/提示词/MCP）也独立成 ai 页，同样只在个人菜单里有入口，不占主导航。
-const VIEWS = ['home', 'invest', 'asset', 'finance', 'rebalance', 'settings', 'ai', 'devices', 'notify'];
+// 设置 / AI 配置 / 设备 / 通知只在右上角个人菜单里有入口，不占主导航。
+const VIEWS = ['home', 'invest', 'asset', 'finance', 'settings', 'ai', 'devices', 'notify'];
 
-// ==== 复盘页状态与配色（声明必须早于下方同步执行的 applyRoute()，否则 TDZ 报错）====
-// 分类色复用 --cat-*（与资产构成卡同源，同一类别跨页同色）。
-// 值以字符串形式注入 style 的 --rb-c，故此处保留 rgba(var(--cat-x), 1) 原样写法。
-const RB_CLASS_COLOR = {
-  stock: 'rgba(var(--cat-equity), 1)',
-  fund: 'rgba(var(--cat-fund), 1)',
-  wealth: 'rgba(var(--cat-wealth), 1)',
-  cash: 'rgba(var(--cat-cash), 1)',
-};
-let rvData = null;          // /api/review 最近一次结果（复盘页）
 // 2026-10-20 tab 重构：原 hash 'holdings' 兼容映射到 'invest'（持仓/理财视图）。
 function viewFromHash() {
   const h = (location.hash || '').replace(/^#\/?/, '');
@@ -158,7 +144,7 @@ function setActiveNav(view) {
 }
 // 隐藏全部常驻视图（列表必须与 VIEWS 一一对应，漏一个就会两页叠着显示）
 function hideAllViews() {
-  ['homeView', 'holdingsView', 'assetView', 'financeView', 'rebalanceView', 'settingsView', 'aiView', 'devicesView', 'notifyView'].forEach((id) => {
+  ['homeView', 'holdingsView', 'assetView', 'financeView', 'settingsView', 'aiView', 'devicesView', 'notifyView'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
@@ -187,7 +173,7 @@ function playViewFade(viewEl) {
 // 播放时机（2026-11-02）：每个容器一次会话只播一次 ——
 //   ① riseArmed：路由进入视图（applyRoute 置位）才允许播，后台数据刷新（行情轮询、
 //      记一笔后 loadAsset）造成的重渲染一律不播；
-//   ② risenViews（WeakSet 按容器记录）：复盘/财务这类「每次渲染整体重建 innerHTML」的页面，
+//   ② risenViews（WeakSet 按容器记录）：财务这类「每次渲染整体重建 innerHTML」的页面，
 //      节点永远是新的，必须按容器去重，否则每次点进导航整页重新跳一遍；
 //   ③ risenEls（WeakSet 按块记录）：force 切投资页 tab 时不重播已播过的持久 hero
 //      （类会被下方 animationend 摘掉，所以不能只看 class）。
@@ -239,7 +225,6 @@ function applyRoute() {
   if (v === 'home') showHomeView();
   else if (v === 'asset') showAssetView();
   else if (v === 'finance') showFinanceView();
-  else if (v === 'rebalance') showRebalanceView();
   else if (v === 'settings') showSettingsView();
   else if (v === 'ai') showAiView();
   else if (v === 'devices') showDevicesView();
@@ -257,7 +242,6 @@ function viewIdOf(v) {
     : v === 'invest' ? 'holdingsView'
       : v === 'asset' ? 'assetView'
         : v === 'finance' ? 'financeView'
-          : v === 'rebalance' ? 'rebalanceView'
             : v === 'settings' ? 'settingsView'
               : v === 'ai' ? 'aiView'
                 : v === 'devices' ? 'devicesView'
@@ -479,7 +463,7 @@ let holdingsSort = 'mv';        // 持仓排序：mv 市值 | profit 盈亏 | da
 let holdingsSortDir = 'desc';   // 排序方向：desc 降序 | asc 升序（再次点击同一表头 toggle）
 let flowRangeDays = 30;         // 资产页流水区间：7 | 30 | 365
 let homeNetVal = 0;             // 首页净资产走势区间收益率基准（= 净资产）
-let flowTypeFilter = 'all';     // 资产页流水类型：all | in | out | dividend | trade
+let flowTypeFilters = [];       // 资产页流水类型多选：in | out | dividend | trade | invest | transfer；空数组 = 全部
 let assetFlowsCache = [];       // 资产页流水全量缓存（供筛选/区间重渲染，避免重复请求）
 let homeRecentFilter = 'all';    // 首页最新流水类型过滤：all | in | out | neutral
 let homeRecentFlowsData = [];    // 首页最新流水全量缓存（近 45 天最近 8 笔，供类型过滤重渲染）
@@ -567,7 +551,6 @@ async function load() {
     const hd = await r.json();
     usdRate = hd.rate || 1;
     hkdRate = hd.hkd_rate || 1;
-    // 汇率条（renderFx）已随首页 market-bar 整体下线（2026-10-09），/api/home 的 fx 字段保留但前端不再渲染。
     allHoldings = hd.holdings || [];
     assetSources = hd.sources || [];
     sparkCache = hd.spark || {};
@@ -641,9 +624,9 @@ async function reopenHoldingRow(id) {
   });
 }
 
-// 行情时效性标识（renderFreshness/更新时间行）已随首页 market-bar 整体下线（2026-10-09）。
+// 行情时效性标识由 header 第二行展示。
 
-// Holdings（持仓分类筛选已移除，直接返回全集）。
+// Holdings（返回全部持仓）。
 function filteredHoldings() {
   return allHoldings;
 }
@@ -757,7 +740,7 @@ function renderFiltered() {
     return;
   }
 
-  // 理财视图：隐藏持仓区，主区域显示理财管理区（表格视图，已移除卡片展示）
+  // 理财视图：隐藏持仓区，主区域显示理财管理区（表格视图）
   if (homeSection === 'wealth') {
     if (srcBox) srcBox.hidden = true;
     if (empty) empty.hidden = true;
@@ -770,7 +753,7 @@ function renderFiltered() {
     return;
   }
 
-  // 持仓视图（默认）：隐藏理财区，按来源分组表展示（已移除卡片展示）
+  // 持仓视图（默认）：隐藏理财区，按来源分组表展示
   if (wl) wl.hidden = true;
   if (closedBox) closedBox.hidden = true;
   const depBox2 = document.getElementById('homeDepositBox');
@@ -830,7 +813,7 @@ function playInvestRise(force) {
 }
 
 // 已平仓汇总视图：持仓(quantity<=0) + 理财(archived=1) 的系统归集，合并「手动补录」纯记录（不入账）。
-// 列：名称 / 代码 / 类型 / 盈亏金额 / 盈亏% / 年化% / 来源 / 清仓时间 / 天数 / 操作（已取消「本金」列）。
+// 列：名称 / 代码 / 类型 / 盈亏金额 / 盈亏% / 年化% / 来源 / 清仓时间 / 天数 / 操作。
 // 类型口径 = 资产类别（股票 / 基金 / 理财）：系统持仓按是否关联基金代码区分，手动补录按记录里的类型。
 // 系统记录可「回退」（撤销清仓/重开）；手动补录可「编辑 / 删除」。
 function renderClosed(box, closedHoldings, closedWealth) {
@@ -851,7 +834,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
   };
   let hTotalDays = 0, hTotalRealized = 0, wTotalDays = 0, wTotalPnl = 0;
   // 汇总一律折 CNY（原币 → cnyOf）：分组小计用的就是 cnyOf(金额, 币种)，
-  // 早期汇总直接累加原币，导致「落袋合计 229.17 ≠ 分组小计 220.76 + 55.96」，且与复盘页「累计落袋」对不上。
+  // 早期汇总直接累加原币，导致「落袋合计 229.17 ≠ 分组小计 220.76 + 55.96」。
   closedHoldings.forEach((h) => { hTotalDays += ((h.closed_date && h.buy_date) ? daysBetween(h.buy_date, h.closed_date) : (h.holding_days || 0)); hTotalRealized += cnyOf(Number(h.realized_pnl) || 0, normCurJS(h.currency)); });
   mHold.forEach((m) => { hTotalDays += (Number(m.holding_days) || 0); hTotalRealized += mcToCny(m); });
   closedWealth.forEach((w) => { wTotalDays += (w.holding_days || 0); wTotalPnl += cnyOf(Number(w.cum_pnl) || 0, normCurJS(w.currency)); });
@@ -1181,13 +1164,6 @@ async function doRefresh() {
   if (cancel) cancel.onclick = () => { modal.hidden = true; refreshBtnRef = null; };
   modal.addEventListener('click', (e) => { if (e.target === modal) { modal.hidden = true; refreshBtnRef = null; } });
 })();
-
-// 流水类型下拉（#flowTypePanel）：点击面板外任意处收起。
-// paintFlows 每次重渲染都会重建面板节点，所以收起逻辑全局只绑一次、按 id 现查。
-document.addEventListener('click', (e) => {
-  const p = document.getElementById('flowTypePanel');
-  if (p && !p.hidden && e.target instanceof Element && !e.target.closest('#flowTypePick')) p.hidden = true;
-});
 
 // 打开「新增 / 编辑已平仓记录」弹框（纯记录，不入账）。record 为空表示新增。
 function openClosedRecordModal(record) {
@@ -1566,8 +1542,6 @@ function renderHoldRow(h, pool, pdi, hideDay) {
   </tr>`;
 }
 
-// 卡片视图已移除（2026-10-19）：持仓仅保留按来源分组表格（#holdingsBySource），卡片网格 #cards 一并删除。
-
 function renderSummary(hs) {
   let totalCNY = 0, totalCostCNY = 0;
   hs.forEach((h) => {
@@ -1601,7 +1575,7 @@ function renderSummary(hs) {
     else otherMV += mv;
   });
   // 总市值分类堆叠条（股票/基金/理财/其他）。理财段（2026-10-09 迁入）：
-  // 持仓分类筛选已移除，始终显示理财段；分母同步含理财。
+  // 始终显示理财段；分母同步含理财。
   const showWealthSeg = true;
   const wealthTotal = showWealthSeg && assetData && assetData.wealth ? (Number(assetData.wealth.total) || 0) : 0;
   const mvAll = totalCNY + wealthTotal;
@@ -1691,8 +1665,7 @@ function renderSummary(hs) {
     invPct.textContent = pct(totalPct);
     invPct.className = 'kpi-value ' + pCls;
   }
-  // 盈亏日历 / AI 助手入口已迁至右上角操作区（act-group），此处不再绑定；
-  // 权益曲线已迁至首页卡片（renderHomeDashboard 内 renderRateSpark）。
+  // 权益曲线由首页卡片渲染（renderHomeDashboard 内 renderRateSpark）。
 }
 
 // 首页「权益收益曲线」：固定近 30 日累计权益盈亏（数据复用盈亏日历 /api/pnl/history，
@@ -2068,7 +2041,7 @@ function sparkCell(sym, pnl) {
   return sparkline(arr, { w: 136, h: 26, stroke: color, fill: color, responsive: true });
 }
 
-// 单只持仓手动刷新逻辑已移除：行情改由定时快照（refreshAllQuotes）自动更新。
+// 行情由定时快照（refreshAllQuotes）自动更新。
 
 // ---------------- 添加/编辑持仓：名称/代码联想 + 类别/市场胶囊 ----------------
 // 联想接口返回的市场码 -> 组合持仓市场口径（中文）。
@@ -2255,11 +2228,6 @@ function renderAdjCashSelect(h) {
   }).join('');
   const html = `<option value="0">（自动：余额最大的同币种子账户）</option>` + opts;
   const def = pickFallbackCash(list);
-  const sel = $('#adj_cash_id');
-  if (sel) {
-    sel.innerHTML = html;
-    sel.value = def ? String(def.id) : '0';
-  }
   // 调仓面板复用同一账户的账户下拉（与加减仓/分红保持一致）
   const addSel = $('#add_cash_id');
   if (addSel) {
@@ -2734,7 +2702,6 @@ $('#confirmOk').onclick = async () => {
   load();
 };
 
-// 登录界面已移除：初始化时由 boot() 静默自动登录，无需手动输入
 // 「添加」按钮：先弹类型选择（持仓 / 理财），再打开对应弹框。
 // 默认高亮跟随顶部类别胶囊 —— 胶囊停在「理财」时默认选理财，否则默认选持仓。
 // 添加持仓 / 理财快照 / 记收入 / 记支出：入口保留在首页「快捷功能」卡片（见 renderHomeDashboard）。
@@ -2773,8 +2740,7 @@ $('#addPickModal').addEventListener('click', (e) => {
 });
 // 名称/代码联想框初始化（类别/市场已改为胶囊，不再用下拉框 onchange）
 wireSearch();
-// 首页「刷新」按钮已移除：手动整体刷新入口取消，行情改由定时快照自动更新。
-// （批量 /api/refresh 接口仍保留供定时任务复用。）
+// 行情由定时快照自动更新；批量 /api/refresh 接口仍保留供定时任务复用。
 
 // 投资页主区切换（持仓 / 理财）：localStorage 记忆，默认持仓；下划线样式（无滑动白块）
 function syncViewToggle() {
@@ -2915,7 +2881,6 @@ function openChart() {
 const PIE_CAT = { 理财: '--cat-wealth', 基金: '--cat-fund', 股票: '--cat-equity' };
 
 // Top-level segments (股票/基金/理财), values already in CNY.
-// 现金段已删（2026-10-10）：现金非投资持仓，资产构成饼图不再画，总盘子即「投资市值 + 理财」。
 function getTopSegs(d) {
   const eq = d.equity || {};
   let stock = 0, fund = 0;
@@ -3153,7 +3118,7 @@ function moveTrendTip(e) {
 function hideTrendTip() { const tip = document.getElementById('trendTip'); if (tip) tip.classList.remove('show'); }
 
 // 资产工具栏按钮改由 #assetToolbar 事件委托（见下方 document.getElementById('assetToolbar').addEventListener）
-// 关闭按钮已移除：右上角 ✕ 与点击遮罩均可关闭
+// 右上角 ✕ 与点击遮罩均可关闭
 $('#chartModal').addEventListener('click', (e) => { if (e.target === $('#chartModal')) $('#chartModal').hidden = true; });
 $('#histModal').addEventListener('click', (e) => { if (e.target === $('#histModal')) { $('#histModal').hidden = true; hideTrendTip(); } });
 $('#wealthHistModal').addEventListener('click', (e) => { if (e.target === $('#wealthHistModal')) { $('#wealthHistModal').hidden = true; hideTrendTip(); } });
@@ -3205,8 +3170,14 @@ $('#crSave').addEventListener('click', async () => {
   $('#crSave').disabled = false;
 });
 // —— 批量新增已平仓（纯记录，不入账）——
-// 账户 + 类型 为全局（作用于本批所有行）；下方逐行填 名称 / 代码（名称联想）/ 盈亏金额 / 天数(可选)。
-// 本金不在批量录入里填（数据库该字段保留，可留空）；故批量记录的「盈亏率」不予推算。
+// 账户 + 类型 为全局（作用于本批所有行）；下方逐行填 名称 / 代码（名称联想）/ 盈亏金额 / 盈亏率%(可选) / 天数(可选)。
+// 本金不在批量录入里填（数据库该字段保留，可留空）；填了盈亏率则直接入库，表格按填的值展示。
+function manRateOrNull(el) {
+  const s2 = String(el && el.value == null ? '' : el.value).trim();
+  if (s2 === '') return null;
+  const n = Number(s2);
+  return Number.isFinite(n) ? n : null;
+}
 function fillCrbSourceSelect(current) {
   const sel = $('#crb_source');
   if (!sel) return;
@@ -3242,7 +3213,7 @@ function openBatchClosedModal() {
 function renderBatchRows(n) {
   const grid = $('#crbGrid');
   if (!grid) return;
-  let html = '<div class="batch-row head"><span>名称</span><span>代码</span><span>盈亏金额</span><span>天数</span><span></span></div>';
+  let html = '<div class="batch-row head"><span>名称</span><span>代码</span><span>盈亏金额</span><span>盈亏率%</span><span>天数</span><span></span></div>';
   for (let i = 0; i < n; i++) {
     html += `<div class="batch-row" data-idx="${i}">
       <div class="crb-name-wrap">
@@ -3251,6 +3222,7 @@ function renderBatchRows(n) {
       </div>
       <input class="crb-code" placeholder="代码" autocomplete="off">
       <input class="crb-amount" type="number" step="0.01" placeholder="正赚负亏" autocomplete="off">
+      <input class="crb-rate" type="number" step="0.01" placeholder="选填" autocomplete="off">
       <input class="crb-days" type="number" step="1" min="0" placeholder="天数" autocomplete="off">
       <button type="button" class="crb-del" title="删除此行">×</button>
     </div>`;
@@ -3270,6 +3242,7 @@ $('#crbAddRow').addEventListener('click', () => {
     + '<div class="crb-suggest f-suggest" hidden></div></div>'
     + '<input class="crb-code" placeholder="代码" autocomplete="off">'
     + '<input class="crb-amount" type="number" step="0.01" placeholder="正赚负亏" autocomplete="off">'
+    + '<input class="crb-rate" type="number" step="0.01" placeholder="选填" autocomplete="off">'
     + '<input class="crb-days" type="number" step="1" min="0" placeholder="天数" autocomplete="off">'
     + '<button type="button" class="crb-del" title="删除此行">×</button>';
   grid.appendChild(div);
@@ -3357,7 +3330,7 @@ $('#crbSave').addEventListener('click', async () => {
       amount: parseFloat(row.querySelector('.crb-amount').value) || 0,
       currency: 'cny',
       principal: null,
-      return_rate: null,
+      return_rate: manRateOrNull(row.querySelector('.crb-rate')),
       holding_days: parseInt(row.querySelector('.crb-days').value, 10) || 0,
       source,
       realized_at: '',
@@ -3569,7 +3542,7 @@ const daysBetween = (a, b) => {
 
 let calData = {};
 
-// 盈亏日历弹框（原「日历 + 走势」双 Tab 已移除走势视图，仅保留日历）
+// 盈亏日历弹框
 async function openPnlModal() {
   // 无可见视图时，先落回首页作弹框背景
   if ($('#holdingsView').hidden && $('#assetView').hidden) {
@@ -3644,7 +3617,7 @@ async function renderHomeDashboard() {
   const bd = $('#homeAssetBreakdown');
   if (bd) {
     const lTotal = (ov.liability && ov.liability.total) || 0;
-    // 方案 12：chip 色一律引用全局分类色 token，与资产页环形图 / 复盘圆环同源。
+    // 方案 12：chip 色一律引用全局分类色 token，与资产页环形图同源。
     // --cat-* 是逗号分隔的 RGB 分量（如 255,149,0），必须包 rgb()/rgba() 才能当颜色用。
     // 负债不走红绿：红=涨、绿=跌，负债既不是涨也不是跌，用警示色 --warning。
     const rows = [
@@ -3673,8 +3646,6 @@ async function renderHomeDashboard() {
       { ico: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/>', label: '理财快照', fn: () => openSnapModal() },
       { ico: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', label: '记收入', fn: async () => { await openFlowModal('in'); } },
       { ico: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>', label: '记支出', fn: async () => { await openFlowModal('out'); } },
-      // 「截图导入」入口已删除（2026-10-27）：该能力后续并入 AI 助手弹框，暂不实现，
-      // 快捷区只保留已落地的操作，避免占位项点了只弹 toast。
     ];
     // 每个快捷功能取一个独立强调色（注入 --tint，仅作用于该微件子树，不影响全局强调色）
     const SC_TINTS = ['217, 165, 43', '42, 163, 155', '232, 110, 145', '56, 132, 232'];
@@ -3698,7 +3669,7 @@ async function renderHomeDashboard() {
   // 最新流水（近 45 天，取最近 8 笔；复用 /api/asset/flows）+ 类型过滤胶囊
   const rf = $('#homeRecentFlows');
   if (rf) {
-    rf.innerHTML = '<div class="recent-item"><div class="skeleton-line" style="--sk-w:80%"></div><div class="skeleton-line" style="--sk-w:55%"></div><div class="skeleton-line" style="--sk-w:65%"></div></div>';
+    rf.innerHTML = '<div class="recent-sk"><div class="skeleton-line" style="--sk-w:32%"></div><div class="skeleton-line" style="--sk-w:84%"></div><div class="skeleton-line" style="--sk-w:66%"></div></div>';
     try {
       const end = new Date();
       const start = new Date(end.getTime() - 45 * 864e5);
@@ -3709,7 +3680,7 @@ async function renderHomeDashboard() {
         homeRecentFlowsData = (d.flows || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
         renderRecentFlows();
       }
-    } catch (_) { rf.innerHTML = '<div class="recent-item empty-hint">流水加载失败</div>'; }
+    } catch (_) { rf.innerHTML = '<div class="recent-empty">流水加载失败</div>'; }
   }
   // 首页「权益收益曲线」+「竖向跑马灯」（待办 + 收益总结）：两者都复用已预取的 calData
   renderRateSpark();
@@ -3722,7 +3693,14 @@ async function showFinanceView() {
   renderFinanceView();
 }
 
-// 首页最新流水：按类型过滤胶囊重渲染（全部 / 收入 / 支出 / 中性）
+// 日期 → 中文星期（首页流水按天分组时挂在日期右侧）
+const CN_WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+function flowWeekLabel(dateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr || ''));
+  return m ? CN_WEEK[new Date(+m[1], +m[2] - 1, +m[3]).getDay()] : '';
+}
+
+// 首页最新流水：按日期分组 + 竖向时间轴（2026-11-03 方案 B）
 function renderRecentFlows() {
   const rf = $('#homeRecentFlows');
   if (!rf) return;
@@ -3733,18 +3711,54 @@ function renderRecentFlows() {
     if (homeRecentFilter === 'neutral') return short === 'neutral';
     return short === homeRecentFilter;
   });
-  if (!flows.length) { rf.innerHTML = '<div class="recent-item empty-hint">该类型下暂无近期流水</div>'; return; }
-  rf.innerHTML = flows.map((f) => {
-    const isIn = f.direction === 'in';
-    const amtCls = isIn ? 'up' : 'down';
-    // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
-    const amt = (isIn ? '+' : '−') + moneyCurW(Math.abs(Number(f.amount) || 0), f.currency);
-    const dd = fmtFlowDate(f.date, 'year');   // 首页无年份上下文 → 恒带两位年份「26-10-30」
-    const sub = [f.name, f.ref_name].filter(Boolean).join(' · ');
-    return `<div class="recent-item">
-      <span class="recent-date" title="${esc(flowDateTitle(f))}">${dd}</span>
-      <div><div class="recent-title">${cashFlowTypeTag(f)}${flowSnapshotTag(f)}</div><div class="recent-sub">${esc(sub || '')}</div></div>
-      <span class="recent-amt ${amtCls}">${amt}</span></div>`;
+  const cnt = $('#homeRecentCount');
+  if (cnt) cnt.textContent = flows.length ? `共 ${flows.length} 笔` : '';
+  if (!flows.length) { rf.innerHTML = '<div class="recent-empty">该类型下暂无近期流水</div>'; return; }
+  // 数据已按日期倒序，顺序扫一遍即可分组
+  const groups = [];
+  flows.forEach((f) => {
+    const date = String(f.date || '').slice(0, 10);
+    const last = groups[groups.length - 1];
+    if (last && last.date === date) last.items.push(f);
+    else groups.push({ date, items: [f] });
+  });
+  rf.innerHTML = groups.map((g) => {
+    // 当日净额只在组内币种一致时展示，避免跨币种直接相加得出错误数字
+    const curs = [...new Set(g.items.map((f) => String(f.currency || 'cny').toLowerCase()))];
+    let netHtml = `${g.items.length} 笔`;
+    if (curs.length === 1) {
+      const net = g.items.reduce((s, f) => s + (Number(f.amount) || 0), 0);
+      const cls = net > 0 ? 'up' : (net < 0 ? 'down' : '');
+      const txt = net === 0 ? moneyCurW(0, curs[0]) : (net > 0 ? '+' : NEG) + moneyCurW(Math.abs(net), curs[0]);
+      netHtml = `<span class="rg-net-prefix">当日净额 </span><b class="${cls}">${txt}</b>`;
+    }
+    const week = flowWeekLabel(g.date);
+    return `<div class="recent-group">
+      <span class="rg-node"></span>
+      <div class="rg-head">
+        <span class="rg-date" title="${esc(fmtFlowDate(g.date, 'full'))}${week ? ' ' + week : ''}">${fmtFlowDate(g.date)}</span>
+        <span class="rg-week">${week}</span>
+        <span class="rg-net">${netHtml}</span>
+      </div>
+      <div class="rg-rows">${g.items.map((f) => {
+        const isIn = f.direction === 'in';
+        const amtNum = Number(f.amount) || 0;
+        // 圆点按金额方向着色：入账红 / 出账绿 / 0 变动中性灰
+        const dotCls = amtNum > 0 ? 'in' : (amtNum < 0 ? 'out' : 'neutral');
+        const amtCls = isIn ? 'up' : 'down';
+        // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
+        const amt = amtNum === 0 ? moneyCurW(0, f.currency) : (isIn ? '+' : NEG) + moneyCurW(Math.abs(amtNum), f.currency);
+        const sub = [f.name, f.ref_name].filter(Boolean).join(' · ');
+        return `<div class="rg-row">
+          <span class="rg-dot ${dotCls}"></span>
+          <div class="rg-main">
+            <div class="recent-title">${cashFlowTypeTag(f)}${flowSnapshotTag(f)}</div>
+            <div class="recent-sub" title="${esc(sub || f.note || '')}">${esc(sub || f.note || '')}</div>
+          </div>
+          <span class="recent-amt ${amtCls}">${amt}</span>
+        </div>`;
+      }).join('')}</div>
+    </div>`;
   }).join('');
 }
 // 首页最新流水类型过滤胶囊（委托到容器，重渲染后依旧生效）
@@ -3981,7 +3995,8 @@ function renderHomeMarquee(sentence, todoGroups, cum30, downDays) {
         const label = esc(g.label || '');
         const title = esc(it.title || '');
         const sub = esc(it.sub || '');
-        const amtText = g.amount > 0 ? ` · ${esc(yuanOfW(g.amount))}` : '';
+        const amt = Number(it.amount) || 0;
+        const amtText = amt > 0 ? ` · ${esc(yuanOfW(amt))}` : '';
         const icon = HM_ICONS[g.key] || HM_ICONS.alert;
         items.push({
           key: g.key,
@@ -5270,7 +5285,7 @@ function drawCalYear() {
   }
 }
 
-// 盈亏明细已删除「币种」列：原始币种改以符号（¥ / $ / HK$）走在代码前，列数更少且不丢信息。
+// 盈亏明细不单列「币种」：原始币种改以符号（¥ / $ / HK$）走在代码前。
 function calCurSym(cur) {
   const c = String(cur || 'cny').toLowerCase();
   const label = c === 'usd' ? 'USD' : (c === 'hkd' ? 'HKD' : 'CNY');
@@ -6356,7 +6371,7 @@ function showHistTip(e, x, cur, closedInfo, tx, isRate) {
   moveTrendTip(e);
 }
 
-// 应用入口：静默自动登录后直接进入（登录界面已移除）
+// 应用入口：认证先行，无有效会话时进入认领 / 配对闸门
 boot();
 
 // ===================== 资产全景模块 =====================
@@ -7145,7 +7160,7 @@ function segToneColor(dir, i) {
   const rgb = dir === 'income' ? 'var(--up-rgb)' : 'var(--down-rgb)';
   return 'rgba(' + rgb + ',' + Math.max(0.45, 0.95 - i * 0.25).toFixed(2) + ')';
 }
-// 一张 KPI 卡的 HTML（结构与财务 / 复盘两页同壳：角标 + 标签 + 主值 + 副标 + 分段条）
+// 一张 KPI 卡的 HTML（结构与财务页同壳：角标 + 标签 + 主值 + 副标 + 分段条）
 function assetKpiCardHTML(c) {
   return '<div class="kpi-card density-standard">'
     + '<div class="kpi-icon ' + c.ico + '"><svg viewBox="0 0 24 24">' + ASSET_KPI_ICONS[c.icon] + '</svg></div>'
@@ -7247,8 +7262,8 @@ function assetKpiCardsCash() {
   };
 }
 
-// 流水筛选 chips 的文案（KPI 眉标提示要跟表格上方的 chips 保持同一口径）
-const ASSET_FLOW_FILTER_LABEL = { all: '全部类型', in: '入账', out: '支出', dividend: '分红', trade: '买卖', invest: '投资', transfer: '转账' };
+// 流水筛选文案（表头漏斗按钮的 title 与弹框勾选项共用同一份口径）
+const ASSET_FLOW_FILTER_LABEL = { in: '入账', out: '支出', dividend: '分红', trade: '买卖', invest: '投资', transfer: '转账' };
 // 当前筛选口径下的流水列表（KPI 与表格必须同源，故抽成同一个函数）
 function currentFlowList() {
   let list = assetFlowsCache;
@@ -7256,7 +7271,8 @@ function currentFlowList() {
     const cutoff = new Date(Date.now() - flowRangeDays * 864e5).toISOString().slice(0, 10);
     list = list.filter((f) => (f.date || '') >= cutoff);
   }
-  if (flowTypeFilter !== 'all') list = list.filter((f) => flowMatch(f, flowTypeFilter));
+  // 多选命中任意一类即保留；空数组 = 全部类型
+  if (flowTypeFilters.length) list = list.filter((f) => flowTypeFilters.some((t) => flowMatch(f, t)));
   return list;
 }
 // 按收支分类拆分金额（前 3 类），同方向同色不同透明度
@@ -7437,58 +7453,63 @@ async function renderAssetFlowsPanel(body) {
   paintFlows(body);
 }
 
-// 资产页流水：复用原型 holding-toolbar（类型 chips + 区间下拉）实时过滤，避免重复请求。
+// 资产页流水：区间下拉留在工具条，类型筛选入口改挂到表头「类型」右侧（2026-11-03）。
 function paintFlows(body) {
   if (!body) return;
   const list = currentFlowList();
 
   // 合计条已上提为顶部 4 张卡（renderAssetKpis('flows')），这里不再重复一遍。
-  let html = '';
-
-  // 类型筛选改下拉（2026-11-02，复用弹框子账户选择器的 ac-picker 组件）：
-  // 七枚胶囊在窄屏换行挤占首屏，下拉只占一个按钮位、当前口径直接显示在按钮上。
-  const typeRows = Object.entries(ASSET_FLOW_FILTER_LABEL).map(([k, v]) =>
-    '<button type="button" class="ac-pick-row' + (flowTypeFilter === k ? ' on' : '') + '" data-cat="' + k + '">' + v + '</button>').join('');
-  html += '<div class="holding-toolbar"><div class="ac-picker flow-type-pick" id="flowTypePick">' +
-    '<button type="button" class="ac-picker-btn" id="flowTypeBtn">' + esc(ASSET_FLOW_FILTER_LABEL[flowTypeFilter] || ASSET_FLOW_FILTER_LABEL.all) +
-    '<svg class="ac-pick-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>' +
-    '<div class="ac-picker-panel" id="flowTypePanel" hidden>' + typeRows + '</div>' +
-    '</div><select class="sort-select" id="flowRange">' +
+  let html = '<div class="holding-toolbar"><select class="sort-select" id="flowRange">' +
     toolbarOpt('7', '近7天', flowRangeDays === 7) +
     toolbarOpt('30', '近30天', flowRangeDays === 30) +
     toolbarOpt('365', '近1年', flowRangeDays === 365) +
     '</select></div>';
 
-  if (!list.length) {
-    html += '<p class="u-muted">该范围内暂无资金流水。</p>';
-    body.innerHTML = html;
-  } else {
-    const rows = list.map((f) => {
-      const amt = f.amount || 0;
-      const cls = clsPnl(amt);
-      const snap = !!f.snapshot;
-      const undoBtn = snap ? '' : actBtn('undo', 'data-afrb="' + f.id + '"', '回退该笔资金变动');
-      return '<tr' + (snap ? ' class="snap-flow"' : '') + '><td title="' + esc(flowDateTitle(f)) + '">' + esc(fmtFlowDate(f.date)) + '</td><td>' + cashFlowTypeTag(f) + finCatBadge(flowCatOf(f)) + flowSourceTag(f.source) + flowSnapshotTag(f) + '</td>' +
-        '<td class="num ' + cls + '">' + (amt >= 0 ? '+' : '−') + moneyCurW(Math.abs(amt), f.currency) + '</td>' +
-        '<td class="note-cell" title="' + esc(f.note || '') + '">' + esc(f.note || '') + '</td>' +
-        '<td class="row-actions">' + undoBtn + '</td></tr>';
-    }).join('');
-    html += '<div class="card asset-flow-card"><table class="asset-table flow-hist"><thead><tr><th>日期</th><th>类型</th><th class="num">金额</th><th>说明</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
-    body.innerHTML = html;
-  }
+  // 表头漏斗：筛选中时染主色 + 右上角蓝点，title 里回显已勾选的类型
+  const picked = flowTypeFilters.map((k) => ASSET_FLOW_FILTER_LABEL[k]).filter(Boolean);
+  const filterTitle = picked.length ? '筛选类型：' + picked.join('、') : '筛选流水类型';
+  const filterBtn = '<button type="button" class="th-filter-btn' + (picked.length ? ' active' : '') + '" id="flowTypeFilterBtn" title="' + esc(filterTitle) + '" aria-label="' + esc(filterTitle) + '">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg></button>';
+
+  // 空结果也保留表头，否则筛选入口会一起消失，用户没法改回全部类型
+  const emptyText = flowTypeFilters.length ? '当前筛选类型下暂无资金流水，点表头漏斗可改回全部类型。' : '该范围内暂无资金流水。';
+  const rows = list.length ? list.map((f) => {
+    const amt = f.amount || 0;
+    const cls = clsPnl(amt);
+    const snap = !!f.snapshot;
+    const undoBtn = snap ? '' : actBtn('undo', 'data-afrb="' + f.id + '"', '回退该笔资金变动');
+    return '<tr' + (snap ? ' class="snap-flow"' : '') + '><td title="' + esc(flowDateTitle(f)) + '">' + esc(fmtFlowDate(f.date)) + '</td><td>' + cashFlowTypeTag(f) + finCatBadge(flowCatOf(f)) + flowSourceTag(f.source) + flowSnapshotTag(f) + '</td>' +
+      '<td class="num ' + cls + '">' + (amt >= 0 ? '+' : '−') + moneyCurW(Math.abs(amt), f.currency) + '</td>' +
+      '<td class="note-cell" title="' + esc(f.note || '') + '">' + esc(f.note || '') + '</td>' +
+      '<td class="row-actions">' + undoBtn + '</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="flow-empty-cell">' + emptyText + '</td></tr>';
+
+  html += '<div class="card asset-flow-card"><table class="asset-table flow-hist"><thead><tr><th>日期</th><th class="th-type">类型' + filterBtn + '</th><th class="num">金额</th><th>说明</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  body.innerHTML = html;
+
   body.querySelectorAll('[data-afrb]').forEach((b) => { b.onclick = () => rollbackAssetFlow(Number(b.dataset.afrb), body); });
-  const pickBtn = body.querySelector('#flowTypeBtn');
-  const pickPanel = body.querySelector('#flowTypePanel');
-  if (pickBtn && pickPanel) {
-    pickBtn.onclick = (e) => { e.stopPropagation(); pickPanel.hidden = !pickPanel.hidden; };
-    pickPanel.querySelectorAll('.ac-pick-row').forEach((r) => {
-      r.onclick = () => { flowTypeFilter = r.dataset.cat; paintFlows(body); };
-    });
-  }
+  const filterBtnEl = body.querySelector('#flowTypeFilterBtn');
+  if (filterBtnEl) filterBtnEl.onclick = () => openFlowFilterModal(body);
   const rng = body.querySelector('#flowRange');
   if (rng) rng.onchange = () => { flowRangeDays = parseInt(rng.value, 10) || 30; paintFlows(body); };
   // 顶部卡片与表格同源：筛选 / 区间一变，卡片里的合计跟着变
   if (assetSub === 'flows') renderAssetKpis('flows');
+}
+
+// 表头漏斗打开的筛选弹框：勾选为草稿，点「完成」才落到 flowTypeFilters 并重绘
+function openFlowFilterModal(body) {
+  const modal = $('#flowFilterModal');
+  if (!modal) return;
+  const boxes = [...modal.querySelectorAll('#flowFilterChecks input[type="checkbox"]')];
+  boxes.forEach((cb) => { cb.checked = flowTypeFilters.includes(cb.value); });
+  modal.hidden = false;
+  modal.onclick = (e) => { if (e.target === modal) modal.hidden = true; };
+  modal.querySelector('#flowFilterReset').onclick = () => { boxes.forEach((cb) => { cb.checked = false; }); };
+  modal.querySelector('#flowFilterApply').onclick = () => {
+    flowTypeFilters = boxes.filter((cb) => cb.checked).map((cb) => cb.value);
+    modal.hidden = true;
+    paintFlows(body);
+  };
 }
 
 // 流水类型粗分类映射（全部/入账/支出/分红/买卖/投资/转账；投资与转账按语义分类判定）
@@ -7565,10 +7586,6 @@ function bindAssetSubTabs() {
     if (t) t.click();
   }
 }
-
-// 资产页页内工具条已删除：盈亏日历入口上提至首页「收益率」卡，资产构成入口上提至首页「总市值」卡，
-// 资产页页内工具条已删除：盈亏日历入口上提至首页「收益率」卡，资产构成入口上提至首页「总市值」卡。
-// 原全局 header 工具条（资产工具 / 资产全景 / 通知渠道）已迁至常驻主导航，同样不再需要。
 
 function assetDel(type, id) {
   const msg = {
@@ -7837,8 +7854,6 @@ function renderWealth(body) {
   bindCopyDelegation(body);
 }
 
-// 首页跟随式理财区块（renderWealthInline）已移除（2026-10-19）：理财统一由顶部「理财」切换进入 #homeWealthBox，不再在持仓下方跟随展示。
-
 // 理财表格视图（账户分组折叠，样式复用持仓来源分组）：按 source_id 分组，组头显示账户名 + 款数 + 合计金额，
 // 悬停展开单日/累计收益。行内不再重复账户列（账户已是组头），其余列沿用原口径。
 function renderWealthTable(w) {
@@ -8057,7 +8072,7 @@ $('#wealthReduceForm').onsubmit = async (e) => {
 $('#wrCancel').onclick = () => { $('#wealthReduceModal').hidden = true; };
 $('#wrDelete').onclick = () => { $('#wealthReduceModal').hidden = true; delWealthRow(reduceWealthId); };
 
-let wealthCum0 = 0; // 编辑理财打开时的累计收益原值（输入框已移除，PUT 时回传防清零）
+let wealthCum0 = 0; // 编辑理财打开时的累计收益原值（PUT 时回传，防止被清零）
 async function openWealthModal(id) {
   await loadSourcesCache();
   await loadCashAccounts();
@@ -8477,7 +8492,7 @@ $('#cashForm').onsubmit = async (e) => {
   const kind = isLiab ? 'liability' : 'cash';
   const name = $('#c_name').value.trim();
   if (!name) { $('#cashErr').textContent = '名称不能为空'; return; }
-  // 类型字段已移除（统一表单不再录入）；编辑时保留原记录的 type（存量数据不动），新增为空
+  // 类型字段不在表单录入；编辑时保留原记录的 type（存量数据不动），新增为空
   const type = acctEdit ? (acctEdit.type || '') : '';
   const currency = $('#c_currency').value || 'cny';
   const note = $('#c_note').value.trim();
@@ -8808,7 +8823,7 @@ async function openFlowModal(sign) {
   $('#flowModal').hidden = false;
 }
 
-// 还款到负债 picker 已移除：负债账户直接并入「子账户」下拉（前缀 l:），由后端按账户类型自动记。
+// 还款到负债：负债账户并入「子账户」下拉（前缀 l:），由后端按账户类型自动记。
 $('#flowForm').onsubmit = async (e) => {
   e.preventDefault();
   const rawId = $('#flow_cash').value || '0';
@@ -10454,7 +10469,7 @@ function renderAlertList() {
       lastDay = day;
     }
     const m = alertKindMeta(a.kind);
-    html += `<button class="alert-item${a.read_at ? '' : ' unread'}" type="button" data-aid="${a.id}" data-hid="${a.holding_id}">`
+    html += `<div class="alert-item${a.read_at ? '' : ' unread'}" role="button" tabindex="0" data-aid="${a.id}" data-hid="${a.holding_id}">`
       + '<span class="alert-dot" aria-hidden="true"></span>'
       + '<span class="alert-main">'
       + `<span class="alert-t">${esc(a.title || a.name || '提醒')}</span>`
@@ -10463,7 +10478,11 @@ function renderAlertList() {
       + `<span class="alert-tag ${m.cls}">${m.text}</span>`
       + `<span class="alert-name">${esc(a.name || '')}</span>`
       + `<span class="alert-time">${esc(String(a.created_at || '').slice(11, 16))}</span>`
-      + '</span></span></button>';
+      + '</span></span>'
+      + `<button class="alert-del" type="button" data-del="${a.id}" title="删除该提醒" aria-label="删除该提醒">`
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>'
+      + '</button></div>';
   });
   box.innerHTML = html;
 }
@@ -10500,6 +10519,31 @@ async function markAlertsRead(ids) {
       renderAlertList();
     }
   } catch (_) { /* 忽略 */ }
+}
+// 删除单条提醒记录（列表右侧悬停出现的垃圾桶图标）
+async function deleteAlertRecord(aid) {
+  try {
+    const r = await api('/api/alerts/' + encodeURIComponent(aid), { method: 'DELETE' });
+    if (!r.ok) throw new Error('删除失败');
+    const d = await r.json();
+    alertCache = alertCache.filter((a) => String(a.id) !== String(aid));
+    alertUnread = Number(d.unread) || 0;
+    updateAlertBadge(alertUnread);
+    renderAlertList();
+    toast('已删除该提醒', 'ok');
+  } catch (e) {
+    toast(humanizeErr(null, e, '删除提醒失败'), 'err');
+  }
+}
+function confirmDeleteAlert(aid) {
+  const a = alertCache.find((x) => String(x.id) === String(aid));
+  openConfirm({
+    title: '删除提醒',
+    msg: `确定删除「${a && (a.title || a.name) ? (a.title || a.name) : '该提醒'}」？删除后不再出现在提醒列表。`,
+    okText: '删除',
+    danger: true,
+    onOk: () => deleteAlertRecord(aid),
+  });
 }
 // 打开提醒详情：列表里只有两行摘要，完整正文与触发价位在这里看全。
 // 「看详情」即视为已读，但只在真的未读时才写库，避免每次点开都发一次请求。
@@ -10602,6 +10646,8 @@ function bindAlertBell() {
   };
   pop.addEventListener('click', (e) => e.stopPropagation());
   pop.addEventListener('click', (e) => {
+    const del = e.target.closest('.alert-del');
+    if (del) { e.stopPropagation(); confirmDeleteAlert(del.dataset.del); return; }
     const item = e.target.closest('.alert-item');
     if (item) { openAlertDetail(item.dataset.aid); return; }
     const act = e.target.closest('[data-act]');
@@ -10609,6 +10655,15 @@ function bindAlertBell() {
     if (act.dataset.act === 'scan') scanAlertsNow();
     else if (act.dataset.act === 'apply-all') applyAllRiskPlans();
     else if (act.dataset.act === 'notify') { closeAlertPop(); navigate('notify'); }
+  });
+  // 键盘可达：条目 Enter / Space 打开详情（删除按钮是真实 button，自带键盘行为）
+  pop.addEventListener('keydown', (e) => {
+    if (e.target.closest('.alert-del')) return;
+    const item = e.target.closest('.alert-item');
+    if (item && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      openAlertDetail(item.dataset.aid);
+    }
   });
   const readAll = document.getElementById('alertReadAll');
   if (readAll) readAll.onclick = (e) => { e.stopPropagation(); markAlertsRead([]); };
@@ -13513,253 +13568,6 @@ async function dcaDeletePlan() {
   if (ec) ec.onclick = () => { document.getElementById('dcaExecModal').hidden = true; };
 })();
 
-// ===== 复盘页 v6.2 · 收益率诊断（2026-10-30）=====
-// 只回答一个问题：各产品实际收益率与落袋多少钱（单一榜 + 收益占比圆环）。
-// 判定与年化一律服务端做（GET /api/review），前端只呈现与画条/画环：
-//   1) 收益总额 = 市值 × 年化（持仓中）/ 落袋总收益（已平仓），单位 元；
-//   2) 持有 <90 天照列但打「仅 N 天」灰标；
-//   3) 圆环 = 当前榜单按类别汇总的收益占比（色 = 类别色，与行首色点同源）。
-// 2026-10-30 变更：闲置现金卡连同其渲染逻辑整块删除；目标配置入口早已移除，
-// 因此列表与圆环都只呈现实际收益率/实际收益额，不再出现「目标 xx%」。
-
-let rvRange = '1y';                   // 全局区间：1y/6m/3m/1m/all，驱动基准对比和归因榜
-let rvBenchKey = 'csi300';            // 基准指数：csi300/sp500/ndx，首屏结论卡对标
-let rvBenchData = null;               // 缓存 benchmark 接口返回（首屏卡副标题需要）
-let rvBdData = null;                  // 缓存 breakdown 接口返回（归因榜区间真实收益）
-
-async function showRebalanceView() {
-  const v = document.getElementById('rebalanceView');
-  if (v) v.hidden = false;
-  await loadReview();
-}
-
-// 复盘页：拉 /api/review（全持有期）+ /api/review/benchmark（区间）+ /api/review/breakdown（区间权益归因）。
-async function loadReview() {
-  try {
-    const rr = await api('/api/review');
-    if (!rr.ok) throw new Error('HTTP ' + rr.status);
-    rvData = await rr.json();
-    renderReview();
-    loadBenchmark();
-    loadBreakdown();
-  } catch (e) {
-    console.error('review load failed', e);
-  }
-}
-
-function renderReview() {
-  if (!rvData) return;
-  renderRvHero();   // 内部会调 renderRvCompactKpis()，不再独立调用
-  renderRvBreakdown();
-  playRiseIn($('#rebalanceView'), '.rv-range-bar, .rv-hero, .rv-breakdown', 60);
-}
-
-// ===== 复盘页「基准对比」（2026-11-02，v8 重排：删掉 4 卡，数据只供 hero 副标题）=====
-async function loadBenchmark() {
-  try {
-    const r = await api('/api/review/benchmark?range=' + encodeURIComponent(rvRange));
-    if (!r.ok) throw new Error(humanizeErr(r, null, 'HTTP ' + r.status));
-    rvBenchData = await r.json();
-    renderRvHero();
-    // 更新区间日期显示（区间切换条右侧）
-    const rng = rvBenchData && rvBenchData.range ? rvBenchData.range : null;
-    const rbDates = document.getElementById('rvRbDates');
-    if (rbDates && rng && rng.from) {
-      rbDates.textContent = `${rng.from} ~ ${rng.to}`;
-    } else if (rbDates) {
-      rbDates.textContent = '';
-    }
-  } catch (e) {
-    console.error('benchmark load failed', e);
-  }
-}
-
-// ===== 区间权益归因（本轮重点：真区间口径，不是全持有期冒充）=====
-async function loadBreakdown() {
-  try {
-    const r = await api('/api/review/breakdown?range=' + encodeURIComponent(rvRange));
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    rvBdData = await r.json();
-    renderRvBreakdown();
-  } catch (e) {
-    console.error('breakdown load failed', e);
-    rvBdData = null;
-    renderRvBreakdown();
-  }
-}
-
-// ===== 首屏结论卡（v8 重排：副标题改用区间收益金额）=====
-function renderRvHero() {
-  const box = document.getElementById('rvHero');
-  if (!box) return;
-  const rng = rvBenchData && rvBenchData.range ? rvBenchData.range : null;
-  const pf = rvBenchData && rvBenchData.portfolio ? rvBenchData.portfolio : null;
-  const benchList = rvBenchData && rvBenchData.bench ? rvBenchData.bench : [];
-  const myBench = benchList.find((b) => b.key === rvBenchKey);
-  const bdTotal = rvBdData && rvBdData.total_gain_cny != null ? Number(rvBdData.total_gain_cny) : null;
-
-  const title = document.getElementById('rvHeroTitle');
-  const value = document.getElementById('rvHeroValue');
-  const sub = document.getElementById('rvHeroSub');
-
-  if (title) {
-    const rangeLabel = rng ? (rng.label || '') : '';
-    const benchLabel = myBench ? myBench.label : '基准';
-    title.textContent = `${rangeLabel} · 对标 ${benchLabel}`;
-  }
-
-  if (value) {
-    if (pf && pf.ok) {
-      const v = Number(pf.ret_pct) || 0;
-      value.textContent = (v > 0 ? '+' : '') + v.toFixed(2) + '%';
-      value.className = 'rv-hero-value ' + clsPnl(v);
-    } else {
-      value.textContent = '—';
-      value.className = 'rv-hero-value';
-    }
-  }
-
-  if (sub) {
-    const parts = [];
-    if (myBench && myBench.ok && pf && pf.ok) {
-      const ex = Number(myBench.excess_pp);
-      parts.push(ex > 0 ? `跑赢 ${ex.toFixed(2)}pp` : (ex < 0 ? `跑输 ${Math.abs(ex).toFixed(2)}pp` : `持平`));
-    }
-    if (bdTotal != null && bdTotal !== 0) {
-      parts.push(`权益收益 ${(bdTotal >= 0 ? '+' : '') + rbYuan(bdTotal)}`);
-    }
-    sub.textContent = parts.length ? parts.join(' · ') : '—';
-  }
-  // KPI 三指标内嵌 hero 底部，不再独立卡（清单 1）
-  renderRvCompactKpis();
-}
-
-// ===== KPI：年化 + 收益合计 + 年化差距（已内嵌 hero 卡底部，函数保留只操作 id）=====
-function renderRvCompactKpis() {
-  if (!rvData) return;
-  // ① 组合实测年化（全持有期，benchmark 还没 range 版的年化）
-  const ann = rvData.ann == null ? null : Number(rvData.ann);
-  const aV = document.getElementById('rvKpiAnn');
-  if (aV) {
-    aV.textContent = ann == null ? '—' : rvPct(ann, 2);
-    aV.className = 'rv-ck-value ' + (ann == null ? '' : ann >= 0 ? 'up' : 'down');
-    const s = document.getElementById('rvKpiAnnSub');
-    if (s) s.textContent = rvData.ann_est ? '含估算成分' : '全量实测';
-  }
-  // ② 收益合计
-  const perf = (rvData && rvData.perf) || [];
-  const holdSum = perf.filter((b) => (b.state || 'holding') === 'holding').reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
-  const closedSum = perf.filter((b) => (b.state || 'holding') === 'closed').reduce((a, b) => a + (Number(b.gain_cny) || 0), 0);
-  const sum = holdSum + closedSum;
-  const gV = document.getElementById('rvKpiGain');
-  if (gV) {
-    const has = perf.length > 0;
-    gV.textContent = has ? (sum >= 0 ? '+' : '') + rbYuan(sum) : '—';
-    gV.className = 'rv-ck-value ' + (has ? (sum >= 0 ? 'up' : 'down') : '');
-    const s = document.getElementById('rvKpiGainSub');
-    if (s) s.textContent = has
-      ? `浮盈 ${holdSum >= 0 ? '+' : ''}${rbYuan(holdSum)} · 落袋 ${closedSum >= 0 ? '+' : ''}${rbYuan(closedSum)}`
-      : '暂无数据';
-  }
-  // ③ 年化差距
-  const gapPP = rvData.gap_pp != null ? Number(rvData.gap_pp) : null;
-  const goalPP = rvData.goal_pct != null ? Number(rvData.goal_pct) : null;
-  const kV = document.getElementById('rvKpiGap');
-  if (kV) {
-    if (gapPP == null) {
-      kV.textContent = '—';
-      kV.className = 'rv-ck-value';
-    } else {
-      kV.textContent = (gapPP > 0 ? '−' : '+') + Math.abs(gapPP).toFixed(2) + '%';
-      kV.className = 'rv-ck-value ' + (gapPP > 0 ? 'down' : 'up');
-    }
-    const s = document.getElementById('rvKpiGapSub');
-    if (s) {
-      if (goalPP == null) s.textContent = '未设目标';
-      else {
-        let txt = `目标 ${goalPP.toFixed(2)}%`;
-        if (rvData.goal_fallback) txt += '（内推）';
-        if (rvData.gap_amt != null) txt += ` · 每年 ${Number(rvData.gap_amt) > 0 ? '少赚' : '多赚'} ${rbYuan(Math.abs(Number(rvData.gap_amt)))}`;
-        s.textContent = txt;
-      }
-    }
-  }
-}
-
-// ===== 收益归因（本轮重点：区间真实收益，不是全持有期冒充）=====
-// 数据来自 /api/review/breakdown?range=X，后端只算权益标的（股票+基金），按 |gain| 降序。
-function renderRvBreakdown() {
-  const box = document.getElementById('rvBreakdown');
-  const listEl = document.getElementById('rvBdList');
-  if (!box || !listEl) return;
-
-  const items = rvBdData && rvBdData.items ? rvBdData.items : null;
-  if (!items || !items.length) {
-    box.hidden = true;
-    return;
-  }
-  box.hidden = false;
-
-  const maxAbs = Math.max(1, ...items.map((it) => Math.abs(Number(it.gain_range_cny) || 0)));
-
-  listEl.innerHTML = items.map((it) => {
-    const gain = Number(it.gain_range_cny) || 0;
-    const up = gain >= 0;
-    const w = Math.min(100, Math.abs(gain) / maxAbs * 100);
-    const key = it.key || '';
-    const color = RB_CLASS_COLOR[key] || 'var(--text-faint)';
-    const est = it.quality === 'estimated';
-    // 区间收益率 = 区间收益 / |起点市值|（起点市值为 0 时跳过）
-    const startMV = Number(it.start_mv_cny) || 0;
-    const retPct = startMV !== 0 ? (gain / Math.abs(startMV) * 100) : null;
-    const retTxt = retPct != null
-      ? (up ? '+' : '') + retPct.toFixed(1) + '%'
-      : '—';
-    return `<div class='rv-bd-row'>
-      <span class='rv-bd-bar-wrap'>
-        <span class='rv-track'><span class='rv-fill ${up ? 'is-up' : 'is-down'}' style='--w:${w.toFixed(1)}%'></span></span>
-      </span>
-      <span class='rv-bd-left'>
-        <span class='rb-dot' style='--rb-c:${color}'></span>
-        <span class='rv-bd-name'>${esc(it.name)}${it.label ? `<span class='rv-bd-lbl'>${esc(it.label)}</span>` : ''}${est ? `<span class='rv-tag' title='${esc(it.note || '起点市值按成本价估算')}'>估算</span>` : ''}</span>
-      </span>
-      <span class='rv-bd-right'>
-        <span class='rv-bd-amt ${up ? 'up' : 'down'}'>${(up ? '+' : '') + rbYuan(gain)}</span>
-        <span class='rv-bd-pct ${up ? 'up' : 'down'}'>${retTxt}</span>
-      </span>
-    </div>`;
-  }).join('');
-}
-
-// —— 金额 / 百分比格式化（复盘页专用）——
-const rbYuan = (v) => (Number(v) < 0 ? '−¥' : '¥') + Math.abs(Math.round(Number(v) || 0)).toLocaleString('en-US');
-const rvPct = (v, d = 2) => (Number(v) || 0).toFixed(d) + '%';
-
-(function bindReviewUI() {
-  // 区间切换：驱动 benchmark + breakdown（都是区间数据），review 不动（全持有期）
-  document.querySelectorAll('#rvRangeBar .rv-rb-btns button').forEach((btn) => {
-    btn.onclick = () => {
-      const r = btn.dataset.range;
-      if (!r || r === rvRange) return;
-      rvRange = r;
-      document.querySelectorAll('#rvRangeBar .rv-rb-btns button').forEach((b) => b.classList.toggle('on', b === btn));
-      loadBenchmark();
-      loadBreakdown();
-    };
-  });
-
-  // 基准指数切换：只刷 hero 副标题
-  document.querySelectorAll('#rvBenchSwitch .rv-bs-btns button').forEach((btn) => {
-    btn.onclick = () => {
-      const k = btn.dataset.bench;
-      if (!k || k === rvBenchKey) return;
-      rvBenchKey = k;
-      document.querySelectorAll('#rvBenchSwitch .rv-bs-btns button').forEach((b) => b.classList.toggle('on', b === btn));
-      renderRvHero();
-    };
-  });
-})();
-
 // ============================================================
 // 认证层（2026-10-28）：登录闸门 / 添加设备与邀请 / 操作 PIN
 // 后端口径见 internal/api/auth.go：会话 Cookie + 一次性配对码。
@@ -13912,7 +13720,7 @@ async function onAuthed(st) {
   // 2026-11-02：原先空 hash 就「不跳」、只把 #/pair 深链改 home，导致从 #/devices、
   // #/notify 这类个人菜单页进闸门的设备登录完还停在原页，看起来像没进去。
   // 现在只认「登录前明确停在某个业务页」这一种回原页的情况，其余全进 #/home。
-  const BACK_OK = /^#\/(home|invest|holdings|asset|finance|rebalance|settings)$/;
+  const BACK_OK = /^#\/(home|invest|holdings|asset|finance|settings)$/;
   const back = BACK_OK.test(authReturnHash || '') ? authReturnHash : '#/home';
   authReturnHash = '';
   document.getElementById('authGate').hidden = true;

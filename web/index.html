@@ -109,18 +109,13 @@
       <button class="nav-pill" data-view="finance" type="button" onclick="navigate('finance')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M7 15h4"/></svg><span>财务</span>
       </button>
-      <!-- 复盘（原「再平衡」，2026-10-28 改名；路由仍用 rebalance）：按 股票/基金/理财/现金 四大类做资产配置偏离追踪 -->
-      <button class="nav-pill" data-view="rebalance" type="button" onclick="navigate('rebalance')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9"/><path d="M17 6h3"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span>复盘</span>
-      </button>
     </nav>
     <div class="act-group">
       <!-- AI 入口用「星芒(sparkles)」而非聊天气泡：气泡只表达「对话」，星芒才是当下 AI 的通用符号，
            也与相邻的日历/头像线性图标区分度更高 -->
       <button id="aiChatTopBtn" class="btn icon-btn" type="button" title="AI 助手" aria-label="AI 助手"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><!-- 星芒图形包围盒 y[3,16.4] 中心 9.7，整体下移 2.3 使视觉中心落在 viewBox 中心 12 --><g transform="translate(0 2.3)"><path d="M10.6 3.2l1.75 4.85 4.85 1.75-4.85 1.75L10.6 16.4 8.85 11.55 4 9.8l4.85-1.75z"/><path d="M18.4 3v3.2"/><path d="M20 4.6h-3.2"/></g></svg></button>
-      <!-- 盈亏日历：2026-10-28 从个人菜单「提出来」为顶栏图标按钮，置于 AI 助手右侧、样式与其一致；
-           2026-11-01 起全宽度常驻 —— 个人下拉里的重复入口已删除（缩窄窗口后按钮凭空消失，
-           只能靠下拉里那一条才能进去，入口不统一）。窄档让位靠 tablet 档收紧导航 pill 内距实现。 -->
+      <!-- 盈亏日历：顶栏图标按钮，置于 AI 助手右侧、样式与其一致；
+           全宽度常驻，窄档让位靠 tablet 档收紧导航 pill 内距实现。 -->
       <button id="pnlCalTopBtn" class="btn icon-btn" type="button" title="盈亏日历" aria-label="盈亏日历"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></button>
       <!-- 止盈止损提醒（2026-10-31）：铃铛 + 未读角标，放在盈亏日历右侧、头像左侧。
            止盈止损信号是「需要立刻处理」的信息，不能只沉在消息页，故独立成一个顶栏入口；
@@ -249,6 +244,7 @@
           <button class="rf-pill" data-rf="in" type="button">收入</button>
           <button class="rf-pill" data-rf="out" type="button">支出</button>
           <button class="rf-pill" data-rf="neutral" type="button">中性</button>
+          <span class="recent-count" id="homeRecentCount"></span>
         </div>
         <div class="recent-list" id="homeRecentFlows"></div>
       </div>
@@ -319,7 +315,7 @@
     <div id="depositKpiBody"></div>
   </section>
 
-  <!-- 首页理财视图：由顶部 #viewToggle 切到「理财」时显示，复用 renderWealth 渲染（标题/操作/表格，已移除卡片展示） -->
+  <!-- 首页理财视图：由顶部 #viewToggle 切到「理财」时显示，复用 renderWealth 渲染（标题 / 操作 / 表格） -->
   <div id="homeWealthBox" class="home-wealth-box" hidden></div>
 
   <!-- 首页存款视图：由顶部 #viewToggle 切到「存款」时显示，renderDeposits 渲染（标题/新增按钮/表格） -->
@@ -387,10 +383,10 @@
           <div class="hm-chips" id="hmChips"></div>
           <!-- 方案 6：该月无数据时会自动落到最近有记录的月份，这里说明「为什么不是你选的那个月」 -->
           <div class="hm-auto-hint" id="hmAutoHint" hidden></div>
-          <div class="hm-treemap" id="catTreemap"></div>
+          <div class="hm-treemap-scroll"><div class="hm-treemap" id="catTreemap"></div></div>
         </div>
       </div>
-      <!-- 下半部分：当月收支分类明细（由原「月度收支分类详情」卡合并而来，跟随热力图选月；默认展开） -->
+      <!-- 下半部分：当月收支分类明细（跟随热力图选月；默认展开） -->
       <div class="fin-cat-block" id="finCatBlock">
         <button class="fin-cat-head" type="button" aria-expanded="true">
           <span class="heatmap-sub-title"><span id="catBlockMonth">—</span> 收支分类明细</span>
@@ -412,89 +408,17 @@
     <div id="assetTabBody"></div>
   </div>
 
-  <!-- ===== 再平衡（2026-10-27 重新引入） =====
-       口径：股票 / 基金 / 理财 / 现金 四大类（不细到行业主题）。
-       结构沿用财务页：.kpi-section（眉标 + 控件 + .kpi-row）→ 主卡（目标vs实际 + 偏离建议）→ 本次清单 / 历史。 -->
-  <!-- ===== 复盘页 v6.2 · 收益率诊断（2026-10-30）=====
-       一张卡：业绩表现 —— 左侧「收益占比」圆环 + 右侧单一榜（按收益总额排序，
-       可切「持仓中/已平仓」（默认持仓中），默认 10 条可展开）。
-       数据全部来自 GET /api/review：收益总额、年化都在服务端算好，
-       前端只负责呈现与条形/圆环几何，避免两边各算一套导致数字对不上。
-       2026-10-30：删掉闲置现金卡（连带圆环移到业绩表现左侧做收益占比）、
-       删掉头部操作区与口径说明卡；目标无设置入口，因此不再展示「目标 xx%」。 -->
-  <div id="rebalanceView" hidden>
-    <!-- ① 区间切换条（第一行）：所有区块联动。 -->
-    <div class="rv-range-bar" id="rvRangeBar">
-      <span class="rv-rb-label">区间</span>
-      <div class="rv-rb-btns">
-        <button type="button" class="on" data-range="1y">近 1 年</button>
-        <button type="button" data-range="6m">近 6 月</button>
-        <button type="button" data-range="3m">近 3 月</button>
-        <button type="button" data-range="1m">近 1 月</button>
-        <button type="button" data-range="all">全部</button>
-      </div>
-      <span class="rv-rb-dates" id="rvRbDates"></span>
-    </div>
-
-    <!-- ② Hero 卡：区间收益大字 + 副标题 + 底部 KPI 三指标 + 顶部右侧基准切换器。 -->
-    <section class="card rv-hero rv-cardless" id="rvHero">
-      <div class="rv-hero-body">
-        <div class="rv-hero-title-row">
-          <div class="rv-hero-title" id="rvHeroTitle">复盘</div>
-          <div class="rv-bench-switch" id="rvBenchSwitch">
-            <div class="rv-bs-btns">
-              <button type="button" class="on" data-bench="csi300">沪深300</button>
-              <button type="button" data-bench="sp500">标普500</button>
-              <button type="button" data-bench="ndx">纳指100</button>
-            </div>
-          </div>
-        </div>
-        <div class="rv-hero-value" id="rvHeroValue">—</div>
-        <div class="rv-hero-sub" id="rvHeroSub">—</div>
-        <div class="rv-ck-row">
-          <div class="rv-ck-item">
-            <div class="rv-ck-label">组合实测年化</div>
-            <div class="rv-ck-value" id="rvKpiAnn">—</div>
-            <div class="rv-ck-sub" id="rvKpiAnnSub">—</div>
-          </div>
-          <div class="rv-ck-divider"></div>
-          <div class="rv-ck-item">
-            <div class="rv-ck-label">收益合计</div>
-            <div class="rv-ck-value" id="rvKpiGain">—</div>
-            <div class="rv-ck-sub" id="rvKpiGainSub">—</div>
-          </div>
-          <div class="rv-ck-divider"></div>
-          <div class="rv-ck-item">
-            <div class="rv-ck-label">年化差距</div>
-            <div class="rv-ck-value" id="rvKpiGap">—</div>
-            <div class="rv-ck-sub" id="rvKpiGapSub">—</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ④ 收益归因：上下排布（标题在上，内容在下）。
-         后端只算权益标的（股票+基金），区间联动。 -->
-    <section class="card rv-breakdown rv-cardless" id="rvBreakdown" hidden>
-      <div class="rv-bd-title-row">
-        <span class="rv-bd-title">收益归因</span>
-        <span class="rv-bd-note">仅权益标的 · 区间口径</span>
-      </div>
-      <div class="rv-bd-list" id="rvBdList"></div>
-    </section>
-  </div>
-
     <div id="settingsView" class="page-view settings-page pano-open" hidden>
     <div class="settings-layout">
 
       <!-- ④ 外观主题（已置顶） -->
       <section class="settings-group">
         <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 2-2 0-1.4 1-2 2.3-2H18a3.5 3.5 0 0 0 3.5-3.5C21.5 7 17 3 12 3Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16.5" cy="11" r="1"/></svg>外观主题</span></h3>
-        <p class="settings-group-desc">设置网站主题色，选中即时生效；深色 / 浅色模式在右上角个人菜单切换。</p>
+        <p class="settings-group-desc">设置网站主题色</p>
 		<div class="settings-group-body">
           <div class="grp-label">主题色</div>
           <div class="accent-swatches" id="accentSwatches">
-                  <button class="accent-swatch" type="button" data-accent="gold" title="土豪金（默认）" aria-label="土豪金"></button>
+                  <button class="accent-swatch" type="button" data-accent="gold" title="土豪金" aria-label="土豪金"></button>
                   <button class="accent-swatch" type="button" data-accent="green" title="豆沙护眼绿" aria-label="豆沙绿"></button>
                   <button class="accent-swatch" type="button" data-accent="blue" title="经典蓝" aria-label="经典蓝"></button>
                   <button class="accent-swatch accent-custom" type="button" id="accentCustomBtn" title="自定义主题色（铅笔挑选任意颜色）" aria-label="自定义主题色"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;margin:auto"><path d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"/><path d="M14.5 6.5 17.5 9.5"/></svg></button>
@@ -503,9 +427,7 @@
         </div>
       </section>
 
-      <!-- ② 风险偏好分组已移除（2026-10-22）：资产类型标签设置保留后端 /api/settings/asset_type_labels，仍供持仓编辑多选 chip 使用，仅不再在设置页暴露 -->
-
-      <!-- ⑥ 收支分类（常驻展开，不再可折叠）：自定义分类与内置分类合并进「记收入/记支出」与「收支计划」选择器 -->
+      <!-- ⑥ 收支分类（常驻展开）：自定义分类与内置分类合并进「记收入/记支出」与「收支计划」选择器 -->
       <section class="settings-group">
         <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="10" rx="2"/><path d="M4 11h16"/><circle cx="16" cy="14.5" r="1.2"/></svg>收支分类</span></h3>
         <p class="settings-group-desc">自定义收支分类。内置已含：收入（工资薪金/经营收入/投资分红/投资利息/落袋收益/其他收入）、支出（日常消费/居住支出/资本开支/负债偿还/税费/保险保障/教育医疗/投资费用/其他支出）；投资活动与内部划转为中性类不计收支。</p>
@@ -525,7 +447,7 @@
         </div>
       </section>
 
-      <!-- 数据管理（原「账本切换」相关设置，按原型布局移至此） -->
+      <!-- 数据管理 -->
       <section class="settings-group">
         <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M10 11v6M14 11v6"/></svg>数据管理</span></h3>
         <p class="settings-group-desc">导出 / 导入全部数据，或清空当前账本数据。</p>
@@ -820,7 +742,7 @@
 
   </div><!-- /toolsView -->
 
-  <!-- 盈亏日历弹框（原「日历 + 走势」双 Tab 已移除走势视图） -->
+  <!-- 盈亏日历弹框 -->
   <div id="pnlModal" class="modal" hidden>
     <div class="modal-card">
       <h2 id="pnlModalTitle">盈亏日历</h2>
@@ -969,8 +891,7 @@
               </div>
             </div>
           <!-- 低频字段收进高级折叠：主流程只留 名称/代码/数量成本/日期/账户，弹框高度降约 30%。
-               持仓类型（独立一行）与关联股票代码均为基金分类相关低频项：输入关联代码会实时反推
-               持仓类型（syncCatFromLinked），二者收在同一折叠里保持联动可见。 -->
+               持仓类型与关联股票代码是基金分类相关低频项，收在同一折叠里。 -->
           <details class="f-adv">
             <summary><span class="hat-chevron">▾</span>高级选项</summary>
             <div class="f-adv-body">
@@ -985,7 +906,7 @@
               <div id="linked_symbol_row" class="linked-sym-row">
                 <span class="linked-sym-label">关联股票代码</span>
                 <select id="f_linked_market" class="linked-sym-mkt"><option value="a">A 股</option><option value="hk">港股</option><option value="us">美股</option></select>
-                <input id="f_linked_code" class="linked-sym-code" placeholder="如 600519 / 00700 / AAPL" oninput="syncCatFromLinked()">
+                <input id="f_linked_code" class="linked-sym-code" placeholder="如 600519 / 00700 / AAPL">
               </div>
               <label>备注 <input id="f_note" placeholder="备注（可选）"></label>
               <!-- 止盈止损（2026-10-31）：参数按持仓保存，默认「不启用」——
@@ -1114,13 +1035,13 @@
           <input type="hidden" id="addMode" value="qty">
           <input type="hidden" id="addSide" value="buy">
           <div class="adj-row">
-            <label class="adj-inline">原成交价（元/份）<input id="addOldPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="如 10.50"></label>
+            <label class="adj-inline">原成交价（元/份）<input id="addOldPrice" type="number" step="0.0001" min="0" placeholder="如 10.50"></label>
             <label class="adj-inline">原持仓数量（股/份）<input id="addOldQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 1000"></label>
           </div>
           <div class="adj-row">
             <label class="adj-inline" id="addQtyWrap"><span id="addQtyLabel">补仓数量</span><input id="addNewQty" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="如 500"></label>
             <label class="adj-inline" id="addAmtWrap" style="display:none"><span id="addAmtLabel">补仓金额</span><input id="addAmount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 5000"></label>
-            <label class="adj-inline"><span id="addPriceLabel">补仓价</span><input id="addNewPrice" type="number" step="0.0001" min="0" oninput="clampCalc(this)" placeholder="按交易日期取收盘"><span class="ua-hint" id="addPriceHint"></span></label>
+            <label class="adj-inline"><span id="addPriceLabel">补仓价</span><input id="addNewPrice" type="number" step="0.0001" min="0" placeholder="按交易日期取收盘"><span class="ua-hint" id="addPriceHint"></span></label>
             <label class="adj-inline">手续费<input id="addFee" type="number" step="0.0001" min="0" oninput="clampDecimals(this,2)" placeholder="如 0 或 5"></label>
           </div>
           <div class="tool-result" id="addResult"></div>
@@ -1654,6 +1575,29 @@
         <div id="flowErr" class="err"></div>
         <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
       </form>
+    </div>
+  </div>
+
+  <!-- 流水类型筛选（2026-11-03）：入口从表格上方的下拉挪到「类型」表头右侧的漏斗按钮，
+       弹框内多选勾选；一项都不勾 = 全部类型。 -->
+  <div id="flowFilterModal" class="modal" hidden>
+    <div class="modal-card" style="width:420px; max-width:94vw;">
+      <h2 class="m-head">筛选流水类型</h2>
+      <div class="m-body">
+        <p class="tool-hint">可多选；全部不勾选时显示所有类型。</p>
+        <div class="cur-checks" id="flowFilterChecks">
+          <label class="cur-check"><input type="checkbox" value="in"> 入账</label>
+          <label class="cur-check"><input type="checkbox" value="out"> 支出</label>
+          <label class="cur-check"><input type="checkbox" value="dividend"> 分红</label>
+          <label class="cur-check"><input type="checkbox" value="trade"> 买卖</label>
+          <label class="cur-check"><input type="checkbox" value="invest"> 投资</label>
+          <label class="cur-check"><input type="checkbox" value="transfer"> 转账</label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="flowFilterReset">重置</button>
+        <button type="button" class="btn primary" id="flowFilterApply">完成</button>
+      </div>
     </div>
   </div>
 
