@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -185,16 +186,20 @@ func updateCashflowPlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "产生新负债需关联一个子账户"})
 		return
 	}
+	// 校验归属：仅允许编辑自己的计划，避免越权改写他人数据。软删除的计划视同不存在。
 	p.ID = id
 	uid := currentUserID(c)
-	// 校验归属：仅允许编辑自己的计划，避免越权改写他人数据。
-	if existing, e := db.GetCashflowPlan(id); e != nil {
+	existing, e := db.GetCashflowPlan(id)
+	if e != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
 		return
-	} else if existing == nil || existing.UserID != uid {
+	}
+	if existing == nil || existing.UserID != uid || existing.DeletedAt != "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "计划不存在"})
 		return
 	}
+	// 整表单保存不改变启用/暂停状态：暂停只走列表开关或 PATCH，避免老客户端漏传 enabled 时被误暂停。
+	p.Enabled = existing.Enabled
 	p.UserID = uid
 	if err := db.UpdateCashflowPlan(&p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -216,6 +221,184 @@ func deleteCashflowPlan(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// patchCashflowPlan 行内局部更新：只改请求体里出现的字段，其余保持原值。
+// 用于列表里的金额/日期/名称/暂停开关，避免为改一个数字走整表单保存。
+func patchCashflowPlan(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	uid := currentUserID(c)
+	p, err := db.GetCashflowPlan(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if p == nil || p.UserID != uid || p.DeletedAt != "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "计划不存在"})
+		return
+	}
+	var body struct {
+		Amount      *float64 `json:"amount"`
+		DayOfMonth  *int     `json:"day_of_month"`
+		Title       *string  `json:"title"`
+		Name        *string  `json:"name"`
+		Type        *string  `json:"type"`
+		Enabled     *int     `json:"enabled"`
+		OneTimeDate *string  `json:"one_time_date"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式不对"})
+		return
+	}
+	changed := false
+	if body.Amount != nil {
+		v := math.Round(*body.Amount*100) / 100
+		if v < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "金额不能为负"})
+			return
+		}
+		p.Amount = v
+		changed = true
+	}
+	if body.Title != nil || body.Name != nil {
+		title := ""
+		if body.Title != nil {
+			title = *body.Title
+		} else {
+			title = *body.Name
+		}
+		title = strings.TrimSpace(title)
+		if title == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
+			return
+		}
+		p.Title = title
+		changed = true
+	}
+	if body.Type != nil {
+		t := strings.TrimSpace(*body.Type)
+		if t != "income" && t != "expense" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "方向只能是收入或支出"})
+			return
+		}
+		// 已关联负债的计划改方向会让负债归属失真，第一期直接拒绝，去抽屉里调整关联。
+		if t != p.Type && (p.LiabilityID > 0 || (p.Type == "expense" && p.LiabilityMode == "incur")) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "已关联负债的计划不能直接改方向"})
+			return
+		}
+		p.Type = t
+		changed = true
+	}
+	if body.Enabled != nil {
+		v := *body.Enabled
+		if v != 0 && v != 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "enabled 只能是 0 或 1"})
+			return
+		}
+		p.Enabled = v
+		changed = true
+	}
+	if body.DayOfMonth != nil {
+		v := *body.DayOfMonth
+		if v < 1 || v > 31 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "日期要在 1–31 号之间"})
+			return
+		}
+		p.DayOfMonth = v
+		changed = true
+	}
+	if body.OneTimeDate != nil {
+		if p.Pattern != "one_time" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "只有一次性计划能改具体日期"})
+			return
+		}
+		d := strings.TrimSpace(*body.OneTimeDate)
+		t, e := time.Parse("2006-01-02", d)
+		if e != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式不对"})
+			return
+		}
+		p.OneTimeDate = t.Format("2006-01-02")
+		p.DayOfMonth = t.Day()
+		changed = true
+	}
+	if !changed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "没有要改的字段"})
+		return
+	}
+	if err := db.UpdateCashflowPlan(p); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"plan": p})
+}
+
+// bulkDeleteCashflowPlans 批量软删除；单条删除也走这里，便于前端统一做撤销。
+func bulkDeleteCashflowPlans(c *gin.Context) {
+	var body struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式不对"})
+		return
+	}
+	ids, err := cleanPlanIDs(body.IDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	n, err := db.SoftDeleteCashflowPlans(currentUserID(c), ids)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": n, "ids": ids})
+}
+
+// restoreCashflowPlans 撤销软删除（单条或整批），只恢复本人已删除的行，幂等。
+func restoreCashflowPlans(c *gin.Context) {
+	var body struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式不对"})
+		return
+	}
+	ids, err := cleanPlanIDs(body.IDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	n, err := db.RestoreCashflowPlans(currentUserID(c), ids)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"restored": n})
+}
+
+// cleanPlanIDs 去重并限制批量上限，避免空请求与超大 IN 查询。
+func cleanPlanIDs(in []int64) ([]int64, error) {
+	seen := make(map[int64]bool, len(in))
+	out := make([]int64, 0, len(in))
+	for _, id := range in {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil, errors.New("ids 不能为空")
+	}
+	if len(out) > 500 {
+		return nil, errors.New("一次最多操作 500 条")
+	}
+	return out, nil
+}
+
 // completeCashflowPlan 勾选完成：把真实出入账记入账户/负债，并落库完成记录（幂等：同 plan+ym 只记一次）。
 func completeCashflowPlan(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -229,7 +412,7 @@ func completeCashflowPlan(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if p == nil || p.UserID != uid {
+	if p == nil || p.UserID != uid || p.DeletedAt != "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "计划不存在"})
 		return
 	}
@@ -292,7 +475,7 @@ func uncompleteCashflowPlan(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if p == nil || p.UserID != uid {
+	if p == nil || p.UserID != uid || p.DeletedAt != "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "计划不存在"})
 		return
 	}
@@ -412,12 +595,12 @@ func recordPlanTransaction(uid int64, p *db.CashflowPlan, actual float64, cashAc
 		}
 		bal := actual
 		if _, e2 := db.InsertLiabilityFlow(&db.LiabilityFlow{
-			UserID:       uid,
-			LiabilityID:  lid,
-			Type:         "loan",
-			Amount:       actual,
-			Balance:      bal,
-			Note:         "一次性购物负债产生「" + p.Title + "」",
+			UserID:      uid,
+			LiabilityID: lid,
+			Type:        "loan",
+			Amount:      actual,
+			Balance:     bal,
+			Note:        "一次性购物负债产生「" + p.Title + "」",
 		}); e2 != nil {
 			return "", 0, e2
 		}
@@ -436,12 +619,12 @@ func recordPlanTransaction(uid int64, p *db.CashflowPlan, actual float64, cashAc
 		}
 		bal := math.Round((l.Amount-actual)*100) / 100 // 还款后债务余额下降
 		if _, e2 := db.InsertLiabilityFlow(&db.LiabilityFlow{
-			UserID:       uid,
-			LiabilityID:  p.LiabilityID,
-			Type:         "repay",
-			Amount:       actual,
-			Balance:      bal,
-			Note:         "待还款完成「" + p.Title + "」",
+			UserID:      uid,
+			LiabilityID: p.LiabilityID,
+			Type:        "repay",
+			Amount:      actual,
+			Balance:     bal,
+			Note:        "待还款完成「" + p.Title + "」",
 		}); e2 != nil {
 			return "", 0, e2
 		}
@@ -511,12 +694,12 @@ func reversePlanTransaction(uid int64, done *db.CashflowDone, p *db.CashflowPlan
 		if l != nil {
 			newBal := math.Round((l.Amount+actual)*100) / 100 // 撤销还款：债务余额回升
 			if _, e := db.InsertLiabilityFlow(&db.LiabilityFlow{
-				UserID:       uid,
-				LiabilityID:  done.RefID,
-				Type:         "loan",
-				Amount:       actual,
-				Balance:      newBal,
-				Note:         "撤销待还款「" + p.Title + "」",
+				UserID:      uid,
+				LiabilityID: done.RefID,
+				Type:        "loan",
+				Amount:      actual,
+				Balance:     newBal,
+				Note:        "撤销待还款「" + p.Title + "」",
 			}); e != nil {
 				return e
 			}

@@ -688,6 +688,9 @@ func checkCashflowReminders() {
 		var due []db.CashflowPlan
 		tomorrowStr := tomorrow.Format("2006-01-02")
 		for _, p := range plans {
+			if p.Enabled == 0 { // 暂停的计划不发到期提醒
+				continue
+			}
 			if p.Type != "expense" { // 仅待还款参与提醒
 				continue
 			}

@@ -147,6 +147,9 @@ func todayBrief(c *gin.Context) {
 		gIncome := todayGroup{Key: "income", Label: "未来收入", Items: make([]todayItem, 0, 4)}
 
 		for _, p := range plans {
+			if p.Enabled == 0 { // 暂停的计划不参与首页待办
+				continue
+			}
 			if p.Type != "income" && p.Type != "expense" {
 				continue
 			}

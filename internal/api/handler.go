@@ -29,11 +29,11 @@ type HoldingView struct {
 	DayPnlPct   float64 `json:"day_pnl_pct"`
 	// DayPnl 实际归属的交易日（YYYY-MM-DD）。交易日即今天；周末/法定节假日回指最近一个交易日，
 	// 此时 DayPnl 是那个交易日的涨跌而非「今天」的（休市没有今天可言）。
-	PnlDate     string `json:"pnl_date"`
-	HoldingDays int    `json:"holding_days"` // 持仓天数，从 buy_date 算起
-	SourceName   string  `json:"source_name"`  // 所属平台/来源名称（来自 asset_sources）
-	RealizedPnl  float64 `json:"realized_pnl"` // 累计已实现盈亏（position_tx 聚合，含 SELL/DIV）
-	ClosedDate   string  `json:"closed_date"`  // 清仓日期（最后一次 SELL 的日期，YYYY-MM-DD；未清仓为空）
+	PnlDate      string  `json:"pnl_date"`
+	HoldingDays  int     `json:"holding_days"`  // 持仓天数，从 buy_date 算起
+	SourceName   string  `json:"source_name"`   // 所属平台/来源名称（来自 asset_sources）
+	RealizedPnl  float64 `json:"realized_pnl"`  // 累计已实现盈亏（position_tx 聚合，含 SELL/DIV）
+	ClosedDate   string  `json:"closed_date"`   // 清仓日期（最后一次 SELL 的日期，YYYY-MM-DD；未清仓为空）
 	InvestedCost float64 `json:"invested_cost"` // 累计买入成本（BUY 金额之和；清仓后 quantity=0 致 cost_value 归零，供已平仓盈亏率分母）
 }
 
@@ -183,7 +183,7 @@ func RegisterRoutes(r *gin.Engine) {
 	{
 		pub.GET("/session", sessionState)
 		pub.POST("/session/claim", sessionClaim)        // 首启认领（仅当库内无有效会话）
-		pub.POST("/session/pair", sessionPair)         // 配对码登录
+		pub.POST("/session/pair", sessionPair)          // 配对码登录
 		pub.POST("/session/pin-login", sessionPinLogin) // 操作 PIN 登录（实例已设 PIN 时的免配对回去通道）
 	}
 
@@ -203,15 +203,15 @@ func RegisterRoutes(r *gin.Engine) {
 		// 仍属主设备专属（账本级不可逆操作）：改/关操作 PIN、恢复码 rotate、删账本、清空账本、导入。
 		g.POST("/session/logout", sessionLogout)
 		g.POST("/session/switch", sessionSwitch)
-		g.POST("/session/persist", sessionPersist) // 切换本设备登录保持（会话 Cookie / 长期 Cookie）
-		g.POST("/session/pin", OwnerGuard(), sessionPIN)              // 改/关卡 PIN 只属主设备
-		g.POST("/session/pin/reset", sessionPINReset)                 // 忘记 PIN：用恢复码重置（需已登录，不需旧 PIN）
+		g.POST("/session/persist", sessionPersist)                                          // 切换本设备登录保持（会话 Cookie / 长期 Cookie）
+		g.POST("/session/pin", OwnerGuard(), sessionPIN)                                    // 改/关卡 PIN 只属主设备
+		g.POST("/session/pin/reset", sessionPINReset)                                       // 忘记 PIN：用恢复码重置（需已登录，不需旧 PIN）
 		g.POST("/session/recovery/rotate", OwnerGuard(), PinGuard(), sessionRecoveryRotate) // 重新生成恢复码
-		g.POST("/session/transfer", OwnerGuard(), sessionTransfer)    // 把主设备身份转移给指定设备
+		g.POST("/session/transfer", OwnerGuard(), sessionTransfer)                          // 把主设备身份转移给指定设备
 		g.GET("/session/devices", sessionDevices)
 		g.PATCH("/session/devices/:id", sessionDeviceRename)  // 改名：本机与他机都放行
 		g.DELETE("/session/devices/:id", sessionDeviceRevoke) // 吊销自己：免 PIN；吊销他机：任意设备 + PIN
-		g.POST("/session/code", PinGuard(), sessionCode) // 出码（加设备 / 邀请家人）：任意设备 + PIN
+		g.POST("/session/code", PinGuard(), sessionCode)      // 出码（加设备 / 邀请家人）：任意设备 + PIN
 
 		// 多账本：账本列表/新增/删除/统计/清空（路径与字段沿用 users）
 		g.GET("/users", listUsers)
@@ -359,7 +359,11 @@ func RegisterRoutes(r *gin.Engine) {
 		g.GET("/cashflow/plans", listCashflowPlans)
 		g.POST("/cashflow/plans", createCashflowPlan)
 		g.PUT("/cashflow/plans/:id", updateCashflowPlan)
+		g.PATCH("/cashflow/plans/:id", patchCashflowPlan)
 		g.DELETE("/cashflow/plans/:id", deleteCashflowPlan)
+		// 软删除的批量与撤销：单条也走 bulk-delete/restore，前端统一做 5 秒撤销。
+		g.POST("/cashflow/plans/bulk-delete", bulkDeleteCashflowPlans)
+		g.POST("/cashflow/plans/restore", restoreCashflowPlans)
 		g.POST("/cashflow/plans/:id/complete", completeCashflowPlan)
 		g.POST("/cashflow/plans/:id/uncomplete", uncompleteCashflowPlan)
 		g.GET("/asset/flows", listFlows)
@@ -638,37 +642,37 @@ func updateHolding(c *gin.Context) {
 		return
 	}
 	h := req.Holding
-		h.ID = id
-		uid := currentUserID(c)
-		// 编辑时表单不回传 buy_plan / user_id：先取旧行保留，避免保存时被清空（#修复：编辑持仓导致所属账本被重置为 0、从当前账本列表消失）
-		ex, e := db.Get(id)
-		if e == nil {
-			h.BuyPlan = ex.BuyPlan
-			// 止盈止损方案同理：持仓编辑表单不回传 risk_plan，必须保留旧值，
-			// 否则用户改个份额就把辛苦调好的价位清零（与 buy_plan 同一个坑）。
-			if strings.TrimSpace(h.RiskPlan) == "" {
-				h.RiskPlan = ex.RiskPlan
-			}
-			// 取旧值用于资金联动对比：仅当新旧总成本变化 ≥ 0.01 时才联动（避免误改名字/代码时触发）
-			oldCost := ex.Quantity*ex.CostPrice + ex.TransactionCost
-			newCost := h.Quantity*h.CostPrice + h.TransactionCost
-			diff := newCost - oldCost
-			if math.Abs(diff) >= 0.01 && req.CashAccountID >= 0 {
-				acc, accErr := resolveCashAccount(uid, req.CashAccountID, h.SourceID, h.Currency)
-				if accErr == nil {
-					flowType, label := "holding_edit_add", "编辑追补资金"
-					delta := -diff // diff>0 追补=扣款（负）；diff<0 调减=回款（正）
-					if diff < 0 {
-						flowType, label = "holding_edit_reduce", "编辑调减资金"
-						delta = -diff // diff 为负 → delta 为正（入账）
-					}
-					detail := fmt.Sprintf("%s %s｜旧成本 %.2f → 新成本 %.2f｜差额 %+.2f", label, h.Name, oldCost, newCost, -diff)
-					if e2 := db.AddCashAmount(acc.ID, delta, flowType, "holding", h.ID, h.Name, detail); e2 != nil {
-						log.Printf("[updateHolding] 编辑持仓现金联动失败(uid=%d hid=%d): %v", uid, id, e2)
-					}
+	h.ID = id
+	uid := currentUserID(c)
+	// 编辑时表单不回传 buy_plan / user_id：先取旧行保留，避免保存时被清空（#修复：编辑持仓导致所属账本被重置为 0、从当前账本列表消失）
+	ex, e := db.Get(id)
+	if e == nil {
+		h.BuyPlan = ex.BuyPlan
+		// 止盈止损方案同理：持仓编辑表单不回传 risk_plan，必须保留旧值，
+		// 否则用户改个份额就把辛苦调好的价位清零（与 buy_plan 同一个坑）。
+		if strings.TrimSpace(h.RiskPlan) == "" {
+			h.RiskPlan = ex.RiskPlan
+		}
+		// 取旧值用于资金联动对比：仅当新旧总成本变化 ≥ 0.01 时才联动（避免误改名字/代码时触发）
+		oldCost := ex.Quantity*ex.CostPrice + ex.TransactionCost
+		newCost := h.Quantity*h.CostPrice + h.TransactionCost
+		diff := newCost - oldCost
+		if math.Abs(diff) >= 0.01 && req.CashAccountID >= 0 {
+			acc, accErr := resolveCashAccount(uid, req.CashAccountID, h.SourceID, h.Currency)
+			if accErr == nil {
+				flowType, label := "holding_edit_add", "编辑追补资金"
+				delta := -diff // diff>0 追补=扣款（负）；diff<0 调减=回款（正）
+				if diff < 0 {
+					flowType, label = "holding_edit_reduce", "编辑调减资金"
+					delta = -diff // diff 为负 → delta 为正（入账）
+				}
+				detail := fmt.Sprintf("%s %s｜旧成本 %.2f → 新成本 %.2f｜差额 %+.2f", label, h.Name, oldCost, newCost, -diff)
+				if e2 := db.AddCashAmount(acc.ID, delta, flowType, "holding", h.ID, h.Name, detail); e2 != nil {
+					log.Printf("[updateHolding] 编辑持仓现金联动失败(uid=%d hid=%d): %v", uid, id, e2)
 				}
 			}
 		}
+	}
 	h.UserID = uid
 	normalize(&h)
 	if exists, e := db.ExistsBySymbol(h.Symbol, id, currentUserID(c)); e == nil && exists {
@@ -773,7 +777,7 @@ func adjustHolding(c *gin.Context) {
 		Price         float64 `json:"price"`
 		Fee           float64 `json:"fee"`
 		Note          string  `json:"note"`
-		Date          string  `json:"date"` // 交易日期（YYYY-MM-DD 可回填历史）；为空则取当前时间
+		Date          string  `json:"date"`            // 交易日期（YYYY-MM-DD 可回填历史）；为空则取当前时间
 		CashAccountID int64   `json:"cash_account_id"` // 资金往来账户：加仓付款 / 减仓回款；为空则回落到该来源的默认现金账户
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1128,7 +1132,6 @@ func refresh(c *gin.Context) {
 // refreshOne 已移除：单只持仓手动刷新逻辑取消，行情改由定时快照（refreshAllQuotes）自动更新。
 // 批量刷新 /api/refresh 与定时快照仍复用 refreshAllQuotes。
 
-
 func rate(c *gin.Context) {
 	r, degraded := market.GetUSDRate()
 	c.JSON(http.StatusOK, gin.H{"rate": r, "rate_degraded": degraded})
@@ -1146,14 +1149,14 @@ func computeSummary(uid int64) (gin.H, error) {
 	}
 	cnyRate, hkdRate, degraded := market.GetFXRates()
 	var (
-		cnyMV, cnyCV, cnyPnl     float64
-		usdMV, usdCV, usdPnl     float64
-		hkdMV, hkdCV, hkdPnl     float64
-		totalCNY, totalCostCNY   float64
-		todayLiveCNY             float64
-		todayLiveCny             float64
-		todayLiveUsd             float64
-		unsupported              = []string{}
+		cnyMV, cnyCV, cnyPnl   float64
+		usdMV, usdCV, usdPnl   float64
+		hkdMV, hkdCV, hkdPnl   float64
+		totalCNY, totalCostCNY float64
+		todayLiveCNY           float64
+		todayLiveCny           float64
+		todayLiveUsd           float64
+		unsupported            = []string{}
 	)
 	for _, h := range hs {
 		mv := h.Quantity * h.CurrentPrice
@@ -1295,36 +1298,36 @@ func computeSummary(uid int64) (gin.H, error) {
 		monthPNLUsd += todayLiveUsd + realizedUsd
 	}
 	return gin.H{
-		"today_realized_cny":  round2(todayRealizedCNY),
-		"realized_today":      realizedToday,
-		"rate":                cnyRate,
-		"rate_degraded":       degraded,
+		"today_realized_cny":     round2(todayRealizedCNY),
+		"realized_today":         realizedToday,
+		"rate":                   cnyRate,
+		"rate_degraded":          degraded,
 		"unsupported_currencies": unsupported,
-		"month_pnl_cny":       round2(monthPNL),
-		"month_pnl_cny_ccy":   round2(monthPNLCny),
-		"month_pnl_usd":       round2(monthPNLUsd),
+		"month_pnl_cny":          round2(monthPNL),
+		"month_pnl_cny_ccy":      round2(monthPNLCny),
+		"month_pnl_usd":          round2(monthPNLUsd),
 		// 今日盈亏的归属交易日：非交易日回指最近交易日（前端据此把「今日」改成「最近交易日」，
 		// 并判断本月是否已开市 —— pnl_date 不在本月即本月尚无交易日）。
-		"pnl_date":            pnlDate,
-		"hkd_rate":            fxToCNY(1, "HKD", cnyRate, hkdRate),
-		"cny_market_value":    round2(cnyMV),
-		"cny_cost_value":      round2(cnyCV),
-		"cny_pnl":             round2(cnyPnl),
-		"cny_pnl_pct":         round2(cnyPct),
-		"usd_market_value":    round2(usdMV),
-		"usd_cost_value":      round2(usdCV),
-		"usd_pnl":             round2(usdPnl),
-		"usd_pnl_pct":         round2(usdPct),
+		"pnl_date":             pnlDate,
+		"hkd_rate":             fxToCNY(1, "HKD", cnyRate, hkdRate),
+		"cny_market_value":     round2(cnyMV),
+		"cny_cost_value":       round2(cnyCV),
+		"cny_pnl":              round2(cnyPnl),
+		"cny_pnl_pct":          round2(cnyPct),
+		"usd_market_value":     round2(usdMV),
+		"usd_cost_value":       round2(usdCV),
+		"usd_pnl":              round2(usdPnl),
+		"usd_pnl_pct":          round2(usdPct),
 		"usd_market_value_cny": round2(fxToCNY(usdMV, "USD", cnyRate, hkdRate)),
-		"hkd_market_value":    round2(hkdMV),
-		"hkd_cost_value":      round2(hkdCV),
-		"hkd_pnl":             round2(hkdPnl),
-		"hkd_pnl_pct":         round2(hkdPct),
+		"hkd_market_value":     round2(hkdMV),
+		"hkd_cost_value":       round2(hkdCV),
+		"hkd_pnl":              round2(hkdPnl),
+		"hkd_pnl_pct":          round2(hkdPct),
 		"hkd_market_value_cny": round2(fxToCNY(hkdMV, "HKD", cnyRate, hkdRate)),
-		"total_cny":           round2(totalCNY),
-		"total_cost_cny":      round2(totalCostCNY),
-		"total_pnl":           round2(totalPnl),
-		"total_pnl_pct":       round2(totalPct),
+		"total_cny":            round2(totalCNY),
+		"total_cost_cny":       round2(totalCostCNY),
+		"total_pnl":            round2(totalPnl),
+		"total_pnl_pct":        round2(totalPct),
 	}, nil
 }
 
@@ -1421,12 +1424,12 @@ var cnHolidays = map[string]bool{
 
 // 中国调休补班日（周末上班，算交易日），按 "2006-01-02" 标注。
 var cnWorkdays = map[string]bool{
-	"2026-01-04": true,  // 元旦调休
-	"2026-02-14": true,  // 春节调休
-	"2026-02-28": true,  // 春节调休
-	"2026-05-09": true,  // 劳动节调休
-	"2026-09-20": true,  // 国庆调休
-	"2026-10-10": true,  // 国庆调休
+	"2026-01-04": true, // 元旦调休
+	"2026-02-14": true, // 春节调休
+	"2026-02-28": true, // 春节调休
+	"2026-05-09": true, // 劳动节调休
+	"2026-09-20": true, // 国庆调休
+	"2026-10-10": true, // 国庆调休
 }
 
 // isTradingDayCN 判断给定日期是否为中国 A 股交易日：
@@ -2448,7 +2451,6 @@ func computeSpark(uid int64, syms []string, minDates map[string]string) map[stri
 	return out
 }
 
-
 // home is the merged first-screen endpoint. It runs the same computations the client
 // previously fetched via /api/holdings + /api/summary + /api/fx + /api/asset/sources
 // + /api/price/spark and returns them in ONE response, removing the request waterfall
@@ -2805,4 +2807,3 @@ func holdingPnlHistory(c *gin.Context) {
 		"closed_info": closedInfo,
 	})
 }
-

@@ -1405,6 +1405,8 @@ func initAssetTables() error {
 				pattern TEXT NOT NULL DEFAULT 'recurring_fixed',
 				one_time_date TEXT NOT NULL DEFAULT '',
 			liability_mode TEXT NOT NULL DEFAULT 'repay',
+			enabled INTEGER NOT NULL DEFAULT 1,
+			deleted_at TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT ''
 		)`,
 		// 完成记录：某计划在某一月份(ym)被勾选完成后落库一条，保证幂等（同 plan+ym 唯一）。
@@ -1503,6 +1505,12 @@ func initAssetTables() error {
 	// 存量回填按 type 自动映射 + manual 按备注关键词启发式（见 fincat.go）。
 	addColumnIfMissing("cash_flow", "category", "TEXT NOT NULL DEFAULT ''")
 	addColumnIfMissing("cashflow_plans", "category", "TEXT NOT NULL DEFAULT ''")
+	// enabled：收支计划启用/暂停（1=启用，0=暂停）。暂停后不计入月度小结、不参与首页待办与到期提醒。
+	// 老库由常量默认值补 1，存量计划保持启用。
+	addColumnIfMissing("cashflow_plans", "enabled", "INTEGER NOT NULL DEFAULT 1")
+	// deleted_at：软删除时间（YYYY-MM-DD HH:MM:SS，空=未删除）。列表与汇总统一过滤；
+	// 完成记录 cashflow_plan_done 保留，撤销恢复后历史仍在。
+	addColumnIfMissing("cashflow_plans", "deleted_at", "TEXT NOT NULL DEFAULT ''")
 	// 仅快照标记：勾选后该笔流水计入汇总分析，但不改动对应子账户的实时余额。
 	addColumnIfMissing("cash_flow", "snapshot", "INTEGER NOT NULL DEFAULT 0")
 	migrateFinCategory()
@@ -2800,12 +2808,14 @@ type CashflowPlan struct {
 	AccountID     int64   `json:"account_id"`   // 关联子账户（入账/还款账户；incur 模式必填）
 	LiabilityID   int64   `json:"liability_id"` // 关联负债（仅 expense）
 	Note          string  `json:"note"`
-	EndDate       string  `json:"end_date"`       // 截止日期 YYYY-MM-DD，空=长期有效
-	Pattern       string  `json:"pattern"`        // recurring_fixed | recurring_variable | one_time
-	OneTimeDate   string  `json:"one_time_date"`  // 一次性计划归属具体日期 YYYY-MM-DD
-	LiabilityMode string  `json:"liability_mode"` // repay(还款已有) | incur(产生新负债)，仅 expense
-	Category      string  `json:"category"`       // 收支语义分类（完成入账时落到现金流水；空=按方向兜底 other_in/other_out）
-	Notify        int     `json:"notify"`         // 是否推送到期提醒（1=推送，0=不推送）；默认 1
+	EndDate       string  `json:"end_date"`             // 截止日期 YYYY-MM-DD，空=长期有效
+	Pattern       string  `json:"pattern"`              // recurring_fixed | recurring_variable | one_time
+	OneTimeDate   string  `json:"one_time_date"`        // 一次性计划归属具体日期 YYYY-MM-DD
+	LiabilityMode string  `json:"liability_mode"`       // repay(还款已有) | incur(产生新负债)，仅 expense
+	Category      string  `json:"category"`             // 收支语义分类（完成入账时落到现金流水；空=按方向兜底 other_in/other_out）
+	Notify        int     `json:"notify"`               // 是否推送到期提醒（1=推送，0=不推送）；默认 1
+	Enabled       int     `json:"enabled"`              // 1=启用，0=暂停（暂停不计入小结、不进待办、不提醒）
+	DeletedAt     string  `json:"deleted_at,omitempty"` // 软删除时间；空=未删除
 	CreatedAt     string  `json:"created_at"`
 }
 
@@ -2822,7 +2832,7 @@ type CashflowDone struct {
 }
 
 func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
-	rows, err := DB.Query(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),notify,created_at FROM cashflow_plans WHERE user_id=? ORDER BY (CASE WHEN pattern='one_time' THEN 1 ELSE 0 END), day_of_month ASC, id ASC`, uid)
+	rows, err := DB.Query(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),notify,enabled,created_at FROM cashflow_plans WHERE user_id=? AND COALESCE(deleted_at,'')='' ORDER BY (CASE WHEN pattern='one_time' THEN 1 ELSE 0 END), day_of_month ASC, id ASC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -2831,7 +2841,7 @@ func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
 	for rows.Next() {
 		var p CashflowPlan
 		var typ, title, cur, note, pat, otd, lmode, cat string
-		if err := rows.Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.Notify, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.Notify, &p.Enabled, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		p.Type, p.Title, p.Currency, p.Note, p.Pattern, p.OneTimeDate, p.LiabilityMode, p.Category = typ, title, cur, note, pat, otd, lmode, cat
@@ -2843,8 +2853,8 @@ func ListCashflowPlans(uid int64) ([]CashflowPlan, error) {
 func GetCashflowPlan(id int64) (*CashflowPlan, error) {
 	var p CashflowPlan
 	var typ, title, cur, note, pat, otd, lmode, cat string
-	err := DB.QueryRow(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),notify,created_at FROM cashflow_plans WHERE id=?`, id).
-		Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.Notify, &p.CreatedAt)
+	err := DB.QueryRow(`SELECT id,user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,COALESCE(category,''),notify,enabled,COALESCE(deleted_at,''),created_at FROM cashflow_plans WHERE id=?`, id).
+		Scan(&p.ID, &p.UserID, &typ, &title, &p.DayOfMonth, &p.Amount, &cur, &p.AccountID, &p.LiabilityID, &note, &p.EndDate, &pat, &otd, &lmode, &cat, &p.Notify, &p.Enabled, &p.DeletedAt, &p.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -2869,9 +2879,11 @@ func CreateCashflowPlan(p *CashflowPlan) (int64, error) {
 	if p.LiabilityMode == "" {
 		p.LiabilityMode = "repay"
 	}
+	// 新建计划默认启用；暂停通过列表开关或 PATCH 单独设置。
+	p.Enabled = 1
 	p.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO cashflow_plans(user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,category,notify,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		p.UserID, p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.Notify, p.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO cashflow_plans(user_id,type,title,day_of_month,amount,currency,account_id,liability_id,note,end_date,pattern,one_time_date,liability_mode,category,notify,enabled,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		p.UserID, p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.Notify, p.Enabled, p.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -2889,16 +2901,61 @@ func UpdateCashflowPlan(p *CashflowPlan) error {
 	if p.LiabilityMode == "" {
 		p.LiabilityMode = "repay"
 	}
-	_, err := DB.Exec(`UPDATE cashflow_plans SET type=?,title=?,day_of_month=?,amount=?,currency=?,account_id=?,liability_id=?,note=?,end_date=?,pattern=?,one_time_date=?,liability_mode=?,category=?,notify=? WHERE id=? AND user_id=?`,
-		p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.Notify, p.ID, p.UserID)
+	_, err := DB.Exec(`UPDATE cashflow_plans SET type=?,title=?,day_of_month=?,amount=?,currency=?,account_id=?,liability_id=?,note=?,end_date=?,pattern=?,one_time_date=?,liability_mode=?,category=?,notify=?,enabled=? WHERE id=? AND user_id=?`,
+		p.Type, p.Title, p.DayOfMonth, p.Amount, p.Currency, p.AccountID, p.LiabilityID, p.Note, p.EndDate, p.Pattern, p.OneTimeDate, p.LiabilityMode, strings.TrimSpace(p.Category), p.Notify, p.Enabled, p.ID, p.UserID)
 	return err
 }
 
+// DeleteCashflowPlan 软删除：只打 deleted_at 标记，不碰 cashflow_plan_done。
+// 完成历史与真实流水引用必须保留，撤销恢复后还能看到当初的完成记录。
 func DeleteCashflowPlan(id, uid int64) error {
-	// 连带清除完成记录（避免孤儿数据）
-	_, _ = DB.Exec(`DELETE FROM cashflow_plan_done WHERE plan_id=? AND user_id=?`, id, uid)
-	_, err := DB.Exec(`DELETE FROM cashflow_plans WHERE id=? AND user_id=?`, id, uid)
+	_, err := DB.Exec(`UPDATE cashflow_plans SET deleted_at=? WHERE id=? AND user_id=? AND COALESCE(deleted_at,'')=''`,
+		time.Now().Format("2006-01-02 15:04:05"), id, uid)
 	return err
+}
+
+// SoftDeleteCashflowPlans 批量软删除（只影响当前用户、未删除的行），返回实际标记数。
+func SoftDeleteCashflowPlans(uid int64, ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	args := make([]interface{}, 0, len(ids)+2)
+	args = append(args, time.Now().Format("2006-01-02 15:04:05"), uid)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	res, err := DB.Exec(`UPDATE cashflow_plans SET deleted_at=? WHERE user_id=? AND COALESCE(deleted_at,'')='' AND id IN (`+sqlPlaceholders(len(ids))+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// RestoreCashflowPlans 撤销软删除（单条或批量），只恢复当前用户已删除的行。
+func RestoreCashflowPlans(uid int64, ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	args := make([]interface{}, 0, len(ids)+1)
+	args = append(args, uid)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	res, err := DB.Exec(`UPDATE cashflow_plans SET deleted_at='' WHERE user_id=? AND COALESCE(deleted_at,'')<>'' AND id IN (`+sqlPlaceholders(len(ids))+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// sqlPlaceholders 生成 "?,?,?" 形式的 IN 占位符（ids 数量来自服务端校验，非用户 SQL）。
+func sqlPlaceholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
 
 func GetCashflowDone(uid, planID int64, ym string) (*CashflowDone, error) {
