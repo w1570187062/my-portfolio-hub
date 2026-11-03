@@ -114,3 +114,4 @@ Desktop.ini
 
 # Go 本地构建缓存（go build 生成，勿入库）
 .gocache/
+/recent-flows-prototype
