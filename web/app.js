@@ -4903,8 +4903,12 @@ function paintCfPlanPanel() {
   wrap.innerHTML = toolbar + bulkbar + listHTML;
   const headSub = document.querySelector('.cf-head-sub');
   if (headSub) headSub.textContent = `${all.length} 个计划 · 启用 ${all.filter((p) => p.enabled !== 0).length} · 暂停 ${all.filter((p) => p.enabled === 0).length}`;
+  // 纯图标按钮靠激活态而不是文案表达「正在批量选择」，所以文字不再改写
   const bulkBtn = document.querySelector('.cf-bulk-btn');
-  if (bulkBtn) bulkBtn.textContent = cfPlanBulk ? '退出批量' : '批量管理';
+  if (bulkBtn) {
+    bulkBtn.classList.toggle('on', cfPlanBulk);
+    bulkBtn.setAttribute('aria-pressed', cfPlanBulk ? 'true' : 'false');
+  }
 }
 
 async function renderAssetCashflowPanel(body) {
@@ -4913,19 +4917,8 @@ async function renderAssetCashflowPanel(body) {
   cfViewYm = cashflowMonth || cfNowYm;
   _planDoneCache[cashflowMonth || cfNowYm] = cashflowDone;
   if (assetSub === 'cashflow') renderAssetKpis('cashflow');
-  body.innerHTML = `<div class="asset-cashflow">
-      <div class="cf-head">
-        <div class="cf-head-text">
-          <div class="section-title">收支计划</div>
-          <div class="cf-head-sub"></div>
-        </div>
-        <div class="cf-head-acts">
-          <button type="button" class="btn sm cf-bulk-btn" data-cf-act="bulk">批量管理</button>
-          <button type="button" class="btn primary sm" data-cf-act="add">＋ 新建计划</button>
-        </div>
-      </div>
-      <div class="cf-plan-wrap"></div>
-    </div>`;
+  // 面板只剩计划列表：标题行（.cf-head）已提到页签条下方，见 renderAssetTab。
+  body.innerHTML = '<div class="cf-plan-wrap"></div>';
   paintCfPlanPanel();
 }
 
@@ -5178,7 +5171,7 @@ document.addEventListener('click', (e) => {
     if (btn) cfHandlePlanAct(btn);
     return;
   }
-  const host = e.target.closest ? e.target.closest('#assetPanelCashflow') : null;
+  const host = e.target.closest ? e.target.closest('#assetPanelCashflow, .asset-cf-head') : null;
   if (!host) { cfClosePop(); return; }
   const el = e.target.closest('[data-cf-act]');
   if (el) cfHandlePlanAct(el);
@@ -6810,6 +6803,8 @@ const ACT_ICONS = {
   note: '<rect x="4.6" y="4" width="14.8" height="16" rx="2.2"/><path d="M8.6 9h6.8M8.6 12.8h6.8M8.6 16.6h4.2"/>',
   // 收支计划：日历（与 hero 收支卡 data-icon="calendar" 同款线性风格）
   calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.4"/><path d="M3.5 10h17M8 3.6v3M16 3.6v3"/>',
+  // 批量管理：两行清单 + 逐行勾选（16px 下三条横线会糊成一团，两行刚好可辨）
+  checks: '<path d="M4 7 5.8 8.8 8.6 5.6"/><path d="M11.4 7.2h8"/><path d="M4 15 5.8 16.8 8.6 13.6"/><path d="M11.4 15.2h8"/>',
   // 理财净值：价格标签（净值 = 单位净值），用于「刷新净值」按钮
   nav: '<path d="M4 4h7l9 9-7 7-9-9V4Z"/><circle cx="8.4" cy="8.4" r="1.3"/>',
 };
@@ -7123,6 +7118,9 @@ injectModalClose();
 function ensureModalCancel() {
   document.querySelectorAll('.modal .modal-actions').forEach((a) => {
     if (a.dataset.cancelAdded === '1') return;
+    // 个别抽屉（收支计划）刻意只保留主按钮：关闭走右上角 ✕ / 遮罩 / Esc 三路，
+    // 底部再补一枚「取消」既重复又占位，用 data-no-cancel 显式豁免。
+    if (a.dataset.noCancel === '1') return;
     const btns = [...a.querySelectorAll('button')].filter((b) => !b.hidden);
     if (btns.length !== 1) return;
     const c = document.createElement('button');
@@ -7466,6 +7464,19 @@ function renderAssetTab() {
            那一行左侧恒空，只有两枚图标贴在右侧，既多占 44px 又和投资页的工具条问题同源。 -->
       <span class="sub-tabs-tools" id="assetTools"></span>
     </div>
+    <!-- 收支计划标题行（2026-11-03）：从收支面板内部提到页签条下方，作为页级标题。
+         只属于「收支」页签 —— 显隐由 applyAssetSub 统一切换，切到其他页签自动隐藏；
+         标题下方的间距由 .sub-tabs 自带的 margin-bottom 提供，不再另加上边距。 -->
+    <div class="cf-head asset-cf-head" hidden>
+      <div class="cf-head-text">
+        <div class="section-title">收支计划</div>
+        <div class="cf-head-sub"></div>
+      </div>
+      <div class="cf-head-acts">
+        <button type="button" class="btn icon-btn cf-bulk-btn" data-cf-act="bulk" title="批量管理" aria-label="批量管理" aria-pressed="false">${actIcon('checks')}</button>
+        <button type="button" class="btn icon-btn" data-cf-act="add" title="新建收支计划" aria-label="新建收支计划">${actIcon('plus')}</button>
+      </div>
+    </div>
     <!-- 顶部 4 张卡随子 tab 换内容（= 当前视图的四个关键数字）。
          眉标行（kpi-head）2026-11-02 删除：与子 tab 行重复，口径信息由各视图工具条承担。 -->
     <div class="kpi-row cols-flat asset-kpi-row" id="assetKpiRow"></div>
@@ -7511,6 +7522,9 @@ function applyAssetSub(sub) {
   document.querySelectorAll('#assetTabBody .asset-subpanel').forEach((p) => {
     p.classList.toggle('active', p.dataset.sub === assetSub);
   });
+  // 收支计划标题行跟着「收支」页签走：它是页级标题，不是面板内容，所以单独同步显隐
+  const cfHead = document.querySelector('.asset-cf-head');
+  if (cfHead) cfHead.hidden = assetSub !== 'cashflow';
 }
 
 // 卡内分段条（2026-11-02）：一条 6px 的构成条，取代原「资产结构」折叠卡里的四组迷你图。

@@ -2229,11 +2229,17 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
    2026-11-02 首版只写了 #investTools，资产页那两枚仍是 .icon-btn 的「透明无框」裸图标，
    同一个「tab 行右端图标组」在两个页面长出两种长相。 */
 .asset-toolbar .btn.icon-btn,
-.sub-tabs-tools .btn.icon-btn { border-color: var(--border); background: var(--btn-ghost); }
+.sub-tabs-tools .btn.icon-btn,
+.cf-head-acts .btn.icon-btn { border-color: var(--border); background: var(--btn-ghost); }
 .asset-toolbar .btn.icon-btn:hover,
-.sub-tabs-tools .btn.icon-btn:hover { border-color: var(--btn-border); background: var(--btn-ghost-hover); }
+.sub-tabs-tools .btn.icon-btn:hover,
+.cf-head-acts .btn.icon-btn:hover { border-color: var(--btn-border); background: var(--btn-ghost-hover); }
 .asset-toolbar .btn.icon-btn:active,
-.sub-tabs-tools .btn.icon-btn:active { border-color: var(--btn-border); background: var(--btn-ghost-hover); }
+.sub-tabs-tools .btn.icon-btn:active,
+.cf-head-acts .btn.icon-btn:active { border-color: var(--btn-border); background: var(--btn-ghost-hover); }
+/* 批量管理纯图标按钮的激活态：进入选择态后按钮不能只靠文字表达（图标按钮没有文字），
+   沿用 chip 的选中口径（主色淡底 + 主色描边），与 .cf-chip.on 同一套视觉语言。 */
+.cf-head-acts .btn.icon-btn.on { border-color: rgba(var(--tint), .45); background: var(--primary-soft); color: var(--primary); }
 /* 投资页理财视图：左右不再内缩（原 28px）——与 .holdings-by-source 保持同一左缘基准
    （均贴齐 Hero/切换器/工具栏的 20px 内容边），否则切换持仓/理财时整块表格会横跳 28px。
    表格超宽仍由容器 overflow-x 横向滚动。 */
@@ -6626,7 +6632,9 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 }
 
 /* ===== 资产页 · 收支计划（2026-11-03 改版：日程式分组列表） ===== */
-.asset-cashflow { display: flex; flex-direction: column; gap: var(--sp-3); }
+/* 标题行（含两枚纯图标操作）提到页签条下方作页级标题：
+   上间距由 .sub-tabs 的 margin-bottom（--sp-4）承担，这里只补到下方 KPI 卡的间距。 */
+.asset-cf-head { margin-bottom: var(--sp-4); }
 .cf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
 .cf-head-text { min-width: 0; }
 .cf-head-sub { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
