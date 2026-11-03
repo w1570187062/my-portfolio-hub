@@ -3549,6 +3549,8 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .holding-toolbar[hidden] { display: none; }
 /* （.filter-group / .filter-chip 已随 2026-11-02 流水类型筛选改下拉一并删除） */
 .sort-select { min-height: var(--toolbar-row-h); padding: 5px 12px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text-muted); font-size: var(--fs-sm); border-radius: var(--r-sm); cursor: pointer; }
+.sort-select:hover { border-color: var(--border-strong); color: var(--text); }
+.sort-select:focus-visible { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .toolbar-gain { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
 .toolbar-gain b { font-weight: 700; }
 /* v3.4 行密度切换：分段控件，localStorage 记忆 */
@@ -6630,18 +6632,8 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .cf-head-sub { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
 .cf-head-acts { display: flex; align-items: center; gap: var(--sp-2); flex: 0 0 auto; }
 
-/* 小结：收入红 / 支出绿，与全站收支语义一致；数字用等宽数字防跳动 */
-.cf-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); }
-.cf-sum {
-  display: flex; flex-direction: column; gap: var(--sp-1);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r);
-}
-.cf-sum-label { font-size: var(--fs-sm); color: var(--text-muted); }
-.cf-sum-val { font-size: var(--fs-xl); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
-.cf-sum-val.income { color: var(--up); }
-.cf-sum-val.expense { color: var(--down); }
-.cf-sum-sub { font-size: var(--fs-xs); color: var(--text-faint); }
+/* 面板内部纵向节奏：工具条 / 批量条 / 各分组之间统一 16px，分组内标题到列表 12px */
+.cf-plan-wrap { display: flex; flex-direction: column; gap: var(--sp-4); padding-bottom: var(--sp-5); }
 
 .cf-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
 .cf-filters { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
@@ -6657,7 +6649,6 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .cf-chip:hover { background: var(--bg-hover); color: var(--text); }
 .cf-chip.on { background: var(--primary-soft); border-color: rgba(var(--tint), .45); color: var(--primary); font-weight: 600; }
 .cf-sort-wrap { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); }
-.cf-sort { height: var(--h-2); font-size: var(--fs-sm); }
 
 .cf-bulkbar {
   display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
@@ -6667,7 +6658,7 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .cf-bulk-cnt { font-size: var(--fs-sm); color: var(--text-muted); }
 .cf-bulk-cnt b { color: var(--text); font-variant-numeric: tabular-nums; }
 
-.cf-group { display: flex; flex-direction: column; gap: var(--sp-2); }
+.cf-group { display: flex; flex-direction: column; gap: var(--sp-3); }
 .cf-group-head { display: flex; align-items: baseline; gap: var(--sp-2); padding: 0 var(--sp-1); }
 .cf-group-name { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
 .cf-group-note { font-size: var(--fs-xs); color: var(--text-faint); }
@@ -6802,24 +6793,14 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   height: 100vh; max-height: 100vh; overflow-y: auto;
   border-radius: 0; box-shadow: var(--sh-3);
 }
-.cf-drawer-close {
-  position: absolute; top: var(--sp-4); right: var(--sp-4); z-index: 2;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; padding: 0;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
-  background: var(--bg-soft); color: var(--text-muted);
-  font-family: inherit; font-size: var(--fs-base); cursor: pointer;
-}
-.cf-drawer-close:hover { color: var(--text); border-color: var(--border-strong); }
 .cf-drawer-card h2 { padding-right: var(--sp-8); }
 .cf-delete-btn { margin-right: auto; }
 
 @media (max-width: 640px) {
   .cf-head { align-items: center; }
   .cf-head-acts { gap: var(--sp-1); }
-  .cf-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .cf-sum { padding: var(--sp-3); }
-  .cf-sum-val { font-size: var(--fs-lg); }
+  .cf-plan-wrap { gap: var(--sp-3); padding-bottom: var(--sp-4); }
+  .cf-group { gap: var(--sp-2); }
   .cf-toolbar { align-items: stretch; }
   .cf-sort-wrap { justify-content: space-between; width: 100%; }
   .cf-row {

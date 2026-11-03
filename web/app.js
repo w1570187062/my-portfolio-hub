@@ -4790,26 +4790,6 @@ function cfDateShort(d) {
   return d ? String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') : '—';
 }
 
-// 小结只算启用中的循环计划：一次性挂在具体日期上，暂停的不占月度额度。
-// 金额统一折 CNY，与原币展示互不影响。
-function cfPlanSummaryHTML(all) {
-  const rec = all.filter((p) => p.enabled !== 0 && p.pattern !== 'one_time');
-  const sum = (type) => rec.filter((p) => p.type === type)
-    .reduce((a, p) => a + cnyOf(Math.abs(Number(p.amount) || 0), normCurJS(p.currency)), 0);
-  const sumCnt = (type) => rec.filter((p) => p.type === type).length;
-  const inc = sum('income');
-  const exp = sum('expense');
-  const net = inc - exp;
-  const onCnt = all.filter((p) => p.enabled !== 0).length;
-  const offCnt = all.filter((p) => p.enabled === 0).length;
-  return `<div class="cf-summary">
-      <div class="cf-sum"><span class="cf-sum-label">本月固定收入</span><b class="cf-sum-val income">${yuanOfW(inc)}</b><span class="cf-sum-sub">${sumCnt('income')} 项</span></div>
-      <div class="cf-sum"><span class="cf-sum-label">本月固定支出</span><b class="cf-sum-val expense">${yuanOfW(exp)}</b><span class="cf-sum-sub">${sumCnt('expense')} 项</span></div>
-      <div class="cf-sum"><span class="cf-sum-label">本月净额</span><b class="cf-sum-val ${net >= 0 ? 'income' : 'expense'}">${(net >= 0 ? '+' : '−') + yuanOfW(Math.abs(net))}</b><span class="cf-sum-sub">固定收支之差</span></div>
-      <div class="cf-sum"><span class="cf-sum-label">计划状态</span><b class="cf-sum-val">${onCnt} 启用</b><span class="cf-sum-sub">${offCnt} 暂停</span></div>
-    </div>`;
-}
-
 const CF_ICO_PENCIL = '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
 const CF_ICO_TRASH = '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
 
@@ -4856,7 +4836,7 @@ function cfPlanGroupsHTML(list) {
     soon: { label: '即将发生', note: '7 天内' },
     month: { label: '本月', note: '含下月顺延' },
     expired: { label: '已过期', note: '不再发生' },
-    paused: { label: '已暂停', note: '不计入小结' },
+    paused: { label: '已暂停', note: '不计入上方固定收支' },
   };
   return ['soon', 'month', 'expired', 'paused'].map((k) => {
     if (!buckets[k].length) return '';
@@ -4878,7 +4858,7 @@ function cfPlanToolbarHTML() {
         ${chip('status', 'all', '全部状态', s === 'all')}${chip('status', 'on', '启用中', s === 'on')}${chip('status', 'paused', '已暂停', s === 'paused')}${chip('status', 'expired', '已过期', s === 'expired')}
       </div>
       <label class="cf-sort-wrap">排序
-        <select id="cfSortSel" class="cf-sort">
+        <select id="cfSortSel" class="sort-select">
           <option value="next"${cfPlanView.sort === 'next' ? ' selected' : ''}>下次发生</option>
           <option value="amount"${cfPlanView.sort === 'amount' ? ' selected' : ''}>金额</option>
           <option value="name"${cfPlanView.sort === 'name' ? ' selected' : ''}>名称</option>
@@ -4897,13 +4877,12 @@ function cfPlanBulkHTML(filtered) {
     </div>`;
 }
 
-// 只重绘面板内部（小结/工具条/列表），外壳与事件委托不动；乐观删除时可立即出效果。
+// 只重绘面板内部（工具条/列表），外壳与事件委托不动；乐观删除时可立即出效果。
 function paintCfPlanPanel() {
   const wrap = document.querySelector('.cf-plan-wrap');
   if (!wrap) return;
   const all = cashflowPlans || [];
   const filtered = cfPlanSorted(cfPlanFiltered());
-  const summary = cfPlanSummaryHTML(all);
   const toolbar = all.length ? cfPlanToolbarHTML() : '';
   const bulkbar = cfPlanBulk ? cfPlanBulkHTML(filtered) : '';
   let listHTML = '';
@@ -4921,7 +4900,7 @@ function paintCfPlanPanel() {
   } else {
     listHTML = cfPlanGroupsHTML(filtered);
   }
-  wrap.innerHTML = summary + toolbar + bulkbar + listHTML;
+  wrap.innerHTML = toolbar + bulkbar + listHTML;
   const headSub = document.querySelector('.cf-head-sub');
   if (headSub) headSub.textContent = `${all.length} 个计划 · 启用 ${all.filter((p) => p.enabled !== 0).length} · 暂停 ${all.filter((p) => p.enabled === 0).length}`;
   const bulkBtn = document.querySelector('.cf-bulk-btn');
@@ -5213,7 +5192,13 @@ document.addEventListener('change', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') cfClosePop();
+  if (e.key === 'Escape') {
+    cfClosePop();
+    // 行内输入框的 Esc 只取消编辑，不连带关抽屉
+    const inInline = e.target.closest && e.target.closest('[data-cf-inline]');
+    const modal = document.getElementById('cashflowModal');
+    if (modal && !modal.hidden && !inInline) closeCashflowDrawer();
+  }
   const inp = e.target.closest ? e.target.closest('[data-cf-inline]') : null;
   if (!inp) return;
   if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
@@ -11877,8 +11862,15 @@ async function openCashflowModal(p) {
   renderCfLiabilitySelect(isEdit ? (p.liability_mode === 'incur' ? 'incur' : p.liability_id) : 0);
   syncCfForm();
   renderCfDoneBtn(p, isEdit);   // 「标记完成 / 撤销完成」落在保存按钮左侧
-  const closeBtn = document.getElementById('cfDrawerClose');
+  const modal = document.getElementById('cashflowModal');
+  // 关闭入口沿用全站的 .card-close（由 injectModalClose 注入），这里只补两条关闭路径：
+  // 点遮罩、按 Esc。绑一次即可，避免每次打开重复挂监听。
+  const closeBtn = modal.querySelector('.card-close');
   if (closeBtn) closeBtn.onclick = closeCashflowDrawer;
+  if (!modal.dataset.dismissBound) {
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeCashflowDrawer(); });
+    modal.dataset.dismissBound = '1';
+  }
   const delBtn = document.getElementById('cfDeleteBtn');
   if (delBtn) {
     delBtn.hidden = !isEdit;
@@ -11888,7 +11880,7 @@ async function openCashflowModal(p) {
       cfDeletePlans([p.id], `已删除「${p.title}」`);
     };
   }
-  document.getElementById('cashflowModal').hidden = false;
+  modal.hidden = false;
 }
 
 function closeCashflowDrawer() {
