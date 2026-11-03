@@ -533,6 +533,22 @@ func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 			log.Printf("[notify] 按推送策略(%s)跳过本次推送（触发：%s）", policyName(cfg.Policy), triggeredBy)
 			return
 		}
+		// 去重：定时快照（scope 非全量）同一天只推一次，跨进程也生效。
+		// scope 为空（手动刷新/手动快照）仍每次照发，保证用户手动操作即时可见。
+		// 多实例/重启新旧进程并存时，第二次同一 (uid,scope,date) 会被去重跳过，
+		// 根治「同一份净值却被推了 2 次且金额不一致」的线上 bug。
+		if scope != "" {
+			cst := time.FixedZone("CST", 8*3600)
+			pushDate := time.Now().In(cst).Format("2006-01-02")
+			first, deErr := db.MarkNotifyPushed(uid, scope, pushDate)
+			if deErr != nil {
+				log.Printf("[notify] 去重标记失败(uid=%d,scope=%s): %v", uid, scope, deErr)
+				// 降级：失败不阻断发送，避免漏推
+			} else if !first {
+				log.Printf("[notify] 今日(%s)%s 净值已推送过，跳过重复发送（触发：%s）", pushDate, scopeLabelCN(scope), triggeredBy)
+				return
+			}
+		}
 		text, hasData := buildNetValueNotifyText(uid, triggeredBy, scope)
 		if !hasData {
 			log.Printf("[notify] 本次推送无有效持仓/信号数据，取消发送（触发：%s）", triggeredBy)

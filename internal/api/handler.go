@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -2001,6 +2002,17 @@ func EnsureSnapshot() {
 		}
 		_ = doSnapshot(u.ID)
 	}
+}
+
+// SchedulerEnabled 控制本实例是否运行全部定时任务（快照/AI总结/备份/归零/提醒/扫描）。
+// 默认：写实例（未设 READ_ONLY）运行；只读实例（READ_ONLY=1，如 demo）默认不运行，
+// 避免多实例各自跑调度导致净值推送重复、行情刷新互相覆盖。
+// 可用环境变量 SCHEDULER 显式覆盖：SCHEDULER=1 强制开启，SCHEDULER=0 强制关闭。
+func SchedulerEnabled() bool {
+	if v := os.Getenv("SCHEDULER"); v != "" {
+		return v == "1"
+	}
+	return !readOnlyMode()
 }
 
 // ScheduleDailySnapshot runs three time-triggered P&L snapshots per day, each

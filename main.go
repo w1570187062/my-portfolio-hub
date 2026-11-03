@@ -51,31 +51,37 @@ func main() {
 	// FX rates: warm cache from DB and refresh in background (handlers no longer block on upstream).
 	market.StartFXUpdater()
 
-	// Daily P&L snapshot: backfill today on startup, then record every day at 15:15.
-	api.EnsureSnapshot()
-	// 补齐历史 pnl_daily 的 base_cny（盈亏率视图依赖），再启动定时快照。
-	api.BackfillPnlBaseCNY()
-	go api.ScheduleDailySnapshot()
-	go api.ScheduleDailyAISummary()
+	// 定时任务（快照/AI总结/备份/归零/提醒/扫描）只在「调度开启」的实例运行；
+	// 默认写实例开启、只读实例（如 demo）关闭，避免多实例重复推送/覆盖行情。
+	if api.SchedulerEnabled() {
+		// Daily P&L snapshot: backfill today on startup, then record every day at 15:15.
+		api.EnsureSnapshot()
+		// 补齐历史 pnl_daily 的 base_cny（盈亏率视图依赖），再启动定时快照。
+		api.BackfillPnlBaseCNY()
+		go api.ScheduleDailySnapshot()
+		go api.ScheduleDailyAISummary()
 
-	// 基金定投：启动时为所有用户补齐已到期的待确认期次（不自动动账）。
-	api.EnsureDCA()
+		// 基金定投：启动时为所有用户补齐已到期的待确认期次（不自动动账）。
+		api.EnsureDCA()
 
-	// 自动备份（方案 1）：每日 03:10 用 VACUUM INTO 出一份一致快照，
-	// 保留最近 30 份 + 每月 1 号那份；启动时若当天还没有备份则立刻补跑。
-	api.EnsureBackup()
-	go api.ScheduleBackup()
+		// 自动备份（方案 1）：每日 03:10 用 VACUUM INTO 出一份一致快照，
+		// 保留最近 30 份 + 每月 1 号那份；启动时若当天还没有备份则立刻补跑。
+		api.EnsureBackup()
+		go api.ScheduleBackup()
 
-	// 每日 00:00 归零结算：先兜底落库上一交易日盈亏，再把当日盈亏归零（不带入下一交易日）。
-	api.EnsureMidnightReset()
-	go api.ScheduleMidnightReset()
+		// 每日 00:00 归零结算：先兜底落库上一交易日盈亏，再把当日盈亏归零（不带入下一交易日）。
+		api.EnsureMidnightReset()
+		go api.ScheduleMidnightReset()
 
-	// 待还款提前一天提醒：每天在配置时间（默认 07:00）检查次日到期的待还款并推送。
-	go api.ScheduleCashflowReminder()
+		// 待还款提前一天提醒：每天在配置时间（默认 07:00）检查次日到期的待还款并推送。
+		go api.ScheduleCashflowReminder()
 
-	// 止盈止损：A股收盘 15:20 / 基金净值 21:10 / 美股收盘 07:10 三个时点各扫一轮，
-	// 命中后写 alert_events（站内铃铛）+ 按独立开关推钉钉/邮件。
-	go api.ScheduleAlertScan()
+		// 止盈止损：A股收盘 15:20 / 基金净值 21:10 / 美股收盘 07:10 三个时点各扫一轮，
+		// 命中后写 alert_events（站内铃铛）+ 按独立开关推钉钉/邮件。
+		go api.ScheduleAlertScan()
+	} else {
+		log.Printf("[scheduler] SCHEDULER 关闭（只读实例默认不运行），跳过所有定时任务与启动补齐")
+	}
 
 	sub, err := fs.Sub(webFS, "web/dist")
 	if err != nil {

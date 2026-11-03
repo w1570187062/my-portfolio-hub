@@ -183,6 +183,9 @@ func Init(path string) error {
 	if err := initNotifySettings(); err != nil {
 		return fmt.Errorf("init notify_settings: %w", err)
 	}
+	if err := initNotifyPushLog(); err != nil {
+		return fmt.Errorf("init notify_push_log: %w", err)
+	}
 	if err := initAlertEvents(); err != nil {
 		return fmt.Errorf("init alert_events: %w", err)
 	}
@@ -327,6 +330,34 @@ func initNotifySettings() error {
 		cfg TEXT NOT NULL DEFAULT '{}'
 	)`)
 	return err
+}
+
+// 净值推送去重日志：同一 (uid, scope, push_date) 每天只记录一次，
+// 保证「定时快照」类净值推送在任意多实例/重复触发下每天只发出一条。
+func initNotifyPushLog() error {
+	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS notify_push_log (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		uid        INTEGER NOT NULL,
+		scope      TEXT NOT NULL,
+		push_date  TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		UNIQUE(uid, scope, push_date)
+	)`)
+	return err
+}
+
+// MarkNotifyPushed 原子地标记「今天已为此 (uid, scope) 推送过净值」，
+// 返回 true 表示本次是首次（应发送），false 表示今天已推过（应跳过）。
+// 用 INSERT OR IGNORE + RowsAffected 实现跨进程去重：多个实例并发抢同一行，
+// 只有一个能插入成功；其余拿到 RowsAffected==0 即判定为重复。
+// 失败时不返回 true（降级为照常发送），避免去重故障导致漏推。
+func MarkNotifyPushed(uid int64, scope, pushDate string) (bool, error) {
+	res, err := DB.Exec(`INSERT OR IGNORE INTO notify_push_log(uid, scope, push_date) VALUES(?,?,?)`, uid, scope, pushDate)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }
 
 // GetNotifyConfig returns the raw JSON config ("{}" if none stored).
