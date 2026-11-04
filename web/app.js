@@ -2747,9 +2747,36 @@ $('#addPickModal').addEventListener('click', (e) => {
 wireSearch();
 // 行情由定时快照自动更新；批量 /api/refresh 接口仍保留供定时任务复用。
 
+// 子 tab 的键盘导航（WAI-ARIA tabs 模式）：←/→ 循环、Home/End 跳首尾，
+// 焦点移动即激活（roving tabindex 由各 sync 函数维护，只有选中的那个在 Tab 序列里）。
+// 同一容器只挂一次监听（容器在资产页每次重渲染时是新节点，dataset 标记随之重置）。
+function wireSubTabs(list) {
+  if (!list || list.dataset.kbWired === '1') return;
+  list.dataset.kbWired = '1';
+  list.addEventListener('keydown', (e) => {
+    const key = e.key;
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Home' && key !== 'End') return;
+    const tabs = Array.from(list.querySelectorAll('.sub-tab'));
+    if (tabs.length < 2) return;
+    const from = tabs.indexOf(e.target.closest('.sub-tab'));
+    if (from < 0) return;
+    const to = key === 'Home' ? 0
+      : key === 'End' ? tabs.length - 1
+        : (from + (key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    e.preventDefault();
+    tabs[to].focus();
+    tabs[to].click(); // 激活与鼠标点击走同一条路径（aria-selected / 面板显隐只在一处维护）
+  });
+}
+
 // 投资页主区切换（持仓 / 理财）：localStorage 记忆，默认持仓；下划线样式（无滑动白块）
 function syncViewToggle() {
-  document.querySelectorAll('#viewToggle .sub-tab').forEach((x) => x.classList.toggle('active', x.dataset.view === homeSection));
+  document.querySelectorAll('#viewToggle .sub-tab').forEach((x) => {
+    const on = x.dataset.view === homeSection;
+    x.classList.toggle('active', on);
+    x.setAttribute('aria-selected', on ? 'true' : 'false');
+    x.tabIndex = on ? 0 : -1;
+  });
 }
 // 四块 KPI 只切显隐（DOM 常驻、等高，切换不位移）。抽成函数是因为它必须有两个调用点：
 // renderFiltered（切 tab / 刷新数据）和 showHoldingsView（从别的页面回来）。
@@ -2787,6 +2814,7 @@ document.querySelectorAll('#viewToggle .sub-tab').forEach((b) => {
     playInvestRise(true);
   };
 });
+wireSubTabs(document.getElementById('viewToggle'));
 syncViewToggle();
 $('#emptyAddBtn').onclick = () => openModal(null);
 
@@ -7457,14 +7485,17 @@ function renderAssetTab() {
          「子 tab → KPI 卡片 → 表格」—— 与投资页（持仓/理财/存款/平仓）
          完全一致的顺序与形态：同一个 .sub-tabs 组件、同一个下划线选中态、
          同一套右端视图级控件位。 -->
-    <div class="sub-tabs" id="assetSubTabs">
-      <button class="sub-tab" data-sub="accounts" type="button">账户<span class="sub-tab-count" id="assetAcctCount">${acctCount}</span></button>
-      <button class="sub-tab" data-sub="cash" type="button">现金<span class="sub-tab-count">${cashLiveCount}</span></button>
-      <button class="sub-tab" data-sub="flows" type="button">流水</button>
-      <button class="sub-tab" data-sub="cashflow" type="button">收支</button>
+    <div class="sub-tabs" id="assetSubTabs" role="tablist" aria-label="资产视图">
+      <div class="sub-tabs-scroll">
+        <button class="sub-tab" data-sub="accounts" type="button" role="tab" aria-selected="false" tabindex="-1">账户<span class="sub-tab-count" id="assetAcctCount">${acctCount}</span></button>
+        <button class="sub-tab" data-sub="cash" type="button" role="tab" aria-selected="false" tabindex="-1">现金<span class="sub-tab-count">${cashLiveCount}</span></button>
+        <button class="sub-tab" data-sub="flows" type="button" role="tab" aria-selected="false" tabindex="-1">流水</button>
+        <button class="sub-tab" data-sub="cashflow" type="button" role="tab" aria-selected="false" tabindex="-1">收支</button>
+      </div>
       <!-- 视图级控件（一键更新余额 / 添加账户）挂在 tab 行右端，由 renderSources 填充，
            只在「账户」子视图出现。2026-11-02 由账户面板顶部的独立 .asset-toolbar 并入：
-           那一行左侧恒空，只有两枚图标贴在右侧，既多占 44px 又和投资页的工具条问题同源。 -->
+           那一行左侧恒空，只有两枚图标贴在右侧，既多占 44px 又和投资页的工具条问题同源。
+           注意它必须留在 .sub-tabs-scroll **之外**：否则 tab 带横向滚动时会被一起滚走。 -->
       <span class="sub-tabs-tools" id="assetTools"></span>
     </div>
     <!-- 收支计划标题行（2026-11-03）：从收支面板内部提到页签条下方，作为页级标题。
@@ -7494,7 +7525,7 @@ function renderAssetTab() {
   renderAssetFlowsPanel($('#assetPanelFlows'));
   renderAssetCashflowPanel($('#assetPanelCashflow'));
 
-  // 按记住的子视图统一恢复（tab 高亮 / 面板显隐 / 顶部 4 卡）。
+  // 按记住的子视图统一恢复（tab 高亮 / aria-selected / 面板显隐 / 顶部 4 卡）。
   // 必须在面板渲染之后：面板里会在 assetSub 匹配时补刷一次自己的 KPI 口径。
   applyAssetSub(assetSub);
 
@@ -7515,7 +7546,10 @@ function applyAssetSub(sub) {
   const tabs = document.getElementById('assetSubTabs');
   if (tabs) {
     tabs.querySelectorAll('.sub-tab').forEach((x) => {
-      x.classList.toggle('active', x.dataset.sub === assetSub);
+      const on = x.dataset.sub === assetSub;
+      x.classList.toggle('active', on);
+      x.setAttribute('aria-selected', on ? 'true' : 'false');
+      x.tabIndex = on ? 0 : -1;
     });
     const tools = tabs.querySelector('.sub-tabs-tools');
     // 账户操作（更新余额 / 添加账户）只对「账户」子视图有意义
@@ -8088,6 +8122,7 @@ function bindAssetSubTabs() {
   tabs.querySelectorAll('.sub-tab').forEach((b) => {
     b.onclick = () => applyAssetSub(b.dataset.sub);
   });
+  wireSubTabs(tabs);
   // 兑现跨页跳转意图（首页待办点击「待还款」）：tab 绑定完成后才能安全 click()
   if (pendingAssetSub) {
     const want = pendingAssetSub;

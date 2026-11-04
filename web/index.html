@@ -256,11 +256,13 @@
        与资产页的「账户 / 现金 / 流水 / 收支」子 tab 是同一套 .sub-tabs 组件，
        跨页切换时是同一种控件、同一套选中态（全站统一，不另立竖排栏目形态）。 -->
   <div id="holdingsView">
-    <nav class="sub-tabs" id="viewToggle">
-      <button class="sub-tab active" data-view="holdings" type="button">持仓<span class="sub-tab-count" data-count="holdings"></span></button>
-      <button class="sub-tab" data-view="wealth" type="button">理财<span class="sub-tab-count" data-count="wealth"></span></button>
-      <button class="sub-tab" data-view="deposits" type="button">存款<span class="sub-tab-count" data-count="deposits"></span></button>
-      <button class="sub-tab" data-view="closed" type="button">平仓<span class="sub-tab-count" data-count="closed"></span></button>
+    <nav class="sub-tabs" id="viewToggle" role="tablist" aria-label="投资视图">
+      <div class="sub-tabs-scroll">
+        <button class="sub-tab active" data-view="holdings" type="button" role="tab" aria-selected="true" tabindex="0">持仓<span class="sub-tab-count" data-count="holdings"></span></button>
+        <button class="sub-tab" data-view="wealth" type="button" role="tab" aria-selected="false" tabindex="-1">理财<span class="sub-tab-count" data-count="wealth"></span></button>
+        <button class="sub-tab" data-view="deposits" type="button" role="tab" aria-selected="false" tabindex="-1">存款<span class="sub-tab-count" data-count="deposits"></span></button>
+        <button class="sub-tab" data-view="closed" type="button" role="tab" aria-selected="false" tabindex="-1">平仓<span class="sub-tab-count" data-count="closed"></span></button>
+      </div>
     </nav>
   <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 3 卫星（今日 / 本月 / 收益率），统一 .kpi-card -->
   <section class="invest-hero" id="investHero">

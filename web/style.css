@@ -5913,8 +5913,26 @@ textarea::placeholder {
 /* —— 投资页 KPI 行（原型场景 B：1 锚点 + 3 卫星，直接铺在页面底色上，不再套玻璃大卡） —— */
 .invest-hero { margin-bottom: var(--sp-4); }
 
-/* —— 子 Tab（持仓/理财 · 账户/流水/负债）：原型下划线样式 —— */
-.sub-tabs { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); border-bottom: 1px solid var(--border); padding-bottom: 0; }
+/* —— 子 Tab（持仓/理财 · 账户/流水/负债）：原型下划线样式 ——
+   2026-11-04 方案 1 落地（UnderlineNav + 计数胶囊）：
+   外层只管「tab 带 + 右端工具槽」的横向排列与底部发丝线；
+   .sub-tabs-scroll 才是可滚动的 tab 带，工具槽（.sub-tabs-tools）刻意留在滚动容器之外 ——
+   横向溢出时它固定在右边缘，不会被滚走、也不会盖住最后一个 tab。 */
+.sub-tabs {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+  min-width: 0;
+}
+.sub-tabs-scroll {
+  display: flex; align-items: center; gap: var(--sp-2);
+  flex: 1 1 auto; min-width: 0;
+  overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.sub-tabs-scroll::-webkit-scrollbar { display: none; }
 
 /* ===== 投资页：视图切换条（2026-11-02，原型 B）=====
    这页原先是「KPI 卡片 → 切换条 → 表格」，选择器排在第三块、370px 之后 ——
@@ -5932,8 +5950,10 @@ textarea::placeholder {
    视图级控件（行密度 / 刷新）**不再**挂在这条 tab 行右端（见 .invest-tools-row）。 */
 /* 视图级控件组（行密度 / 刷新行情）：资产页子 tab 行右端的落点。
    2026-11-02 投资页曾并入 tab 行，2026-11-03 又移出到卡片与表格之间 —— 原因是
-   tab 行与表格之间隔着一整排 KPI 卡片，控件离它作用的表格太远，看不出从属关系。 */
-.sub-tabs-tools { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
+   tab 行与表格之间隔着一整排 KPI 卡片，控件离它作用的表格太远，看不出从属关系。
+   flex:0 0 auto：它是 .sub-tabs 的直接子项、不在 .sub-tabs-scroll 里，
+   tab 带横向溢出时工具槽仍然钉在右边缘完整可见，也不会盖住最后一个 tab。 */
+.sub-tabs-tools { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
 /* 投资页视图工具条：KPI 卡片与表格之间的一行控件（2026-11-03）。
    与资产页流水工具条（.holding-toolbar + .tl-tools）同一套排布：右对齐、不加底框、
    不占一整行高度（行内只有控件本身）。上下各留一档间距，与卡片/表格都不贴边。
@@ -5944,27 +5964,47 @@ textarea::placeholder {
 .sub-tabs-tools:empty { display: none; }
 .sub-tabs-tools[hidden] { display: none; }
 .sub-tab {
-  padding: var(--sp-2) var(--sp-5);
+  position: relative;
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-4);
   border: none; background: transparent; color: var(--text-muted);
   font-size: var(--fs-md); font-weight: 500; font-family: inherit;
-  cursor: pointer; display: inline-flex; align-items: center; gap: var(--sp-2);
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  white-space: nowrap;
+  /* min-width 92px 锁死宽度：选中态 13→15px 会把文字撑宽 1–6px，
+     不锁的话整条切换器随选中项左右抖（原型实测跳动 26px）。
+     92 − 左右内边距 32 = 60 是内容上限；最长内容「两字 15px(30) + gap 8 + 徽标 18」= 56，留 4px 余量。 */
+  min-width: 92px;
   /* min-height 36px：带计数徽标的 tab 内容高 18px 徽标 + 16px 内边距 = 34，
      不带徽标的只有文字行高 ≈ 35 —— 两者差 1px，flex 居中后顶边就对不齐
      （资产页「流水 / 收支」无徽标，与「账户 / 现金」错开 1px）。
      锁死最小高度后所有 tab 等高，选中下划线也在同一基线上。 */
   min-height: 36px;
-  transition: color .15s var(--e), border-color .15s var(--e);
+  transition: color .15s var(--e), font-size .15s var(--e);
 }
 .sub-tab:hover { color: var(--text); }
-.sub-tab.active { color: var(--text); border-bottom-color: var(--primary); }
+.sub-tab.active { color: var(--text); font-size: 15px; font-weight: 700; }
+/* 下划线拉满整个 tab（left/right:0），不是文字宽度 ——
+   所以计数徽标必须自成一枚胶囊：它的宽度不再掺进下划线的参照。 */
+.sub-tab.active::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: var(--primary);
+}
+/* 深色底加一层轻辉光才够醒目；浅色底上实线已经成立，glow 会糊成一片发脏的带 */
+:root:not([data-theme="light"]) .sub-tab.active::after { filter: drop-shadow(0 0 4px var(--primary-glow)); }
+:root[data-theme="light"] .sub-tab.active::after { filter: none; }
+.sub-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r-xs); }
+/* 计数徽标：独立小胶囊（描边 + 透明底），与标签之间由 .sub-tab 的 gap 隔开 */
 .sub-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
   min-width: 18px; height: 18px; padding: 0 var(--sp-1);
-  border-radius: 999px; background: var(--bg-input); color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px; background: transparent; color: var(--text-muted);
   font-size: var(--fs-xs); font-weight: 600; line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
-.sub-tab.active .sub-tab-count { background: var(--primary-soft); color: var(--primary); }
+.sub-tab.active .sub-tab-count { background: var(--primary-soft); border-color: rgba(var(--tint), .35); color: var(--primary); }
 
 /* —— 快捷功能 —— */
 .shortcut-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-2); }
@@ -6270,13 +6310,16 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .rg-row { grid-template-columns: 14px minmax(0, 1fr) auto; gap: var(--sp-2); padding: 10px var(--sp-2); }
   .recent-amt { font-size: var(--fs-md); }
   .rg-net-prefix { display: none; }
-  /* 投资页顶部 tab：手机端字号与内边距收紧。
-     **这里只有这一处定义**（别再在 640 大段里重复写一遍 .sub-tab —— 后出现的同特异性规则会静默盖掉前者，
-     2026-11-02 就因此把 tab 又撑回 76px，计数徽标被迫换行、tab 高 50 而非 36）。
-     390px 下 4 个 tab 的可用宽度是 350 − 刷新按钮 32 − 间隙 12 = 306，均分 72px；
-     内容 = 文字 24 + gap 4 + 徽标 18 = 46，加左右各 8px 内边距 = 62，留 10px 余量。 */
-  .sub-tab { font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-2); gap: var(--sp-1); }
+  /* 子 tab 手机档（**这里只有这一处 .sub-tab 的手机覆盖**，别再在 640 大段里重复写 ——
+     后出现的同特异性规则会静默盖掉前者，2026-11-02 就因此把 tab 撑回 76px）。
+     5 条上限：tab 带 gap:0 + 每条 flex:1 1 0 均分，390 内容宽 332 → 每条约 66，
+     5 条刚好放下、余量为 0，再加任何横向间距就会溢出。
+     min-width 64 兜底：内容是「两字 15px(30) + gap 4 + 徽标 18」= 52，加左右各 4px = 60 < 64。
+     字号不在这里降档：未选中 13px / 选中 15px 是方案 1 的统一口径（桌面与手机一致）。 */
+  .sub-tab { flex: 1 1 0; min-width: 64px; padding: var(--sp-2) var(--sp-1); gap: var(--sp-1); }
+  .sub-tabs-scroll { gap: 0; }
   .sub-tabs { gap: var(--sp-1); }
+  .sub-tabs-tools { gap: var(--sp-1); }
 }
 
 
