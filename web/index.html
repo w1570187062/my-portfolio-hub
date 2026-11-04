@@ -1262,30 +1262,38 @@
     </div>
   </div>
 
-  <!-- ===== 持仓历史盈亏弹框（3 段切换：盈亏走势曲线 / 历史净值表格 / 交易记录表格）===== -->
+  <!-- ===== 持仓历史盈亏弹框（3 段切换：盈亏走势曲线 / 每日明细表格 / 交易记录表格）===== -->
   <div id="histModal" class="modal" hidden>
     <div class="modal-card" style="width:720px; max-width:94vw;">
       <h2 id="histTitle">历史盈亏</h2>
       <div class="m-body">
-        <div class="wh-range-bar ds-t-seg" id="histSegBar">
-          <button data-seg="amount" class="active" type="button">盈亏走势</button>
-          <button data-seg="nav" type="button">历史净值</button>
-          <button data-seg="tx" type="button">交易记录</button>
+        <div class="hist-head">
+          <div class="ds-t-seg" id="histSegBar">
+            <button data-seg="amount" class="active" type="button">盈亏走势</button>
+            <button data-seg="nav" type="button">每日明细</button>
+            <button data-seg="tx" type="button">交易记录</button>
+          </div>
+          <!-- 时间段右槽：与分段同一行，仅「每日明细」段显示；选项收进下拉层，不再单占一排胶囊 -->
+          <div class="hist-range" id="histRangeWrap" hidden>
+            <button type="button" class="hist-range-btn" id="histRangeBtn" aria-haspopup="true" aria-expanded="false" aria-controls="histRangePop">
+              <span id="histRangeLabel">近7天</span>
+              <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <div class="hist-range-pop" id="histRangePop" role="menu" aria-label="时间范围" hidden>
+              <button type="button" role="menuitemradio" data-range="7" aria-checked="true">近 7 天<span class="ck">✓</span></button>
+              <button type="button" role="menuitemradio" data-range="30" aria-checked="false">近 30 天<span class="ck">✓</span></button>
+              <button type="button" role="menuitemradio" data-range="0" aria-checked="false">全部<span class="ck">✓</span></button>
+              <button type="button" role="menuitemradio" data-range="custom" aria-checked="false">自定义区间<span class="ck">✓</span></button>
+              <div class="hist-range-dates" id="histNavCustomRow" hidden>
+                <label>起<input type="date" id="histNavFrom"></label>
+                <label>止<input type="date" id="histNavTo"></label>
+                <button type="button" class="hist-range-done" id="histRangeDone">完成</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div id="histChartBody"></div>
         <div id="histNavBody" hidden>
-          <div class="wh-range-bar hist-nav-range" id="histNavRangeBar">
-            <div class="ds-t-seg">
-              <button data-range="7" class="active" type="button">近7天</button>
-              <button data-range="30" type="button">近30天</button>
-              <button data-range="0" type="button">全部</button>
-              <button data-range="custom" type="button">自定义</button>
-            </div>
-            <span class="wh-custom-inline" id="histNavCustomRow" hidden>
-              <label>起 <input type="date" id="histNavFrom"></label>
-              <label>止 <input type="date" id="histNavTo"></label>
-            </span>
-          </div>
           <div id="histNavTable" class="hist-table"></div>
         </div>
         <div id="histTxBody" class="hist-table" hidden></div>

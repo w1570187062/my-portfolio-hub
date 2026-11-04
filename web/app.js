@@ -6202,7 +6202,7 @@ $('#importFile').onchange = async (e) => {
 
 // ---- 理财历史盈亏弹框（每日盈亏与审计合并，无 tab）----
 
-// 历史盈亏弹框 2 段切换：amount 盈亏金额曲线 / tx 交易记录表格（加减仓+分红，2026-10-20 起移除「盈亏率」分段）。
+// 历史盈亏弹框 3 段切换：amount 盈亏金额曲线 / nav 每日明细表格 / tx 交易记录表格（2026-10-20 起移除「盈亏率」分段）。
 // 切换分段不重新请求：曲线与记录各自缓存。
 let histSeg = 'amount';
 let histPnlData = null;    // /pnl-history 响应缓存
@@ -6215,6 +6215,15 @@ async function openHoldingHistory(id) {
   histHistId = Number(id);
   histSeg = 'amount';
   syncHistSegBar();
+  // 时间段状态按弹框维度重置：否则上一只持仓的自定义起止会带进新弹框（旧实现这里是漏的）
+  histNavRange = 7;
+  histNavFrom = '';
+  histNavTo = '';
+  ['histNavFrom', 'histNavTo'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) { el.value = ''; syncDateHint(el); }
+  });
+  closeHistRangePop();
   histPnlData = null;
   histTxsCache = null;
   $('#histTxBody').hidden = true;
@@ -6250,7 +6259,7 @@ function syncHistSegBar() {
   if (bar) bar.querySelectorAll('button[data-seg]').forEach((x) => x.classList.toggle('active', x.dataset.seg === histSeg));
 }
 
-// 按当前分段渲染：amount → 盈亏走势曲线；nav → 历史净值表格；tx → 交易记录表格
+// 按当前分段渲染：amount → 盈亏走势曲线；nav → 每日明细表格；tx → 交易记录表格
 function renderHistSeg() {
   const chart = $('#histChartBody'), tx = $('#histTxBody'), nav = $('#histNavBody');
   if (!chart || !tx || !nav || !histPnlData) return;
@@ -6260,18 +6269,23 @@ function renderHistSeg() {
   chart.hidden = !isAmount;
   tx.hidden = !isTx;
   nav.hidden = !isNav;
+  const rangeWrap = $('#histRangeWrap');
+  if (rangeWrap) rangeWrap.hidden = !isNav;   // 时间段只在「每日明细」段出现，不再单独占一排
+  if (!isNav) closeHistRangePop();
   if (isAmount) { chart.innerHTML = ''; renderHistChart(histPnlData, histHistCur, 'amount'); }
-  else if (isNav) { syncHistNavRangeBar(); renderHistNavTable(); }
+  else if (isNav) { syncHistNavRange(); renderHistNavTable(); }
   else if (isTx) { renderHistTxTable(); }
 }
 
-// 历史净值段状态：时间段（7/30/0/自定义）+ 自定义起止；默认近 7 天
+// 每日明细段状态：时间段（7/30/0/自定义）+ 自定义起止；默认近 7 天
 let histNavRange = 7;
 let histNavFrom = '';
 let histNavTo = '';
 
-// 历史净值表格：复用 /api/holdings/:id/pnl-history 的 series（已含 close/涨跌幅/盈亏金额/累计盈亏），
-// 按时间段控件过滤后展示「日期 / 净值·股价 / 涨跌幅 / 盈亏金额 / 累计盈亏」。
+// 每日明细表格：复用 /api/holdings/:id/pnl-history 的 series（已含 close/涨跌幅/盈亏金额/累计盈亏），
+// 按时间段控件过滤后展示「日期 / 单位净值（股票为收盘价）/ 涨跌幅 / 盈亏金额 / 累计盈亏」。
+// 净值口径：close 落库的是不复权收盘价（基金即单位净值 dwjz），而涨跌幅按「净值+累计分红」复权后算，
+// 分红日两者不能直接相除对账 —— 表头因此不使用「净值·股价」这种含混叫法。
 function renderHistNavTable() {
   const body = $('#histNavTable');
   if (!body || !histPnlData) return;
@@ -6289,7 +6303,10 @@ function renderHistNavTable() {
     }
   }
   const cur = histHistCur || '¥';
-  const head = '<thead><tr><th>日期</th><th class="num">净值·股价</th><th class="num">涨跌幅</th>'
+  // 列名跟着标的类型走：基金是单位净值，股票/港股是收盘价；类型缺失时给中性合并名
+  const cat = (histPnlData.holding || {}).category || '';
+  const navHead = cat === 'fund' ? '单位净值' : (cat ? '收盘价' : '净值 / 收盘价');
+  const head = '<thead><tr><th>日期</th><th class="num">' + navHead + '</th><th class="num">涨跌幅</th>'
     + '<th class="num">盈亏金额</th><th class="num">累计盈亏</th></tr></thead>';
   if (!rows.length) { body.innerHTML = '<p class="u-muted u-py-2">该区间无数据</p>'; return; }
   // 展示倒序：从最新开始（区间过滤仍基于升序 sAll，这里仅反转展示）
@@ -6306,7 +6323,7 @@ function renderHistNavTable() {
     const day = x.day_pnl || 0;
     const tot = x.total_pnl || 0;
     const naTd = '<td class="num" title="该日尚未建仓，不计盈亏">—</td>';
-    // 净值·股价固定 4 位小数（基金净值与股价均需 4 位精度，整数位后不足补零）
+    // 净值/收盘价固定 4 位小数（基金净值与股价均需 4 位精度，整数位后不足补零）
     const navTxt = (x.close == null || isNaN(x.close)) ? '—' : Number(x.close).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
     return '<tr>'
       + '<td>' + esc(x.date) + (held ? '' : '<span class="hist-nav-na" title="该日尚未建仓">未建仓</span>') + '</td>'
@@ -6328,28 +6345,67 @@ $('#histSegBar').addEventListener('click', (e) => {
   renderHistSeg();
 });
 
-// 历史净值段：时间段控件（30/90/0/自定义），复用 pnl-history 的 series 前端过滤。
-$('#histNavRangeBar').addEventListener('click', (e) => {
+// 每日明细段：时间段右槽。按钮只显示当前区间，具体选项收进下拉层；自定义区间在下拉层内展开日期。
+const histRangeBtn = $('#histRangeBtn');
+const histRangePop = $('#histRangePop');
+function openHistRangePop() {
+  if (!histRangePop || !histRangeBtn) return;
+  histRangePop.hidden = false;
+  histRangeBtn.setAttribute('aria-expanded', 'true');
+}
+function closeHistRangePop() {
+  if (!histRangePop || !histRangeBtn) return;
+  histRangePop.hidden = true;
+  histRangeBtn.setAttribute('aria-expanded', 'false');
+}
+histRangeBtn.addEventListener('click', () => {
+  if (histRangePop.hidden) openHistRangePop(); else closeHistRangePop();
+});
+histRangePop.addEventListener('click', (e) => {
+  if (e.target.closest('#histRangeDone')) { closeHistRangePop(); return; }
   const b = e.target.closest('button[data-range]');
   if (!b) return;
   const v = b.dataset.range;
   if (v === 'custom') {
     histNavRange = 'custom';
     const sAll = (histPnlData.series || []).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
-    if (sAll.length) { histNavFrom = sAll[0].date; histNavTo = sAll[sAll.length - 1].date; $('#histNavFrom').value = histNavFrom; $('#histNavTo').value = histNavTo; }
+    if (sAll.length && (!histNavFrom || !histNavTo)) {
+      histNavFrom = histNavFrom || sAll[0].date;
+      histNavTo = histNavTo || sAll[sAll.length - 1].date;
+      $('#histNavFrom').value = histNavFrom;
+      $('#histNavTo').value = histNavTo;
+      // 程序化赋值不触发 input/change，不手动同步就会残留 date-empty（日期已填、画面空白）
+      syncDateHint(document.getElementById('histNavFrom'));
+      syncDateHint(document.getElementById('histNavTo'));
+    }
+    // 选中自定义后保持下拉层打开，方便继续改起止日期
   } else {
     histNavRange = Number(v);
+    closeHistRangePop();
   }
-  syncHistNavRangeBar();
+  syncHistNavRange();
   renderHistNavTable();
 });
-$('#histNavFrom').addEventListener('change', () => { histNavFrom = $('#histNavFrom').value || ''; renderHistNavTable(); });
-$('#histNavTo').addEventListener('change', () => { histNavTo = $('#histNavTo').value || ''; renderHistNavTable(); });
+$('#histNavFrom').addEventListener('change', () => { histNavFrom = $('#histNavFrom').value || ''; histNavRange = 'custom'; syncHistNavRange(); renderHistNavTable(); });
+$('#histNavTo').addEventListener('change', () => { histNavTo = $('#histNavTo').value || ''; histNavRange = 'custom'; syncHistNavRange(); renderHistNavTable(); });
+// 点弹层以外区域 / Esc 收起（不干扰弹框本身）
+document.addEventListener('click', (e) => {
+  if (!histRangePop || histRangePop.hidden) return;
+  if (!e.target.closest || !e.target.closest('#histRangeWrap')) closeHistRangePop();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && histRangePop && !histRangePop.hidden) closeHistRangePop();
+});
 
-// 同步历史净值段范围胶囊 active 态 + 自定义区间显隐
-function syncHistNavRangeBar() {
-  const bar = $('#histNavRangeBar');
-  if (bar) bar.querySelectorAll('button[data-range]').forEach((x) => x.classList.toggle('active', x.dataset.range === String(histNavRange)));
+// 同步时间段右槽：按钮文案、选项选中态、自定义日期块显隐
+function syncHistNavRange() {
+  const label = $('#histRangeLabel');
+  if (label) label.textContent = histNavRange === 'custom' ? '自定义' : (histNavRange > 0 ? '近' + histNavRange + '天' : '全部');
+  if (histRangePop) {
+    histRangePop.querySelectorAll('button[data-range]').forEach((x) => {
+      x.setAttribute('aria-checked', String(x.dataset.range === String(histNavRange)));
+    });
+  }
   const customRow = $('#histNavCustomRow');
   if (customRow) customRow.hidden = (histNavRange !== 'custom');
 }

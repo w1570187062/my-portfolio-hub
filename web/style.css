@@ -2966,7 +2966,7 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .batch-row .crb-del:hover { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
 #crbAddRow { margin-bottom: var(--sp-3); }
 
-/* 历史净值表（历史盈亏弹框内） */
+/* 每日明细表（历史盈亏弹框内） */
 .hist-nav-table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
 .hist-nav-table th { font-size: var(--fs-xs); font-weight: 600; color: var(--text-faint); padding: var(--sp-2) var(--sp-3); text-align: left; border-bottom: 1px solid var(--sub-divider); }
 .hist-nav-table td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--sub-divider); font-variant-numeric: tabular-nums; }
@@ -3258,12 +3258,55 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .wh-custom-row input[type="date"] { font-family: inherit; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--bg); color: var(--text); }
 .wh-custom-hint { font-size: var(--fs-xs); }
 
-/* 持仓历史净值段：时间胶囊与自定义区间同一行，自定义区间仅选中「自定义」时显示 */
-.hist-nav-range { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.wh-custom-inline { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); }
-.wh-custom-inline[hidden] { display: none; }
-.wh-custom-inline label { display: inline-flex; align-items: center; gap: 4px; }
-.wh-custom-inline input[type="date"] { font-family: inherit; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--bg); color: var(--text); }
+/* 持仓历史盈亏：分段行 + 右侧时间范围槽（2026-11-04 改版，原「历史净值」段更名「每日明细」）
+   分段行与下方内容之间留 --sp-4 呼吸区；原实现是 .wh-range-bar 的 --sp-2（8px）。 */
+.hist-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+/* 表格自带 margin-top（4px），与 .hist-head 叠加会让实际间距变成 20px，这里清掉保证正好 --sp-4 */
+#histNavTable.hist-table,
+#histTxBody.hist-table { margin-top: 0; }
+/* 分段选中改 soft-fill：深色下 --primary 实心配 --on-primary 只有 3.49:1，不达 AA（浅色 5.57:1） */
+#histSegBar button.active { background: var(--primary-soft); color: var(--primary-hover); font-weight: 600; box-shadow: inset 0 0 0 1px rgba(var(--tint), .26); }
+#histSegBar button.active:hover { background: var(--primary-soft); color: var(--primary-hover); }
+
+.hist-range { position: relative; flex: 0 0 auto; }
+.hist-range-btn {
+  display: inline-flex; align-items: center; gap: var(--sp-1); height: 26px; padding: 0 var(--sp-2);
+  border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--btn-ghost); color: var(--text);
+  font-family: var(--font-sans); font-size: var(--fs-sm); line-height: 1.3; white-space: nowrap; cursor: pointer;
+  transition: var(--btn-transition);
+}
+.hist-range-btn:hover { background: var(--btn-ghost-hover); border-color: var(--btn-border); color: var(--text); }
+.hist-range-btn[aria-expanded="true"] { border-color: rgba(var(--tint), .45); background: var(--primary-soft); color: var(--primary-hover); }
+.hist-range-btn svg { width: 10px; height: 10px; flex: 0 0 auto; transition: transform .18s var(--e); }
+.hist-range-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+.hist-range-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 208px; padding: var(--sp-1);
+  background: var(--bg-card-solid); border: 1px solid var(--border); border-radius: var(--r-sm); box-shadow: var(--sh-2);
+}
+.hist-range-pop > button {
+  display: flex; align-items: center; justify-content: space-between; width: 100%; height: 32px;
+  padding: 0 var(--sp-2); border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text);
+  font-family: var(--font-sans); font-size: var(--fs-sm); text-align: left; cursor: pointer;
+}
+.hist-range-pop > button:hover { background: var(--bg-hover); }
+.hist-range-pop > button[aria-checked="true"] { color: var(--primary-hover); font-weight: 600; }
+.hist-range-pop > button .ck { opacity: 0; font-size: var(--fs-xs); }
+.hist-range-pop > button[aria-checked="true"] .ck { opacity: 1; }
+.hist-range-dates { display: grid; gap: var(--sp-1); padding: var(--sp-1) var(--sp-2) var(--sp-2); }
+.hist-range-dates[hidden] { display: none; }
+.hist-range-dates label { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-muted); }
+.hist-range-dates input[type="date"] { width: 100%; min-width: 0; font-family: inherit; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--bg); color: var(--text); }
+/* 「完成」在 .hist-range-dates 内，不是 .hist-range-pop 的直接子元素，拿不到上面那条
+   .hist-range-pop > button 的边框归零，必须自己清掉 UA 的 2px outset 边框 */
+.hist-range-done { display: flex; align-items: center; justify-content: center; width: 100%; height: 32px; margin-top: var(--sp-1); border: 0; border-radius: var(--r-xs); background: var(--primary-soft); color: var(--primary-hover); font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
+.hist-range-done:hover { background: var(--primary-soft); color: var(--primary-hover); }
+
+/* 窄屏：分段内边距收紧，保证「3 段 + 时间段」在 390px 下同排不换行 */
+@media (max-width: 640px) {
+  #histSegBar button { padding: var(--sp-1) var(--sp-2); }
+  .hist-range-btn { padding: 0 6px; font-size: var(--fs-xs); }
+  .hist-range-pop { width: 196px; }
+}
 .wh-more { margin-top: var(--sp-2); text-align: center; }
 
 /* 明文输入框眼睛切换 */
