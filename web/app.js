@@ -7492,10 +7492,11 @@ function renderAssetTab() {
         <button class="sub-tab" data-sub="flows" type="button" role="tab" aria-selected="false" tabindex="-1">流水</button>
         <button class="sub-tab" data-sub="cashflow" type="button" role="tab" aria-selected="false" tabindex="-1">收支</button>
       </div>
-      <!-- 视图级控件（一键更新余额 / 添加账户）挂在 tab 行右端，由 renderSources 填充，
-           只在「账户」子视图出现。2026-11-02 由账户面板顶部的独立 .asset-toolbar 并入：
-           那一行左侧恒空，只有两枚图标贴在右侧，既多占 44px 又和投资页的工具条问题同源。
-           注意它必须留在 .sub-tabs-scroll **之外**：否则 tab 带横向滚动时会被一起滚走。 -->
+    </div>
+    <!-- 视图级控件行（2026-11-04）：从 tab 行挪出独立成行，右对齐、与下方表格右缘同一条线。
+       tab 行只放 tab —— 否则两枚按钮会和 4–5 条 tab 抢宽度，把手机端的 flex:1 1 0 均分挤坏。
+       非「账户」页签整行 hidden（CSS 里有 [hidden] 兜底，不会留下空行高度）。 -->
+    <div class="asset-tools-row" id="assetToolsRow" hidden>
       <span class="sub-tabs-tools" id="assetTools"></span>
     </div>
     <!-- 收支计划标题行（2026-11-03）：从收支面板内部提到页签条下方，作为页级标题。
@@ -7551,10 +7552,12 @@ function applyAssetSub(sub) {
       x.setAttribute('aria-selected', on ? 'true' : 'false');
       x.tabIndex = on ? 0 : -1;
     });
-    const tools = tabs.querySelector('.sub-tabs-tools');
-    // 账户操作（更新余额 / 添加账户）只对「账户」子视图有意义
-    if (tools) tools.hidden = assetSub !== 'accounts';
   }
+  // 账户操作（更新余额 / 添加账户）只对「账户」子视图有意义。
+  // 2026-11-04 起它是一整行 .asset-tools-row（不再挂在 tab 行里），所以按行切显隐；
+  // hidden 生效依赖 CSS 的 .asset-tools-row[hidden] 兜底，否则 display:flex 会压过 UA 规则。
+  const toolsRow = document.querySelector('.asset-tools-row');
+  if (toolsRow) toolsRow.hidden = assetSub !== 'accounts';
   renderAssetKpis(assetSub);
   document.querySelectorAll('#assetTabBody .asset-subpanel').forEach((p) => {
     p.classList.toggle('active', p.dataset.sub === assetSub);
@@ -8176,9 +8179,8 @@ function renderSources(body) {
   // （账户 N 个 / 总资产 / 负债 / 净资产），其中后三项与页面顶部 4 张 KPI 卡完全重复，
   // 第一项「账户 N 个」已由 #assetAcctCount 徽标承担 —— 整条删除，账户表直接顶到内容区顶部。
   // 「总资产 = 持仓 + 理财 + 现金」的拆分口径（全部折算 CNY）随 kpi-head 一并删除（2026-11-02）。
-  // 账户操作（添加账户 / 一键更新余额）2026-11-02 由账户面板顶部那条独立工具条
-  // 改挂到子 tab 行右端的 #assetTools：那一行左侧恒空、只有两枚图标贴右，
-  // 与投资页 #investToolbar 是同一个毛病（控件孤立 + 白占一行）。
+  // 账户操作（添加账户 / 一键更新余额）挂在 tab 行下方的 .asset-tools-row（#assetTools），
+  // 右对齐、与账户表右缘齐平；非「账户」子视图整行隐藏（见 applyAssetSub）。
   // 一张卡承载账户主表；横向滚动由 .as-main 接管。指标条摘要头已迁出为独立「资产摘要」卡。
   html += `<div class="as-card tier-1"><div class="as-main">`;
   if (!list.length) html += emptyStateHTML({ icon: EMPTY_ICONS.bank, title: '还没有账户', desc: '先添加一个银行、证券或软件，开始记录你的资产。', btnLabel: '＋ 添加账户', btnAttrs: 'data-empty-add="source"' });
@@ -8229,8 +8231,8 @@ function renderSources(body) {
   html += `</div></div>`;
   body.innerHTML = html;
   body.scrollTop = prevScroll;
-  // 账户操作按钮挂到子 tab 行右端（#assetTools）：只在「账户」子视图出现，
-  // 切到现金 / 流水 / 收支 时由 bindAssetSubTabs 隐藏。
+  // 账户操作按钮挂到 tab 行下方的工具行（#assetTools）：只在「账户」子视图出现，
+  // 切到现金 / 流水 / 收支 时由 applyAssetSub 整行隐藏。
   // ⚠ 容器不存在时（资产页尚未渲染，renderSources 被别处提前调用）必须跳过绑定，
   // 否则 $('#addSourceBtn') 取到 null 再挂 onclick 会直接抛 TypeError。
   const tools = document.getElementById('assetTools');

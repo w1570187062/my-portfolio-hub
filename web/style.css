@@ -5954,6 +5954,16 @@ textarea::placeholder {
    flex:0 0 auto：它是 .sub-tabs 的直接子项、不在 .sub-tabs-scroll 里，
    tab 带横向溢出时工具槽仍然钉在右边缘完整可见，也不会盖住最后一个 tab。 */
 .sub-tabs-tools { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
+/* 资产页视图级控件行（2026-11-04）：从页签条里挪出来独立成行，右端与下方表格右缘对齐。
+   它与 tab 行不再争宽度，5 条 flex:1 1 0 的均分也不会被两枚按钮吃掉。
+   非「账户」页签整行 hidden：display:flex 会压过 UA 的 [hidden]，所以必须自带 [hidden] 兜底，
+   否则就是「看不见但仍占一行高度 + 16px 间距」。 */
+.asset-tools-row {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+.asset-tools-row[hidden] { display: none; }
 /* 投资页视图工具条：KPI 卡片与表格之间的一行控件（2026-11-03）。
    与资产页流水工具条（.holding-toolbar + .tl-tools）同一套排布：右对齐、不加底框、
    不占一整行高度（行内只有控件本身）。上下各留一档间距，与卡片/表格都不贴边。
@@ -6676,8 +6686,13 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 
 /* ===== 资产页 · 收支计划（2026-11-03 改版：日程式分组列表） ===== */
 /* 标题行（含两枚纯图标操作）提到页签条下方作页级标题：
-   上间距由 .sub-tabs 的 margin-bottom（--sp-4）承担，这里只补到下方 KPI 卡的间距。 */
+   上间距由 .sub-tabs 的 margin-bottom（--sp-4）承担，这里只补到下方 KPI 卡的间距。
+   ⚠ [hidden] 必须显式兜底：下面的 .cf-head 声明了 display:flex，
+   作者样式会整体压过浏览器给 [hidden] 的 UA 规则（UA 声明优先级最低，与选择器权重无关），
+   于是 hidden 属性形同虚设 —— 这正是「切到账户/现金/流水仍挂着收支标题行」的根因。
+   .sub-tabs-tools[hidden] 早就补过同一条（L5967），这里漏了。 */
 .asset-cf-head { margin-bottom: var(--sp-4); }
+.asset-cf-head[hidden] { display: none; }
 .cf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
 .cf-head-text { min-width: 0; }
 .cf-head-sub { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
