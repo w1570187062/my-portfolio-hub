@@ -5787,10 +5787,9 @@ textarea::placeholder {
   .nw-chip { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); font-size: var(--fs-sm); }
   .nw-chip .d { width: 7px; height: 7px; }
   .nw-main > .nw-right .rate-spark-box { min-height: 192px; }
-  /* 宽屏水印：原型 300px 会被 274.8px 高的卡上下各裁 15px，实测读成「拱形」；
-     落地收到 192px（卡内容高 208px，留 8px 余量）完整露出，形状才读得出来。
-     若要恢复 300px，需把 hero 抬到 ~300px 高，与 D 的紧凑目标冲突。 */
-  .nw-top .nw-shield { right: 24px; top: 0; width: 192px; height: 192px; }
+  /* 宽屏只把水印从「今日/本月」左移 24px，尺寸仍绑定块高（height:100%）——
+     原 192px 高于卡高 79.3，被 .kpi-card 的 overflow:hidden 裁掉 59%，见基础规则注释。 */
+  .nw-top .nw-shield { right: 24px; }
 }
 /* 641–1340：芯片让一档内距，四枚仍等分一行 */
 @media (min-width: 641px) and (max-width: 1340px) {
@@ -5821,10 +5820,13 @@ textarea::placeholder {
   border-radius: var(--r-sm);
 }
 /* 盾牌水印：落在主数字与「今日/本月」之间的空白，纯装饰（不接管指针、不压正文）。
-   1280 缩到 72px 给 logo 让位，1920 保持 300px；≤640 不出现在单列台账里。 */
+   2026-11-05 二修：祖先是 .kpi-card，自带 overflow:hidden —— 水印只要比块高就会被硬裁
+   （实测 1920 块高 79.3、192px 水印只露 79.3，线上读成「半张盾」）。不再用固定 px 猜尺寸：
+   高度绑定块高 height:100% + aspect-ratio:1，块多高盾多高，永远完整可见。
+   ≤640 单列台账里主数字旁没有横向空白，不渲染。 */
 .nw-shield {
-  position: absolute; right: 0; top: -2px;
-  width: 72px; height: 72px;
+  position: absolute; right: 0; top: 0;
+  height: 100%; width: auto; aspect-ratio: 1;
   pointer-events: none; z-index: 0;
 }
 .nw-shield svg { width: 100%; height: 100%; }
