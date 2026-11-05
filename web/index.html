@@ -519,13 +519,14 @@
                  剩下「设备」「操作 PIN」两组用 .dev-sec 分区 + 全宽实线衔接，不再用虚线分割。 -->
             <section class="dev-sec">
               <div class="grp-label">本账本已接入的设备<span class="pin-state" id="devRoleNote"></span></div>
-              <div id="deviceList" class="device-list"><!-- 初始占位：JS 接手后换成 shimmer 骨架 --></div>
+              <!-- 2026-11-05：出码按钮原本压在设备列表底下，设备一多（手机 7 行）就得先滚到底才找得到，
+                   而新设备首屏给的路径恰恰是「头像 → 绑定设备 → 添加设备」。上移到分组标题正下方、右对齐，
+                   保持「两枚同级按钮统一样式、都不带符号」的既有约定。 -->
               <div class="modal-actions" id="deviceActions">
-                <!-- 两枚同级按钮统一样式、都不带符号：早先「＋ 添加设备」比「邀请家人」多一个加号，
-                     同一排里一个像主按钮、一个像次按钮，实际两者权重相同。 -->
                 <button class="btn" type="button" id="addDeviceBtn">添加设备</button>
                 <button class="btn" type="button" id="inviteMemberBtn">邀请家人</button>
               </div>
+              <div id="deviceList" class="device-list"><!-- 初始占位：JS 接手后换成 shimmer 骨架 --></div>
             </section>
             <section class="dev-sec" id="pinSection">
               <div class="grp-label" id="pinTitle">操作 PIN<span class="pin-state" id="pinState"></span></div>
@@ -2004,6 +2005,13 @@
         <input id="devNameInput" type="text" maxlength="20" placeholder="如：客厅台式机 / 我的 MacBook" autocomplete="off" spellcheck="false">
       </label>
       <p class="tool-hint">只影响列表里的显示；留空则恢复浏览器自动识别的名称。</p>
+      <!-- 切换主设备（2026-11-05）：任意设备凭操作 PIN 都能切，普通设备由此把自己升为主设备。
+           与「改名称」是两件事，用分隔线划开；目标已是主设备时只回显状态、不给按钮。 -->
+      <div class="dev-owner-row" id="devNameOwnerRow">
+        <button type="button" class="btn btn-sm" id="devNameOwner"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5 7.2 11 12 4.6l4.8 6.4 3.7-3.5-1.6 10.1H5.1L3.5 7.5Z"/><path d="M5.1 20h13.8"/></svg>设为主设备</button>
+        <span class="tool-hint" id="devNameOwnerCur" hidden>这台设备已经是主设备</span>
+        <p class="tool-hint" id="devNameOwnerHint">输入操作 PIN 即可切换，本机将成为主设备。</p>
+      </div>
     </div>
     <div class="modal-actions">
       <button type="button" class="btn" id="devNameCancel">取消</button>

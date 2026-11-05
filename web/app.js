@@ -15156,8 +15156,12 @@ async function doClaim() {
 }
 
 async function doPair(code) {
+  // 深链 / 二维码走 t=secret 直接进来，不是 6 位数字；只有手输这一路才按位数校验。
+  const typed = !code;
   code = (code || document.getElementById('authCode').value || '').trim();
-  if (!code) { document.getElementById('authPairErr').textContent = '请输入配对码'; return; }
+  const err = document.getElementById('authPairErr');
+  if (!code) { err.textContent = '请输入配对码'; return; }
+  if (typed && !/^\d{6}$/.test(code)) { err.textContent = '配对码是 6 位数字，请核对后再试'; return; }
   const btn = document.getElementById('authPairBtn');
   btn.disabled = true;
   try {
@@ -15177,8 +15181,8 @@ async function doPair(code) {
 }
 
 // PIN 登录（2026-11-02）：实例已设操作 PIN 时，不用主设备出码也能进去。
-// 授予全部账本、member 权限；设备管理类操作对所有设备开放（后端按 PIN 校验），
-// 仍归主设备的只剩账本级不可逆操作；限流与配对同池。
+// 授予全部账本、member 权限；普通设备只能删自己 / 给自己改名，可凭 PIN 切换主设备，
+// 其余管理操作（含出码）归主设备；限流与配对同池。
 // PIN 登录区展开 / 折叠（2026-11-02）。折叠态只露一行文字按钮，避免备用通道挤占首屏。
 // 展开时把焦点送进 PIN 输入框：用户刚点「用它直接进入」，下一步必然是输数字。
 function setPinLoginOpen(open) {
