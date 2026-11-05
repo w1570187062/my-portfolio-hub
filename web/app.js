@@ -8131,15 +8131,19 @@ function renderAssetTab() {
         <button class="sub-tab" data-sub="cashflow" type="button" role="tab" aria-selected="false" tabindex="-1">收支</button>
       </div>
     </div>
-    <!-- 视图级控件行（2026-11-04）：从 tab 行挪出独立成行，右对齐、与下方表格右缘同一条线。
-       tab 行只放 tab —— 否则两枚按钮会和 4–5 条 tab 抢宽度，把手机端的 flex:1 1 0 均分挤坏。
-       非「账户」页签整行 hidden（CSS 里有 [hidden] 兜底，不会留下空行高度）。 -->
+    <!-- 顶部 4 张卡随子 tab 换内容（= 当前视图的四个关键数字）。
+         眉标行（kpi-head）2026-11-02 删除：与子 tab 行重复，口径信息由各视图工具条承担。 -->
+    <div class="kpi-row cols-flat asset-kpi-row" id="assetKpiRow"></div>
+    <!-- 视图级控件行（2026-11-04，2026-11-05 归位到卡片下方）：右对齐、与下方表格右缘同一条线，
+         夹在 KPI 卡与表格之间。tab 行只放 tab —— 否则两枚按钮会和 4–5 条 tab 抢宽度，
+         把手机端的 flex:1 1 0 均分挤坏。非「账户」页签整行 hidden（CSS 里有 [hidden] 兜底，
+         不会留下空行高度）。 -->
     <div class="asset-tools-row" id="assetToolsRow" hidden>
       <span class="sub-tabs-tools" id="assetTools"></span>
     </div>
-    <!-- 收支计划标题行（2026-11-03）：从收支面板内部提到页签条下方，作为页级标题。
-         只属于「收支」页签 —— 显隐由 applyAssetSub 统一切换，切到其他页签自动隐藏；
-         标题下方的间距由 .sub-tabs 自带的 margin-bottom 提供，不再另加上边距。 -->
+    <!-- 收支计划标题行（2026-11-03，2026-11-05 与账户工具行对齐）：作为页级标题放在卡片下方、
+         列表面板之前，与账户页的按钮行同一节奏、同一右缘。只属于「收支」页签 ——
+         显隐由 applyAssetSub 统一切换；隐藏时 display:none，不留空行。 -->
     <div class="cf-head asset-cf-head" hidden>
       <div class="cf-head-text">
         <div class="section-title">收支计划</div>
@@ -8150,9 +8154,6 @@ function renderAssetTab() {
         <button type="button" class="btn icon-btn" data-cf-act="add" title="新建收支计划" aria-label="新建收支计划">${actIcon('plus')}</button>
       </div>
     </div>
-    <!-- 顶部 4 张卡随子 tab 换内容（= 当前视图的四个关键数字）。
-         眉标行（kpi-head）2026-11-02 删除：与子 tab 行重复，口径信息由各视图工具条承担。 -->
-    <div class="kpi-row cols-flat asset-kpi-row" id="assetKpiRow"></div>
     <div class="asset-subpanel" data-sub="accounts" id="assetPanelAccounts"></div>
     <div class="asset-subpanel" data-sub="cash" id="assetPanelCash"></div>
     <div class="asset-subpanel" data-sub="flows" id="assetPanelFlows"></div>
