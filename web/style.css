@@ -5774,6 +5774,72 @@ textarea::placeholder {
   .kpi-card.anchor.has-alloc .kpi-body { flex-basis: 200px; min-width: 200px; }
 }
 
+/* ===== 今日盈亏卡 · 右侧「今日贡献」三条（2026-11-05） =====
+   口径：按今日盈亏绝对值降序取前三（亏损最多也会排在前），标题已写「按绝对值」消歧。
+   布局沿用锚点卡的「文本块 + 右侧块」可换行横排：
+     · 宽屏（内容宽 ≥359）= 文本块保持自然宽度（实测 171px），右侧轨道吃掉剩余空档；
+     · 卡宽不足（平板 2×2 / 手机）= 轨道整块换到文本块下一行，不压主数字、不横向溢出。
+   行高固定 25px × 3 + 表头 20 + 8 = 103px，小于卡片内容高度（1920 实测 107.6px），
+   因此不改变卡片高度。表头 20+8 的用意：让第一行从 y≈44 开始，正好避开右上角 32px 图标。
+   名称严格单行：white-space:nowrap + text-overflow:ellipsis + min-width:0，
+   任何长度都不换行、不撑高；全名走 title + aria-label。 */
+.kpi-card.has-contrib {
+  flex-direction: row; flex-wrap: wrap;
+  align-items: flex-start; align-content: flex-start;
+  column-gap: var(--sp-4); row-gap: var(--sp-2);
+}
+.kpi-card.has-contrib .kpi-body {
+  flex: 0 1 auto; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.kpi-contrib {
+  flex: 1 1 172px; min-width: 172px;
+  display: flex; flex-direction: column;
+}
+/* [hidden] 兜底：.kpi-contrib 自带 display:flex，作者样式会压过 UA 的 [hidden] */
+.kpi-contrib[hidden] { display: none; }
+.kpi-contrib-head {
+  display: flex; align-items: baseline; gap: var(--sp-1);
+  height: 20px; margin-bottom: var(--sp-2); min-width: 0;
+}
+.kpi-contrib-title {
+  flex: 0 1 auto; min-width: 0;
+  font-size: var(--fs-2xs); color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kpi-contrib-count {
+  flex: 0 0 auto; font-size: var(--fs-2xs); color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.kpi-contrib-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+/* 三行等距：高度锁死 25px，名称再长也只影响文本层（省略号），不参与行高计算 */
+.kpi-contrib-item { display: flex; align-items: center; gap: 6px; height: 25px; min-width: 0; }
+.kpi-contrib-rank {
+  flex: 0 0 16px; height: 16px; border-radius: var(--r-xs);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-input); color: var(--text-secondary);
+  font-size: var(--fs-2xs); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.kpi-contrib-name {
+  flex: 1 1 auto; min-width: 0;
+  font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 金额列固定宽度：三行名称右边界一致，金额按小数点对齐（tabular-nums） */
+.kpi-contrib-amt {
+  flex: 0 0 62px; text-align: right;
+  font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.kpi-contrib-amt.up { color: var(--up); }
+.kpi-contrib-amt.down { color: var(--down); }
+.kpi-contrib-amt.flat { color: var(--text-muted); }
+@media (max-width: 640px) {
+  /* 手机：轨道整块占满一行（卡内宽 137px），金额列缩到 56px / 10px 给名称留最小可读宽度 */
+  .kpi-contrib { flex-basis: 100%; min-width: 0; }
+  .kpi-contrib-amt { flex-basis: 56px; font-size: var(--fs-2xs); }
+  .kpi-contrib-rank { flex-basis: 14px; }
+}
+
 /* 行模板：平级等宽（财务/资产）｜锚点 + 卫星（投资） */
 .kpi-row { display: grid; gap: var(--sp-3); align-items: stretch; }
 .kpi-row.cols-flat { grid-template-columns: repeat(4, 1fr); }

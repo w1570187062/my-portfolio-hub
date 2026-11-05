@@ -289,11 +289,22 @@
         </div>
         <div class="kpi-alloc" id="investAlloc" hidden></div>
       </div>
-      <div class="kpi-card density-standard">
+      <!-- has-contrib：右侧挂「今日贡献」三条（按今日盈亏绝对值降序）。文本包进 .kpi-body，
+           宽屏三条在右侧、与主数字同顶；窄屏/手机自动换到文本块下方（不新增断点）。 -->
+      <div class="kpi-card density-standard has-contrib">
         <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
-        <div class="kpi-label" id="investDayLabel">今日盈亏</div>
-        <div class="kpi-main"><div class="kpi-value" id="investDayPnl">—</div></div>
-        <div class="kpi-sub" id="investDayPct">—</div>
+        <div class="kpi-body">
+          <div class="kpi-label" id="investDayLabel">今日盈亏</div>
+          <div class="kpi-main"><div class="kpi-value" id="investDayPnl">—</div></div>
+          <div class="kpi-sub" id="investDayPct">—</div>
+        </div>
+        <div class="kpi-contrib" id="investDayContrib" hidden>
+          <div class="kpi-contrib-head">
+            <span class="kpi-contrib-title" title="按今日盈亏绝对值降序取前三：亏损最多也会排在前面；0 与无数据不列入。">今日贡献 · 按绝对值</span>
+            <span class="kpi-contrib-count"></span>
+          </div>
+          <ul class="kpi-contrib-list"></ul>
+        </div>
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-down"><svg viewBox="0 0 24 24"><path d="M3 7l6 6 4-4 8 8"/><path d="M14 17h7v-7"/></svg></div>
