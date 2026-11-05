@@ -5737,12 +5737,29 @@ textarea::placeholder {
 }
 /* [hidden] 兜底：.kpi-alloc 自带 display:flex，作者样式会压过 UA 的 [hidden] */
 .kpi-alloc[hidden] { display: none; }
-.alloc-ring { display: block; width: 56px; height: 56px; flex: 0 0 auto; }
-.alloc-ring-track { fill: none; stroke: var(--bg-input); stroke-width: 8; }
+/* 环外径 96 = 左侧文本块（主数字 + 主标题 + 副标，实测 97.6px）对齐，差 1.6px。
+   线宽 10 → 内孔直径 = 2×43 − 10 = 76（外径 2×43 + 10 = 96）。 */
+.alloc-ring-wrap { position: relative; width: 96px; height: 96px; flex: 0 0 auto; }
+.alloc-ring { display: block; width: 100%; height: 100%; }
+.alloc-ring-track { fill: none; stroke: var(--bg-input); stroke-width: 10; }
 /* 环形分段：起点统一转到 12 点方向，弧长由 JS 写入 stroke-dasharray */
 .alloc-ring-seg {
-  fill: none; stroke: var(--alloc-c); stroke-width: 8;
+  fill: none; stroke: var(--alloc-c); stroke-width: 10;
   transform: rotate(-90deg); transform-origin: 50% 50%;
+}
+/* 环心内容（2026-11-05）：小标签「总资产」+ 汇总数值。
+   不放分段占比 —— 图例已经逐段列了，中心再写一遍就是重复读数。
+   内孔 76px，中心块实测宽 ≤ 61px（上限 80%×76 = 60.8），左右各留 ≥ 7px 呼吸位；
+   竖直方向内孔 76 容纳两行 27px，弧线不压字。 */
+.alloc-center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; pointer-events: none;
+}
+.alloc-center-k { font-size: var(--fs-2xs); line-height: 1.1; color: var(--text-muted); }
+.alloc-center-v {
+  font-size: var(--fs-sm); line-height: 1.15; font-weight: 600;
+  color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .alloc-legend { display: flex; flex-direction: column; gap: 2px; min-width: 84px; }
 .alloc-leg {
@@ -5788,9 +5805,11 @@ textarea::placeholder {
   .kpi-card.density-standard .kpi-value { font-size: var(--fs-xl); }
   .kpi-card.anchor { padding: var(--sp-4); }
   .kpi-card.anchor .kpi-value { font-size: var(--fs-2xl); }
-  /* 手机档：环缩到 40px、图例 76px，仍放不进右侧（卡宽 169px）→ 环块换到数字块下方 */
-  .alloc-ring { width: 40px; height: 40px; }
-  .alloc-legend { min-width: 76px; }
+  /* 手机档重排（2026-11-05 环径 96 后）：卡 169 内宽 137，环 96 + 图例 84 横向放不下，
+     缩环会让中心「总资产」放不进内孔（80% 规则），故环块整块占满一行：
+     环 96 居中、图例三行整宽落在环下方。代价 = 卡高增加（实测见 README）。 */
+  .kpi-alloc { flex-basis: 100%; flex-direction: column; align-items: center; }
+  .alloc-legend { width: 100%; min-width: 0; }
 }
 
 /* —— 净资产 Hero —— */
