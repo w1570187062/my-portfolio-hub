@@ -445,6 +445,11 @@ let snapshotDate = '';   // 最近 pnl_daily 快照日期（YYYY-MM-DD）
 let monthPnlCNY = 0;     // 本月累计盈亏（CNY 折算）
 let monthPnlCny = 0;     // 本月累计盈亏（CNY 原始货币）
 let todayRealizedCny = 0; // 今日已实现盈亏（减仓落库，CNY 折算），并入首页「今日盈亏」
+let realizedToday = [];   // /api/home realized_today：今日逐标的已实现盈亏（含 symbol/name/currency/amount）
+let homeUpdatedAtMax = ''; // /api/home updated_at_max：最近一次行情落库时间（判定「今日是否更新」）
+let prevPnlDay = null;    // /api/pnl/history 中 date < 今天 的最新一行：昨日/上一交易日回退数据
+let fallbackActive = false; // 今日盈亏卡是否处于「今日未更新」回退态（用于 60s 轮询 + 可见性刷新）
+let fallbackRefreshTimer = null;
 let monthPnlUsd = 0;     // 本月累计盈亏（USD 原始货币）
 // 当日盈亏的「归属交易日」（后端 /api/home 与 /api/asset/overview 都给）：交易日=今天，
 // 周末/法定节假日=最近一个交易日。非交易日那笔数不是今天赚的，标签必须跟着改。
@@ -558,10 +563,12 @@ async function load() {
     sparkCache = hd.spark || {};
     cashBalMap = hd.cash || {};
     snapshotDate = hd.snapshot_date || '';
+    homeUpdatedAtMax = hd.updated_at_max || '';
     monthPnlCNY = hd.month_pnl_cny || 0;
     monthPnlCny = hd.month_pnl_cny_ccy || 0;
     monthPnlUsd = hd.month_pnl_usd || 0;
     todayRealizedCny = hd.today_realized_cny || 0;
+    realizedToday = hd.realized_today || [];
     pnlDateStr = hd.pnl_date || '';
     // 方案 16：三项互不依赖，改成并行 —— 原先串行 await 是三个串起来的往返，
     // 首屏完成时间被拖长一个 RTT 的量级。
@@ -569,6 +576,7 @@ async function load() {
       loadManualClosed(),   // 已平仓页手动补录记录（不入账）
       loadCustomFlowCats(), // 自定义收支分类（设置页维护，选择器/统计共用）
       loadDeposits(),       // 存款列表（首页「存款」分段）
+      loadPrevPnlDay(),     // 今日未更新时的昨日/上一交易日回退数据
     ]);
     renderFiltered();
     loadCashflow(); // 首页紧凑卡片：本月收支计划（不阻塞主渲染）
@@ -592,6 +600,46 @@ async function loadManualClosed() {
       manualClosedRecords = (d && d.records) || [];
     }
   } catch (_) { /* 手动记录加载失败不阻塞主流程 */ }
+}
+
+// 今日数据未更新时的回退源：/api/pnl/history 里 date < 今天 的最新一行。
+// 主数字用 equity_pnl_cny（纯持仓合计，与今日卡的「持仓+已实现」口径一致，不含理财），
+// 明细用 detail.by_symbol[].pnl_cny（快照落库时已折算成 CNY）。
+// 若该行没有 by_symbol（老快照只存了总额）：items 为空，回退时列表隐藏，
+// 绝不把今日列表挂在昨日总额下面。
+async function loadPrevPnlDay() {
+  prevPnlDay = null;
+  try {
+    const r = await api('/api/pnl/history');
+    if (!r.ok) return;
+    const d = await r.json();
+    const today = ymd(new Date());
+    const rows = (d.history || []).filter((x) => x && x.date && x.date < today);
+    if (!rows.length) return;
+    rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const row = rows[rows.length - 1];
+    let det = {};
+    try { det = JSON.parse(row.detail || '{}'); } catch (_) { /* 老 detail 解析失败 → 无明细 */ }
+    const bySym = Array.isArray(det.by_symbol) ? det.by_symbol : [];
+    const map = new Map();
+    bySym.forEach((it) => {
+      if (!it) return;
+      const name = it.name || it.symbol || '未命名';
+      const key = it.symbol || ('n:' + name);
+      const realized = !!it.realized || /·已实现$/.test(name);
+      const cny = typeof it.pnl_cny === 'number' ? it.pnl_cny : toCnyCur(it.pnl, it.currency);
+      const cur = map.get(key);
+      if (cur) { cur.cny += cny; cur.realized = cur.realized || realized; }
+      else map.set(key, { key, name: name.replace(/·已实现$/, ''), cny, realized });
+    });
+    prevPnlDay = {
+      date: row.date,
+      equity: typeof row.equity_pnl_cny === 'number' ? row.equity_pnl_cny : (row.total_cny || 0),
+      items: [...map.values()],
+      pool: map.size,
+      hasDetail: bySym.length > 0,
+    };
+  } catch (_) { prevPnlDay = null; }
 }
 
 // 已平仓视图回退（撤销清仓/重开）后：重新拉取持仓与理财，刷新已平仓视图。
@@ -642,6 +690,15 @@ function toRmb(h, v) {
   if ((h.currency || '').toUpperCase() === 'USD') return (v || 0) * usdRate;
   if ((h.currency || '').toUpperCase() === 'HKD') return (v || 0) * hkdRate;
   return v || 0;
+}
+
+// 币种字符串 → CNY。realized_today / pnl_daily.detail 的币种写法比 holdings 杂（USD/$/美元、HKD/港币/港元），
+// 统一在这里归一，避免逐处写 if。人民币（含 rmb/RMB/CNY）原样返回。
+function toCnyCur(v, cur) {
+  const c = String(cur || 'cny').trim().toUpperCase();
+  if (c === 'USD' || c === '$' || c === '美元') return (Number(v) || 0) * usdRate;
+  if (c === 'HKD' || c === 'HK$' || c === '港币' || c === '港元') return (Number(v) || 0) * hkdRate;
+  return Number(v) || 0;
 }
 
 // 市值外币值悬停提示（表格列：主显 CNY，悬停显示精确值）：
@@ -1651,35 +1708,77 @@ function renderSummary(hs) {
     invMvSub.innerHTML = `持仓 <span class="hl">${liveN}</span> 只${closedN ? ` · 已清仓 <span class="hl">${closedN}</span>` : ''} · 成本 <span class="hl" title="¥${fmtYuanExact(totalCostCNY)}">¥${fmtMoney(totalCostCNY)}</span>`;
   }
   // 今日盈亏口径与首页「今日」一致：持仓今日盈亏 + 今日已实现（清仓/减仓）盈亏，均折 CNY
+  // 今日行情还没更新（updated_at_max 不是今天 / 基金 21:00 前）时整卡回退到上一快照：
+  // 抬头、主数字、副标、右侧列表全部切到同一口径，绝不混「昨日总额 + 今日前三」。
   const invDay = document.getElementById('investDayPnl');
+  const di = pnlDayInfo(pnlDateStr);
+  const dayStale = todayDataStale(hs);
+  let dayState = { mode: 'normal', di };
   if (invDay) {
-    // 非交易日（周末/法定节假日）这笔数其实是最近一个交易日的涨跌，抬头跟着归属日改，
-    // 否则周日打开看到「今日盈亏 −9,865」会以为今天在亏。
-    const di = pnlDayInfo(pnlDateStr);
-    // 0 值不配 28px 主数字（2026-11-02）：开盘前（05:00–09:35）所有持仓的今日盈亏恒为 0，
-    // 摆一个「¥0.00」在主视觉位会被读成没加载出来。降级成「—」+ 状态徽章，
-    // 副标说明「09:30 开盘后更新」，信息量为零的 0 不再占据锚点级的视觉重量。
-    const dayIdle = di.preOpen || amtIsZero(dayPnlCNY);
-    // 徽章挂数值右侧而不是抬头：它标的是「这个数不新鲜」，不是「日期」，
-    // 所以应当跟着数字走。抬头写 10-30 盈亏已经交代了是哪天，徽章再贴上去就是两个小 pill 挨着。
-    invDay.innerHTML = (dayIdle ? ZERO_DASH : signedCur(dayPnlCNY, 'cny')) + dayBadge(di);
-    invDay.className = 'kpi-value ' + (dayIdle ? '' : dpCls);
-    const dayLbl = document.getElementById('investDayLabel');
-    if (dayLbl) {
-      dayLbl.textContent = di.isToday ? '今日盈亏' : di.md + ' 盈亏';
-      dayLbl.title = di.note || '现价相对昨收的变动 + 当日已实现盈亏';
-    }
-    const sub = document.getElementById('investDayPct');
-    // 方案 5：标注分母（持仓市值），否则与首页「今日 +0.04%（/净资产）」并排看像算错。
-    if (sub) {
-      if (dayIdle) {
-        sub.textContent = di.preOpen ? '09:30 开盘后更新' : (di.isToday ? '今日暂无变动' : '无新数据');
-        sub.className = 'kpi-sub';
-        sub.title = di.note || '今日盈亏为 0';
+    if (dayStale) {
+      const prev = prevPnlDay;
+      if (prev) {
+        const who = prevDayLabel(prev.date);
+        dayState = { mode: 'fallback', who, prev };
+        invDay.innerHTML = signedCur(prev.equity, 'cny');
+        invDay.className = 'kpi-value ' + clsPnl(prev.equity);
+        const dayLbl = document.getElementById('investDayLabel');
+        if (dayLbl) {
+          dayLbl.textContent = who === '昨日' ? '昨日盈亏' : who + ' 盈亏';
+          dayLbl.title = `今日行情未更新（最近 ${homeUpdatedAtMax || '未知'}），展示 ${prev.date} 收盘盈亏`;
+        }
+        const sub = document.getElementById('investDayPct');
+        if (sub) {
+          sub.textContent = prev.hasDetail
+            ? (amtIsZero(prev.equity) ? '昨日无变动' : '今日未更新')
+            : '昨日明细不可得';
+          sub.className = 'kpi-sub';
+          sub.title = `行情更新时间 ${homeUpdatedAtMax || '未知'}，今日尚未更新；当前展示 ${prev.date} 收盘数据（纯持仓，不含理财）`;
+        }
       } else {
-        sub.innerHTML = pct(dayPnlCNY / Math.max(totalCNY - dayPnlCNY, 1) * 100) + '<span class="sub-of">/持仓市值</span>';
-        sub.className = 'kpi-sub ' + dpCls;
-        sub.title = (di.note ? di.note + ' · ' : '') + '分母 = 期初持仓市值';
+        dayState = { mode: 'fallback-empty' };
+        invDay.innerHTML = ZERO_DASH;
+        invDay.className = 'kpi-value';
+        const dayLbl = document.getElementById('investDayLabel');
+        if (dayLbl) {
+          dayLbl.textContent = '今日盈亏';
+          dayLbl.title = '今日行情未更新，且没有可回退的历史盈亏';
+        }
+        const sub = document.getElementById('investDayPct');
+        if (sub) {
+          sub.textContent = '暂无历史盈亏';
+          sub.className = 'kpi-sub';
+          sub.title = `行情更新时间 ${homeUpdatedAtMax || '未知'}，今日尚未更新；历史快照里没有可用的盈亏数据`;
+        }
+      }
+    } else {
+      // 非交易日（周末/法定节假日）这笔数其实是最近一个交易日的涨跌，抬头跟着归属日改，
+      // 否则周日打开看到「今日盈亏 −9,865」会以为今天在亏。
+      // 0 值不配 28px 主数字（2026-11-02）：开盘前（05:00–09:35）所有持仓的今日盈亏恒为 0，
+      // 摆一个「¥0.00」在主视觉位会被读成没加载出来。降级成「—」+ 状态徽章，
+      // 副标说明「09:30 开盘后更新」，信息量为零的 0 不再占据锚点级的视觉重量。
+      const dayIdle = di.preOpen || amtIsZero(dayPnlCNY);
+      // 徽章挂数值右侧而不是抬头：它标的是「这个数不新鲜」，不是「日期」，
+      // 所以应当跟着数字走。抬头写 10-30 盈亏已经交代了是哪天，徽章再贴上去就是两个小 pill 挨着。
+      invDay.innerHTML = (dayIdle ? ZERO_DASH : signedCur(dayPnlCNY, 'cny')) + dayBadge(di);
+      invDay.className = 'kpi-value ' + (dayIdle ? '' : dpCls);
+      const dayLbl = document.getElementById('investDayLabel');
+      if (dayLbl) {
+        dayLbl.textContent = di.isToday ? '今日盈亏' : di.md + ' 盈亏';
+        dayLbl.title = di.note || '现价相对昨收的变动 + 当日已实现盈亏';
+      }
+      const sub = document.getElementById('investDayPct');
+      // 方案 5：标注分母（持仓市值），否则与首页「今日 +0.04%（/净资产）」并排看像算错。
+      if (sub) {
+        if (dayIdle) {
+          sub.textContent = di.preOpen ? '09:30 开盘后更新' : (di.isToday ? '今日暂无变动' : '无新数据');
+          sub.className = 'kpi-sub';
+          sub.title = di.note || '今日盈亏为 0';
+        } else {
+          sub.innerHTML = pct(dayPnlCNY / Math.max(totalCNY - dayPnlCNY, 1) * 100) + '<span class="sub-of">/持仓市值</span>';
+          sub.className = 'kpi-sub ' + dpCls;
+          sub.title = (di.note ? di.note + ' · ' : '') + '分母 = 期初持仓市值';
+        }
       }
     }
   }
@@ -1717,6 +1816,147 @@ function renderSummary(hs) {
   }
   // 锚点卡右侧的三段资产占比环（权益 / 理财 / 现金）
   renderInvestAlloc(totalCNY);
+  // 今日盈亏卡右侧的「今日贡献」三条（只在有非零贡献且卡片不处于空态时显示）
+  renderDayContrib(hs, dayPnlCNY, dayState);
+  // 回退态才开自动轮询；切回正常/离开回退时立即清计时器
+  setFallbackActive(dayState.mode !== 'normal');
+}
+
+// ===== 今日盈亏卡 · 右侧「今日贡献」三条（2026-11-05） =====
+// 口径：按「今日盈亏绝对值」降序取前三，亏损最多也会排在第一位 ——
+// 标题写明「按绝对值」，否则「前三名」会被读成「赚得最多的三只」。
+// 数据与卡片总额同源：holdings[].day_pnl（原币）+ realized_today[]（今日清仓/减仓的逐标的已实现），
+// 按 symbol 合并后全量求和 = Σ toRmb(day_pnl) + today_realized_cny = 卡片主数字。
+// 0 / 无数据（基金 21:00 前、美股盘中、非交易日无记录）不参与排序，也不补位成三行。
+// 名称严格单行省略：全名放 title + aria-label（移动端浏览器对 title 的支持见实测报告）。
+// 回退态由 renderSummary 传入同一个 dayState：列表必须用上一快照的 by_symbol，
+// 绝不能出现「昨日总额 + 今日前三」的串口径。
+
+// 今日行情是否还没落库（用于整卡回退）。
+// 顺序：非交易日 / 无在持 → 不回退；全基金且 21:00 前 → 回退（后端基金净值闸门）；
+// 其余看 updated_at_max 的日期是不是今天 —— 是今天就是「真的 0」，不是今天才是「没数据」。
+function todayDataStale(hs) {
+  if (!pnlDateStr || pnlDateStr !== ymd(new Date())) return false;
+  const live = hs.filter((h) => (h.quantity || 0) > 0);
+  if (!live.length) return false;
+  const allFund = live.every((h) => (h.category || '') === 'fund');
+  if (allFund && new Date().getHours() < 21) return true;
+  return String(homeUpdatedAtMax || '').slice(0, 10) !== ymd(new Date());
+}
+
+// 回退标签：上一快照正好是昨天 → 「昨日」；更早（周末/长假）→ 「MM-DD」，不谎称昨天。
+function prevDayLabel(date) {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  return date === ymd(y) ? '昨日' : String(date || '').slice(5);
+}
+
+// 回退态自动切回：60s 轮询 + 页面重新可见时立即拉取；正常态不轮询。
+function setFallbackActive(on) {
+  fallbackActive = !!on;
+  if (!on) {
+    if (fallbackRefreshTimer) { clearTimeout(fallbackRefreshTimer); fallbackRefreshTimer = null; }
+    return;
+  }
+  if (fallbackRefreshTimer) return;
+  fallbackRefreshTimer = setTimeout(() => {
+    fallbackRefreshTimer = null;
+    if (document.hidden) { if (fallbackActive) setFallbackActive(true); return; }
+    load();
+    // load 失败不会重渲染，保持回退继续下一轮；成功时 renderSummary 会把它清掉
+    if (fallbackActive) setFallbackActive(true);
+  }, 60000);
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && fallbackActive) load();
+});
+
+function renderDayContrib(hs, dayPnlCNY, state) {
+  const box = document.getElementById('investDayContrib');
+  if (!box) return;
+  const list = box.querySelector('.kpi-contrib-list');
+  const countEl = box.querySelector('.kpi-contrib-count');
+  const titleEl = box.querySelector('.kpi-contrib-title');
+  const hide = () => {
+    box.hidden = true;
+    if (list) list.innerHTML = '';
+  };
+  const setTitle = (text, tip) => {
+    if (!titleEl) return;
+    titleEl.textContent = text;
+    titleEl.title = tip;
+  };
+  const sortItems = (arr) => arr
+    .filter((it) => !amtIsZero(it.cny))
+    .sort((a, b) => Math.abs(b.cny) - Math.abs(a.cny) || b.cny - a.cny || a.name.localeCompare(b.name, 'zh-Hans-CN'));
+  const rowsHtml = (arr, suffix) => arr.map((it, i) => {
+    const cls = clsPnl(it.cny);
+    const full = esc(it.name) + (it.realized ? suffix : '');
+    return '<li class="kpi-contrib-item">'
+      + `<span class="kpi-contrib-rank" aria-hidden="true">${i + 1}</span>`
+      + `<span class="kpi-contrib-name" title="${full}" aria-label="${full}">${esc(it.name)}</span>`
+      + `<span class="kpi-contrib-amt ${cls}">${signedMoneyW(it.cny, 'cny')}</span>`
+      + '</li>';
+  }).join('');
+
+  // —— 回退态：主数字与列表都必须是上一快照，不许混今日 ——
+  if (state && state.mode === 'fallback') {
+    const prev = state.prev;
+    if (!prev || !prev.items || !prev.items.length) return hide();
+    const items = sortItems(prev.items);
+    if (!items.length) return hide();
+    const top = items.slice(0, 3);
+    const pool = Math.max(prev.pool || 0, top.length);
+    if (list) list.innerHTML = rowsHtml(top, '（含已实现）');
+    if (countEl) {
+      countEl.textContent = top.length + '/' + pool;
+      countEl.title = `${prev.date} 有变动的 ${top.length} 只 / 共 ${pool} 只，0 与无数据不列入`;
+    }
+    setTitle(state.who + ' 贡献 · 按绝对值', `按 ${prev.date} 盈亏绝对值降序取前三：亏损最多也会排在前面；0 与无数据不列入。`);
+    box.hidden = false;
+    return;
+  }
+  if (state && state.mode === 'fallback-empty') return hide();
+
+  // —— 正常态：今日持仓 + 今日已实现 ——
+  // 数据没拉到 / 待开盘 / 今日总额为 0：卡片本身已写「— / 今日暂无变动」，
+  // 旁边再列非零贡献会自相矛盾，直接不显示。不用 0 冒充「没有贡献」。
+  const di = pnlDayInfo(pnlDateStr);
+  if (homeLoadError || di.preOpen || amtIsZero(dayPnlCNY)) return hide();
+  const map = new Map();
+  const add = (key, name, cny, realized) => {
+    if (amtIsZero(cny)) return;
+    const it = map.get(key);
+    if (it) {
+      it.cny += cny;
+      if (realized) it.realized = true;
+    } else {
+      map.set(key, { key, name, cny, realized: !!realized });
+    }
+  };
+  const liveSyms = new Set();
+  hs.forEach((h) => {
+    const key = h.symbol || ('id:' + h.id);
+    if ((h.quantity || 0) > 0) liveSyms.add(key);
+    add(key, h.name || h.symbol || '未命名', toRmb(h, h.day_pnl || 0), false);
+  });
+  // 今日已实现是逐标的的：同标的一笔清仓收益与剩余份额的浮动盈亏合并成一行，不重复出现
+  (realizedToday || []).forEach((r) => {
+    const key = r.symbol || ('r:' + (r.name || ''));
+    add(key, r.name || r.symbol || '今日已实现', toCnyCur(r.amount, r.currency), true);
+  });
+  const items = sortItems([...map.values()]);
+  if (!items.length) return hide();
+  const top = items.slice(0, 3);
+  // 分母 = 在持只数 + 已清仓但今日有已实现贡献的标的数（只清仓、无持仓的日子也能解释 1/1）
+  const pool = liveSyms.size + [...map.keys()].filter((k) => !liveSyms.has(k)).length;
+  if (list) list.innerHTML = rowsHtml(top, '（含今日已实现）');
+  if (countEl) {
+    countEl.textContent = top.length + '/' + Math.max(pool, top.length);
+    countEl.title = `今日有变动的 ${top.length} 只 / 在持 ${Math.max(pool, top.length)} 只，0 与无数据不列入`;
+  }
+  setTitle('今日贡献 · 按绝对值', '按今日盈亏绝对值降序取前三：亏损最多也会排在前面；0 与无数据不列入。');
+  box.hidden = false;
 }
 
 // ===== 投资页「持仓」锚点卡 · 资产占比环（2026-11-05） =====
