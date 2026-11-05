@@ -1824,7 +1824,8 @@ function renderSummary(hs) {
 
 // ===== 今日盈亏卡 · 右侧「今日贡献」三条（2026-11-05） =====
 // 口径：按「今日盈亏绝对值」降序取前三，亏损最多也会排在第一位 ——
-// 标题写明「按绝对值」，否则「前三名」会被读成「赚得最多的三只」。
+// 抬头只写「今日贡献」+ 小一号的淡色标签「绝对值」（完整解释收进 title），
+// 否则「前三名」会被读成「赚得最多的三只」。
 // 数据与卡片总额同源：holdings[].day_pnl（原币）+ realized_today[]（今日清仓/减仓的逐标的已实现），
 // 按 symbol 合并后全量求和 = Σ toRmb(day_pnl) + today_realized_cny = 卡片主数字。
 // 0 / 无数据（基金 21:00 前、美股盘中、非交易日无记录）不参与排序，也不补位成三行。
@@ -1832,15 +1833,25 @@ function renderSummary(hs) {
 // 回退态由 renderSummary 传入同一个 dayState：列表必须用上一快照的 by_symbol，
 // 绝不能出现「昨日总额 + 今日前三」的串口径。
 
+// 单只持仓的今日盈亏是否被后端「结构性归零」（不是真的没涨跌）：
+//   · 基金 21:00 前净值还没出，enrich 里直接置 0；
+//   · 美股当日盈亏归属美东交易日，enrich 里固定置 0，要等次日凌晨回填。
+// 这两类都不算「今日有数」。
+function holdingDayPnlGated(h) {
+  if ((h.market || '') === '美股') return true;
+  return (h.category || '') === 'fund' && new Date().getHours() < 21;
+}
+
 // 今日行情是否还没落库（用于整卡回退）。
-// 顺序：非交易日 / 无在持 → 不回退；全基金且 21:00 前 → 回退（后端基金净值闸门）；
+// 顺序：非交易日 / 无在持 → 不回退；在持全部被结构性归零（基金 21:00 前 / 美股）→ 回退；
 // 其余看 updated_at_max 的日期是不是今天 —— 是今天就是「真的 0」，不是今天才是「没数据」。
 function todayDataStale(hs) {
   if (!pnlDateStr || pnlDateStr !== ymd(new Date())) return false;
   const live = hs.filter((h) => (h.quantity || 0) > 0);
   if (!live.length) return false;
-  const allFund = live.every((h) => (h.category || '') === 'fund');
-  if (allFund && new Date().getHours() < 21) return true;
+  // 在持全部被结构性归零（基金未出净值 / 美股未回填）→ 今日没有可用数据，整卡回退上一快照。
+  // 混合持仓（如美股 + 基金）同样按「全部」判断：只要有一只 A股/港股能算出真值，就不回退。
+  if (live.every(holdingDayPnlGated)) return true;
   return String(homeUpdatedAtMax || '').slice(0, 10) !== ymd(new Date());
 }
 
@@ -1875,16 +1886,18 @@ function renderDayContrib(hs, dayPnlCNY, state) {
   const box = document.getElementById('investDayContrib');
   if (!box) return;
   const list = box.querySelector('.kpi-contrib-list');
-  const countEl = box.querySelector('.kpi-contrib-count');
   const titleEl = box.querySelector('.kpi-contrib-title');
+  const tagEl = box.querySelector('.kpi-contrib-tag');
   const hide = () => {
     box.hidden = true;
     if (list) list.innerHTML = '';
   };
+  // 抬头只留「今日贡献 / 昨日贡献」+ 固定的小标签「绝对值」；完整口径（含为何亏损也排前面）
+  // 全部收进 title，正文不再出现长句与 3/8 计数。
   const setTitle = (text, tip) => {
-    if (!titleEl) return;
-    titleEl.textContent = text;
-    titleEl.title = tip;
+    box.title = tip;
+    if (titleEl) { titleEl.textContent = text; titleEl.title = tip; }
+    if (tagEl) tagEl.title = tip;
   };
   const sortItems = (arr) => arr
     .filter((it) => !amtIsZero(it.cny))
@@ -1906,13 +1919,9 @@ function renderDayContrib(hs, dayPnlCNY, state) {
     const items = sortItems(prev.items);
     if (!items.length) return hide();
     const top = items.slice(0, 3);
-    const pool = Math.max(prev.pool || 0, top.length);
     if (list) list.innerHTML = rowsHtml(top, '（含已实现）');
-    if (countEl) {
-      countEl.textContent = top.length + '/' + pool;
-      countEl.title = `${prev.date} 有变动的 ${top.length} 只 / 共 ${pool} 只，0 与无数据不列入`;
-    }
-    setTitle((state.who === '昨日' ? '昨日贡献' : state.who + ' 贡献') + ' · 按绝对值', `按 ${prev.date} 盈亏绝对值降序取前三：亏损最多也会排在前面；0 与无数据不列入。`);
+    setTitle(state.who === '昨日' ? '昨日贡献' : state.who + ' 贡献',
+      `按 ${prev.date} 盈亏绝对值降序取前三：亏损最多也会排在前面；0 与无数据不列入。`);
     box.hidden = false;
     return;
   }
@@ -1934,10 +1943,8 @@ function renderDayContrib(hs, dayPnlCNY, state) {
       map.set(key, { key, name, cny, realized: !!realized });
     }
   };
-  const liveSyms = new Set();
   hs.forEach((h) => {
     const key = h.symbol || ('id:' + h.id);
-    if ((h.quantity || 0) > 0) liveSyms.add(key);
     add(key, h.name || h.symbol || '未命名', toRmb(h, h.day_pnl || 0), false);
   });
   // 今日已实现是逐标的的：同标的一笔清仓收益与剩余份额的浮动盈亏合并成一行，不重复出现
@@ -1948,14 +1955,8 @@ function renderDayContrib(hs, dayPnlCNY, state) {
   const items = sortItems([...map.values()]);
   if (!items.length) return hide();
   const top = items.slice(0, 3);
-  // 分母 = 在持只数 + 已清仓但今日有已实现贡献的标的数（只清仓、无持仓的日子也能解释 1/1）
-  const pool = liveSyms.size + [...map.keys()].filter((k) => !liveSyms.has(k)).length;
   if (list) list.innerHTML = rowsHtml(top, '（含今日已实现）');
-  if (countEl) {
-    countEl.textContent = top.length + '/' + Math.max(pool, top.length);
-    countEl.title = `今日有变动的 ${top.length} 只 / 在持 ${Math.max(pool, top.length)} 只，0 与无数据不列入`;
-  }
-  setTitle('今日贡献 · 按绝对值', '按今日盈亏绝对值降序取前三：亏损最多也会排在前面；0 与无数据不列入。');
+  setTitle('今日贡献', '按今日盈亏绝对值降序取前三：亏损最多也会排在前面；0 与无数据不列入。');
   box.hidden = false;
 }
 

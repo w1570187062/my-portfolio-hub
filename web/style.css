@@ -5775,7 +5775,8 @@ textarea::placeholder {
 }
 
 /* ===== 今日盈亏卡 · 右侧「今日贡献」三条（2026-11-05） =====
-   口径：按今日盈亏绝对值降序取前三（亏损最多也会排在前），标题已写「按绝对值」消歧。
+   口径：按今日盈亏绝对值降序取前三（亏损最多也会排在前）。抬头只留「今日贡献/昨日贡献」，
+   其后跟小一号的淡色小标签「绝对值」；完整解释（含 0 与无数据不列入）只放 title，正文不铺长句。
    布局沿用锚点卡的「文本块 + 右侧块」可换行横排：
      · 宽屏（内容宽 ≥359）= 文本块保持自然宽度（实测 171px），右侧轨道吃掉剩余空档；
      · 卡宽不足（平板 2×2 / 手机）= 轨道整块换到文本块下一行，不压主数字、不横向溢出。
@@ -5804,12 +5805,14 @@ textarea::placeholder {
 }
 .kpi-contrib-title {
   flex: 0 1 auto; min-width: 0;
-  font-size: var(--fs-2xs); color: var(--text-muted);
+  font-size: var(--fs-xs); color: var(--text-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.kpi-contrib-count {
-  flex: 0 0 auto; font-size: var(--fs-2xs); color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
+/* 口径标记：两个字，比标题小一号、颜色更淡，只负责「按绝对值」这个信息点 */
+.kpi-contrib-tag {
+  flex: 0 0 auto; font-size: var(--fs-2xs); line-height: 1;
+  color: var(--text-faint); letter-spacing: .2px;
+  white-space: nowrap;
 }
 .kpi-contrib-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 /* 三行等距：高度锁死 25px，名称再长也只影响文本层（省略号），不参与行高计算 */
