@@ -5778,10 +5778,13 @@ textarea::placeholder {
    口径：按今日盈亏绝对值降序取前三（亏损最多也会排在前）。抬头只留「今日贡献/昨日贡献」，
    其后跟小一号的淡色小标签「绝对值」；完整解释（含 0 与无数据不列入）只放 title，正文不铺长句。
    布局沿用锚点卡的「文本块 + 右侧块」可换行横排：
-     · 宽屏（内容宽 ≥359）= 文本块保持自然宽度（实测 171px），右侧轨道吃掉剩余空档；
-     · 卡宽不足（平板 2×2 / 手机）= 轨道整块换到文本块下一行，不压主数字、不横向溢出。
-   行高固定 25px × 3 + 表头 20 + 8 = 103px，小于卡片内容高度（1920 实测 107.6px），
-   因此不改变卡片高度。表头 20+8 的用意：让第一行从 y≈44 开始，正好避开右上角 32px 图标。
+     · 卡够宽 = 文本块保持自然宽度，右侧轨道吃掉剩余空档；
+     · 卡宽不足 = 轨道整块换到文本块下一行，不压主数字、不横向溢出。
+   换行由 flex-wrap 按**卡内可用宽**判定，不是按视口判定。实测临界值（2026-11-05，真机数据）：
+   文本块 max-content 153.2 + 列间距 16 + 轨道 min-width 172 = 341.2，加 padding/border 约 34
+   → **卡宽 ≥375 才同顶**。4 列布局下 1.6fr/1fr 只能给到 278–373（视口 1341–1810 整段都差这十几像素），
+   所以卡在最后 12px 上换行 —— 本轮据此把 4 列断点改为「行宽 ≥1800」。
+   行高固定 25px × 3 + 表头 20 + 8 = 103px，小于卡片内容高度，因此不改变卡片高度。
    名称严格单行：white-space:nowrap + text-overflow:ellipsis + min-width:0，
    任何长度都不换行、不撑高；全名走 title + aria-label。 */
 .kpi-card.has-contrib {
@@ -5846,7 +5849,10 @@ textarea::placeholder {
 /* 行模板：平级等宽（财务/资产）｜锚点 + 卫星（投资） */
 .kpi-row { display: grid; gap: var(--sp-3); align-items: stretch; }
 .kpi-row.cols-flat { grid-template-columns: repeat(4, 1fr); }
-.kpi-row.cols-anchor { grid-template-columns: 1.6fr 1fr 1fr 1fr; }
+/* 锚点 + 3 卫星：1.6fr 给环块/主数字（实测自然宽 575），1.15fr 给「今日盈亏」——
+   它要同时装文本块 153 + 间距 16 + 今日贡献轨道 172，1fr 在 1920 只有 386 富余太薄，
+   1.15fr 把两卡差距从 1.6:1 收到 1.39:1，宽屏下轨道有余量吃满。 */
+.kpi-row.cols-anchor { grid-template-columns: 1.6fr 1.15fr 1fr 1fr; }
 /* 卡片区标题行：投资 / 财务 / 资产三页共用同一行高与同一上边距（眉标在左，控件在右）。
    作用是把「卡片上方留白」收敛成一处口径：页面 padding → 32px 行高 → 12px → 卡片。 */
 .kpi-head {
@@ -5860,12 +5866,20 @@ textarea::placeholder {
   letter-spacing: .5px; text-transform: uppercase;
 }
 .kpi-head-label::before { content: ""; width: 3px; height: 12px; border-radius: 2px; background: var(--primary); flex: 0 0 auto; }
-@media (max-width: 1340px) {
-  /* 4 卡一律 2×2，锚点卡**不跨整行**：若首卡跨满，剩下 3 张在 2 列里排成 2+1，
-     最后一行右侧空掉半格（1024 档实测每格 480px 的空洞）。2×2 四格填满，
-     锚点卡的层级靠 32px 字号 + 加重 padding 维持，不靠跨度。 */
-  .kpi-row.cols-flat,
+/* 4 列 → 2×2 的切换阈值绑「可用宽度」而不是视口：
+   .kpi-row.cols-anchor 的行宽就是它真正能分给四张卡的宽度，容器查询直接量它（容器见 .invest-hero）。
+   阈值取行宽 1800：此时 1fr≈371 → 锚点 594（自然宽 575，余 19）、今日盈亏 427（同顶下限 375，余 52）；
+   行宽 1799 以下 4 列会把锚点和今日盈亏同时压到下限附近，实测 1341–1800 视口整段都在换行。
+   浏览器兼容：Chromium 105+ 起支持容器查询，Edge/Chrome/Safari 均已覆盖。 */
+@container (max-width: 1799px) {
+  /* 投资页「1 锚点 + 3 卫星」改 2×2。
+     锚点卡**不跨整行**：若首卡跨满，剩下 3 张在 2 列里排成 2+1，最后一行右侧空掉半格；
+     2×2 四格填满，层级靠 32px 字号 + 加重 padding 维持，不靠跨度。 */
   .kpi-row.cols-anchor { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 1340px) {
+  /* 平级 4 卡（财务 / 资产页）没有侧挂轨道，1340 起 2×2 不涉及换行问题，断点保持不变。 */
+  .kpi-row.cols-flat { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 640px) {
   .kpi-row.cols-flat { grid-template-columns: 1fr; }
@@ -6129,7 +6143,9 @@ textarea::placeholder {
 }
 
 /* —— 投资页 KPI 行（原型场景 B：1 锚点 + 3 卫星，直接铺在页面底色上，不再套玻璃大卡） —— */
-.invest-hero { margin-bottom: var(--sp-4); }
+/* 容器查询参照物（2026-11-05）：投资页 KPI 行的 4 列 / 2×2 切换按「行宽」判定，
+   因此这里声明 inline-size 容器。只做尺寸查询，不影响子元素定位与宽度。 */
+.invest-hero { margin-bottom: var(--sp-4); container-type: inline-size; }
 
 /* —— 子 Tab（持仓/理财 · 账户/流水/负债）：原型下划线样式 ——
    2026-11-04 方案 1 落地（UnderlineNav + 计数胶囊）：
