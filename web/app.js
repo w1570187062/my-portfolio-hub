@@ -1729,7 +1729,8 @@ function renderSummary(hs) {
 // 合计为 0 / 某一段为 0：弧长按 0 写，SVG 只画底环，不出 NaN、不出空环。
 // 百分比用最大余数法按 0.1% 取整，三段展示值恒等于 100.0%。
 let mvRingRaf = 0;
-const MV_RING_R = 22;
+// 环外径 96 与左侧文本块（97.6px）等高；r = 43 → 弧线中线直径 86，线宽 10 落在 96 内，内孔 76
+const MV_RING_R = 43;
 const MV_RING_C = 2 * Math.PI * MV_RING_R;
 
 function mvRingSplit(items) {
@@ -1788,14 +1789,23 @@ function renderInvestAlloc(equityCny) {
     { label: '现金', v: Number((assetData.cash && assetData.cash.total) || 0), color: 'rgb(var(--cat-cash))' },
   ];
   const { total, parts: p } = mvRingSplit(parts);
-  const aria = '资产占比：' + p.map((s) => s.label + ' ' + s.txt).join('、');
+  // 环心放「总量」而不是再次列出三段：图例已经逐段报了百分比，中心再写分段就是重复读数。
+  // 总量 = 三段之和（权益 + 理财 + 现金，不含负债），与左侧卡面「持仓市值」不是同一个数，
+  // 语义上是「这几段加起来的资产总额」，不会和主数字打架。
+  const aria = '资产占比：' + p.map((s) => s.label + ' ' + s.txt).join('、')
+    + `；总资产 ¥${fmtYuanExact(total)}`;
   host.hidden = false;
   host.innerHTML =
-    `<svg class="alloc-ring" viewBox="0 0 56 56" role="img" aria-label="${aria}">`
-    + `<circle class="alloc-ring-track" cx="28" cy="28" r="${MV_RING_R}"/>`
-    + p.map((s) => `<circle class="alloc-ring-seg" cx="28" cy="28" r="${MV_RING_R}"`
+    '<div class="alloc-ring-wrap">'
+    + `<svg class="alloc-ring" viewBox="0 0 96 96" role="img" aria-label="${aria}">`
+    + '<circle class="alloc-ring-track" cx="48" cy="48" r="' + MV_RING_R + '"/>'
+    + p.map((s) => `<circle class="alloc-ring-seg" cx="48" cy="48" r="${MV_RING_R}"`
       + ` stroke-dasharray="0 ${MV_RING_C.toFixed(2)}" style="--alloc-c:${s.color}"/>`).join('')
     + '</svg>'
+    + '<div class="alloc-center" aria-hidden="true">'
+    + '<span class="alloc-center-k">总资产</span>'
+    + `<span class="alloc-center-v" title="¥${fmtYuanExact(total)}">¥${fmtMoney(total)}</span>`
+    + '</div></div>'
     + '<div class="alloc-legend">'
     + p.map((s) => `<div class="alloc-leg"><span class="alloc-dot" style="--alloc-c:${s.color}"></span>`
       + `<span>${s.label}</span><span class="alloc-leg-p">${s.txt}</span></div>`).join('')
