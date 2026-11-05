@@ -202,16 +202,18 @@
     <section class="home-dash">
       <div class="networth-hero tier-1" id="homeHero">
         <div class="nw-main">
+          <!-- 盾牌背景层：与 .nw-main 同高的整版水印。它是网格项（跨左列两行）但无在流
+               内容（svg 绝对定位），故不参与布局、不改 hero 高度；z-index:-1 落在
+               台账/芯片/跑马灯/曲线之下、hero 卡底之上 -->
+          <div class="nw-shield" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path class="wm-a" d="M12 2.4 19.2 5.6v6.2c0 4.7-3.1 7.9-7.2 9.6-4.1-1.7-7.2-4.9-7.2-9.6V5.6L12 2.4Z"/>
+              <path class="wm-b" d="M12 5.6l5.2 2.2v4.4c0 3.3-2.2 5.6-5.2 6.8-3-1.2-5.2-3.5-5.2-6.8v-4.4L12 5.6Z"/>
+            </svg>
+          </div>
           <!-- 左列台账（原型 D）：净资产 + 今日/本月两端对齐 → 资产芯片四等分 → 跑马灯 -->
           <div class="nw-ledger">
             <div class="nw-top">
-              <!-- 盾牌背景层：铺在「净资产 eyebrow + 主数字 + 今日/本月」整行之下，纯装饰、不参与布局 -->
-              <div class="nw-shield" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none">
-                  <path class="wm-a" d="M12 2.4 19.2 5.6v6.2c0 4.7-3.1 7.9-7.2 9.6-4.1-1.7-7.2-4.9-7.2-9.6V5.6L12 2.4Z"/>
-                  <path class="wm-b" d="M12 5.6l5.2 2.2v4.4c0 3.3-2.2 5.6-5.2 6.8-3-1.2-5.2-3.5-5.2-6.8v-4.4L12 5.6Z"/>
-                </svg>
-              </div>
               <!-- 品牌标：直接复用项目 logo（favicon.svg 32×32），与右侧「净资产 eyebrow + 主数字」
                    同高；390 档跨两行，块高把「今日/本月」也算进去 -->
               <img class="nw-brand" src="favicon.svg" alt="" aria-hidden="true">
