@@ -202,25 +202,35 @@
     <section class="home-dash">
       <div class="networth-hero tier-1" id="homeHero">
         <div class="nw-main">
-          <div class="nw-left">
-            <!-- 净资产主数字：density-hero（全站视觉锚点），今日/本月变动挂在 kpi-sub -->
-            <div class="kpi-card density-hero">
-              <div class="kpi-eyebrow">净资产 NET WORTH</div>
-              <div class="kpi-main"><div class="kpi-value" id="homeNetWorth">—</div></div>
-              <div class="kpi-sub hero-changes" id="homeNetChanges"></div>
-            </div>
-            <!-- 单行竖向步进跑马灯：待办 + 收益句子，每次完整跳一行。
-                 位置在资产分布芯片**之上**（2026-11-02 调整）：净资产主数字与芯片之间
-                 夹一条动态信息带，靠 .home-marquee 自带的 border-top 当分割线，
-                 芯片留在最底部当「资产构成」的收尾。 -->
-            <div class="home-marquee" id="homeMarquee" hidden aria-label="首页动态">
-              <div class="hm-viewport">
-                <div class="hm-track" id="homeMarqueeTrack">
-                  <!-- JS 渲染：每子 div 固定一行高 -->
+          <!-- 左列台账（原型 D）：净资产 + 今日/本月两端对齐 → 资产芯片四等分 → 跑马灯 -->
+          <div class="nw-ledger">
+            <div class="nw-top">
+              <!-- 品牌标：直接复用项目 logo（favicon.svg 32×32），与右侧「净资产 eyebrow + 主数字」
+                   同高；390 档跨两行，块高把「今日/本月」也算进去 -->
+              <img class="nw-brand" src="favicon.svg" alt="" aria-hidden="true">
+              <div class="kpi-card density-hero">
+                <div class="kpi-eyebrow">净资产 NET WORTH</div>
+                <div class="kpi-main"><div class="kpi-value" id="homeNetWorth">—</div></div>
+                <!-- 盾牌水印：落在主数字与「今日/本月」之间的台账空白，纯装饰 -->
+                <div class="nw-shield" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path class="wm-a" d="M12 2.4 19.2 5.6v6.2c0 4.7-3.1 7.9-7.2 9.6-4.1-1.7-7.2-4.9-7.2-9.6V5.6L12 2.4Z"/>
+                    <path class="wm-b" d="M12 5.6l5.2 2.2v4.4c0 3.3-2.2 5.6-5.2 6.8-3-1.2-5.2-3.5-5.2-6.8v-4.4L12 5.6Z"/>
+                  </svg>
                 </div>
               </div>
+              <div class="hero-changes" id="homeNetChanges"></div>
             </div>
             <div class="nw-asset-row" id="homeAssetBreakdown"></div>
+          </div>
+          <!-- 单行竖向步进跑马灯：待办 + 收益句子，每次完整跳一行。
+               D 档：宽屏落在台账末行（芯片之下、曲线左栏下方），手机档排在曲线之前。 -->
+          <div class="home-marquee" id="homeMarquee" hidden aria-label="首页动态">
+            <div class="hm-viewport">
+              <div class="hm-track" id="homeMarqueeTrack">
+                <!-- JS 渲染：每子 div 固定一行高 -->
+              </div>
+            </div>
           </div>
           <div class="nw-right">
             <div class="nw-spark">

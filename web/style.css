@@ -303,8 +303,10 @@
   --success-soft: rgba(22, 163, 74, .1);
   --info: #0284c7;
   --info-soft: rgba(2, 132, 199, .1);
-  --warning: #d97706;
-  --warning-soft: rgba(217, 119, 6, .1);
+  /* 2026-11-05：警示色由 #d97706 压深到 #b45309 —— 原值铺在白卡上仅 3.19:1，
+     作 11px 文字与 10px 圆点都不达 AA（圆点铺在芯片淡底上更低到约 2.9:1） */
+  --warning: #b45309;
+  --warning-soft: rgba(180, 83, 9, .1);
 
   /* 资产分类色（日间色阶，进度条/圆环/饼图在浅底下的取值；与暗色同语义，见 :root 注释） */
   --cat-fund: 88, 86, 214;  /* #5856D6 靛 */
@@ -374,11 +376,13 @@
   background:
     radial-gradient(ellipse at 20% 0%, rgba(var(--tint), .05) 0%, transparent 60%);
 }
-/* 日间模式：涨跌色用更深的红绿保证对比度 */
+/* 日间模式：涨跌色用更深的红绿保证对比度。
+   2026-11-05：绿 #16a34a 铺在白卡（#fbfcfe）上实测 3.30:1，16px/600 的跌值不达 AA；
+   压深到 #15803d 后实测约 4.9:1。红 #dc2626 实测 4.83:1，不动。 */
 :root[data-theme="light"] {
-  --up: #dc2626; --down: #16a34a;--up-rgb: 220, 38, 38; --down-rgb: 22, 163, 74;
+  --up: #dc2626; --down: #15803d;--up-rgb: 220, 38, 38; --down-rgb: 21, 128, 61;
   --danger-rgb: 229, 69, 69;
-  --warning-rgb: 217, 119, 6;
+  --warning-rgb: 180, 83, 9;
 --cum-line: #7c3aed; --cum-line-rgb: 124, 58, 237;
 }
 :root[data-theme="light"] .up { color: var(--up); }
@@ -5758,51 +5762,80 @@ textarea::placeholder {
   box-shadow: var(--card-shadow), var(--card-inset-line);
 }
 .networth-hero > * { position: relative; z-index: 1; }
-/* Hero 主区：左列（信息组 ＋ 资产分布｜底部）｜权益收益曲线（右）
-   2026-10-29：4:6 → 6:4 → 1:1。左列是「净资产 + 今日/本月变动 + 资产分布芯片」三块竖排，
-   右列只有一条曲线；曲线对宽度的需求远低于数字组，40% 就够画 30–70 个点，
-   而左列在 40% 下净资产主数字两侧留白过宽、资产芯片容易折行。
-   最终按用户意见取等分：两侧各半，曲线不被压窄、数字组也不再靠边。
-   两栏内容各自在栏内居中（见下方 .nw-left / .nw-right）。 */
+/* Hero 主区（2026-11-05 落地方案 D「横向台账」）：
+   左列台账（净资产 + 今日/本月两端对齐｜芯片四等分｜跑马灯）｜曲线独立右栏。
+   宽屏靠「行内两端对齐 + 芯片四等分」吃掉横向余量，不再用 1:1 等分把两列拉宽；
+   手机档回落单列，跑马灯排在曲线之前。 */
 #homeHero { display: flex; flex-direction: column; }
-.nw-main { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; gap: var(--sp-8); min-width: 0; flex: 1; }
-/* ≥1341px 桌面档：比例沿用 1:1（不再给左列固定 380–460px，否则比例会随视口漂移）。
-   左列 padding 一并取消 —— 内容已居中，靠 padding 留白只会压缩栏宽。 */
+.nw-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.34fr) minmax(0, .96fr);
+  column-gap: var(--sp-8); row-gap: var(--sp-5);
+  align-items: stretch; min-width: 0; flex: 1;
+}
+.nw-main > .nw-ledger { grid-area: 1 / 1 / 2 / 2; }
+.nw-main > .home-marquee { grid-area: 2 / 1 / 3 / 2; padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.nw-main > .nw-right { grid-area: 1 / 2 / 3 / 3; }
+/* ≥1341px 宽屏：只加宽不给高 —— 列间距与芯片内距放大一档，曲线用固定高度，
+   不再像旧版那样让整张卡跟着视口宽度一起变高。 */
 @media (min-width: 1341px) {
-  .nw-main { grid-template-columns: 1fr 1fr; }
-  /* 桌面档左列纵向节奏整体拉开一档（行距/字号/芯片同步放大，移动端维持紧凑不动）：
-     .nw-left 行距 16→20，hero 卡内部行距 4→8，「本月」行 11/13px→12/16px，
-     芯片 4×8px 内距/11px 字→8×12px/12px 字、圆点 6→7px（元素尺寸 ≤30px 豁免）、芯片间距 8→12px */
-  /* 注意：.nw-left 基础规则在本 media 块之后声明（同为 0,1,0 会反超），行距用两级类提高特异性 */
-  .networth-hero .nw-left { gap: var(--sp-6); }
-  .nw-left .kpi-card.density-hero { gap: var(--sp-2); }
-  .nw-left .kpi-card.density-hero .hero-changes { margin-top: var(--sp-3); }
-  .nw-left .hero-changes .hc-label { font-size: var(--fs-sm); }
-  .nw-left .hero-changes .hc-val { font-size: var(--fs-lg); }
-  /* 芯片列间距在下方 2×2 规则之后按档位统一声明，避免被反超 */
-  .nw-left .nw-chip { padding: 8px 12px; gap: var(--sp-2); font-size: var(--fs-sm); }
-  .nw-left .nw-chip .d { width: 7px; height: 7px; }
+  .nw-main { column-gap: 56px; }
+  .kpi-card.density-hero .kpi-value { font-size: 48px; letter-spacing: -1.4px; }
+  .nw-top .kpi-card.density-hero { gap: var(--sp-2); }
+  .nw-top .hero-changes .hc-label { font-size: var(--fs-sm); }
+  .nw-top .hero-changes .hc-val { font-size: var(--fs-lg); }
+  .nw-chip { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); font-size: var(--fs-sm); }
+  .nw-chip .d { width: 7px; height: 7px; }
+  .nw-main > .nw-right .rate-spark-box { min-height: 192px; }
+  /* 宽屏水印：原型 300px 会被 274.8px 高的卡上下各裁 15px，实测读成「拱形」；
+     落地收到 192px（卡内容高 208px，留 8px 余量）完整露出，形状才读得出来。
+     若要恢复 300px，需把 hero 抬到 ~300px 高，与 D 的紧凑目标冲突。 */
+  .nw-top .nw-shield { right: 24px; top: 0; width: 192px; height: 192px; }
 }
-/* 641–1340：右栏等分后约 250–530px，曲线本身撑满栏宽没问题；
-   左列资产芯片让空间，保住曲线 + 跑马灯在右栏不被挤没。
-   本块在 ≥1341 块之后、同特异性靠源码顺序生效，故无需再加一级类 */
+/* 641–1340：芯片让一档内距，四枚仍等分一行 */
 @media (min-width: 641px) and (max-width: 1340px) {
-  .nw-left .nw-chip { padding: var(--sp-1) var(--sp-2); gap: var(--sp-1); font-size: var(--fs-xs); }
-  .nw-left .nw-chip .d { width: 6px; height: 6px; }
+  .nw-chip { padding: var(--sp-1) var(--sp-2); gap: var(--sp-1); font-size: var(--fs-xs); }
+  .nw-chip .d { width: 6px; height: 6px; }
 }
-/* 左列：纵向堆叠——净资产（density-hero）→ 资产分布芯片，对齐原型 hero-left
-   （品牌区 2026-10-27 已迁到 header 的 .app-brand）
-   2026-10-27：内容在栏内**整体居中**（横 + 纵）。子项保持整栏宽（.nw-left > *），
-   真正居中的是它们内部的内容 —— 否则 flex 网格项会缩到 fit-content，
-   .nw-asset-row 的芯片会被压成多行。 */
-.nw-left { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; justify-content: center; align-items: center; text-align: center; }
-.nw-left > * { width: 100%; }
-.nw-left .kpi-card.density-hero { align-items: center; }
-.nw-left .kpi-card.density-hero .kpi-eyebrow { justify-content: center; }
-.nw-left .hero-changes { justify-content: center; }
-.nw-left .nw-asset-row { justify-content: center; }
-/* 右列：曲线块整块在栏内垂直居中（曲线本身撑满栏宽，故水平方向无需再调） */
-.nw-right { display: flex; flex-direction: column; min-width: 0; justify-content: center; }
+/* 左列台账：顶部行 → 芯片 → 跑马灯（跑马灯是 .nw-main 的第二个网格项，
+   宽屏落在台账下方、曲线左栏底部） */
+.nw-ledger { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; justify-content: center; }
+/* 顶部台账行：logo ｜ 净资产（eyebrow + 主数字） ｜ 今日/本月（右端对齐） */
+.nw-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: var(--sp-4); row-gap: var(--sp-2);
+  min-width: 0;
+}
+.nw-top .kpi-card.density-hero { position: relative; min-width: 0; }
+.nw-top .kpi-card.density-hero .kpi-eyebrow { justify-content: flex-start; }
+.nw-top .hero-changes { justify-content: flex-end; align-self: end; }
+/* 品牌标：与右侧「净资产 eyebrow + 主数字」整块等高。
+   源文件 web/favicon.svg 是 32×32 正方形，height:100% + width:auto 按原比例放大，
+   object-fit:contain 兜底不裁切、不拉伸；手机档跨两行（块高含今日/本月）。 */
+.nw-brand {
+  grid-row: 1; align-self: stretch;
+  width: auto; height: 100%; min-height: var(--sp-8);
+  object-fit: contain; justify-self: start;
+  border-radius: var(--r-sm);
+}
+/* 盾牌水印：落在主数字与「今日/本月」之间的空白，纯装饰（不接管指针、不压正文）。
+   1280 缩到 72px 给 logo 让位，1920 保持 300px；≤640 不出现在单列台账里。 */
+.nw-shield {
+  position: absolute; right: 0; top: -2px;
+  width: 72px; height: 72px;
+  pointer-events: none; z-index: 0;
+}
+.nw-shield svg { width: 100%; height: 100%; }
+.nw-shield .wm-a { stroke: rgba(var(--tint), .18); stroke-width: 1.7; }
+.nw-shield .wm-b { stroke: rgba(var(--tint), .07); stroke-width: 1.4; }
+:root[data-theme="light"] .nw-shield .wm-a { stroke: rgba(var(--tint), .13); }
+:root[data-theme="light"] .nw-shield .wm-b { stroke: rgba(var(--tint), .05); }
+/* 右列：曲线撑满两行（曲线随台账高度走，不额外加高） */
+.nw-right { display: flex; flex-direction: column; min-width: 0; }
+.nw-spark { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.nw-right .rate-spark-box { flex: 1; min-height: 176px; }
 .hero-changes { display: flex; flex-direction: row; flex-wrap: wrap; gap: var(--sp-4); justify-content: flex-start; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .hero-changes .hc-item { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
 .hero-changes .hc-label { font-size: var(--fs-xs); color: var(--text-muted); }
@@ -5812,41 +5845,22 @@ textarea::placeholder {
 /* 无数字的状态项（开盘前「待开盘 · 09:30 更新」）：不参与涨跌着色，也不抢主数字重量 */
 .hero-changes .hc-item.is-idle .hc-val { color: var(--text-faint); font-weight: 400; font-size: var(--fs-sm); }
 .kpi-card .kpi-sub .sub-of { color: var(--text-faint); font-size: var(--fs-2xs); margin-left: 2px; }
-/* ≥641（桌面 / 平板）：资产分布芯片排 2×2 —— 每排 2 枚、共两排。
-   原来 4 枚靠 flex-wrap 一行铺开，芯片宽度随文字长短参差、右侧留白不稳定；
-   改成两列后四枚对齐，读起来更像「一组数据」而不是四个零散标签。
-   列宽用 max-content（不铺满整栏）：芯片只需包住自己的内容 + 一点内边距，
-   拉成半栏宽会显得空荡。列宽取列内较宽的那枚，同列两枚仍等宽对齐。
-   （若容器过窄，max-content 会超出 → 芯片自带 max-width:100% 兜底折行。）
-   手机档（≤640）在下面的 640 断点里覆盖回「一行四个」，不受影响。 */
-@media (min-width: 641px) {
-  .nw-left .nw-asset-row { display: grid; grid-template-columns: repeat(2, max-content); column-gap: var(--sp-5); row-gap: var(--sp-2); }
-  .nw-left .nw-chip { justify-content: center; max-width: 100%; }
-}
-/* 两列芯片的列间距按档位递进 —— 必须写在上方 2×2 规则之后，
-   否则同特异性会被基础 column-gap 反超（≥1341 曾经因此只剩 16px）。
-   641–1340：20px；≥1341：32px，四枚芯片左右彻底分开。 */
-@media (min-width: 641px) and (max-width: 1340px) {
-  .nw-left .nw-asset-row { column-gap: var(--sp-5); row-gap: var(--sp-2); }
-}
-@media (min-width: 1341px) {
-  .nw-left .nw-asset-row { column-gap: var(--sp-8); row-gap: var(--sp-3); }
-}
-/* 资产分布芯片行（原型 hero-asset-chip）：手机档一行 4 枚，桌面档见上方 2×2 */
-.nw-asset-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+/* 资产分布芯片行：四枚等分一行铺满台账宽度（D 的横向填充来源之一）。
+   旧版桌面 2×2 只占左半栏，是「宽屏空」的组成部分之一，故改为一排四等分。 */
+.nw-asset-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); min-width: 0; }
 /* 资产分布芯片：一枚一个口径（● 持仓 ¥9.29万）。文字只用一种颜色（--text），
-   层级靠字重（标签 400 / 金额 600）+ 数字等宽，不再像以前那样「彩点 + 冷灰标签 + 白金额」三种色
-   挤在 6px 的圆点旁边 —— 芯片底色是强调色的暖调（--tint 7%），冷灰标签压在上面会发闷。
-   金额的涨跌色（b.down）仍保留，那是语义色，与这里的层级无关。 */
+   层级靠字重（标签 400 / 金额 600）+ 数字等宽，不再像以前那样「彩点 + 冷灰标签 + 白金额」
+   三种色挤在 6px 的圆点旁边。金额的涨跌色（b.down）仍保留，那是语义色。 */
 .nw-chip {
-  display: inline-flex; align-items: center; gap: var(--sp-1);
+  display: flex; align-items: center; justify-content: center;
+  gap: var(--sp-1); min-width: 0;
   padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm);
   background: rgba(var(--tint), .07); border: 1px solid rgba(var(--tint), .12);
   font-size: var(--fs-xs); font-weight: 400; color: var(--text); white-space: nowrap;
 }
 .nw-chip .d { width: 6px; height: 6px; border-radius: 50%; background: var(--dot-c, var(--primary)); flex: 0 0 auto; }
-/* 芯片文本块：桌面档 inline（标签与金额同一行，空格由文本节点提供，视觉零变化），
-   手机档在下面的 640 断点里改成竖排两行。 */
+/* 芯片文本块：桌面档 inline（标签与金额同一行，空格由文本节点提供），
+   手机档在 640 断点里改成竖排两行。 */
 .nw-chip-t { display: inline; }
 .nw-chip b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .nw-chip b.down { color: var(--down); }
@@ -5932,23 +5946,36 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   .hm-track { transition: none !important; }
 }
-/* 窄屏（≤640）：字号小一档，行高随字号重算；资产分布芯片强制一行四个 */
+/* 窄屏（≤640）：字号小一档，行高随字号重算；资产分布芯片仍强制一行四个 */
 @media (max-width: 640px) {
-  /* 芯片一行四个（2026-11-02 修）：原来是 flex-wrap:wrap，四个「● 持仓 ¥9.32万」
-     在 iPhone 13 上各 95–104px、合计 396px > 行宽 308px → 折成 2×2，看着像随手换行。
-     320px 机型内容宽只有 238px，单行文字四个无论怎么压都放不下（需 ~290px），
-     所以改的是芯片**内部换行**：标签一行、金额一行，等分四列（SE 上每列 58px，
-     最长的「−¥2.44万」10px 约 45px，仍有余量）。桌面档不受影响（.nw-chip-t 仍是 inline）。 */
-  .nw-left .nw-asset-row { flex-wrap: nowrap; gap: var(--sp-1); }
-  .nw-left .nw-chip {
-    flex: 1 1 0; min-width: 0; justify-content: center;
+  /* 芯片一行四个（2026-11-02 修）：单行文字四个在 320–390 档都放不下，
+     改的是芯片**内部换行**：标签一行、金额一行，等分四列。 */
+  .nw-asset-row { gap: var(--sp-1); }
+  .nw-chip {
     padding: 3px; gap: 2px; font-size: var(--fs-2xs); overflow: hidden;
   }
-  .nw-left .nw-chip .d { width: 5px; height: 5px; }
-  .nw-left .nw-chip-t {
+  .nw-chip .d { width: 5px; height: 5px; }
+  .nw-chip-t {
     display: flex; flex-direction: column; align-items: center;
     gap: 0; min-width: 0; line-height: 1.25; text-align: center;
   }
+  /* 台账单列：logo 跨「净资产 + 主数字」与「今日/本月」两行，与整块等高 */
+  .nw-ledger { gap: var(--sp-3); justify-content: flex-start; }
+  .nw-top {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--sp-3); row-gap: var(--sp-2);
+  }
+  /* logo 高度=块高在 320 会自我放大：窄列让「今日/本月」折行 → 块变高 → logo 变宽
+     → 主数字列更窄 → 折更多行。故手机档封顶 92px（390 块高 88.5，仍按真实块高）。 */
+  .nw-brand { grid-row: 1 / span 2; align-self: stretch; height: 100%; max-height: 92px; }
+  .nw-top .hero-changes { grid-column: 2; grid-row: 2; justify-content: flex-start; }
+  /* 主数字让位给 logo：390 档 34px 文本约 198px，可用 308 − logo − 12 ≈ 208px；
+     320 档按视觉宽度折算到 24px 左右，避免 320 机型上数字溢出卡片。 */
+  .kpi-card.density-hero .kpi-value { font-size: min(34px, calc((100vw - 176px) / 5.85)); letter-spacing: -.9px; }
+  .nw-right .rate-spark-box { min-height: 108px; }
+  /* 单列下主数字旁没有横向空白，水印不再出现 */
+  .nw-shield { display: none; }
   /* 跑马灯：行高跟字号一起缩 */
   .home-marquee { --hm-row-h: calc(var(--fs-2xs) * 1.6); }
   .hm-item { font-size: var(--fs-2xs); }
@@ -6379,7 +6406,8 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 
 @media (max-width: 640px) {
   #homeHero { padding: var(--sp-5); }
-  .nw-main { display: flex; flex-direction: column; gap: var(--sp-5); }
+  /* D 单列：台账 → 跑马灯 → 曲线（跑马灯排在曲线之前） */
+  .nw-main { display: flex; flex-direction: column; gap: var(--sp-4); }
 }
 
 /* —— 内联样式合规化所需的 helper（2026-10-20） —— */
