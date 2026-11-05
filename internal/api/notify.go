@@ -515,12 +515,20 @@ func moneyFmtPrec(v float64, dec int) string {
 	return sign + fmt.Sprintf("%."+strconv.Itoa(dec)+"f", v)
 }
 
-// NotifyNetValueUpdated 在净值更新（手动或自动）完成后异步推送通知。
+// NotifyNetValueUpdated 在定时快照完成后异步推送通知。
 // 后台 goroutine 执行，绝不阻塞刷新响应。无开启渠道时直接返回。
-// scope 限定通知范围（"" / "all" = 全量；"us"/"cn"/"fund" = 仅对应类别）；手动刷新传全量。
+// scope 限定通知范围（"us"/"cn"/"fund" = 对应类别）；scope 为空表示手动刷新/手动快照，不对外推送。
 // 该范围内无任何持仓时视为「无净值数据更新」，直接跳过推送，避免空通知。
 func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 	go func() {
+		// 手动刷新/手动快照只更新站内数据，不往外发净值播报：
+		// 手动刷新是用户正盯着页面时的操作，本来就能立刻看到结果；再推一条钉钉
+		// 会和当天 21:00 的定时推送撞车（2026-11-04 复盘：当天 21:00 定时基金推送
+		// 之后，点「刷新行情」又触发了一次手动全量推送，用户看到基金净值被推了 2 次）。
+		if scope == "" {
+			log.Printf("[notify] 手动触发（%s）仅更新数据，不外发净值推送", triggeredBy)
+			return
+		}
 		cfg, err := loadNotifyConfig()
 		if err != nil {
 			log.Printf("[notify] 读取配置失败: %v", err)
@@ -537,21 +545,13 @@ func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 			log.Printf("[notify] 按推送策略(%s)跳过本次推送（触发：%s）", policyName(cfg.Policy), triggeredBy)
 			return
 		}
-		// 去重：定时快照（scope 非全量）同一天只推一次，跨进程也生效。
-		// scope 为空（手动刷新/手动快照）仍每次照发，保证用户手动操作即时可见。
-		// 多实例/重启新旧进程并存时，第二次同一 (uid,scope,date) 会被去重跳过，
-		// 根治「同一份净值却被推了 2 次且金额不一致」的线上 bug。
-		if scope != "" {
-			cst := time.FixedZone("CST", 8*3600)
-			pushDate := time.Now().In(cst).Format("2006-01-02")
-			first, deErr := db.MarkNotifyPushed(uid, scope, pushDate)
-			if deErr != nil {
-				log.Printf("[notify] 去重标记失败(uid=%d,scope=%s): %v", uid, scope, deErr)
-				// 降级：失败不阻断发送，避免漏推
-			} else if !first {
-				log.Printf("[notify] 今日(%s)%s 净值已推送过，跳过重复发送（触发：%s）", pushDate, scopeLabelCN(scope), triggeredBy)
-				return
-			}
+		// 去重：同一 (uid, scope, 日期) 每天只推一次，跨进程也生效。
+		// 多实例/重启新旧进程并存时，第二次会被去重跳过，根治「同一份净值被推 2 次」。
+		cst := time.FixedZone("CST", 8*3600)
+		pushDate := time.Now().In(cst).Format("2006-01-02")
+		if !notifyMarkPushed(uid, scope, pushDate) {
+			log.Printf("[notify] 今日(%s)%s 净值已推送过，跳过重复发送（触发：%s）", pushDate, scopeLabelCN(scope), triggeredBy)
+			return
 		}
 		text, hasData := buildNetValueNotifyText(uid, triggeredBy, scope)
 		if !hasData {
@@ -560,6 +560,34 @@ func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 		}
 		sendToChannels(cfg, "持仓净值更新", text)
 	}()
+}
+
+// notifyMarkPushed 原子标记「今天该范围已推送」，返回 true 表示本次是首次、应发送。
+// 多实例并发写 SQLite 时偶发 database is locked：写标记失败先回查已有记录，
+// 确认别人已推过就按重复处理，避免降级成「照常发送」又推一条。
+// 回查也失败/连续失败且无记录时才保守放行，避免因去重故障整体漏推。
+func notifyMarkPushed(uid int64, scope, pushDate string) bool {
+	for attempt := 0; attempt < 3; attempt++ {
+		first, err := db.MarkNotifyPushed(uid, scope, pushDate)
+		if err == nil {
+			return first
+		}
+		log.Printf("[notify] 去重标记失败(uid=%d,scope=%s): %v", uid, scope, err)
+		if pushed, qerr := notifyPushedExists(uid, scope, pushDate); qerr == nil && pushed {
+			return false
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	return true
+}
+
+func notifyPushedExists(uid int64, scope, pushDate string) (bool, error) {
+	var n int
+	err := db.DB.QueryRow(`SELECT COUNT(1) FROM notify_push_log WHERE uid=? AND scope=? AND push_date=?`, uid, scope, pushDate).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // hasHoldingsInScope 判断该用户在指定范围内是否存在持仓。
