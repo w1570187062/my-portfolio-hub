@@ -1912,7 +1912,7 @@ function renderDayContrib(hs, dayPnlCNY, state) {
       countEl.textContent = top.length + '/' + pool;
       countEl.title = `${prev.date} 有变动的 ${top.length} 只 / 共 ${pool} 只，0 与无数据不列入`;
     }
-    setTitle(state.who + ' 贡献 · 按绝对值', `按 ${prev.date} 盈亏绝对值降序取前三：亏损最多也会排在前面；0 与无数据不列入。`);
+    setTitle((state.who === '昨日' ? '昨日贡献' : state.who + ' 贡献') + ' · 按绝对值', `按 ${prev.date} 盈亏绝对值降序取前三：亏损最多也会排在前面；0 与无数据不列入。`);
     box.hidden = false;
     return;
   }
