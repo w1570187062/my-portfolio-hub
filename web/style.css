@@ -5787,9 +5787,7 @@ textarea::placeholder {
   .nw-chip { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); font-size: var(--fs-sm); }
   .nw-chip .d { width: 7px; height: 7px; }
   .nw-main > .nw-right .rate-spark-box { min-height: 192px; }
-  /* 宽屏只把水印从「今日/本月」左移 24px，尺寸仍绑定块高（height:100%）——
-     原 192px 高于卡高 79.3，被 .kpi-card 的 overflow:hidden 裁掉 59%，见基础规则注释。 */
-  .nw-top .nw-shield { right: 24px; }
+  /* 宽屏的盾由 .nw-shield 自己按块高居中，无需再挪位置 */
 }
 /* 641–1340：芯片让一档内距，四枚仍等分一行 */
 @media (min-width: 641px) and (max-width: 1340px) {
@@ -5807,7 +5805,7 @@ textarea::placeholder {
   column-gap: var(--sp-4); row-gap: var(--sp-2);
   min-width: 0;
 }
-.nw-top .kpi-card.density-hero { position: relative; min-width: 0; }
+.nw-top .kpi-card.density-hero { min-width: 0; }
 .nw-top .kpi-card.density-hero .kpi-eyebrow { justify-content: flex-start; }
 .nw-top .hero-changes { justify-content: flex-end; align-self: end; }
 /* 品牌标：与右侧「净资产 eyebrow + 主数字」整块等高。
@@ -5819,17 +5817,20 @@ textarea::placeholder {
   object-fit: contain; justify-self: start;
   border-radius: var(--r-sm);
 }
-/* 盾牌水印：落在主数字与「今日/本月」之间的空白，纯装饰（不接管指针、不压正文）。
-   2026-11-05 二修：祖先是 .kpi-card，自带 overflow:hidden —— 水印只要比块高就会被硬裁
-   （实测 1920 块高 79.3、192px 水印只露 79.3，线上读成「半张盾」）。不再用固定 px 猜尺寸：
-   高度绑定块高 height:100% + aspect-ratio:1，块多高盾多高，永远完整可见。
-   ≤640 单列台账里主数字旁没有横向空白，不渲染。 */
+/* 盾牌水印（2026-11-05 三改）：不再是顶部行里的一个小图标，而是「净资产 eyebrow +
+   主数字 + 今日/本月」这一整行的**背景层**。层铺满整行（inset:0）、z-index:-1 落在
+   文字与 logo 之下，不参与布局、不改行高。
+   高度：整行高再往下吃掉 .nw-ledger 的行距（--sp-5），底边正好贴住芯片行上沿 ——
+   盾完整落在芯片之上，既不会被 overflow 裁，也不会有下半截钻到芯片下面。
+   芯片不属于这一行，故不覆盖（用户口径：只覆盖数字块、到芯片行之前结束）。
+   盾按原比例居中，不拉伸；≤640 单列无横向承载位，不渲染。 */
+.nw-top { position: relative; isolation: isolate; }
 .nw-shield {
-  position: absolute; right: 0; top: 0;
-  height: 100%; width: auto; aspect-ratio: 1;
-  pointer-events: none; z-index: 0;
+  position: absolute; inset: 0; z-index: -1;
+  display: flex; align-items: flex-start; justify-content: center;
+  pointer-events: none;
 }
-.nw-shield svg { width: 100%; height: 100%; }
+.nw-shield svg { height: calc(100% + var(--sp-5)); width: auto; aspect-ratio: 1; }
 .nw-shield .wm-a { stroke: rgba(var(--tint), .18); stroke-width: 1.7; }
 .nw-shield .wm-b { stroke: rgba(var(--tint), .07); stroke-width: 1.4; }
 :root[data-theme="light"] .nw-shield .wm-a { stroke: rgba(var(--tint), .13); }

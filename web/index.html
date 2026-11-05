@@ -205,19 +205,19 @@
           <!-- 左列台账（原型 D）：净资产 + 今日/本月两端对齐 → 资产芯片四等分 → 跑马灯 -->
           <div class="nw-ledger">
             <div class="nw-top">
+              <!-- 盾牌背景层：铺在「净资产 eyebrow + 主数字 + 今日/本月」整行之下，纯装饰、不参与布局 -->
+              <div class="nw-shield" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path class="wm-a" d="M12 2.4 19.2 5.6v6.2c0 4.7-3.1 7.9-7.2 9.6-4.1-1.7-7.2-4.9-7.2-9.6V5.6L12 2.4Z"/>
+                  <path class="wm-b" d="M12 5.6l5.2 2.2v4.4c0 3.3-2.2 5.6-5.2 6.8-3-1.2-5.2-3.5-5.2-6.8v-4.4L12 5.6Z"/>
+                </svg>
+              </div>
               <!-- 品牌标：直接复用项目 logo（favicon.svg 32×32），与右侧「净资产 eyebrow + 主数字」
                    同高；390 档跨两行，块高把「今日/本月」也算进去 -->
               <img class="nw-brand" src="favicon.svg" alt="" aria-hidden="true">
               <div class="kpi-card density-hero">
                 <div class="kpi-eyebrow">净资产 NET WORTH</div>
                 <div class="kpi-main"><div class="kpi-value" id="homeNetWorth">—</div></div>
-                <!-- 盾牌水印：落在主数字与「今日/本月」之间的台账空白，纯装饰 -->
-                <div class="nw-shield" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none">
-                    <path class="wm-a" d="M12 2.4 19.2 5.6v6.2c0 4.7-3.1 7.9-7.2 9.6-4.1-1.7-7.2-4.9-7.2-9.6V5.6L12 2.4Z"/>
-                    <path class="wm-b" d="M12 5.6l5.2 2.2v4.4c0 3.3-2.2 5.6-5.2 6.8-3-1.2-5.2-3.5-5.2-6.8v-4.4L12 5.6Z"/>
-                  </svg>
-                </div>
               </div>
               <div class="hero-changes" id="homeNetChanges"></div>
             </div>
