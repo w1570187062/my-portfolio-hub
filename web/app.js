@@ -7474,6 +7474,8 @@ const ACT_ICONS = {
   checks: '<path d="M4 7 5.8 8.8 8.6 5.6"/><path d="M11.4 7.2h8"/><path d="M4 15 5.8 16.8 8.6 13.6"/><path d="M11.4 15.2h8"/>',
   // 理财净值：价格标签（净值 = 单位净值），用于「刷新净值」按钮
   nav: '<path d="M4 4h7l9 9-7 7-9-9V4Z"/><circle cx="8.4" cy="8.4" r="1.3"/>',
+  // 换汇拆批：双向箭头 + 中间币种符号（16px 下只用两条错位箭头即可读作「兑换」）
+  fx: '<path d="M4 8.5h9"/><path d="M10 5.8 12.7 8.5 10 11.2"/><path d="M20 15.5h-9"/><path d="M14 12.8 11.3 15.5 14 18.2"/>',
 };
 function actIcon(name) {
   return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ACT_ICONS[name] || '') + '</svg>';
@@ -9710,9 +9712,14 @@ async function saveFXModal() {
 
 function initFXModal() {
   const modal = $('#fxModal');
-  $('#fxClose').onclick = () => { modal.hidden = true; fxState = null; };
-  $('#fxCancel').onclick = () => { modal.hidden = true; fxState = null; };
-  modal.addEventListener('click', (e) => { if (e.target === modal) { modal.hidden = true; fxState = null; } });
+  // 关闭入口只保留全站统一的 .card-close（由 injectModalClose 注入）。
+  // 这里补两件事：关闭时清掉 fxState；点 ✕ 时也走同一条清理路径。
+  const closeFX = () => { modal.hidden = true; fxState = null; };
+  modal.addEventListener('click', (e) => {
+    if (e.target.closest('.card-close')) fxState = null;
+  });
+  $('#fxCancel').onclick = closeFX;
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeFX(); });
   $('#fxAddLot').onclick = () => {
     if (!fxState) return;
     fxState.lots.push({ amount: 0, rate: Number(fxState.data.current_rate) || 0, trade_date: fxLocalDate(), note: '' });

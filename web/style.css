@@ -7185,7 +7185,9 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   width: min(1080px, 94vw); height: 90vh; max-height: 90vh;
   padding: var(--sp-5); gap: var(--sp-3);
 }
-.fx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+/* 关闭位由全站统一的 .card-close（绝对定位在卡片右上角）承担，
+   标题区右侧留出 44px，避免 h2 / 副标钻到 ✕ 底下。 */
+.fx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); padding-right: 44px; }
 .fx-head-main { min-width: 0; }
 .fx-card .m-head { margin: 0; padding-right: 0; }
 .fx-sub { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); line-height: 1.55; color: var(--text-muted); }
