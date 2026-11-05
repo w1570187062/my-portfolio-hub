@@ -167,7 +167,15 @@ func aiChatPost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息为空"})
 		return
 	}
-	if strings.TrimSpace(b.APIKey) == "" {
+	if strings.TrimSpace(b.APIKey) == "" || isMaskedSecret(b.APIKey) {
+		// 与 /ai/settings、/ai/summary 同口径：前端拿到的是掩码（****末四位），
+		// 原样回传时按「未修改」处理，换回库中原文。少这一步，换浏览器或刷新页面后
+		// 内存里没有明文 Key，聊天会把掩码当密钥发给模型，直接 401。
+		if cfg, err := loadAIConfig(uid); err == nil {
+			b.APIKey = resolveSavedKey(cfg, b.Model, b.APIKey)
+		}
+	}
+	if strings.TrimSpace(b.APIKey) == "" || isMaskedSecret(b.APIKey) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未配置 API Key，请到「设置 → AI」填写"})
 		return
 	}

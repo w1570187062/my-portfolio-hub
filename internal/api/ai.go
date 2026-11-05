@@ -149,6 +149,41 @@ func mergeMaskedAIKeys(in, old aiConfig) aiConfig {
 	return in
 }
 
+// resolveSavedKey 把前端回传的掩码换回库中原文（聊天接口用）：
+// 先按「模型名 + 末四位」命中，再按末四位命中，最后退回顶层密钥 / 第一条模型。
+func resolveSavedKey(cfg aiConfig, model, masked string) string {
+	masked = strings.TrimSpace(masked)
+	if masked == "" {
+		return ""
+	}
+	last4 := strings.TrimPrefix(masked, keyMaskPrefix)
+	matches := func(s string) bool {
+		if s == "" {
+			return false
+		}
+		return last4 == "" || maskSecret(s) == masked
+	}
+	if model != "" {
+		for _, m := range cfg.Models {
+			if m.Model == model && matches(m.APIKey) {
+				return m.APIKey
+			}
+		}
+	}
+	for _, m := range cfg.Models {
+		if matches(m.APIKey) {
+			return m.APIKey
+		}
+	}
+	if matches(cfg.APIKey) {
+		return cfg.APIKey
+	}
+	if len(cfg.Models) > 0 {
+		return cfg.Models[0].APIKey
+	}
+	return cfg.APIKey
+}
+
 func aiSettingsGet(c *gin.Context) {
 	cfg, err := loadAIConfig(currentUserID(c))
 	if err != nil {
