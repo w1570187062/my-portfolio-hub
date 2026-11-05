@@ -202,14 +202,6 @@
     <section class="home-dash">
       <div class="networth-hero tier-1" id="homeHero">
         <div class="nw-main">
-          <!-- 盾牌背景层（方案 V2）：贴 hero 卡右上角的大盾，向右下出血、超出部分由
-               卡片 overflow 沿圆角自然裁切。0×0 定位锚点，不参与栅格、不改 hero 高度 -->
-          <div class="nw-shield" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path class="wm-a" d="M12 2.4 19.2 5.6v6.2c0 4.7-3.1 7.9-7.2 9.6-4.1-1.7-7.2-4.9-7.2-9.6V5.6L12 2.4Z"/>
-              <path class="wm-b" d="M12 5.6l5.2 2.2v4.4c0 3.3-2.2 5.6-5.2 6.8-3-1.2-5.2-3.5-5.2-6.8v-4.4L12 5.6Z"/>
-            </svg>
-          </div>
           <!-- 左列台账（原型 D）：净资产 + 今日/本月两端对齐 → 资产芯片四等分 → 跑马灯 -->
           <div class="nw-ledger">
             <div class="nw-top">
@@ -235,6 +227,14 @@
           </div>
           <div class="nw-right">
             <div class="nw-spark">
+              <!-- 盾牌背景层：贴着「权益收益曲线」这一块自己的右上角（不是整张 hero 卡的
+                   右上角）。0×0 定位锚点，绝对定位，不参与 flex 布局、不改块高 -->
+              <div class="nw-shield" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path class="wm-a" d="M12 2.4 19.2 5.6v6.2c0 4.7-3.1 7.9-7.2 9.6-4.1-1.7-7.2-4.9-7.2-9.6V5.6L12 2.4Z"/>
+                  <path class="wm-b" d="M12 5.6l5.2 2.2v4.4c0 3.3-2.2 5.6-5.2 6.8-3-1.2-5.2-3.5-5.2-6.8v-4.4L12 5.6Z"/>
+                </svg>
+              </div>
               <div class="rate-spark-head">
                 <div class="rate-spark-left">
                   <span class="rate-spark-label">权益收益曲线</span>

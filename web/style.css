@@ -5787,7 +5787,7 @@ textarea::placeholder {
   .nw-chip { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); font-size: var(--fs-sm); }
   .nw-chip .d { width: 7px; height: 7px; }
   .nw-main > .nw-right .rate-spark-box { min-height: 192px; }
-  /* 宽屏的盾贴卡右上角出血，向右下超出由卡片 overflow 自然裁切，无需再挪位置 */
+  /* 盾贴着曲线块（.nw-spark）自己的右上角，块内定位，无需再挪位置 */
 }
 /* 641–1340：芯片让一档内距，四枚仍等分一行 */
 @media (min-width: 641px) and (max-width: 1340px) {
@@ -5817,25 +5817,21 @@ textarea::placeholder {
   object-fit: contain; justify-self: start;
   border-radius: var(--r-sm);
 }
-/* 盾牌水印（2026-11-05 六改，方案 V2「右上贴角出血大盾」·高度减半）：
-   前几轮把盾压在左列，芯片是分类色的半透明底、盾是主色的半透明描边，两组半透明在
-   同一区域叠色 → 撞色发脏（实测叠芯片 5763–6514px²）。V2 改为把盾整体移出左列：
-   锚 hero 卡（= .nw-main）右上角，超出部分由 hero 卡的 overflow:hidden 沿圆角自然裁掉
-   —— 裁切边正好是块的边界，所以「被切」也是成立的形态。
-   2026-11-05 六改：用户要求体量减半，svg 由 300px 降为 152px（≈一半；150px 不落 4px
-   网格、被 check-ui 硬门拦下，故取最近的 152px，偏差 1.3%），右上角锚点不动
-   （top:-30px / right:-64px），故盾高缩掉一半、贴角位置与出血方向保持一致。
-   实测叠压：芯片 0 / logo 0 / 主数字 0 / 跑马灯 0，只落在右列曲线区的留白上。
-   定位：.nw-shield 是 .nw-main 下 0×0 的定位锚点（不参与栅格），svg 相对它偏移出血；
-   z-index:-1 + .nw-main isolation:isolate → 仍在 .nw-right 内容之下。
+/* 盾牌水印（2026-11-05 七改）：锚点改为「权益收益曲线」这一块自己的右上角（.nw-spark），
+   不再挂到 hero 卡外框。盾的右边与上边正好贴住曲线块的边界，全程在块内、不需要任何
+   overflow 裁切，也不会再出现「贴卡边框」的悬空感。
+   体量沿用上一版半尺寸 152px（300 的一半；150 不落 4px 网格被 check-ui 拦下）。
+   .nw-shield 是 0×0 绝对定位锚点 → 不参与 .nw-spark 的 flex 布局、不改块高；
+   z-index:-1 + .nw-spark isolation:isolate → 落在曲线 svg 与标题文字之下。
+   实测叠压：左列台账（数字/芯片/跑马灯）0，曲线块内为背景水印。
    ≤640 单列档不渲染（见下方断点内的 display:none）。 */
-.nw-main { position: relative; isolation: isolate; }
+.nw-spark { isolation: isolate; }
 .nw-shield {
   position: absolute; top: 0; right: 0; z-index: -1;
   width: 0; height: 0; pointer-events: none;
 }
 .nw-shield svg {
-  position: absolute; top: -30px; right: -64px;
+  position: absolute; top: 0; right: 0;
   height: 152px; width: auto; max-width: none; aspect-ratio: 1;
 }
 .nw-shield .wm-a { stroke: rgba(var(--tint), .18); stroke-width: 1.7; }
