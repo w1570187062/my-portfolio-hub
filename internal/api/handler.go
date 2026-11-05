@@ -1668,11 +1668,42 @@ func backfillSnapshots(uid int64, days int) (backfillResult, error) {
 	}
 	hists := make([]holdHist, 0, len(hs))
 	var errors []string
+	// 写 price_daily 的起点：持仓的本地行情没覆盖建仓日时，把起点推到建仓日，
+	// 否则历史盈亏曲线画不到建仓点（006330 建仓 01-14，行情只有 07-17 起）。
+	// 只影响行情补写；pnl_daily 的回算范围仍按请求的 days，避免改写历史每日盈亏。
+	priceStart := start
 	for i := range hs {
 		h := hs[i]
+		have := map[string]bool{}
+		minHave := "" // 本地已记录行情的最早日期
+		if existing, e := db.GetPriceSeries(h.Symbol, uid); e == nil {
+			for _, p := range existing {
+				have[p.Date] = true
+				if minHave == "" || p.Date < minHave {
+					minHave = p.Date
+				}
+			}
+		}
+		// 抓取深度：默认 days；本地行情缺建仓日那段 → 按建仓日往前推（上限由行情层控制）。
+		// 超过 400 天（净值接口翻页上限）就不再深挖：拉不到只会每次刷新白跑 20 页。
+		// 给 7 天余量：建仓日可能是周末/节假日，行情从下一个交易日起算，否则每次刷新都会重拉。
+		need := days + 2
+		if h.BuyDate != "" {
+			if bd, e := time.Parse("2006-01-02", h.BuyDate); e == nil {
+				covered := minHave != "" && minHave <= bd.AddDate(0, 0, 7).Format("2006-01-02")
+				if !covered {
+					if n := int(bj.Sub(bd).Hours()/24) + 7; n > need && n <= 400 {
+						need = n
+						if bd.Before(priceStart) {
+							priceStart = bd
+						}
+					}
+				}
+			}
+		}
 		hist := map[string]float64{}
 		if h.Category == "fund" {
-			if m, e := market.FetchFundNAVHistory(h.Symbol, days+2); e == nil {
+			if m, e := market.FetchFundNAVHistory(h.Symbol, need); e == nil {
 				hist = m
 			} else {
 				errors = append(errors, h.Symbol+"(基金净值): "+e.Error())
@@ -1687,18 +1718,12 @@ func backfillSnapshots(uid int64, days int) (backfillResult, error) {
 				errors = append(errors, h.Symbol+"(K线): "+e.Error())
 			}
 		}
-		have := map[string]bool{}
-		if existing, e := db.GetPriceSeries(h.Symbol, uid); e == nil {
-			for _, p := range existing {
-				have[p.Date] = true
-			}
-		}
 		hists = append(hists, holdHist{sym: h.Symbol, hist: hist, have: have})
 	}
 
 	var priceRows, pnlDates int
 	// 逐日补写缺失的 price_daily（按日期升序，保证 prev_close 链连续）
-	for d := start; !d.After(bj.AddDate(0, 0, -1)); d = d.AddDate(0, 0, 1) {
+	for d := priceStart; !d.After(bj.AddDate(0, 0, -1)); d = d.AddDate(0, 0, 1) {
 		ds := d.Format("2006-01-02")
 		if ds == today {
 			continue
@@ -2635,11 +2660,12 @@ func holdingPnlHistory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	rate, _ := market.GetUSDRate()
-	fx := 1.0
-	if h.Currency == "USD" {
-		fx = rate
-	}
+	// 币种口径 = 原币：本弹框里的 成交价/成交金额/每笔已实现盈亏 全部是持仓原币（position_tx 原样落库），
+	// 曲线与头部必须同一口径，否则美元持仓会被除以汇率放大 7 倍却仍打 USD 前缀
+	// （2026-11-04 修：原实现按 h.Currency == "USD" 大写硬判，币种归一为小写后大小写不一，
+	// 大写存量数据被折算成 CNY 又标 USD；小写数据不折算，两种数据两套数值）。
+	// 折 CNY 的汇总在列表/首页/资产页做，这里保持原币。
+	const fx = 1.0
 	type Row struct {
 		Date        string  `json:"date"`
 		Close       float64 `json:"close"`
@@ -2648,7 +2674,11 @@ func holdingPnlHistory(c *gin.Context) {
 		TotalPnl    float64 `json:"total_pnl"`
 		TotalPnlPct float64 `json:"total_pnl_pct"`
 		MarketValue float64 `json:"market_value"`
-		Held        bool    `json:"held"` // false = 该日尚未建仓（份额为 0），盈亏不计算、前端显示「—」
+		Held        bool    `json:"held"`             // false = 该日尚未建仓（份额为 0），盈亏不计算、前端显示「—」
+		Anchor      bool    `json:"anchor,omitempty"` // true = 合成建仓点（成本是按当前持仓反推的估算值，当日盈亏无意义）
+		Est         bool    `json:"est,omitempty"`    // true = 建仓段（早于首笔交易）：份额/成本都是反推估算，前端标注「推算」
+		Qty         float64 `json:"qty,omitempty"`    // 仅 anchor 行：推算的建仓份额
+		Cost        float64 `json:"cost,omitempty"`   // 仅 anchor 行：推算的每股成本
 	}
 	// 现金分红后复权：把累计每股现金分红加回净值，使分红日的当日盈亏不再假跌
 	// （净值+分红口径）。红利再投（REINVEST）不在此处理——分红已转为份额，市值连续。
@@ -2681,7 +2711,7 @@ func holdingPnlHistory(c *gin.Context) {
 	// buy_date 常在录入时被填早于实际建仓（本库「招商港股通红利低波」buy_date=04-14、首笔买入
 	// 却是 09-21；「中证海外互联50」buy_date=01-14、首笔买入 08-13），直接用它会把建仓之前
 	// 的净值涨跌算成持仓盈亏。
-	// 这类日期只保留净值供「历史净值」表查看，盈亏金额/累计盈亏一律不计算（Held=false，前端显「—」）。
+	// 这类日期只保留净值供「每日明细」表查看，盈亏金额/累计盈亏一律不计算（Held=false，前端显「—」）。
 	posStart := ""
 	for _, t := range txs {
 		if (t.TxType != "BUY" && t.TxType != "DIV") || t.Reverted == 1 || len(t.CreatedAt) < 10 {
@@ -2695,8 +2725,101 @@ func holdingPnlHistory(c *gin.Context) {
 	if posStart == "" {
 		posStart = startDate // 无交易记录的老持仓：无法证明建仓更晚，退回买入日
 	}
+	// ── 建仓段（buy_date → 首笔交易之间）的份额/成本还原 ─────────────────────
+	// 「新建/导入持仓」的老数据只写持仓行、不落 position_tx，于是建仓日到首笔交易之间有一段
+	// 「有份额、但没有任何交易记录」的区间（006330：01-14 建仓约 4152 份，首笔买入 08-13）。
+	// 这段不能沿用当前份额/成本（那是历次加仓后的终值），否则早段曲线被成倍放大。
+	// 逆序冲销每笔交易还原「初始份额 + 初始成本额」（txs 是 id DESC，天然是时间倒序）：
+	//   买入 → 减份额、减成本额；卖出 → 按当时均价加回份额与成本额；
+	//   现金分红 → 成本额加回（入账时按每股分红下调过成本）；红利再投 → 只减份额。
+	// initQty ≈ 0 说明份额完全由交易记录解释，buy_date 多半填早了（录入时随手填的日期），
+	// 这种情况维持首笔交易截断、只保留净值（Held=false，前端显「—」）。
+	initQty, initCostAmt := qty, qty*cost
+	for _, t := range txs {
+		if t.Reverted == 1 {
+			continue
+		}
+		switch t.TxType {
+		case "BUY":
+			initQty -= t.Quantity
+			initCostAmt -= t.Amount
+		case "SELL":
+			per := 0.0
+			if initQty > 1e-9 {
+				per = initCostAmt / initQty
+			}
+			initQty += t.Quantity
+			initCostAmt += t.Quantity * per
+		case "DIV":
+			initCostAmt += t.Price * initQty
+		case "REINVEST":
+			initQty -= t.Quantity
+		}
+	}
+	initCost := 0.0
+	if initQty > 1e-6 {
+		initCost = initCostAmt / initQty
+	}
+	// 建仓段可算盈亏的条件：还原出了正份额与正成本。已清仓持仓的 qty 本来就是清仓前快照
+	// （LastQuantity），建仓段直接沿用它，不再逆序冲销（冲销会与快照重复计算卖出）。
+	useInit := !closed && initQty > 1e-6 && initCost > 0
+	// 交易按时间正序（ListPositionTx 是 id DESC），供逐日推进持仓状态时按日期消费。
+	type txDay struct {
+		Date string
+		db.PositionTx
+	}
+	var txAsc []txDay
+	for i := len(txs) - 1; i >= 0; i-- {
+		if txs[i].Reverted == 1 || len(txs[i].CreatedAt) < 10 {
+			continue
+		}
+		txAsc = append(txAsc, txDay{Date: txs[i].CreatedAt[:10], PositionTx: txs[i]})
+	}
+	// ── 逐日推进持仓状态（未清仓）──────────────────────────────────────────
+	// 建仓段用还原出的初始份额/成本，之后按交易记录正序推进，让每个点都用「那一天真实持有」的
+	// 份额与成本。原实现全程套用当前终值（终份额 + 终成本）：006330 一进 08-13 就按 6691 份算，
+	// 市值从 544 跳到 858（当天其实只买入 108），中段盈亏被系统性放大。
+	type posState struct{ qty, amt float64 }
+	states := make([]posState, len(series))
+	if !closed {
+		rq, ra := initQty, initCostAmt
+		if !useInit {
+			rq, ra = 0, 0
+		}
+		ti := 0
+		for i, p := range series {
+			for ti < len(txAsc) && txAsc[ti].Date <= p.Date {
+				t := txAsc[ti]
+				ti++
+				switch t.TxType {
+				case "BUY":
+					rq += t.Quantity
+					ra += t.Amount
+				case "SELL":
+					// 均价法：卖出按当时均价结转成本，剩余每股成本不变
+					if rq > 1e-9 {
+						ra -= t.Quantity * ra / rq
+					}
+					rq -= t.Quantity
+				case "DIV":
+					// 现金分红：每股分红直接下调成本（与 db.AdjustDividend 同口径）
+					ra -= t.Price * rq
+				case "REINVEST":
+					rq += t.Quantity
+				}
+			}
+			if rq < 1e-6 {
+				rq, ra = 0, 0
+			}
+			if ra < 0 {
+				ra = 0
+			}
+			states[i] = posState{rq, ra}
+		}
+	}
 	n := 0 // 纳入曲线的点数：过滤（continue）不重置 range 索引，首条判定必须用独立计数
-	for _, p := range series {
+	var prevTotal, prevMV float64
+	for i, p := range series {
 		// 已清仓：曲线截止清仓日（含），之后的行情与持仓无关，不能再算成持仓盈亏
 		if closed && closedDate != "" && p.Date > closedDate {
 			break
@@ -2708,8 +2831,39 @@ func holdingPnlHistory(c *gin.Context) {
 			cumDiv += d
 		}
 		adj := p.Close + cumDiv
-		// 尚未建仓：份额为 0，任何盈亏都是假的。只记录净值与净值涨跌幅（行情属性，与持仓无关）。
-		if posStart != "" && p.Date < posStart {
+		// 已清仓持仓：qty/cost 就是清仓前快照，全程沿用；成本基准加回「当时尚未发生的每股分红」
+		if closed {
+			mv := p.Close * qty * fx
+			costAt := cost + (cumDivTotal - cumDiv)
+			totalPnl := (p.Close - costAt) * qty * fx
+			var totalPct, dayPnl, dayPct float64
+			if costAt > 0 {
+				totalPct = totalPnl / (costAt * qty * fx) * 100
+			}
+			n++
+			if n > 1 {
+				dayPnl = (adj - prevAdj) * qty * fx
+				if prevAdj > 0 {
+					dayPct = dayPnl / (prevAdj * qty * fx) * 100
+				}
+			} else {
+				dayPnl = totalPnl
+				dayPct = totalPct
+			}
+			prevAdj = adj
+			// 清仓日当天的累计盈亏用已实现口径（卖出价落袋），而不是收盘价浮盈，避免与交易记录对不上
+			if closedDate != "" && p.Date == closedDate && realizedSum != 0 {
+				totalPnl = realizedSum
+				if costAt*qty*fx > 0 {
+					totalPct = totalPnl / (costAt * qty * fx) * 100
+				}
+			}
+			rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv, Held: true})
+			continue
+		}
+		st := states[i]
+		if st.qty <= 1e-6 {
+			// 尚未建仓：份额为 0，任何盈亏都是假的。只记录净值与净值涨跌幅（行情属性，与持仓无关）。
 			var navPct float64
 			if prevAdj > 0 {
 				navPct = (adj - prevAdj) / prevAdj * 100
@@ -2718,37 +2872,46 @@ func holdingPnlHistory(c *gin.Context) {
 			rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnlPct: navPct, Held: false})
 			continue
 		}
-		mv := p.Close * qty * fx
-		// 历史成本基准：当前成本 + 尚未生效的每股分红（分红当日成本已摊薄，不再加回）。
-		// 现金分红收益通过成本下调计入一次，与持仓列表 pnl = (现价−成本)×份额 完全同口径。
-		costAt := cost + (cumDivTotal - cumDiv)
-		totalPnl := (p.Close - costAt) * qty * fx
-		var totalPct, dayPnl, dayPct float64
-		if costAt > 0 {
-			totalPct = totalPnl / (costAt * qty * fx) * 100
+		hq := st.qty
+		hc := st.amt / hq // 该日每股成本（已含当日及之前的分红摊薄、按当日记录的交易推进）
+		mv := p.Close * hq * fx
+		totalPnl := (p.Close - hc) * hq * fx
+		var totalPct float64
+		if hc*hq*fx > 0 {
+			totalPct = totalPnl / (hc * hq * fx) * 100
 		}
-		n++
-		if n > 1 {
-			// 当日盈亏用复权净值差值：分红日净值因除息跳降的部分由累计分红补回
-			dayPnl = (adj - prevAdj) * qty * fx
-			if prevAdj > 0 {
-				dayPct = dayPnl / (prevAdj * qty * fx) * 100
+		// 建仓首点（合成建仓点）：成本是按当前持仓反推出来的估算值，不是当日成交价，
+		// 因此「当天盈亏」没有意义（原实现让首点 day_pnl = total_pnl，于是 01-14 建仓点
+		// 显示「当天赚了 52.88 / +8.15%」，看着像算错）。这里置 0 并打 anchor 标记，
+		// 前端把当日盈亏显示为「—」，累计盈亏注明「推算」。
+		anchor := useInit && n == 0 && posStart != "" && p.Date < posStart
+		var dayPnl, dayPct float64
+		if !anchor {
+			if n == 0 {
+				dayPnl = totalPnl // 首点无前值（首笔交易当日）：当天盈亏即建仓浮盈
+			} else {
+				// 当日盈亏 = 累计盈亏的变化量：自动包含当日加仓/减仓/分红的影响，
+				// 且逐日求和恰等于期末累计盈亏（原来用净值差值×份额，加仓日会漏掉新份额的浮盈）。
+				dayPnl = totalPnl - prevTotal
 			}
-		} else {
-			// 首点没有前一快照可差值：当日盈亏按成本基准（与持仓列表 enrich 首日口径一致），
-			// 即首日「盈亏金额 = 累计盈亏」——不是 0。
-			dayPnl = totalPnl
-			dayPct = totalPct
+			if prevMV > 0 {
+				dayPct = dayPnl / prevMV * 100
+			} else if hc*hq*fx > 0 {
+				dayPct = dayPnl / (hc * hq * fx) * 100
+			}
 		}
+		prevTotal, prevMV = totalPnl, mv
 		prevAdj = adj
-		// 清仓日当天的累计盈亏用已实现口径（卖出价落袋），而不是收盘价浮盈，避免与交易记录对不上
-		if closed && closedDate != "" && p.Date == closedDate && realizedSum != 0 {
-			totalPnl = realizedSum
-			if costAt*qty*fx > 0 {
-				totalPct = totalPnl / (costAt * qty * fx) * 100
-			}
+		n++
+		r := Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv, Held: true, Anchor: anchor,
+			// 建仓段（buy_date → 首笔交易）：份额与成本都是逆序冲销反推出来的，不是成交记录，
+			// 前端在这段点的浮框上标「推算」，避免被读成真实成交口径。
+			Est: useInit && posStart != "" && p.Date < posStart}
+		if anchor {
+			// 推算口径回传，便于前端在悬停浮框里给出「成本 × 份额」让用户核对
+			r.Qty, r.Cost = hq, hc
 		}
-		rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv, Held: true})
+		rows = append(rows, r)
 	}
 	// 买入日之后尚无快照（刚买入、当日快照任务未跑）：回退用最后一个 ≤买入日 的点
 	// 保底，避免弹框空图（day_pnl 缺省 0，首行无基准问题）。
@@ -2781,13 +2944,14 @@ func holdingPnlHistory(c *gin.Context) {
 	// 交易点：BUY/SELL 供前端在曲线上打 B/S 标记；DIV（分红）不画。
 	// 日期取 created_at[:10]，若当天没有行情点，前端会就近落到最近一个点上。
 	type Marker struct {
-		Date     string  `json:"date"`
-		Type     string  `json:"type"` // BUY | SELL
-		Price    float64 `json:"price"`
-		Quantity float64 `json:"quantity"`
-		Amount   float64 `json:"amount"` // 成交金额 = quantity * price
-		Fee      float64 `json:"fee"`
-		Note     string  `json:"note"`
+		Date      string  `json:"date"`
+		Type      string  `json:"type"` // BUY | SELL
+		Price     float64 `json:"price"`
+		Quantity  float64 `json:"quantity"`
+		Amount    float64 `json:"amount"`     // 成交金额 = quantity * price
+		Fee       float64 `json:"fee"`
+		Note      string  `json:"note"`
+		Synthetic bool    `json:"synthetic"` // true = 初始建仓（无对应交易记录，只有买点）
 	}
 	var markers []Marker
 	for _, t := range txs {
@@ -2802,6 +2966,37 @@ func holdingPnlHistory(c *gin.Context) {
 			continue // 清仓日之后的交易不在曲线区间内
 		}
 		markers = append(markers, Marker{Date: d, Type: t.TxType, Price: t.Price, Quantity: t.Quantity, Amount: t.Amount, Fee: t.Fee, Note: t.Note})
+	}
+	// 初始建仓买点：2026-11-04 之前的「新建/导入持仓」只写持仓行、不落 position_tx，
+	// 于是曲线上只有卖点没有买点（B），交易记录里也缺建仓行。
+	// 判据用「未记录的份额」而不是「有没有 BUY」：老持仓常常有补仓记录、却缺最初的建仓记录
+	// （PEP：只有 2026-07-31 补仓 0.9681 份，建仓的 7.0077 份没有任何记录），
+	// 只看「没 BUY」会漏掉这一类，图上仍然只有加仓的 B、看不到建仓的 B。
+	//   未记录份额 = 现有持仓 + 已卖出 − 已买入（reverted 不计）
+	// 补的是「不含成交价」的初始建仓标记，纯粹标出持仓起点，不伪造成交数据。
+	var buyQty, sellQty float64
+	for _, t := range txs {
+		if t.Reverted == 1 {
+			continue
+		}
+		switch t.TxType {
+		case "BUY":
+			buyQty += t.Quantity
+		case "SELL":
+			sellQty += t.Quantity
+		}
+	}
+	if h.Quantity+sellQty-buyQty > 1e-6 {
+		buyStart := h.BuyDate
+		if buyStart == "" {
+			buyStart = posStart
+		}
+		if buyStart == "" && len(rows) > 0 {
+			buyStart = rows[0].Date
+		}
+		if buyStart != "" {
+			markers = append(markers, Marker{Date: buyStart, Type: "BUY", Note: "初始建仓", Synthetic: true})
+		}
 	}
 	// 已清仓日的落袋摘要：供前端在清仓日 hover 时显示「累计收益 / 持仓天数 / 收益率」
 	var closedInfo *struct {

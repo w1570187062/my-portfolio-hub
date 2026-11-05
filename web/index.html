@@ -1516,7 +1516,8 @@
              新增与编辑都可通过它切换性质（编辑时换性质走后端安全转换：无流水、无引用才允许）。 -->
         <label class="c-default-row"><input type="checkbox" id="c_is_liab"> 负债</label>
         <label>名称 <input id="c_name" placeholder="如 招行活期 / 房贷" maxlength="40"></label>
-        <!-- 余额：币种下拉 + 金额输入合并为一个组合控件；标签随「是负债」/编辑态切换 -->
+        <!-- 余额：币种下拉 + 金额输入合并为一个组合控件；标签随「是负债」切换。
+             仅新增时可填（初始余额）；编辑态只读展示，改余额走「记收入/记支出」或「一键更新余额」 -->
         <label><span id="c_amount_cap">当前余额</span> <div class="combo"><select id="c_currency"><option value="cny">CNY</option><option value="hkd">HKD</option><option value="usd">USD</option></select><input id="c_amount" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)"></div></label>
         <!-- 所属账户：从账户行「添加」进入或编辑已有记录时锁定父账户（只读，不可选）；空状态全局入口无父账户上下文时才显示下拉 -->
         <label id="c_source_fix_row" hidden>所属账户 <input id="c_source_fix" readonly placeholder="—"></label>
@@ -1529,18 +1530,8 @@
           <input type="checkbox" id="c_excluded"> 日常开销账户
           <span class="c-excl-hint">不计入再平衡</span>
         </label>
-        <!-- 仅编辑态出现（新增时没有可调整的余额）：
-             子账户=±存入/取出，负债=±借入/还款；下方「说明」作为这一笔变动流水的备注 -->
-        <div class="sign-edit" id="c_delta_row" hidden>
-          <div class="field-label" id="c_delta_cap">资金变动</div>
-          <span class="seg-flat" id="c_sign_toggle" role="group" aria-label="存入或取出">
-            <button type="button" class="sign-opt active" data-sign="in">＋</button>
-            <span class="seg-sep">/</span>
-            <button type="button" class="sign-opt" data-sign="out">－</button>
-          </span>
-          <input id="c_delta" type="number" step="0.0001" min="0" oninput="clampDecimals(this,4)" placeholder="金额（正数）">
-        </div>
-        <label id="c_adj_note_row" hidden><span id="c_adj_note_cap">说明（资金变动备注，可选）</span> <input id="c_adj_note" placeholder="如 发工资 / 还信用卡"></label>
+        <!-- 余额变更不在此弹框：存入/取出走首页「记收入/记支出」，对账改余额走「一键更新余额」。
+             本弹框只管资料（名称/币种/备注/日常开销）与新增时的初始余额。 -->
         <div id="cashErr" class="err"></div>
         <div class="modal-actions"><button class="btn primary" type="submit">保存</button></div>
       </form>

@@ -257,12 +257,15 @@ func fundNAV(symbol string) (*Quote, error) {
 //
 // 必须翻页：东财 f10/lsjz 会忽略 pageSize（无论传多少都只返回 20 条/页，2026-10 实测
 // pageSize=120 仍返回 20 条），所以「取 120 天」只能 pageIndex=1..6 逐页拉。
+//
+// 上限 400 天（20 页）：历史盈亏曲线要能画到持仓建仓日，006330 建仓 01-14、原先只拉
+// 120 天导致曲线最早只能到 07-17（2026-11-04）。仅在「本地行情没覆盖建仓日」时才拉这么深。
 func FetchFundNAVHistory(symbol string, days int) (map[string]float64, error) {
 	if days < 1 {
 		days = 1
 	}
-	if days > 120 {
-		days = 120
+	if days > 400 {
+		days = 400
 	}
 	m := map[string]float64{}
 	pageSize := 20 // 接口固定页长

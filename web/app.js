@@ -151,7 +151,7 @@ function hideAllViews() {
 }
 
 // ===== 全站统一加载动画（2026-11-02）=====
-// 三层机制，详见 docs/ui-design-spec.md §7.17：
+// 三层机制（全站唯一口径，改任何一层都要同步对齐另外两层）：
 //   ① 视图层 .view-fade  —— 切页瞬间整个视图淡入，消除硬切
 //   ② 区块层 .rise-in    —— 数据到达后，区块逐个上浮淡入（错落由 --d 控制）
 //   ③ 骨架层             —— 等待数据时的 shimmer 占位
@@ -676,6 +676,18 @@ function emptyStateHTML({ icon, title, desc, btnLabel, btnAttrs }) {
     + '</div>';
 }
 
+// 「另有 N 项，点此展开」折叠条：现金零余额账户 / 已清仓持仓 / 已清仓理财三处共用。
+// 展开状态由各调用方自己的布尔量保存（重渲染、切 tab 后保持），这里只产出按钮并给出绑定入口。
+function zeroFoldHTML(action, count, open, unit) {
+  return '<div class="zero-fold"><button class="zero-fold-btn" type="button" data-fold="' + action + '">'
+    + (open ? '收起 ' + count + ' ' + unit : '另有 ' + count + ' ' + unit + '，点此展开')
+    + '</button></div>';
+}
+function bindZeroFold(root, action, fn) {
+  const b = root.querySelector('[data-fold="' + action + '"]');
+  if (b) b.onclick = fn;
+}
+
 function renderFiltered() {
   const hs = filteredHoldings();
   renderSummary(hs);
@@ -695,10 +707,12 @@ function renderFiltered() {
   // 因此切换时下方内容不会位移。新增 tab 只需在这里加一项。
   applyInvestSection();
 
-  // 分段控件数量徽标：持仓 = 当前筛选后持仓数；理财 = 理财条目数；存款 = 存款条数；已平仓 = 清仓持仓数 + 清合理财数
+  // 分段控件数量徽标：持仓 = 在持只数（份额为 0 的已清仓默认收起，不计入）；
+  // 理财 = 在持款数；存款 = 存款条数；已平仓 = 清仓持仓数 + 清合理财数
   const wProducts = (assetData.wealth || {}).products || [];
-  const wCount = wProducts.length;
+  const wCount = wProducts.filter((p) => !p.archived).length;
   const closedHoldings = allHoldings.filter((h) => (h.quantity || 0) <= 0);
+  const liveHoldings = allHoldings.filter((h) => (h.quantity || 0) > 0);
   const closedWealth = wProducts.filter((p) => p.archived);
   const closedCount = closedHoldings.length + closedWealth.length;
   if (vt) {
@@ -706,7 +720,7 @@ function renderFiltered() {
     const wb = vt.querySelector('[data-count="wealth"]');
     const db3 = vt.querySelector('[data-count="deposits"]');
     const cb = vt.querySelector('[data-count="closed"]');
-    if (hb) hb.textContent = hs.length;
+    if (hb) hb.textContent = liveHoldings.length;
     if (wb) wb.textContent = wCount;
     if (db3) db3.textContent = (depositsCache || []).length;
     if (cb) cb.textContent = closedCount;
@@ -780,18 +794,12 @@ function renderFiltered() {
         if (emptyAddBtn) emptyAddBtn.hidden = false;
       }
       empty.hidden = false;
-    } else if (hs.length === 0) {
-      // 区分「全部已清仓」与「筛选无匹配」：前者是正常状态（列表仅隐藏 0 份额持仓）
-      const allClosed = allHoldings.length > 0 && allHoldings.every((h) => (h.quantity || 0) <= 0);
-      if (allClosed) {
-        if (emptyIcon) emptyIcon.innerHTML = EMPTY_ICONS.inbox;
-        if (emptyTitle) emptyTitle.textContent = '全部持仓已清仓';
-        if (emptyMsg) emptyMsg.textContent = '列表暂无可持仓标的；重新买入后会自动恢复显示，已落袋盈亏已计入首页「今日盈亏」。';
-      } else {
-        if (emptyIcon) emptyIcon.innerHTML = EMPTY_ICONS.searchX;
-        if (emptyTitle) emptyTitle.textContent = '无匹配结果';
-        if (emptyMsg) emptyMsg.textContent = '当前筛选条件下没有匹配的持仓，请调整筛选。';
-      }
+    } else if (liveHoldings.length === 0 && !holdShowClosed) {
+      // 区分「全部已清仓」与「筛选无匹配」：前者是正常状态（份额为 0 的在持被收起）。
+      // 展开已清仓后不再提示，否则整页只剩一句空状态、下面却排着明细行。
+      if (emptyIcon) emptyIcon.innerHTML = EMPTY_ICONS.inbox;
+      if (emptyTitle) emptyTitle.textContent = '全部持仓已清仓';
+      if (emptyMsg) emptyMsg.textContent = '已落袋盈亏已计入首页「今日盈亏」，明细在「平仓」页；如需在持仓页查看，点列表下方展开。';
       if (emptyAddBtn) emptyAddBtn.hidden = true;
       empty.hidden = false;
     } else {
@@ -1322,6 +1330,10 @@ const holdCollapsed = new Set();
 // 理财 / 平仓页折叠状态（单表后的组头也走 tbody.is-collapsed，与持仓同一套交互）
 const wealthCollapsed = new Set();
 const closedCollapsed = new Set();
+// 已清仓（份额 0 的持仓 / archived 的理财）默认收起，与现金页「零余额账户」同口径：
+// 赎回后记录仍保留（编辑 / 历史 / 删除照常可用），只是不再天天占满整张表。
+let holdShowClosed = false;
+let wealthShowClosed = false;
 // 组头折叠绑定（持仓 / 理财 / 平仓三张单表共用）：状态存进各自 Set，重渲染与切 tab 后保持。
 // 键优先取 data-sid（账户 id），平仓表按账户名分组，用 data-grp。
 function bindGroupCollapse(box, store) {
@@ -1342,20 +1354,37 @@ function renderHoldingsBySource(hs) {
   if (!hs.length) { box.innerHTML = ''; return; }
   HOLDINGS_BY_ID = {};
   for (const h of hs) HOLDINGS_BY_ID[h.id] = h;
+  // 已清仓（份额为 0）默认收起，与现金页零余额账户同口径：赎回后记录仍保留
+  // （编辑 / 历史 / 删除照常），但表里只留给在持标的。清仓行不参与组头小计与「N 只」计数
+  // ——否则「持仓 2 只」里会有一只市值为 0。
+  const isClosed = (h) => (h.quantity || 0) <= 0;
+  const closedAll = hs.filter(isClosed);
+  const liveAll = hs.filter((h) => !isClosed(h));
+  const shown = holdShowClosed ? hs : liveAll;
+  // 全部已清仓：表体唯一内容就是展开入口（空状态由 renderFiltered 的 #holdingsEmpty 说明）
+  if (!shown.length) {
+    box.innerHTML = zeroFoldHTML('hold-closed', closedAll.length, holdShowClosed, '笔已清仓');
+    bindZeroFold(box, 'hold-closed', () => { holdShowClosed = !holdShowClosed; renderFiltered(); });
+    return;
+  }
   const toCny = (v, cur) => (cur || '').toUpperCase() === 'USD' ? v * usdRate : (cur || '').toUpperCase() === 'HKD' ? v * hkdRate : v;
   const groups = new Map();
-  for (const h of hs) {
+  for (const h of shown) {
     const sid = h.source_id || 0;
     const sname = h.source_name || (sid === 0 ? '未分组' : '账户' + sid);
     if (!groups.has(sid)) groups.set(sid, { sid, name: sname, items: [], mv: 0, cost: 0, dayPnl: 0, pnl: 0 });
     const g = groups.get(sid);
     g.items.push(h);
-    g.mv += toCny(h.market_value || 0, h.currency);
-    g.cost += toCny(h.cost_value || 0, h.currency);
+    // 组头小计只算在持：展开已清仓时组头数字不能跳（清仓行市值/成本本就是 0），
+    // 今日盈亏按全量算（已清仓标的当日已无行情，day_pnl 恒为 0，不影响口径）。
+    if (!isClosed(h)) {
+      g.mv += toCny(h.market_value || 0, h.currency);
+      g.cost += toCny(h.cost_value || 0, h.currency);
+      g.pnl += toCny(h.pnl || 0, h.currency);
+    }
     g.dayPnl += toCny(h.day_pnl || 0, h.currency);
-    g.pnl += toCny(h.pnl || 0, h.currency);
   }
-  // 表头工具条排序：组内持仓按（市值 / 收益率 / 盈亏 / 持仓天数）降序
+  // 表头工具条排序：组内持仓按（市值 / 收益率 / 盈亏 / 持仓天数）降序；已清仓永远排组尾
   const sortKey = (h) => {
     if (holdingsSort === 'profit') return toRmb(h, h.pnl || 0);
     if (holdingsSort === 'pnl') return (h.cost_price && h.cost_price > 0) ? ((h.current_price || 0) - h.cost_price) / h.cost_price * 100 : -1e9;
@@ -1364,7 +1393,14 @@ function renderHoldingsBySource(hs) {
   };
   // v3.6 排序列指示器：当前排序键映射到表头列；带方向类 sorted-asc/sorted-desc（点击表头 toggle）
   const sortedCls = (key) => (holdingsSort === key ? ' sorted ' + (holdingsSortDir === 'asc' ? 'sorted-asc' : 'sorted-desc') : '');
-  groups.forEach((g) => { g.items.sort((a, b) => { const d = sortKey(b) - sortKey(a); return holdingsSortDir === 'asc' ? -d : d; }); });
+  groups.forEach((g) => {
+    g.items.sort((a, b) => {
+      const ca = isClosed(a) ? 1 : 0, cb = isClosed(b) ? 1 : 0;
+      if (ca !== cb) return ca - cb;
+      const d = sortKey(b) - sortKey(a);
+      return holdingsSortDir === 'asc' ? -d : d;
+    });
+  });
   const arr = [...groups.values()].sort((a, b) => b.mv - a.mv);
   // 仓位分母（全量口径，不随筛选漂移）：同(来源,币种)持仓市值合计(原币种) + 现金子账户余额。
   // cashBalMap 匹配不到该 key → 该池无现金子账户 → 行内显示 —（用户指定口径）。
@@ -1392,7 +1428,9 @@ function renderHoldingsBySource(hs) {
   // 原因写在顶部 KPI 的徽章与副标里（pnlDayInfo / dayBadge），不必在表里重复一遍。
   // 注意必须不产出 <th>/<td>，只 display:none 不够 —— 表格列仍在，剩余宽度会被那一列吃掉，
   // 表现为表格右侧凭空多出一块空白（实测 395px）。
-  const dayIdleAll = arr.every((g) => g.items.every((h) => pdi.preOpen || amtIsZero(toRmb(h, h.day_pnl))));
+  // 今日列是否整列不渲染按**全量**持仓判断（含收起的已清仓）：隐藏行里若有今日盈亏，
+  // KPI 会显示数字而表里没有这一列，看起来像「数对不上」。
+  const dayIdleAll = hs.every((h) => pdi.preOpen || amtIsZero(toRmb(h, h.day_pnl)));
   const colCount = dayIdleAll ? 7 : 8;
   const thead = '<thead><tr>'
     + '<th>名称</th>'
@@ -1412,10 +1450,12 @@ function renderHoldingsBySource(hs) {
     // 组头的「今日」与行内同口径：开盘前 / 真 0 都降级成「—」，不给 0 值数字重量
     const gDayIdle = pdi.preOpen || amtIsZero(g.dayPnl);
     const collapsed = holdCollapsed.has(String(g.sid));
+    const liveN = g.items.filter((h) => !isClosed(h)).length;
+    const closedN = g.items.length - liveN;
     body += `<tbody class="hold-grp${collapsed ? ' is-collapsed' : ''}" data-sid="${g.sid}">`
       + `<tr class="h-grp" role="button" tabindex="0" title="${collapsed ? '展开' : '收起'}该账户明细">`
       + `<td colspan="${colCount}"><div class="hg-in">`
-      + `<span class="hg-l"><i class="hg-chev">▾</i>${srcLogo(g.sid)}<b class="hg-name">${esc(g.name)}</b><em class="hg-count">${g.items.length} 只</em></span>`
+      + `<span class="hg-l"><i class="hg-chev">▾</i>${srcLogo(g.sid)}<b class="hg-name">${esc(g.name)}</b><em class="hg-count">${liveN} 只${closedN ? ` · 已清仓 ${closedN}` : ''}</em></span>`
       + `<span class="hg-r">`
       + `<span class="hg-stat hg-stat-mv" title="该账户持仓折合人民币市值"><i>市值</i><b${wanTitle(g.mv, '¥')}>¥${fmtWan(g.mv)}</b></span>`
       // 今日列整列不渲染时，组头也不再单挂一个「今日 —」——那是同一件事说第三遍
@@ -1425,7 +1465,9 @@ function renderHoldingsBySource(hs) {
       + g.items.map((h) => renderHoldRow(h, poolOf(h), pdi, dayIdleAll)).join('')
       + '</tbody>';
   }
-  box.innerHTML = `<div class="holdings-sheet"><div class="subtable-wrap"><table class="asset-table holdings-table">${thead}${body}</table></div></div>`;
+  box.innerHTML = `<div class="holdings-sheet"><div class="subtable-wrap"><table class="asset-table holdings-table">${thead}${body}</table></div></div>`
+    + (closedAll.length ? zeroFoldHTML('hold-closed', closedAll.length, holdShowClosed, '笔已清仓') : '');
+  bindZeroFold(box, 'hold-closed', () => { holdShowClosed = !holdShowClosed; renderFiltered(); });
   // v3.6 表头点击排序：同一列再次点击 toggle 升/降序；切换列则默认降序（与原下拉口径一致）
   box.querySelectorAll('th.sortable').forEach((th) => {
     th.onclick = () => {
@@ -1533,7 +1575,7 @@ function renderHoldRow(h, pool, pdi, hideDay) {
       <div class="hp-sub ${chgPct != null ? clsPnl(chgPct) : ''}" title="${pdi.isToday ? '今日涨跌幅' : '最近一个收盘交易日的涨跌幅（可能比今日盈亏新一个美股交易日——美股在北京时间凌晨收盘，跨过了日界）'}：现价 vs 昨收${isFund(h) ? '，基金为昨日净值' : ''}">${chgPct != null ? pct(chgPct) : '—'}</div>
     </td>
     <td class="num ht-mv"${mvOrigTitle(h)}>¥${fmtWan(mvCny)}</td>
-    <td class="num share ht-share${pool > 0 ? '' : ' is-empty'}"${pool > 0 ? ` style="--p:${posPct.toFixed(1)}%;--pn:${(posPct / 100).toFixed(4)}"` : ''} title="占该账户同币种资金池比例${pool > 0 ? ' ' + posPct.toFixed(2) + '%' : '；该账户无匹配现金子账户，无法算占比'}">${pool > 0 ? posPct.toFixed(2) + '%' : '—'}</td>
+    <td class="num share ht-share${(pool > 0 && !closed) ? '' : ' is-empty'}"${(pool > 0 && !closed) ? ` style="--p:${posPct.toFixed(1)}%;--pn:${(posPct / 100).toFixed(4)}"` : ''} title="占该账户同币种资金池比例${closed ? '；已清仓（份额为 0）不占资金池' : (pool > 0 ? ' ' + posPct.toFixed(2) + '%' : '；该账户无匹配现金子账户，无法算占比')}">${(pool > 0 && !closed) ? posPct.toFixed(2) + '%' : '—'}</td>
     ${hideDay ? '' : `<td class="num ht-day" title="${pdi.note ? esc(pdi.note) : '今日盈亏'}${h.market === '美股' && pdi.isToday ? '（美股按美东交易日归属：今天的收盘要等北京时间明天凌晨，落账后会出现在对应日期那一格，所以今天这一格暂时是 0）' : ''}${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）">${dayIdle ? ZERO_DASH : `<div class="${clsPnl(h.day_pnl)}"${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</div><div class="hp-sub ${clsPnl(h.day_pnl_pct)}">${h.day_pnl_pct ? pct(h.day_pnl_pct) : ''}</div>`}</td>`}
     <td class="num ht-pnl">
       <div class="${clsPnl(h.pnl)}"${wanTitle(pnlCny, '¥')}>${signedMoneyW(pnlCny, 'cny')}</div>
@@ -1600,10 +1642,13 @@ function renderSummary(hs) {
     invMv.textContent = '¥' + fmtMoney(totalCNY);
     invMv.title = '¥' + fmtYuanExact(totalCNY);
   }
-  // 锚点卡副标：只数 + 成本（不重复卡片 4 的收益率）
+  // 锚点卡副标：只数 + 成本（不重复卡片 4 的收益率）。只数只算在持 —— 已清仓（份额 0）
+  // 默认收起，这里再算进去就会与表里行数、子 tab 徽标对不上。
   const invMvSub = document.getElementById('investMvSub');
   if (invMvSub) {
-    invMvSub.innerHTML = `持仓 <span class="hl">${hs.length}</span> 只 · 成本 <span class="hl" title="¥${fmtYuanExact(totalCostCNY)}">¥${fmtMoney(totalCostCNY)}</span>`;
+    const liveN = hs.filter((h) => (h.quantity || 0) > 0).length;
+    const closedN = hs.length - liveN;
+    invMvSub.innerHTML = `持仓 <span class="hl">${liveN}</span> 只${closedN ? ` · 已清仓 <span class="hl">${closedN}</span>` : ''} · 成本 <span class="hl" title="¥${fmtYuanExact(totalCostCNY)}">¥${fmtMoney(totalCostCNY)}</span>`;
   }
   // 今日盈亏口径与首页「今日」一致：持仓今日盈亏 + 今日已实现（清仓/减仓）盈亏，均折 CNY
   const invDay = document.getElementById('investDayPnl');
@@ -3384,15 +3429,6 @@ $('#crbSave').addEventListener('click', async () => {
   $('#crbSave').disabled = false;
 });
 
-// 资金变动方向切换：选中段置 active（CSS 负责主题色/灰色），方向由 data-sign 决定
-const cashSignToggle = document.getElementById('c_sign_toggle');
-if (cashSignToggle) {
-  cashSignToggle.addEventListener('click', (e) => {
-    const btn = e.target.closest('.sign-opt');
-    if (!btn) return;
-    setCashSign(btn.dataset.sign);
-  });
-}
 // 添加流水：方向切换 + 点击遮罩关闭
 const flowSignToggle = document.getElementById('flow_sign_toggle');
 if (flowSignToggle) {
@@ -6216,7 +6252,7 @@ async function openHoldingHistory(id) {
   histSeg = 'amount';
   syncHistSegBar();
   // 时间段状态按弹框维度重置：否则上一只持仓的自定义起止会带进新弹框（旧实现这里是漏的）
-  histNavRange = 7;
+  histNavRange = 0;
   histNavFrom = '';
   histNavTo = '';
   ['histNavFrom', 'histNavTo'].forEach((id) => {
@@ -6236,7 +6272,8 @@ async function openHoldingHistory(id) {
   histPnlData = d;
   const h = d.holding || {};
   histHistCur = ((d.currency || '').toUpperCase() === 'USD' ? 'USD ' : (d.currency || '').toUpperCase() === 'HKD' ? 'HK$ ' : '¥');
-  $('#histTitle').textContent = (h.name || '') + '（' + (h.symbol || '') + '）历史盈亏';
+  // 2026-11-04：标题不再拼「（代码）」——代码在持仓行与每日明细里都能看到，弹框标题只留名称，手机上少折一行
+  $('#histTitle').textContent = ((h.name || '') + ' 历史盈亏').trim();
   // 已清仓：曲线后端已按清仓日截断，标题后补清仓日期，避免"为什么这几天没数据"的疑问
   const old = document.getElementById('histClosedTip');
   if (old) old.remove();
@@ -6270,17 +6307,46 @@ function renderHistSeg() {
   tx.hidden = !isTx;
   nav.hidden = !isNav;
   const rangeWrap = $('#histRangeWrap');
-  if (rangeWrap) rangeWrap.hidden = !isNav;   // 时间段只在「每日明细」段出现，不再单独占一排
-  if (!isNav) closeHistRangePop();
+  // 时间段三个分段共用同一状态：走势曲线 / 每日明细 / 交易记录都跟随右槽区间
+  if (rangeWrap) rangeWrap.hidden = false;
+  syncHistNavRange();
+  hideTrendTip();   // 离开曲线段时收起钉住的读数浮框，否则它会一直飘在交易记录表上
   if (isAmount) { chart.innerHTML = ''; renderHistChart(histPnlData, histHistCur, 'amount'); }
-  else if (isNav) { syncHistNavRange(); renderHistNavTable(); }
+  else if (isNav) { renderHistNavTable(); }
   else if (isTx) { renderHistTxTable(); }
 }
 
-// 每日明细段状态：时间段（7/30/0/自定义）+ 自定义起止；默认近 7 天
-let histNavRange = 7;
+// 历史盈亏弹框的时间段状态（7/30/0/自定义 + 自定义起止），默认全部。
+// 2026-11-04：由「每日明细」扩展到走势曲线与交易记录共用 —— 三段读取同一份区间，切换分段时区间保持不变。
+let histNavRange = 0;
 let histNavFrom = '';
 let histNavTo = '';
+
+// 时间段过滤：走势曲线 / 每日明细 / 交易记录共用。输入升序序列，输出同口径的升序子序列。
+// anchor：区间基准日（近 N 天从哪一天往回数）。曲线与明细传空（默认取序列末点），
+// 交易记录传「最新行情日」，避免区间跟着最后一笔成交日漂移。
+function filterHistRange(sAll, range, from, to, anchor) {
+  if (range === 'custom') {
+    return sAll.filter((x) => (!from || x.date >= from) && (!to || x.date <= to));
+  }
+  if (range > 0) {
+    const last = anchor || (sAll.length ? sAll[sAll.length - 1].date : '');
+    if (!last) return sAll;
+    const dt = new Date(last);
+    dt.setDate(dt.getDate() - range + 1);
+    const cutFrom = dt.toISOString().slice(0, 10);
+    return sAll.filter((x) => x.date >= cutFrom);
+  }
+  return sAll;
+}
+
+// 最新行情日（/pnl-history 的 series 末点），供交易记录的区间基准使用。
+function histPnlSeriesLast() {
+  const series = (histPnlData && histPnlData.series) || [];
+  let last = '';
+  series.forEach((x) => { if (x.date > last) last = x.date; });
+  return last;
+}
 
 // 每日明细表格：复用 /api/holdings/:id/pnl-history 的 series（已含 close/涨跌幅/盈亏金额/累计盈亏），
 // 按时间段控件过滤后展示「日期 / 单位净值（股票为收盘价）/ 涨跌幅 / 盈亏金额 / 累计盈亏」。
@@ -6290,18 +6356,7 @@ function renderHistNavTable() {
   const body = $('#histNavTable');
   if (!body || !histPnlData) return;
   const sAll = (histPnlData.series || []).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
-  let rows = sAll;
-  if (histNavRange === 'custom') {
-    rows = sAll.filter((x) => (!histNavFrom || x.date >= histNavFrom) && (!histNavTo || x.date <= histNavTo));
-  } else if (histNavRange > 0) {
-    const last = sAll.length ? sAll[sAll.length - 1].date : '';
-    if (last) {
-      const dt = new Date(last);
-      dt.setDate(dt.getDate() - histNavRange + 1);
-      const cutFrom = dt.toISOString().slice(0, 10);
-      rows = sAll.filter((x) => x.date >= cutFrom);
-    }
-  }
+  let rows = filterHistRange(sAll, histNavRange, histNavFrom, histNavTo);
   const cur = histHistCur || '¥';
   // 列名跟着标的类型走：基金是单位净值，股票/港股是收盘价；类型缺失时给中性合并名
   const cat = (histPnlData.holding || {}).category || '';
@@ -6348,16 +6403,37 @@ $('#histSegBar').addEventListener('click', (e) => {
 // 每日明细段：时间段右槽。按钮只显示当前区间，具体选项收进下拉层；自定义区间在下拉层内展开日期。
 const histRangeBtn = $('#histRangeBtn');
 const histRangePop = $('#histRangePop');
+// 下拉层定位：弹框卡片与 .m-body 都是 overflow 裁剪容器，绝对定位的下拉层在「交易记录」
+// 这种矮内容段会被卡片底边切掉（自定义日期与「完成」直接看不见）。改为 fixed 相对视口定位，
+// 下方放不下就翻到按钮上方，并限制最大高度内部滚动（2026-11-04）。
+function placeHistRangePop() {
+  if (!histRangePop || !histRangeBtn || histRangePop.hidden) return;
+  const r = histRangeBtn.getBoundingClientRect();
+  const pop = histRangePop;
+  pop.style.position = 'fixed';
+  pop.style.right = 'auto';
+  const w = pop.offsetWidth;
+  pop.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+  const vh = window.innerHeight;
+  const h = pop.offsetHeight;
+  pop.style.top = (r.bottom + 6 + h > vh - 8 ? Math.max(8, r.top - 6 - h) : r.bottom + 6) + 'px';
+  pop.style.maxHeight = (vh - 16) + 'px';
+  pop.style.overflowY = 'auto';
+}
 function openHistRangePop() {
   if (!histRangePop || !histRangeBtn) return;
   histRangePop.hidden = false;
   histRangeBtn.setAttribute('aria-expanded', 'true');
+  placeHistRangePop();
 }
 function closeHistRangePop() {
   if (!histRangePop || !histRangeBtn) return;
   histRangePop.hidden = true;
   histRangeBtn.setAttribute('aria-expanded', 'false');
 }
+// 下拉层固定定位后不会随内容滚动：跟随按钮重算；滚出视口就收起
+document.addEventListener('scroll', () => { if (histRangePop && !histRangePop.hidden) placeHistRangePop(); }, true);
+window.addEventListener('resize', () => { if (histRangePop && !histRangePop.hidden) placeHistRangePop(); });
 histRangeBtn.addEventListener('click', () => {
   if (histRangePop.hidden) openHistRangePop(); else closeHistRangePop();
 });
@@ -6383,11 +6459,11 @@ histRangePop.addEventListener('click', (e) => {
     histNavRange = Number(v);
     closeHistRangePop();
   }
-  syncHistNavRange();
-  renderHistNavTable();
+  // 走整段重渲染：区间由曲线与每日明细共用，当前停在曲线段时也要立即跟着变
+  renderHistSeg();
 });
-$('#histNavFrom').addEventListener('change', () => { histNavFrom = $('#histNavFrom').value || ''; histNavRange = 'custom'; syncHistNavRange(); renderHistNavTable(); });
-$('#histNavTo').addEventListener('change', () => { histNavTo = $('#histNavTo').value || ''; histNavRange = 'custom'; syncHistNavRange(); renderHistNavTable(); });
+$('#histNavFrom').addEventListener('change', () => { histNavFrom = $('#histNavFrom').value || ''; histNavRange = 'custom'; renderHistSeg(); });
+$('#histNavTo').addEventListener('change', () => { histNavTo = $('#histNavTo').value || ''; histNavRange = 'custom'; renderHistSeg(); });
 // 点弹层以外区域 / Esc 收起（不干扰弹框本身）
 document.addEventListener('click', (e) => {
   if (!histRangePop || histRangePop.hidden) return;
@@ -6408,6 +6484,8 @@ function syncHistNavRange() {
   }
   const customRow = $('#histNavCustomRow');
   if (customRow) customRow.hidden = (histNavRange !== 'custom');
+  // 展开/收起自定义日期会改变下拉层高度，重新贴一次按钮（下方不够时会自动翻到上方）
+  placeHistRangePop();
 }
 
 // 回退等操作后重拉曲线 + 交易记录（保留当前分段）
@@ -6439,14 +6517,23 @@ function renderHistTxTable() {
     return;
   }
   const d = histTxsCache;
-  const h = (histPnlData && histPnlData.holding) || {};
-  const txs = d.transactions || [];
-  // 头部口径沿用原卡片视图：实现盈亏=只有减仓才落袋；加仓浮动盈亏=当前持仓的浮动盈亏（与列表同源）
-  let html = '<div class="adj-realized">累计实现盈亏：<b>' + histHistCur + fmt(d.realized_total || 0) + '</b>';
-  if ((h.quantity || 0) > 0) html += `<span class="adj-float ${clsPnl(h.pnl)}">｜加仓浮动盈亏：<b>${histHistCur}${fmt(h.pnl)}</b>${h.pnl_pct != null ? ` <small>(${pct(h.pnl_pct)})</small>` : ''}</span>`;
-  html += '</div>';
-  if (!txs.length) { body.innerHTML = html + '<div class="adj-empty">暂无记录</div>'; return; }
-  html += '<table class="asset-table"><thead><tr>' +
+  // 2026-11-04：交易记录与另外两段共用同一时间段右槽 —— 按成交日期落在区间内才展示。
+  // 区间基准仍取「最新行情日」而不是最后一笔成交日：否则近 7 天会把几个月前的老交易留下来。
+  // 成交日期取自 created_at（表里「日期」列展示的也是它），补齐成 date 字段后复用同一个过滤器。
+  const anchor = histPnlSeriesLast();
+  const all = (d.transactions || []).map((t) => Object.assign({}, t, { date: String(t.created_at || '').slice(0, 10) }));
+  const txs = filterHistRange(all, histNavRange, histNavFrom, histNavTo, anchor);
+  // 2026-11-04 整块删除交易记录头部（累计实现盈亏 / 加仓浮动盈亏 / 累计分红）：
+  // ① 浮盈是整仓口径（列表折 CNY、这里原币），与「已实现」并排易被读成同一口径；
+  // ② 累计实现盈亏只在减过仓时非 0，多数持仓显示 ¥0 反而像算错；
+  // ③ 分红走成本下调、不进已实现，解释起来又是一行字 —— 用户反馈太挤，直接去掉。
+  // 每笔 SELL 的落袋金额仍在「盈亏/净入账」列逐行可见，汇总口径见列头 title。
+  if (!txs.length) {
+    const ranged = histNavRange === 'custom' || histNavRange > 0;
+    body.innerHTML = '<div class="adj-empty">' + (ranged ? '该时间段内没有记录' : '暂无记录') + '</div>';
+    return;
+  }
+  let html = '<table class="asset-table"><thead><tr>' +
     '<th>类型</th><th>日期</th><th class="num">数量/份额</th><th class="num" title="交易=成交价；分红=折算每股">价格/每股</th>' +
     '<th class="num" title="交易=成交金额；分红=分红总额">金额</th><th class="num">费用</th>' +
     '<th class="num" title="减仓=已实现盈亏；分红=净入账（分红总额−费用）">盈亏/净入账</th>' +
@@ -6455,7 +6542,11 @@ function renderHistTxTable() {
     const reverted = (t.reverted === 1 || t.reverted === true);
     const isDiv = t.tx_type === 'DIV';
     const isReinvest = t.tx_type === 'REINVEST';
-    const tag = t.tx_type === 'BUY' ? '<span class="adj-tag buy">加仓</span>'
+    // 建仓（db.Create 落的那笔 BUY，note=建仓）单独标「建仓」：标成「加仓」会让用户以为
+    // 第一笔就是补仓，找不到持仓起点（2026-11-04）。
+    const isOpenBuy = t.tx_type === 'BUY' && (t.note || '').trim() === '建仓';
+    const tag = isOpenBuy ? '<span class="adj-tag buy">建仓</span>'
+      : t.tx_type === 'BUY' ? '<span class="adj-tag buy">加仓</span>'
       : isDiv ? '<span class="adj-tag div">分红</span>'
       : isReinvest ? '<span class="adj-tag reinvest">红利再投</span>'
       : '<span class="adj-tag sell">减仓</span>';
@@ -6471,10 +6562,13 @@ function renderHistTxTable() {
       `<td>${tag}</td>` +
       `<td class="u-sm u-muted">${t.created_at ? t.created_at.slice(0, 10) : '—'}</td>` +
       `<td class="num">${fmt(t.quantity)}</td>` +
-      `<td class="num">${fmt(t.price)}</td>` +
+      // 价格/每股最多 4 位：基金净值 0.1442、债基分红每股 0.0043 用 2 位会被显示成 0.14 / 0，
+      // 与相邻的「金额」列对不上，看着就像算错（2026-11-04 修）。
+      `<td class="num">${fmtCat(t.price, 'fund')}</td>` +
       `<td class="num">${fmt(t.amount)}</td>` +
       `<td class="num u-muted">${t.fee ? fmt(t.fee) : '—'}</td>` +
-      `<td class="num">${pnlCell}</td>` +
+      // 已回退的行不显示盈亏：这笔已从份额/成本/已实现里撤销，再亮着数字会和头部对不上
+      `<td class="num">${reverted ? '<span class="u-muted">—</span>' : pnlCell}</td>` +
       `<td class="u-sm note-cell" title="${esc(t.note || '')}">${t.note ? esc(t.note) : '<span class="u-muted">—</span>'}</td>` +
       `<td class="row-actions">${op}</td>` +
       '</tr>';
@@ -6581,7 +6675,7 @@ $('#whTo').addEventListener('change', () => { wealthHistCustomTo = $('#whTo').va
 // 复用全局盈亏走势的 SVG 双轴风格：单日盈亏柱状（左轴，红涨绿跌）+ 累计盈亏折线（右轴）
 // 持仓历史盈亏 / 理财每日盈亏 共用绘制器（数据结构统一为 { date, day_pnl, total_pnl }）。
 // 这两处此前各写一份近乎相同的 SVG 逻辑，改视觉时极易只改一半（曾导致柱子静默不渲染），
-// 合并后只需改这一处。视觉规格见 docs/ui-design-spec.md §3.11。
+// 合并后只需改这一处；柱子配色（红涨绿跌）、双轴刻度、悬停标注的口径全部在本函数内约定。
 // mode='rate' 时画「累计盈亏率」折线（series 的 total_pnl_pct / day_pnl_pct，%）——历史盈亏弹框
 // 盈亏率分段复用同一绘制器，仅取值口径与 Y 轴/tooltip 格式化不同。
 function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
@@ -6590,16 +6684,15 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   const valOf = isRate ? (x) => (x.total_pnl_pct != null ? x.total_pnl_pct : 0) : (x) => (x.total_pnl || 0);
   const body = $('#histChartBody');
   if (!s || s.length === 0) { body.innerHTML = '<p class="u-muted">暂无历史数据。</p>'; return; }
-  // 全量默认绘制：单屏最多容纳 ~60 个行情点（604px ÷ 10px/点），超出即横向滚动
-  // （移动端原生手势、桌面滚轮映射，无翻页状态）。每个行情点保证最小 10px 宽度，
-  // 悬停热区可点、x 轴标签不糊。
-  const W = 720, H = 236, mL = 58, mR = 58, mT = 16, mB = 34;  // 2026-10-15 压低画布高度（原 356）
+  // 2026-11-04：改为一屏全览（方案 B）——画布宽度跟随弹框内容区，全部行情点压进可视宽度，
+  // 不再按每点 10px 保底、也不再横向滚动；命中方式改由整块绘图区按 x 反算最近点。
+  // 窄屏（<460px）压到 208px 高、左右边距收到 40/8，把宽度全部留给曲线。
+  const cw = Math.max(240, Math.floor(body.clientWidth || 640));
+  const W = cw, H = cw < 460 ? 208 : 236;
+  const mL = cw < 460 ? 40 : 52, mR = cw < 460 ? 8 : 12, mT = 22, mB = 30;
+  const plotW = W - mL - mR;
   const plotH = H - mT - mB;
   const n = s.length;
-  const SLOT_MIN = 10;
-  const fitW = W - mL - mR;
-  const Wfull = (n * SLOT_MIN > fitW) ? (mL + mR + n * SLOT_MIN) : W;
-  const plotW = Wfull - mL - mR;
   const vals = s.map(valOf);
   // Y 轴自适应（C 方案）：不再强制以 0 为中心。全负或全正时曲线能铺满整个绘图区，
   // 纵向分辨率翻倍；0 落在范围内才画零轴线。
@@ -6616,13 +6709,10 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   const slot = plotW / n;
   const uid = 'th' + (++trendUidSeq);
   const linePts = [];
-  let line = '', area = '', dots = '', hotspots = '';
+  let line = '', area = '', dots = '';
   s.forEach((x, i) => {
     const cx = mL + (i + 0.5) * slot;
     const ly = yLine(valOf(x));
-    // 交互热区：覆盖整列，hover 显示金额；坐标带上供悬停指示线定位
-    hotspots += `<rect class="trend-hot" data-i="${i}" data-x="${cx.toFixed(2)}" data-y="${ly.toFixed(2)}"`
-      + ` x="${(mL + i * slot).toFixed(2)}" y="${mT}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
     linePts.push([cx, ly]);
     // 2026-10-15：去掉单日盈亏柱状，只保留累计盈亏折线 + 悬停读数（单日盈亏在 tooltip 里仍可见）
     line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
@@ -6640,35 +6730,82 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
     ap += `L ${linePts[linePts.length - 1][0].toFixed(2)} ${baseY.toFixed(2)} Z`;
     area = `<path d="${ap}" fill="url(#${uid}Area)" stroke="none"/>`;
   }
-  // 交易点标记：BUY=B（红）/ SELL=S（绿），就近对齐到最近的行情点，画竖虚线 + 圆角小徽标。
-  // 徽标放柱区顶部（零轴上方一侧）而不是折线上方，避免与折线/最新点圆点叠字。
+  // 交易点标记：BUY=B（红）/ SELL=S（绿），就近对齐到最近的行情点。
+  // 全览后点距可能只有零点几像素，固定「零轴上下」会让徽标必然重叠；改为按点位置优先向外、
+  // 每 15px 一层做碰撞避让，并拉一条细引线指回原点；同列堆到第 7 层仍冲突则退化成贴合折线的小圆点。
   const dateIdx = new Map();
   s.forEach((x, i) => { if (!dateIdx.has(x.date)) dateIdx.set(x.date, i); });
-  const usedSlot = new Set();
-  const txAt = new Array(n).fill(null);   // 每个行情点关联的交易（用于 tooltip 显示成交明细）
+  const txAt = new Array(n).fill(null).map(() => []);  // 每个行情点关联的成交（tooltip 用）
   let mk = '';
-  (markers || []).forEach((mk2) => {
-    let idx = dateIdx.has(mk2.date) ? dateIdx.get(mk2.date) : -1;
-    if (idx < 0) { // 就近取当天之前最近的点（交易日晚于/非交易日时兜底）
-      for (let i = 0; i < n; i++) { if (s[i].date <= mk2.date) idx = i; else break; }
+  // 先把每笔交易落到具体行情点，再做去重：合成的「初始建仓」只是用来补缺失的买点，
+  // 一旦它落到的位置已经有真实买入，真实那笔信息更全（有成交价/份额），合成点必须丢弃，
+  // 否则同一天会并排出现 2~3 个 B（006330：08-13 两笔真实买入 + 合成建仓挤在同一点，共 3 个）。
+  const resolveIdx = (m) => {
+    if (dateIdx.has(m.date)) return dateIdx.get(m.date);
+    // 就近取当天之前最近的点；早于曲线首点的交易（建仓早于第一根行情 / 行情没覆盖到那天）
+    // 落到首点 —— 否则整条 B 会被直接丢掉，看起来就是「只有卖点没有买点」。
+    let idx = 0;
+    for (let i = 0; i < n; i++) { if (s[i].date <= m.date) idx = i; else break; }
+    return idx;
+  };
+  // markers 来自 position_tx（后端 ORDER BY id DESC），反转为时间升序：
+  // 同日多笔的并列顺序与「交易记录」表一致，徽标堆叠也按先后从下往上。
+  const placed = (markers || []).slice().reverse().map((m) => ({ m, idx: resolveIdx(m) }));
+  // 同一行情点、同一方向的多笔成交**合并成一个徽标**（标 B×2 / S×2），笔数与明细进 tooltip。
+  // 起因：006330 08-13 相隔 1 分钟建了两笔（405.41@0.1332 + 405.10@0.1333），
+  // 曲线并排两个 B 看起来像重复脏数据；实际是两笔真实买入，合并后既清楚又不丢信息。
+  // 合成的「初始建仓」（老持仓缺建仓记录）也并进同一个徽标、不单独占位，只计数真实成交笔数
+  // —— 否则同一列又会冒出第 2、第 3 个 B；建仓说明仍在 tooltip 里单列一块。
+  const groups = [];
+  const groupOf = new Map();
+  placed.forEach(({ m: mk2, idx }) => {
+    const key = idx + '|' + mk2.type;
+    let g = groupOf.get(key);
+    if (!g) { g = { idx, type: mk2.type, list: [] }; groupOf.set(key, g); groups.push(g); }
+    g.list.push(mk2);
+  });
+  const placedRects = [];
+  const hitsRect = (r) => placedRects.some((p) => !(r.x + r.w + 2 <= p.x || p.x + p.w + 2 <= r.x
+    || r.y + r.h + 2 <= p.y || p.y + p.h + 2 <= r.y));
+  groups.forEach((g) => {
+    const idx = g.idx;
+    txAt[idx] = txAt[idx].concat(g.list);
+    const cnt = g.list.filter((m) => !m.synthetic).length;  // 徽标只数真实成交笔数
+    const cx = mL + (idx + 0.5) * slot;
+    const isBuy = g.type === 'BUY';
+    const py = linePts[idx][1];
+    const label = cnt > 1 ? (isBuy ? 'B×' : 'S×') + cnt : (isBuy ? 'B' : 'S');
+    const bw = cnt > 1 ? 26 : 16, bh = 14;   // 多笔扩到 26px 才能塞下「B×2」
+    // 首尾点的徽标会被 SVG 画布裁掉半边（手机上「B×2」只剩「×2」），横向夹回绘图区内，
+    // 引线仍指向真实点位。
+    const bx = Math.min(W - mR - bw / 2, Math.max(mL + bw / 2, cx));
+    const title = g.list.map((m) => (m.synthetic
+      ? `${m.date} 初始建仓`
+      : `${m.date} ${m.type === 'BUY' ? '买入' : '卖出'}${m.price ? ' @' + fmt(m.price) : ''}${m.note ? '（' + m.note + '）' : ''}`))
+      .join(' ｜ ');
+    // 买点优先往上、卖点优先往下；贴到图区上下边时自动反向找位，每层错开 15px
+    let spot = null;
+    for (const dir of (isBuy ? [-1, 1] : [1, -1])) {
+      for (let lv = 0; lv < 6 && !spot; lv++) {
+        const my = py + dir * (14 + lv * 15);
+        if (my < mT + bh / 2 + 1 || my > mT + plotH - bh / 2 - 1) continue;
+        const rect = { x: bx - bw / 2, y: my - bh / 2, w: bw, h: bh };
+        if (!hitsRect(rect)) spot = { my, rect };
+      }
+      if (spot) break;
     }
-    if (idx < 0) return;
-    if (!txAt[idx]) txAt[idx] = mk2;
-    let slotUsed = idx;
-    while (usedSlot.has(slotUsed) && slotUsed > 0) slotUsed--; // 同日多笔交易错开一格，避免徽标完全重叠
-    usedSlot.add(slotUsed);
-    const cx = mL + (slotUsed + 0.5) * slot;
-    const isBuy = mk2.type === 'BUY';
-    const label = isBuy ? 'B' : 'S';
-    // 徽标贴着折线点：点在零轴**上方**（盈利区）→ 徽标画在点上方；点在零轴下方（亏损区）→ 画在点下方。
-    // 统一放图区顶部会与折线脱节、且多笔交易时挤成一排没有落点。
-    const py = linePts[slotUsed][1];
-    const above = py <= zeroY;
-    const my = above ? py - 15 : py + 15;
+    if (!spot) {
+      // 挤不下：退化为贴合折线的小圆点，具体成交仍在 tooltip 里
+      mk += `<circle class="${isBuy ? 'mk-dot-buy' : 'mk-dot-sell'}" cx="${cx.toFixed(2)}" cy="${py.toFixed(2)}" r="2.8"><title>${title}</title></circle>`;
+      return;
+    }
+    placedRects.push(spot.rect);
+    const edgeY = spot.my > py ? spot.my - bh / 2 - 1 : spot.my + bh / 2 + 1;
     mk += `<g class="chart-marker${isBuy ? ' mk-buy' : ' mk-sell'}">`
-      + `<rect x="${(cx - 8).toFixed(2)}" y="${(my - 7).toFixed(2)}" width="16" height="14" rx="4"/>`
-      + `<text x="${cx.toFixed(2)}" y="${(my + 3.5).toFixed(2)}" text-anchor="middle" font-size="9" font-weight="700">${label}</text>`
-      + `<title>${mk2.date} ${isBuy ? '买入' : '卖出'} ${mk2.type}${mk2.price ? ' @' + fmt(mk2.price) : ''}${mk2.note ? '（' + mk2.note + '）' : ''}</title>`
+      + `<line class="mk-lead" x1="${cx.toFixed(2)}" y1="${py.toFixed(2)}" x2="${cx.toFixed(2)}" y2="${edgeY.toFixed(2)}"/>`
+      + `<rect x="${(bx - bw / 2).toFixed(2)}" y="${(spot.my - bh / 2).toFixed(2)}" width="${bw}" height="${bh}" rx="4"/>`
+      + `<text x="${bx.toFixed(2)}" y="${(spot.my + 3.5).toFixed(2)}" text-anchor="middle" font-size="${cnt > 1 ? 8 : 9}" font-weight="700">${label}</text>`
+      + `<title>${title}</title>`
       + `</g>`;
   });
   // 已清仓：不在曲线上画徽标；hover 清仓日（或末点）仍弹出「清仓落袋」详情块
@@ -6679,99 +6816,135 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
     + ` class="chart-line-glow"/>`
     + `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
     + ` class="chart-line"/>`;
-  const cursor = `<line class="trend-cursor" x1="0" y1="${mT}" x2="0" y2="${(mT + plotH).toFixed(2)}" visibility="hidden"`
-    + ` class="chart-guide"/>`
-    + `<circle class="trend-cursor-dot" cx="0" cy="0" r="4" visibility="hidden"`
-    + ` class="chart-dot"/>`;
-  // x 轴标签按像素间距取步长（~60px 一个），全量数据横向滚动时标签密度保持均匀
-  const xLabelStep = Math.max(1, Math.ceil(60 / slot));
-  // 末位标签只在与前一个标签拉开足够间距时才补，否则会出现「09-08 09-10」叠字
-  const lastTick = Math.floor((n - 1) / xLabelStep) * xLabelStep;
-  let xlabels = '';
-  s.forEach((x, i) => {
-    if (i % xLabelStep === 0 || (i === n - 1 && n - 1 - lastTick >= 2)) {
-      const cx = mL + (i + 0.5) * slot;
-      xlabels += `<text x="${cx.toFixed(2)}" y="${H - 14}" font-size="11" text-anchor="middle"`
-        + ` class="chart-label">${x.date.slice(5)}</text>`;
-    }
+  // 2026-11-04：原来同一元素写了两个 class 属性，第二个被解析器丢弃导致指示线没有样式；合并成一个
+  const cursor = `<line class="trend-cursor chart-guide" x1="0" y1="${mT}" x2="0" y2="${(mT + plotH).toFixed(2)}" visibility="hidden"/>`
+    + `<circle class="trend-cursor-dot chart-dot" cx="0" cy="0" r="4" visibility="hidden"/>`;
+  // x 轴：按可视像素取 3~9 个刻度，首尾必出；与上一个标签挤在 34px 内的直接丢弃（避免叠字）
+  const spanYears = (new Date(s[n - 1].date) - new Date(s[0].date)) / 31536000000;
+  const xText = (d0) => (spanYears > 1.15 ? d0.slice(2, 7) : d0.slice(5));  // 跨年用 YY-MM，12-05 才分得清年份
+  const ticks = Math.max(2, Math.min(9, Math.floor(plotW / 66)));
+  const picked = [];
+  for (let k = 0; k < ticks; k++) picked.push(Math.round((n - 1) * k / (ticks - 1)));
+  let xlabels = '', lastTickX = -1e9;
+  picked.forEach((i, k) => {
+    const cx = mL + (i + 0.5) * slot;
+    if (k > 0 && cx - lastTickX < 34) return;
+    lastTickX = cx;
+    const anchor = k === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle');
+    const tx0 = k === 0 ? mL : (i === n - 1 ? W - mR : cx);
+    xlabels += `<text x="${tx0.toFixed(2)}" y="${H - 10}" font-size="${cw < 460 ? 10 : 11}" text-anchor="${anchor}"`
+      + ` class="chart-label">${xText(s[i].date)}</text>`;
   });
-  // Y 轴自适应（C 方案）：刻度取全量数据的实际 min/max，左右两轴都标同一组值；
-// 零轴只在 0 落在 [vLo,vHi] 内时绘制 —— 否则「全负」标的不会挤在下半区。
-// 比率口径：带符号 + 固定 2 位小数 + %（形状对齐 fmtPnl/pct 约定）
-const fv = isRate ? (v) => (v > 0 ? '+' : '') + Number(v).toFixed(2) + '%' : (v) => fmt(v);
+  // Y 轴自适应（C 方案）：刻度取区间实际 min/max，零轴只在 0 落在范围内时绘制。
+  // 2026-11-04：删掉右侧重复刻度轴（两套 Y 轴白占 ~100px 画宽）；窄屏用「万」压缩，避免刻度伸进绘图区。
+  const fv = isRate
+    ? (v) => (v > 0 ? '+' : '') + Number(v).toFixed(cw < 460 ? 1 : 2) + '%'
+    : (v) => {
+      const a = Math.abs(v);
+      const num = a >= 10000 ? (a / 10000).toFixed(1) + '万' : Math.round(a).toLocaleString('zh-CN');
+      return (v < 0 ? '-' : '') + num;
+    };
   const yLabels = `
-    <text x="${mL - 8}" y="${(mT + 4).toFixed(2)}" font-size="11" text-anchor="end" class="chart-label-up">${fv(vHi)}</text>
-    <text x="${mL - 8}" y="${(mT + plotH + 4).toFixed(2)}" font-size="11" text-anchor="end" class="chart-label-down">${fv(vLo)}</text>
-    <text x="${Wfull - mR + 8}" y="${(mT + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label-cum">${fv(vHi)}</text>
-    <text x="${Wfull - mR + 8}" y="${(mT + plotH + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label-cum">${fv(vLo)}</text>`
-    + (hasZero ? `<text x="${mL - 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="end" class="chart-label">0</text>
-    <text x="${Wfull - mR + 8}" y="${(zeroY + 4).toFixed(2)}" font-size="11" text-anchor="start" class="chart-label">0</text>` : '');
+    <text x="${mL - 6}" y="${(mT + 4).toFixed(2)}" font-size="${cw < 460 ? 10 : 11}" text-anchor="end" class="chart-label">${fv(vHi)}</text>
+    <text x="${mL - 6}" y="${(mT + plotH + 4).toFixed(2)}" font-size="${cw < 460 ? 10 : 11}" text-anchor="end" class="chart-label">${fv(vLo)}</text>`
+    + (hasZero ? `<text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="${cw < 460 ? 10 : 11}" text-anchor="end" class="chart-label">0</text>` : '');
   const q1 = (mT + plotH * 0.25).toFixed(2), q3 = (mT + plotH * 0.75).toFixed(2);
-  const grid = `<line x1="${mL}" y1="${q1}" x2="${Wfull - mR}" y2="${q1}" class="chart-hline"/>`
-    + `<line x1="${mL}" y1="${q3}" x2="${Wfull - mR}" y2="${q3}" class="chart-hline"/>`
-    + (hasZero ? `<line x1="${mL}" y1="${zeroY.toFixed(2)}" x2="${Wfull - mR}" y2="${zeroY.toFixed(2)}" class="chart-zero"/>` : '');
+  const grid = `<line x1="${mL}" y1="${q1}" x2="${W - mR}" y2="${q1}" class="chart-hline"/>`
+    + `<line x1="${mL}" y1="${q3}" x2="${W - mR}" y2="${q3}" class="chart-hline"/>`
+    + (hasZero ? `<line x1="${mL}" y1="${zeroY.toFixed(2)}" x2="${W - mR}" y2="${zeroY.toFixed(2)}" class="chart-zero"/>` : '');
   const legend = `
     <div class="chart-legend">
       <span><span class="chart-line-key"></span>${isRate ? '累计盈亏率' : '累计盈亏'}</span>
       ${(markers && markers.length) ? '<span><span class="chart-marker-key mk-buy"></span>B 买入</span><span><span class="chart-marker-key mk-sell"></span>S 卖出</span>' : ''}
     </div>`;
+  // 命中面：整块绘图区一个透明矩形。点距可能只有零点几像素，不再需要「每点一个热区」，
+  // 读数时按指针 x 反算最近的交易日即可。
+  const surface = `<rect class="trend-hot trend-surface" x="${mL}" y="${mT}" width="${plotW}" height="${plotH}" fill="transparent"/>`;
   body.innerHTML = `
     <div class="chart-curve-wrap">
-    <svg width="${Wfull}" height="${H}" viewBox="0 0 ${Wfull} ${H}">
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
       ${defs}${grid}${area}${cursor}${mk}
       ${lineEl}
-      ${dots}${yLabels}${xlabels}${hotspots}
+      ${dots}${yLabels}${xlabels}${surface}
     </svg></div>${legend}`;
-  // 横向滚动：默认定位到最新一天（最右）；桌面滚轮纵向增量映射为横向滚动（仅在有溢出时拦截）
-  const wrapEl = body.querySelector('.chart-curve-wrap');
-  if (wrapEl) {
-    wrapEl.scrollLeft = wrapEl.scrollWidth;
-    wrapEl.addEventListener('wheel', (e) => {
-      if (wrapEl.scrollWidth <= wrapEl.clientWidth + 1) return;
-      wrapEl.scrollLeft += e.deltaY;
-      e.preventDefault();
-    }, { passive: false });
-  }
-  // 绑定柱子交互热区 tooltip + 悬停指示线/指示点；支持桌面悬停 / 触屏点按（点击固定，再次点击或点空白区取消）
+  // 交互：整块 surface 上的一套指针逻辑 —— 悬停跟随、点按固定、按住拖动（含触屏）连续读数
+  const svgEl = body.querySelector('svg');
+  const surfaceEl = body.querySelector('.trend-surface');
   const curEl = body.querySelector('.trend-cursor');
   const curDot = body.querySelector('.trend-cursor-dot');
-  let pinnedI = -1;
-  const focusBar = (i) => {
-    const r2 = body.querySelectorAll('.trend-hot')[i];
-    const cx = r2.dataset.x, cy = r2.dataset.y;
-    if (curEl) { curEl.setAttribute('x1', cx); curEl.setAttribute('x2', cx); curEl.setAttribute('visibility', 'visible'); }
-    if (curDot) { curDot.setAttribute('cx', cx); curDot.setAttribute('cy', cy); curDot.setAttribute('visibility', 'visible'); }
+  let pinnedI = -1, dragging = false;
+  const focusAt = (i) => {
+    const p = linePts[i];
+    if (!p) return;
+    if (curEl) { curEl.setAttribute('x1', p[0].toFixed(2)); curEl.setAttribute('x2', p[0].toFixed(2)); curEl.setAttribute('visibility', 'visible'); }
+    if (curDot) { curDot.setAttribute('cx', p[0].toFixed(2)); curDot.setAttribute('cy', p[1].toFixed(2)); curDot.setAttribute('visibility', 'visible'); }
+  };
+  const focusOff = () => {
+    if (curEl) curEl.setAttribute('visibility', 'hidden');
+    if (curDot) curDot.setAttribute('visibility', 'hidden');
+  };
+  const tipAt = (i, e) => {
+    focusAt(i);
+    // showHistTip 内部已完成定位（moveTrendTip）
+    showHistTip(e, s[i], cur, closedTipFor(i), txAt[i], isRate, lastClose);
+  };
+  const idxAt = (clientX) => {
+    const box = svgEl.getBoundingClientRect();
+    const ix = (clientX - box.left) * (W / (box.width || W));   // 容错 CSS 缩放
+    return Math.min(n - 1, Math.max(0, Math.floor((ix - mL) / slot)));
   };
   // 清仓落袋块挂载点：优先精确匹配清仓日；清仓日若没有行情点（常见——清仓后该标的停止更新报价，
   // 序列末点早于清仓日），则退化为「曲线末点」，因为末点之后就是清仓，语义仍然成立。
-const closedTipFor = (i) => {
-  if (!closedDetail) return null;
-  if (closedDetail.date === s[i].date) return closedDetail;
-  if (i === n - 1) return Object.assign({}, closedDetail, { date: s[i].date, realClosedDate: closedDetail.date, isLast: true });
-  return null;
-};
-  body.querySelectorAll('.trend-hot').forEach((r) => {
-    const i = +r.dataset.i;
-    r.addEventListener('mouseenter', (e) => {
-      if (pinnedI !== -1) return;
-      focusBar(i);
-      showHistTip(e, s[i], cur, closedTipFor(i), txAt[i], isRate);
+  const closedTipFor = (i) => {
+    if (!closedDetail) return null;
+    if (closedDetail.date === s[i].date) return closedDetail;
+    if (i === n - 1) return Object.assign({}, closedDetail, { date: s[i].date, realClosedDate: closedDetail.date, isLast: true });
+    return null;
+  };
+  // 最新收盘：B 点悬停时算「买入份额至今涨跌」，口径=买入份额 ×（最新价 − 买入价）
+  const lastPt = s[n - 1] || {};
+  const lastClose = (lastPt.close != null && !isNaN(lastPt.close)) ? lastPt.close : null;
+  if (surfaceEl) {
+    surfaceEl.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      const i = idxAt(e.clientX);
+      if (pinnedI === i) { pinnedI = -1; focusOff(); hideTrendTip(); return; }
+      pinnedI = i;
+      tipAt(i, e);
+      try { surfaceEl.setPointerCapture(e.pointerId); } catch (_) { /* 不支持捕获的环境忽略 */ }
     });
-    r.addEventListener('mousemove', moveTrendTip);
-    r.addEventListener('mouseleave', () => {
-      if (curEl) curEl.setAttribute('visibility', 'hidden');
-      if (curDot) curDot.setAttribute('visibility', 'hidden');
-      if (pinnedI === -1) hideTrendTip();
+    surfaceEl.addEventListener('pointermove', (e) => {
+      if (pinnedI !== -1 && !dragging) return;   // 已固定：等再次点按，不在悬停时抢焦点
+      const i = idxAt(e.clientX);
+      if (dragging) pinnedI = i;                 // 按住拖动（含触屏）连续读数
+      tipAt(i, e);
     });
-    r.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (pinnedI === i) { pinnedI = -1; hideTrendTip(); }
-      else { pinnedI = i; focusBar(i); showHistTip(e, s[i], cur, closedTipFor(i), txAt[i], isRate); moveTrendTip(e); }
+    surfaceEl.addEventListener('pointerup', () => { dragging = false; });
+    surfaceEl.addEventListener('pointercancel', () => { dragging = false; });
+    surfaceEl.addEventListener('pointerleave', () => {
+      if (pinnedI !== -1 || dragging) return;
+      focusOff(); hideTrendTip();
     });
-  });
-  // 点击曲线图空白区取消固定（触屏再次点按时收起浮框）
-  const svgEl = body.querySelector('svg');
-  if (svgEl) svgEl.addEventListener('click', () => { if (pinnedI !== -1) { pinnedI = -1; hideTrendTip(); } });
+  }
+  // 键盘：svg 可聚焦，左右方向键逐日读数
+  if (svgEl) {
+    svgEl.setAttribute('tabindex', '0');
+    svgEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      let i = pinnedI === -1 ? n - 1 : pinnedI;
+      i = Math.min(n - 1, Math.max(0, i + (e.key === 'ArrowRight' ? 1 : -1)));
+      pinnedI = i;
+      const box = svgEl.getBoundingClientRect();
+      const cx = box.left + (mL + (i + 0.5) * slot) / W * box.width;
+      tipAt(i, { clientX: cx, clientY: box.top + (mT + plotH / 2) });
+    });
+    // 点绘图区外的空白（svg 本体，不含 surface）取消固定
+    svgEl.addEventListener('click', (e) => {
+      if (e.target !== svgEl || pinnedI === -1) return;
+      pinnedI = -1; focusOff(); hideTrendTip();
+    });
+  }
 }
 
 // 持仓历史盈亏：series 已含 day_pnl / total_pnl，直接交给共用绘制器（mode 决定金额/比率口径）
@@ -6779,15 +6952,29 @@ function renderHistChart(d, cur, mode) {
   const h = d.holding || {};
   const ci = h.closed ? { closed: true, closedDate: h.closed_date } : null;
   // 未建仓的净值日不进曲线：它们没有盈亏，画上去会把建仓前那段压成一条贴零轴的假线
-  const pts = (d.series || []).filter((x) => x.held !== false);
-  drawPnlCurve(pts, cur, d.markers || [], ci, d.closed_info || null, mode);
+  const sAll = (d.series || []).filter((x) => x.held !== false).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+  // 2026-11-04：与「每日明细」共用同一段时间段状态，切换区间时曲线同步收缩/展开
+  const pts = filterHistRange(sAll, histNavRange, histNavFrom, histNavTo);
+  if (!pts.length) {
+    $('#histChartBody').innerHTML = '<p class="u-muted">该时间段内没有行情数据。</p>';
+    return;
+  }
+  const first = pts[0].date, last = pts[pts.length - 1].date;
+  const fromStart = first === sAll[0].date;   // 从最早一天起画：保留早于首点的「初始建仓」标记
+  const mks = (d.markers || []).filter((m) => m.date <= last && (fromStart || m.date >= first));
+  // 自定义区间止于清仓日之前时，不再把「清仓落袋」挂到区间末点
+  const detail = (d.closed_info && (!d.closed_info.date || d.closed_info.date <= last)) ? d.closed_info : null;
+  drawPnlCurve(pts, cur, mks, ci, detail, mode);
 }
 
 // 历史盈亏曲线 tooltip：悬停/点按柱子显示单日盈亏、涨跌幅、累计盈亏等。
 // isRate（盈亏率分段）：主行改展示 涨跌幅 / 累计收益率（%），金额行保留作辅助信息。
 // 所有金额一律带货币符号（cur0 已含 ¥ / USD / HK$ 前缀）。
 // closedInfo 命中当前点时（清仓日）追加「清仓落袋」区块：累计收益 / 持仓天数 / 收益率 / 成本 / 成交价。
-function showHistTip(e, x, cur, closedInfo, tx, isRate) {
+// lastClose：曲线最新收盘价，用于在买点（B）上算「买入份额至今涨跌」。
+// 2026-11-04：去掉市值 / 收盘价 / 成交备注 —— 弹框行数太多、在手机上盖住曲线；
+// 这些信息在「每日明细」分段和持仓详情里都能查到。
+function showHistTip(e, x, cur, closedInfo, tx, isRate, lastClose) {
   let tip = document.getElementById('trendTip');
   if (!tip) { tip = document.createElement('div'); tip.id = 'trendTip'; tip.className = 'trend-tip'; document.body.appendChild(tip); }
   const cur0 = cur || '¥';
@@ -6796,38 +6983,94 @@ function showHistTip(e, x, cur, closedInfo, tx, isRate) {
   const cls = day > 0 ? 't-up' : day < 0 ? 't-down' : 't-muted';
   const cumCls = cum > 0 ? 't-up' : cum < 0 ? 't-down' : 't-muted';
   const money = (v) => cur0 + fmt(v);
-  let html = '<div class="t-date">' + x.date + '</div>';
+  // 建仓段（buy_date → 首笔交易）：份额/成本都是逆序反推的估算值，标「推算」——
+  // 否则这些点的累计盈亏会被当成按真实成交价算出来的数（006330 01-14 起 7 个月都属这段）。
+  const estNote = (x.est && !x.anchor)
+    ? '<span class="t-est" title="建仓早于首笔交易记录，份额与成本按当前持仓反推，本点数字为推算口径">推算</span>'
+    : '';
+  let html = '<div class="t-date">' + x.date + estNote + '</div>';
+  // 合成建仓点（anchor）：这里是曲线能回溯到的最早一天，成本是按当前持仓反推的估算值，
+  // 「当天涨跌」没有前一日基准可比。此时盈亏 / 涨跌幅 / 累计盈亏 / 累计涨跌幅**一律显示「—」**：
+  //  · 当日值没有前值可比；
+  //  · 累计值也完全由反推成本决定（006330 01-14 反推成本 0.1563 vs 当日净值 0.169 → 显示
+  //    「建仓当天就赚了 +52.88 / +8.15%」，会被读成算错）。
+  // 真正可核对的「推算成本 × 份额」放在下方「初始建仓」区块里。
+  const isAnchor = !!x.anchor;
+  const dash = '<span class="t-muted">—</span>';
   if (isRate) {
     const dayP = (x.day_pnl_pct != null ? x.day_pnl_pct : 0);
     const cumP = (x.total_pnl_pct != null ? x.total_pnl_pct : 0);
     const pCls = dayP > 0 ? 't-up' : dayP < 0 ? 't-down' : 't-muted';
     const cPCls = cumP > 0 ? 't-up' : cumP < 0 ? 't-down' : 't-muted';
-    html += '<div class="t-row"><span>涨跌幅</span><span class="' + pCls + '">' + pct(dayP) + '</span></div>'
-      + '<div class="t-row"><span>累计收益率</span><span class="' + cPCls + '">' + pct(cumP) + '</span></div>'
-      + '<div class="t-row"><span>盈亏</span><span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span></div>';
+    html += '<div class="t-row"><span>涨跌幅</span>' + (isAnchor ? dash : '<span class="' + pCls + '">' + pct(dayP) + '</span>') + '</div>'
+      + '<div class="t-row"><span>累计收益率</span>' + (isAnchor ? dash : '<span class="' + cPCls + '">' + pct(cumP) + '</span>') + '</div>'
+      + '<div class="t-row"><span>盈亏</span>' + (isAnchor ? dash : '<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>') + '</div>';
   } else {
-    html += '<div class="t-row"><span>盈亏</span><span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span></div>';
+    html += '<div class="t-row"><span>盈亏</span>' + (isAnchor ? dash : '<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>') + '</div>';
     if (x.day_pnl_pct !== undefined && x.day_pnl_pct !== null)
-      html += '<div class="t-row"><span>涨跌幅</span><span class="' + cls + '">' + pct(x.day_pnl_pct) + '</span></div>';
+      html += '<div class="t-row"><span>涨跌幅</span>' + (isAnchor ? dash : '<span class="' + cls + '">' + pct(x.day_pnl_pct) + '</span>') + '</div>';
   }
-  html += '<div class="t-row"><span>累计盈亏</span><span class="' + cumCls + '">' + (cum > 0 ? '+' : '') + money(cum) + '</span></div>';
+  html += '<div class="t-row"><span>累计盈亏</span>'
+    + (isAnchor ? dash : '<span class="' + cumCls + '">' + (cum > 0 ? '+' : '') + money(cum) + '</span>') + '</div>';
   if (x.total_pnl_pct !== undefined && x.total_pnl_pct !== null)
-    html += '<div class="t-row"><span>累计涨跌幅</span><span class="' + cumCls + '">' + pct(x.total_pnl_pct) + '</span></div>';
-  if (x.market_value !== undefined && x.market_value !== null)
-    html += '<div class="t-row"><span>市值</span><span>' + money(x.market_value) + '</span></div>';
-  if (x.close !== undefined && x.close !== null)
-    html += '<div class="t-row"><span>收盘价</span><span>' + money(x.close) + '</span></div>';
-  // 成交明细块：该点当天有买入/卖出时显示（成本价 / 数量 / 成交金额 / 手续费 / 备注）
-  if (tx) {
-    const isBuy = tx.type === 'BUY';
+    html += '<div class="t-row"><span>累计涨跌幅</span>'
+      + (isAnchor ? dash : '<span class="' + cumCls + '">' + pct(x.total_pnl_pct) + '</span>') + '</div>';
+  // 成交明细块：该点当天的成交（同一行情点可能有多笔，按方向分组，逐笔列出）。
+  // 单价一律 4 位小数（基金净值 0.1332 这类，按 2 位会显示成 ¥0.13，两笔看着像同一笔重复脏数据）。
+  const txPrice = (v) => cur0 + (Math.abs(Number(v)) < 10
+    ? Number(v).toFixed(4)
+    : Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 4 }));
+  const txList = Array.isArray(tx) ? tx : (tx ? [tx] : []);
+  txList.filter((t) => t.synthetic).forEach((t) => {
+    // 持仓起点（老「新建/导入持仓」只写持仓行、不落 position_tx）：没有成交价/金额可展示，
+    // 只有从当前持仓反推出来的份额与成本。必须写明「推算」——否则建仓点的累计盈亏会被当成
+    // 「按当日成交价算出来的真实浮盈」（例：006330 01-14 显示 +52.88 / +8.15%）。
     html += '<div class="t-sep"></div>'
-      + '<div class="t-row t-head"><span>' + (isBuy ? '买入成交' : '卖出成交') + '</span><span>' + tx.date + '</span></div>'
-      + '<div class="t-row"><span>成交价</span><span>' + money(tx.price) + '</span></div>'
-      + '<div class="t-row"><span>数量</span><span>' + fmt(tx.quantity) + '</span></div>'
-      + '<div class="t-row"><span>成交金额</span><span>' + money(tx.amount) + '</span></div>'
-      + (tx.fee ? '<div class="t-row"><span>手续费</span><span>' + money(tx.fee) + '</span></div>' : '')
-      + (tx.note ? '<div class="t-row"><span>备注</span><span>' + esc(tx.note) + '</span></div>' : '');
-  }
+      + '<div class="t-row t-head"><span>初始建仓</span><span>' + esc(t.date || '') + '</span></div>';
+    if (x.cost > 0 && x.qty > 0) {
+      html += '<div class="t-row"><span>推算成本</span><span>' + txPrice(x.cost) + ' × ' + fmt(x.qty) + ' 份</span></div>';
+    }
+    html += '<div class="t-row" title="建仓早于交易记录，没有成交价可查；份额与成本按当前持仓倒推，因此该点的当日/累计盈亏都是推算值，不展示具体数值">'
+      + '<span>说明</span><span>成本为反推估算，盈亏不显示</span></div>';
+  });
+  // 买入在卖出之前展示，与「先建仓后减仓」的交易时序一致
+  ['BUY', 'SELL'].forEach((side) => {
+    const g = txList.filter((t) => !t.synthetic && (side === 'BUY' ? t.type === 'BUY' : t.type !== 'BUY'));
+    if (!g.length) return;
+    const isBuy = side === 'BUY';
+    const head = (isBuy ? '买入成交' : '卖出成交') + (g.length > 1 ? `（${g.length} 笔）` : '');
+    html += '<div class="t-sep"></div>'
+      + '<div class="t-row t-head"><span>' + head + '</span><span>' + g[0].date + '</span></div>';
+    if (g.length === 1) {
+      const t = g[0];
+      html += '<div class="t-row"><span>成交价</span><span>' + txPrice(t.price) + '</span></div>'
+        + '<div class="t-row"><span>数量</span><span>' + fmt(t.quantity) + '</span></div>'
+        + '<div class="t-row"><span>成交金额</span><span>' + money(t.amount) + '</span></div>'
+        + (t.fee ? '<div class="t-row"><span>手续费</span><span>' + money(t.fee) + '</span></div>' : '');
+    } else {
+      // 多笔：逐笔价格/份额并列一行（都是同一天同一方向，横向对照比纵向堆块省一半行高），
+      // 再补合计与合并口径的「买入至今」，避免把同一天的建仓拆成两份互不相干的收益。
+      html += '<div class="t-row"><span>成交价</span><span>' + g.map((t) => txPrice(t.price)).join(' / ') + '</span></div>'
+        + '<div class="t-row"><span>数量</span><span>' + g.map((t) => fmt(t.quantity)).join(' / ') + '</span></div>'
+        + '<div class="t-row"><span>成交金额</span><span>' + g.map((t) => money(t.amount)).join(' / ') + '</span></div>';
+      const sumAmt = g.reduce((a, t) => a + (Number(t.amount) || 0), 0);
+      const sumQty = g.reduce((a, t) => a + (Number(t.quantity) || 0), 0);
+      const sumFee = g.reduce((a, t) => a + (Number(t.fee) || 0), 0);
+      html += '<div class="t-row"><span>合计</span><span>' + fmt(sumQty) + ' 份 ' + money(sumAmt) + '</span></div>'
+        + (sumFee ? '<div class="t-row"><span>手续费</span><span>' + money(sumFee) + '</span></div>' : '');
+    }
+    // 买点专属：这批份额拿到最新收盘价是多少钱（不扣手续费，不随后续减仓变化），
+    // 替代原先交易记录头部的「加仓浮动盈亏」——单笔/单日口径，不会和整仓浮盈混淆。
+    const buyAmt = g.reduce((a, t) => a + (Number(t.amount) || 0), 0);
+    const buyQty = g.reduce((a, t) => a + (Number(t.quantity) || 0), 0);
+    if (isBuy && buyQty > 0 && buyAmt > 0 && lastClose > 0) {
+      const diff = lastClose * buyQty - buyAmt;
+      const dp = diff / buyAmt * 100;
+      const dCls = diff > 0 ? 't-up' : diff < 0 ? 't-down' : 't-muted';
+      html += '<div class="t-row" title="按本次买入份额与买入价，对最新收盘价计算，不含手续费">'
+        + '<span>买入至今</span><span class="' + dCls + '">' + (diff > 0 ? '+' : '') + money(diff) + '（' + pct(dp) + '）</span></div>';
+    }
+  });
   // 清仓日：改用「落袋」口径单独成块，避免与逐日浮盈口径混淆
   if (closedInfo && (closedInfo.date === x.date || x.isLast)) {
     const rCls = closedInfo.realized_pnl > 0 ? 't-up' : closedInfo.realized_pnl < 0 ? 't-down' : 't-muted';
@@ -6855,7 +7098,7 @@ let pendingAssetDel = null;   // { type, id }
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// ===== 行内操作图标字典 + 按钮工厂（规范见 docs/ui-design-spec.md §3.3.1）=====
+// ===== 行内操作图标字典 + 按钮工厂（统一 16px 线性描边 + currentColor）=====
 // 统一 16px 线性描边、一律 currentColor。新增操作先在此登记，不要在模板里现写 SVG。
 const ACT_ICONS = {
   edit: '<path d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"/><path d="M14.5 6.5 17.5 9.5"/>',
@@ -7939,13 +8182,10 @@ function renderAssetCashPanel(body) {
     '<tbody>' + rows + '</tbody></table></div>';
 
   if (zero.length) {
-    html += '<div class="cash-zero"><button class="cash-zero-toggle" type="button" id="cashZeroBtn">' +
-      (cashShowZero ? '收起' : '另有') + ' ' + zero.length + ' 个零余额账户' + (cashShowZero ? '' : '，点此展开') +
-      '</button></div>';
+    html += zeroFoldHTML('cash-zero', zero.length, cashShowZero, '个零余额账户');
   }
   body.innerHTML = html;
-  const zb = body.querySelector('#cashZeroBtn');
-  if (zb) zb.onclick = () => { cashShowZero = !cashShowZero; renderAssetCashPanel(body); };
+  bindZeroFold(body, 'cash-zero', () => { cashShowZero = !cashShowZero; renderAssetCashPanel(body); });
 }
 
 // 预设区间统一按「近 1 年」取数：三个预设里最长的是 365 天，取 180 天会让「近 1 年」
@@ -8387,23 +8627,38 @@ function renderWealthKpi() {
   const all = (assetData && assetData.wealth ? assetData.wealth.products : []) || [];
   const live = all.filter((p) => !p.archived);
   const dead = all.filter((p) => p.archived);
-  let mv = 0, day = 0, cum = 0, dayW = 0;
+  let mv = 0, day = 0, cum = 0, dayW = 0, dayBaseX = 0, redeemedN = 0;
   for (const p of live) {
     const amt = Number(p.amount) || 0;
     mv += wCny(p, amt);
-    day += wCny(p, Number(p.today_pnl) || 0);
     cum += wCny(p, Number(p.cum_pnl) || 0);
     dayW += (Number(p.holding_days) || 0) * amt;
+  }
+  // 今日收益按**全量**汇总，含今天刚赎回的产品：清仓时当日快照被清零，
+  // 但后端 computeWealthPnl = 0（今额）− 昨额 −（−赎回额）= 今天赚的那笔，收益并没消失。
+  // 只汇总在持产品就会漏掉它 —— 「早上更新了收益、当天全部赎回」时卡片反而回落，即本 bug。
+  // 往期归档产品的当日快照不存在，computeWealthPnl 恒为 0，不会把陈年收益记到今天。
+  const todayStr = ymd(new Date());
+  for (const p of all) {
+    const tp = Number(p.today_pnl) || 0;
+    day += wCny(p, tp);
+    if (p.archived && p.snap_date === todayStr) {
+      // 今日已赎回：日初金额（前一快照）并入「占市值」分母，否则清仓后分母只剩在持，
+      // 收益率会被放大成「今天赚了 3%」这种假象。只有真带收益时才计入「含今日已赎回 N 款」
+      // —— 纯赎回（当日没录净值）不该在卡片上留一句没内容的提示。
+      dayBaseX += wCny(p, Number(p.prev_amount) || 0);
+      if (!amtIsZero(tp)) redeemedN++;
+    }
   }
   const principal = mv - cum;                       // 本金近似（同表格年化口径）
   const wDays = mv > 0 ? Math.round(dayW / mv) : 0; // 金额加权持有天数
   const cumRate = principal > 0.005 ? cum / principal * 100 : null;
   const annRate = (cumRate != null && wDays > 0) ? cumRate * 365 / wDays : null;
   // 今日收益占市值只有千分之几，pctOf 的 1 位小数会全被抹成 0.1%／0.0%，这里给 2 位
-  const dayPct = mv > 0.005 ? (day / mv * 100).toFixed(2) + '%' : '—';
+  const dayBase = mv + dayBaseX;
+  const dayPct = dayBase > 0.005 ? (day / dayBase * 100).toFixed(2) + '%' : '—';
   // 非交易日 / 尚未录入当日快照时，今日收益恒为 ¥0 且整张表涨跌幅全 0.00%，
   // 极易被当成「数据出错」或「今天真的一分没赚」。取在持产品的最新快照日期提示截至日。
-  const todayStr = new Date().toISOString().slice(0, 10);
   const latestSnap = live.reduce((a, p) => ((p.snap_date || '') > a ? p.snap_date : a), '');
   const snapStale = !!latestSnap && latestSnap < todayStr;
   const staleHint = snapStale ? `净值截至 ${latestSnap.slice(5)}` : '';
@@ -8419,7 +8674,7 @@ function renderWealthKpi() {
         <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
         <div class="kpi-label">今日收益</div>
         <div class="kpi-main"><div class="kpi-value ${clsPnl(day)}">${signedCur(day, 'cny')}</div></div>
-        <div class="kpi-sub">${staleHint ? `<span class="u-muted">${esc(staleHint)}</span>` : `占市值 <span class="hl">${dayPct}</span>`}</div>
+        <div class="kpi-sub">${staleHint ? `<span class="u-muted">${esc(staleHint)}</span>` : `占市值 <span class="hl">${dayPct}</span>`}${redeemedN ? ` · 含今日赎回 <span class="hl">${redeemedN}</span> 款` : ''}</div>
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-down"><svg viewBox="0 0 24 24"><path d="M3 7l6 6 4-4 8 8"/><path d="M14 17h7v-7"/></svg></div>
@@ -8440,14 +8695,29 @@ function renderWealth(body) {
   renderWealthKpi(); // 顶部 KPI 与表格同源（assetData.wealth），任何一次重渲染都同步刷新
   // 分类筛选（全部 / 净值型 / 其他）已于 2026-11-02 下线：它筛的是「有没有录净值」这一条实现细节，
   // 不是用户会用来找产品的维度；而且筛完只剩一行时反而让人以为数据丢了。
-  const w = [...((assetData.wealth || {}).products || [])].sort((a, b) => Number(b.amount) - Number(a.amount)); // 按金额从大到小
+  const all = [...((assetData.wealth || {}).products || [])].sort((a, b) => Number(b.amount) - Number(a.amount)); // 按金额从大到小
   // 「更新理财持仓」已上移到首页顶部操作条（#wealthSnapBtn）；「添加理财」收敛到顶部 #addBtn。
   // 「批量刷新净值」按钮及前端逻辑已删（2026-10-19）：自动/批量刷新净值尚未支持，后端接口保留。
   // 计数（理财（N））已上提到切换条徽标，此处不再单独渲染头，避免与切换条分两行。
+  // 已清仓（archived）默认收起，与现金零余额账户同口径：产品与历史收益都还在，
+  // 只是不再占满「在持」表（明细整行在「平仓」页也有一份）。
+  const liveW = all.filter((p) => !p.archived);
+  const deadW = all.filter((p) => p.archived);
+  const shown = wealthShowClosed ? all : liveW;
   let html = '';
-  if (!w.length) html += emptyStateHTML({ icon: EMPTY_ICONS.wallet, title: '还没有理财', desc: '添加第一笔理财，每日净值自动录入并计入资产全景。', btnLabel: '＋ 添加第一笔理财', btnAttrs: 'data-empty-add="wealth"' });
-  else html += renderWealthTable(w);
+  if (!all.length) {
+    html += emptyStateHTML({ icon: EMPTY_ICONS.wallet, title: '还没有理财', desc: '添加第一笔理财，每日净值自动录入并计入资产全景。', btnLabel: '＋ 添加第一笔理财', btnAttrs: 'data-empty-add="wealth"' });
+  } else if (!shown.length) {
+    // 全部已赎回：主区域留空会显得像加载失败，用空状态 + 展开入口兜住。收益不会因为
+    // 看不见而消失 —— 顶部 KPI 的今日/累计仍按全量口径给出。
+    html += emptyStateHTML({ icon: EMPTY_ICONS.wallet, title: '没有在持理财', desc: '全部理财已赎回，落袋收益见「平仓」页，历史明细可在下方展开。', btnLabel: '＋ 添加理财', btnAttrs: 'data-empty-add="wealth"' })
+      + zeroFoldHTML('wealth-closed', deadW.length, wealthShowClosed, '款已清仓理财');
+  } else {
+    html += renderWealthTable(shown, all);
+    if (deadW.length) html += zeroFoldHTML('wealth-closed', deadW.length, wealthShowClosed, '款已清仓理财');
+  }
   body.innerHTML = html;
+  bindZeroFold(body, 'wealth-closed', () => { wealthShowClosed = !wealthShowClosed; renderWealth(body); });
   bindGroupCollapse(body, wealthCollapsed);
   body.querySelectorAll('[data-act="edit-wealth"]').forEach((b) => b.onclick = () => openWealthModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="wealth-hist"]').forEach((b) => b.onclick = () => openWealthHistory(Number(b.dataset.id)));
@@ -8459,7 +8729,10 @@ function renderWealth(body) {
 
 // 理财表格视图（账户分组折叠，样式复用持仓来源分组）：按 source_id 分组，组头显示账户名 + 款数 + 合计金额，
 // 悬停展开单日/累计收益。行内不再重复账户列（账户已是组头），其余列沿用原口径。
-function renderWealthTable(w) {
+// w = 当前要渲染的产品（默认仅在持，展开已清仓时含归档）；dayScope = 全量产品，
+// 只用于判断「今日收益列要不要整列渲染」—— 收起的归档款今天可能刚赚了一笔，KPI 会显示，
+// 表里却没有这一列就成了对不上账。
+function renderWealthTable(w, dayScope) {
   const groups = new Map();
   for (const p of w) {
     const sid = p.source_id || 0;
@@ -8478,7 +8751,7 @@ function renderWealthTable(w) {
   // 旧版是「每账户一张表 + 一套表头」，三个账户就是三个 thead，12 列被压到平均 116px。
   // 「今日收益」整列无内容时整列不渲染（同持仓口径，见 spec §3.3）：一列 0 不携带信息。
   // 「净值」同理：非净值型产品（靠每日录入金额累计收益）nav 恒为 0，整列破折号不如不给。
-  const dayIdleAll = arr.every((g) => g.items.every((p) => amtIsZero(p.today_pnl)));
+  const dayIdleAll = (dayScope || w).every((p) => amtIsZero(p.today_pnl));
   const navIdleAll = arr.every((g) => g.items.every((p) => !(Number(p.nav) > 0)));
   const colCount = 6 + (navIdleAll ? 0 : 1) + (dayIdleAll ? 0 : 1);
   const thead = '<thead><tr>'
@@ -8493,18 +8766,23 @@ function renderWealthTable(w) {
     + '</tr></thead>';
   let body = '';
   for (const g of arr) {
+    // 组头小计只算在持（展开已清仓时数字不跳）；今日收益按全量 —— 归档款的当日收益
+    // 只在「今天动过」时才非 0（后端按当日快照算），不会把陈年收益混进来。
+    const liveItems = g.items.filter((p) => !p.archived);
+    const closedN = g.items.length - liveItems.length;
     // 组内多币种时不合计（不同币种不能直接相加），组头显式说明而不是显示误导性的 ¥0
     const curs = [...new Set(g.items.map((p) => p.currency || 'cny'))];
     const single = curs.length === 1;
-    const sum = single ? wCny(g.items[0], g.items.reduce((s, p) => s + Number(p.amount || 0), 0)) : 0;
+    const sum = single && liveItems.length ? wCny(liveItems[0], liveItems.reduce((s, p) => s + Number(p.amount || 0), 0)) : 0;
     const dayPnl = single ? g.items.reduce((s, p) => s + Number(p.today_pnl || 0), 0) : 0;
-    const cumPnl = single ? g.items.reduce((s, p) => s + Number(p.cum_pnl || 0), 0) : 0;
+    const cumPnl = single ? liveItems.reduce((s, p) => s + Number(p.cum_pnl || 0), 0) : 0;
     // 累计收益率 = 累计收益 ÷ 实际投入本金（≈ 当前市值 − 累计收益）；多币种组无单一口径，置 0 由分段展示
     const cumRate = (single && (sum - cumPnl) > 0) ? cumPnl / (sum - cumPnl) * 100 : 0;
     const gDayIdle = amtIsZero(dayPnl);
+    const mixItems = liveItems.length ? liveItems : g.items;
     // 多币种组按各自币种分段列出，避免只给一个合计让用户以为漏了其他币种的金额
     const mixLines = single ? '' : curs.map((c) => {
-      const same = g.items.filter((p) => (p.currency || 'cny') === c);
+      const same = mixItems.filter((p) => (p.currency || 'cny') === c);
       const amt = same.reduce((s, p) => s + Number(p.amount || 0), 0);
       return `<span${wanTitle(amt, curSymbolJS(c))}>${curSymbolJS(c)}${fmtWan(amt)}</span>`;
     }).join(' + ');
@@ -8514,7 +8792,7 @@ function renderWealthTable(w) {
       return `<span${wanTitle(d, curSymbolJS(c))}>${fmtWanPnl(d, c)}</span>`;
     }).join('　');
     const mixCumLines = single ? '' : curs.map((c) => {
-      const same = g.items.filter((p) => (p.currency || 'cny') === c);
+      const same = mixItems.filter((p) => (p.currency || 'cny') === c);
       const m = same.reduce((s, p) => s + Number(p.cum_pnl || 0), 0);
       return `<span${wanTitle(m, curSymbolJS(c))}>${fmtWanPnl(m, c)}</span>`;
     }).join('　');
@@ -8522,7 +8800,7 @@ function renderWealthTable(w) {
     body += `<tbody class="hold-grp wealth-grp${collapsed ? ' is-collapsed' : ''}" data-sid="${g.sid}">`
       + `<tr class="h-grp" role="button" tabindex="0" title="${collapsed ? '展开' : '收起'}该账户明细">`
       + `<td colspan="${colCount}"><div class="hg-in">`
-      + `<span class="hg-l"><i class="hg-chev">▾</i>${srcLogo(g.sid)}<b class="hg-name">${esc(g.name)}</b><em class="hg-count">${g.items.length} 款</em></span>`
+      + `<span class="hg-l"><i class="hg-chev">▾</i>${srcLogo(g.sid)}<b class="hg-name">${esc(g.name)}</b><em class="hg-count">${liveItems.length} 款${closedN ? ` · 已清仓 ${closedN}` : ''}</em></span>`
       + `<span class="hg-r">`
       + `<span class="hg-stat" title="${single ? '该账户理财合计市值（折合人民币）' : '该账户下存在多种币种，按币种分段列出，不折算合计'}"><i>${single ? '合计' : '多币种'}</i><b${single ? wanTitle(sum, '¥') : ' class="mix-amt"'}>${single ? '¥' + fmtWan(sum) : mixLines}</b></span>`
       + (dayIdleAll ? '' : `<span class="hg-stat hg-stat-day" title="${single ? '该账户今日收益合计' : '多币种账户按币种分段：今日收益，不跨币种相加'}"><i>今日</i><b class="${gDayIdle ? '' : clsPnl(dayPnl)}">${single ? (gDayIdle ? '—' : fmtWanPnl(dayPnl)) : mixDayLines}</b></span>`)
@@ -8543,6 +8821,8 @@ function renderWealthRow(p, wPool, hideDay, hideNav) {
   const wKey = (p.source_id || 0) + ':' + normCur(p.currency);
   const pool = wPool[wKey] || 0;
   const wPos = pool > 0 ? (Number(p.amount) || 0) / pool * 100 : 0;
+  // 已清仓金额恒为 0，占比列给它一个「0.00% + 空槽」只是噪声（展开时最显眼的就是这几行）→ 直接 — 
+  const shareIdle = arch || !(pool > 0);
   const days = Number(p.holding_days || 0);
   const base = Number(p.amount || 0);
   // 单利年化 = 累计收益 ÷ 当前持仓 ÷ 持有天数 × 365（当前持仓近似本金；已清仓/无天数不计算）
@@ -8575,7 +8855,7 @@ function renderWealthRow(p, wPool, hideDay, hideNav) {
     </td>
     ${hideNav ? '' : `<td class="num wt-nav" title="${navTip}">${p.nav > 0 ? fmt(p.nav) : ZERO_DASH}</td>`}
     <td class="num wt-mv"${wanTitle(p.amount || 0, curSymbolJS(p.currency))}>${moneyCurW(p.amount || 0, p.currency)}</td>
-    <td class="num share wt-share${pool > 0 ? '' : ' is-empty'}"${pool > 0 ? ` style="--p:${wPos.toFixed(1)}%;--pn:${(wPos / 100).toFixed(4)}"` : ''} title="占该账户同币种理财合计比例${pool > 0 ? ' ' + wPos.toFixed(2) + '%' : ''}">${pool > 0 ? wPos.toFixed(2) + '%' : '—'}</td>
+    <td class="num share wt-share${shareIdle ? ' is-empty' : ''}"${shareIdle ? '' : ` style="--p:${wPos.toFixed(1)}%;--pn:${(wPos / 100).toFixed(4)}"`} title="占该账户同币种理财合计比例${shareIdle ? '' : ' ' + wPos.toFixed(2) + '%'}">${shareIdle ? '—' : wPos.toFixed(2) + '%'}</td>
     ${hideDay ? '' : `<td class="num wt-day">${dayIdle ? ZERO_DASH : `<span class="${clsPnl(pnl)}"${wRmbTitle(p, pnl)}>${signedMoneyW(pnl, p.currency)}</span>`}</td>`}
     <td class="num wt-cum">
       <div class="${clsPnl(cum)}"${wRmbTitle(p, cum)}>${signedMoneyW(cum, p.currency)}</div>
@@ -9004,32 +9284,13 @@ function renderAcctCurrencyOptions(srcId, keepCur) {
   sel.value = keepCur && allow.indexOf(keepCur) >= 0 ? keepCur : allow[0];
 }
 
-// 资金变动方向切换（存入/取出）：选中段主题色、未选中灰色，由 CSS 控制
-function setCashSign(sign) {
-  document.querySelectorAll('#c_sign_toggle .sign-opt').forEach((b) => b.classList.toggle('active', b.dataset.sign === sign));
-}
-
 // 按「是负债」+ 是否编辑态刷新表单的显隐与文案
 function applyAcctKind() {
   const isLiab = acctIsLiab();
   const editing = !!acctEdit;
-  // 正在换性质（子账户 ⇄ 负债）：余额原样搬过去，不能再叠加增减，故收起变动区
-  const converting = editing && acctEdit.kind !== (isLiab ? 'liability' : 'cash');
-  // 余额标签：新增=当前余额 / 编辑子账户=改为新余额 / 编辑负债=改为新欠款余额
-  $('#c_amount_cap').textContent = !editing
-    ? (isLiab ? '当前欠款余额' : '当前余额')
-    : (isLiab ? '改为新欠款余额' : '改为新余额');
-  // 变动区：编辑态一律提供 —— 子账户 = ± 存入/取出，负债 = ± 借入/还款；
-  // 下方「说明」就是这一笔变动流水的备注。只有换性质时收起（那时余额是搬运而非增减）。
-  const showDelta = editing && !converting;
-  $('#c_delta_row').hidden = !showDelta;
-  $('#c_adj_note_row').hidden = !showDelta;
-  if (!showDelta) { $('#c_delta').value = ''; $('#c_adj_note').value = ''; }
-  // 变动区文案随性质切换
-  $('#c_delta_cap').textContent = isLiab ? '欠款变动' : '资金变动';
-  $('#c_sign_toggle').setAttribute('aria-label', isLiab ? '借入或还款' : '存入或取出');
-  $('#c_adj_note_cap').textContent = isLiab ? '说明（欠款变动备注，可选）' : '说明（资金变动备注，可选）';
-  $('#c_adj_note').placeholder = isLiab ? '如 提前还款 / 周转借入' : '如 发工资 / 还信用卡';
+  // 余额标签随性质切换；编辑态只读展示（改余额走「记收入/记支出」或「一键更新余额」），新增态可填初始余额
+  $('#c_amount_cap').textContent = isLiab ? '当前欠款余额' : '当前余额';
+  $('#c_amount').readOnly = editing;
   $('#cashTitle').textContent = (editing ? '编辑' : '添加') + (isLiab ? '负债' : '子账户');
   // 日常开销标记只对子账户有意义（负债不参与再平衡，无需该开关）
   const exclRow = $('#c_excluded_row');
@@ -9055,12 +9316,9 @@ function fillAcctForm(kind, rec, srcIdLocked) {
   // 负债没有「日常开销」概念，勾上「负债」时整行由 applyAcctKind 隐藏
   $('#c_excluded').checked = rec ? !!rec.excluded : false;
   $('#c_name').value = rec ? (rec.name || '') : '';
-  // 编辑态带入已有余额：值等于原余额视为「未改动」，可直接改用 ± 资金
+  // 编辑态带入已有余额作只读展示；新增态留空待填初始余额
   $('#c_amount').value = rec ? round4(rec.amount) : '';
   $('#c_note').value = rec ? (rec.note || '') : '';
-  $('#c_delta').value = '';
-  $('#c_adj_note').value = ''; // 资金变动说明是逐笔交易的备注，每次打开清空，不残留脏数据
-  setCashSign('in');
   // 所属账户：编辑与「从账户行进入的新增」都锁定只读；空状态全局入口才给下拉
   const fallback = srcId || (assetSources[0] ? assetSources[0].id : '');
   $('#c_source').value = assetSources.some((s) => String(s.id) === String(fallback)) ? fallback : '';
@@ -9085,7 +9343,7 @@ async function openCashModal(id, presetSourceId) {
   renderAcctSourceOptions();
   let c = null;
   if (id) {
-    // 编辑子账户：所属账户固定为操作按钮所在行，可改名称/类型/币种/备注与余额
+    // 编辑子账户：所属账户固定为操作按钮所在行，可改名称/币种/备注/日常开销标记（余额只读）
     const r = await api('/api/asset/cash');
     if (r.ok) { const d = await r.json(); c = (d.cash || []).find((x) => x.id === id); }
   }
@@ -9107,11 +9365,11 @@ $('#cashForm').onsubmit = async (e) => {
 
   // ① 编辑时改了性质（子账户 ⇄ 负债）：两张表 id 空间独立，换表只能新建+删除，
   //    走后端安全转换（无流水、无收支计划引用才允许），失败时原样保留、不产生半成品。
+  //    余额原样搬过去（编辑态余额只读，取原值）。
   if (acctEdit && acctEdit.kind !== kind) {
-    if (amountRaw === '' || isNaN(Number(amountRaw))) { $('#cashErr').textContent = '余额格式不正确'; return; }
     try {
       const r = await api('/api/asset/accounts/convert', { method: 'POST', body: JSON.stringify({
-        kind: acctEdit.kind, id: acctEdit.id, name, type, currency, amount: round4(Number(amountRaw)), note,
+        kind: acctEdit.kind, id: acctEdit.id, name, type, currency, amount: round4(acctEdit.amount), note,
       }) });
       if (!r.ok) { let m = '转换失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
       $('#cashModal').hidden = true;
@@ -9121,40 +9379,23 @@ $('#cashForm').onsubmit = async (e) => {
     return;
   }
 
-  // ② 编辑且性质未变：按原性质保存
+  // ② 编辑且性质未变：只保存资料（名称/币种/类型/备注/日常开销），余额原值回传不动。
+  //    余额变更不在此弹框：存入/取出走「记收入/记支出」，对账改余额走「一键更新余额」。
   if (acctEdit) {
     if (kind === 'liability') {
-      // 欠款余额：可直接改成新值，也可用 ± 借入/还款 做增量（两者只能填一个，与子账户一致）。
-      // 「＋」= 借入（欠款增加）、「－」= 还款（欠款减少）。
-      const deltaRaw = $('#c_delta').value.trim();
-      const amtIsSet = amountRaw !== '' && Number(amountRaw) !== acctEdit.amount;
-      if (amtIsSet && deltaRaw !== '') { $('#cashErr').textContent = '「改为新欠款余额」与「± 欠款变动」只能填一个'; return; }
-      let newAmount = acctEdit.amount;
-      if (amtIsSet) {
-        if (amountRaw === '-' || isNaN(Number(amountRaw))) { $('#cashErr').textContent = '欠款余额格式不正确'; return; }
-        newAmount = Number(amountRaw);
-      } else if (deltaRaw !== '') {
-        const amt = Math.abs(Number(deltaRaw));
-        const sign = (document.querySelector('#c_sign_toggle .sign-opt.active') || {}).dataset?.sign || 'in';
-        newAmount = acctEdit.amount + (sign === 'out' ? -amt : amt);
-      }
-      if (newAmount < 0) { $('#cashErr').textContent = '欠款余额不能为负（还款金额超过了当前欠款）'; return; }
       try {
         const r = await api('/api/asset/liabilities/' + acctEdit.id, { method: 'PUT', body: JSON.stringify({
           name, type, source_id: acctEdit.source_id,
-          amount: round4(newAmount), currency, note,
-          flow_note: $('#c_adj_note').value.trim(),
+          amount: round4(acctEdit.amount), currency, note,
         }) });
         if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
         $('#cashModal').hidden = true;
         await loadAsset();
-        const diff = round4(newAmount - acctEdit.amount);
-        const tail = diff > 0 ? '，欠款 +' + money(diff) : (diff < 0 ? '，欠款 -' + money(-diff) : '');
-        toast('已更新负债' + tail, 'ok');
+        toast('已更新负债资料', 'ok');
       } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
       return;
     }
-    await submitCashEdit(name, type, currency, note, amountRaw, $('#c_excluded').checked);
+    await submitCashEdit(name, type, currency, note, $('#c_excluded').checked);
     return;
   }
 
@@ -9181,52 +9422,25 @@ $('#cashForm').onsubmit = async (e) => {
   } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
 };
 
-// 编辑子账户：名称/类型/币种/备注走全量 PUT；余额支持「改为新余额」（自动折算 delta）或「± 资金」增量
-async function submitCashEdit(name, type, currency, note, amountRaw, excluded) {
-  const deltaRaw = $('#c_delta').value.trim();
-  // 预填原余额后：值等于原余额视为「未改动」，不算有效输入，方便直接用 ± 资金
-  const amtIsSet = amountRaw !== '' && Number(amountRaw) !== acctEdit.amount;
-  if (amtIsSet && deltaRaw !== '') { $('#cashErr').textContent = '「改为新余额」与「± 资金」只能填一个'; return; }
-  let delta = 0;
-  if (deltaRaw !== '') {
-    const amt = Math.abs(Number(deltaRaw));
-    const sign = (document.querySelector('#c_sign_toggle .sign-opt.active') || {}).dataset?.sign || 'in';
-    delta = Math.round((sign === 'out' ? -amt : amt) * 100) / 100;
-  }
-  let deltaVia = 'delta'; // 记录用哪种方式改的余额（提示文案用）
-  if (amtIsSet) {
-    if (amountRaw === '-' || isNaN(Number(amountRaw))) { $('#cashErr').textContent = '新余额格式不正确'; return; }
-    delta = Math.round((Number(amountRaw) - acctEdit.amount) * 100) / 100;
-    deltaVia = 'set';
-  }
+// 编辑子账户：名称/类型/币种/备注/日常开销走全量 PUT，amount 传原值不动。
+// 余额变更走「记收入/记支出」（增量）或「一键更新余额」（对账改余额），不在此弹框。
+async function submitCashEdit(name, type, currency, note, excluded) {
   const nameChanged = name !== (acctEdit.name || '');
-  const curChanged = currency !== acctEdit.currency; // 只改币种、余额不变也要能保存
+  const curChanged = currency !== acctEdit.currency; // 只改币种也要能保存
   const typeChanged = type !== (acctEdit.type || '');
   const noteChanged = note !== (acctEdit.note || '');
   const exclChanged = !!excluded !== !!acctEdit.excluded; // 只改「日常开销」标记也要能保存
-  if (!nameChanged && !curChanged && !typeChanged && !noteChanged && !exclChanged && !delta) { $('#cashErr').textContent = '没有需要保存的修改（修改名称/货币/类型/备注/日常开销标记、改新余额或填写 ± 资金）'; return; }
+  if (!nameChanged && !curChanged && !typeChanged && !noteChanged && !exclChanged) { $('#cashErr').textContent = '没有需要保存的修改（修改名称/货币/类型/备注/日常开销标记）'; return; }
   try {
-    if (nameChanged || curChanged || typeChanged || noteChanged || exclChanged) {
-      // 全量 PUT：未展示的字段回传原值；amount 传原值，余额变动由下方 adjust 增量处理
-      const rp = await api('/api/asset/cash/' + acctEdit.id, { method: 'PUT', body: JSON.stringify({
-        name, currency, type, note, amount: acctEdit.amount,
-        source_id: acctEdit.source_id, excluded: !!excluded,
-      }) });
-      if (!rp.ok) { let m = '保存失败'; try { const d = await rp.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
-    }
-    if (delta) {
-      // 流水备注：用户填写优先；「改为新余额」方式未填时标注；都为空则后端兜底「手工存入/手工取出」
-      const adjNote = $('#c_adj_note').value.trim();
-      let n = adjNote;
-      if (!n && deltaVia === 'set') n = '改为新余额';
-      const r = await api('/api/asset/cash/adjust', { method: 'POST', body: JSON.stringify({ cash_id: acctEdit.id, delta, note: n }) });
-      if (!r.ok) { let m = '资金调整失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
-    }
+    // 全量 PUT：未展示的字段回传原值；amount 传原值，余额不在此处改
+    const rp = await api('/api/asset/cash/' + acctEdit.id, { method: 'PUT', body: JSON.stringify({
+      name, currency, type, note, amount: acctEdit.amount,
+      source_id: acctEdit.source_id, excluded: !!excluded,
+    }) });
+    if (!rp.ok) { let m = '保存失败'; try { const d = await rp.json(); if (d && d.error) m = d.error; } catch (_) {} $('#cashErr').textContent = m; return; }
     $('#cashModal').hidden = true;
     await loadAsset();
-    const balTxt = deltaVia === 'set' ? '余额已改为新值' : (delta > 0 ? '已存入现金' : '已取出现金');
-    const metaChanged = nameChanged || curChanged || typeChanged || noteChanged || exclChanged;
-    toast(metaChanged && delta ? '已更新资料，' + balTxt : (metaChanged ? '已更新子账户资料' : balTxt), 'ok');
+    toast('已更新子账户资料', 'ok');
   } catch (err) { $('#cashErr').textContent = '异常：' + err.message; }
 }
 
@@ -11668,6 +11882,8 @@ async function switchUser(id) {
     cashflowPlans = [];
     cashflowDone = {};
     for (const k in _planDoneCache) delete _planDoneCache[k];
+    holdShowClosed = false;   // 「已清仓」展开态是视图偏好，切账本后回到默认收起
+    wealthShowClosed = false;
     closeUserSheet();
     await load();
     await loadAsset();

@@ -125,7 +125,7 @@
   /* 颜色/背景走通用缓动，位移走回弹缓动（按下回弹感） */
   --btn-transition: color .2s var(--e), background .2s var(--e), border-color .2s var(--e), box-shadow .2s var(--e), transform .12s var(--e-back);
 
-  /* ===== 设计 token 四级体系：间距 / 形状 / 高度 / 字号（规范见 docs/ui-design-spec.md） =====
+  /* ===== 设计 token 四级体系：间距 / 形状 / 高度 / 字号（唯一来源即本节，组件只许引用变量） =====
      v3 定案：像素基准 **4px 网格**，间距 / 圆角 / 控件高度一律落在 4 的倍数上（更紧凑）。 */
 
   /* 间距档位。新代码一律用档位，禁止出现 7 / 10 / 14 / 18px 这类"看着差不多"的值 */
@@ -241,9 +241,6 @@
   --fs-2xs: 10px;
 
 --dca-pad-x: 28px;
-  /* 平安银行品牌橙（独立于通用色阶，集中管理，避免 #e8541d / #f2661f 散落） */
-  --brand-pingan: #e8541d;
-  --brand-pingan-deep: #f2661f;
   /* 盈亏日历：亮色主题专用文字色（暗色下走通用 --text-faint / --text） */
   --cal-text-dim: #bcc0c7;
   --cal-text-dark: #333;
@@ -505,7 +502,7 @@
 
 /* 行操作列容器：内容右对齐、不换行（按钮本身样式见「行内操作按钮族」） */
 .row-act-cell { white-space: nowrap; text-align: right; }
-/* ===== 行内操作按钮族（统一为纯图标，见 docs/ui-design-spec.md §3.3.1）=====
+/* ===== 行内操作按钮族（统一为纯图标：16px 线性描边 + currentColor）=====
    原来同一语义有四种长相：emoji（📊✏️📈🗑️）/ 文字按钮 / 裸文字链接 / 长短不一的描线按钮。
    emoji 跨系统渲染不一致、不跟随主题色；文字按钮宽度随数据变化会让列宽抖动。 */
 .row-act {
@@ -1869,7 +1866,13 @@ th.sorted-asc::after { border-bottom: 5px solid var(--primary); }
    （本页 body overflow-x:clip，无地板时溢出列会被裁掉）；日期列不折行，备注列截断看 title */
 #histTxBody .asset-table { min-width: 640px; }
 #histTxBody td:nth-child(2) { white-space: nowrap; }
+/* 曲线宽度必须保持绘制时的固有宽度（每点最少 10px），否则点上到 200 个时会被
+   max-width:100% 压缩到一屏，标签糊成一片、横向滚动也永远不触发（2026-11-04 复现：
+   006330 曲线回到建仓日后 197 个点被压进 650px）。溢出交给 .chart-curve-wrap 横滑。 */
+/* 画宽由 JS 按容器实测宽度渲染；max-width 兜底避免旋转/缩放后溢出弹框 */
 #histChartBody svg { max-width: 100%; height: auto; }
+/* 触屏：横向拖动交给曲线读数，纵向仍可滚动弹框 */
+#histChartBody svg { touch-action: pan-y; }
 
 .err { color: var(--danger); font-size: var(--fs-md); min-height: 16px; text-align: center; }
 
@@ -2086,9 +2089,9 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
 #form > .hold-acct-wrap,
 #form > #linked_symbol_row { margin-bottom: var(--sp-3); }
 #form > .f-search-label { margin-bottom: var(--sp-5); }
-/* 统一账户弹框：资金变动行是 flex，会压过 [hidden] 的
-   UA 默认值，不显式声明的话「资金变动行」按 hidden 切不掉 */
-#c_delta_row[hidden] { display: none; }
+/* .sign-edit 是 flex，会压过 UA 的 [hidden]{display:none}，隐藏态必须显式兜底
+   （添加流水弹框的「收支分类」行靠 hidden 切换，见 syncFlowAccountUI） */
+.sign-edit[hidden] { display: none; }
 .modal-card input, .modal-card select, .modal-card textarea {
   width: 100%;
   padding: var(--sp-2) var(--sp-3);
@@ -2431,8 +2434,14 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 /* 盈亏曲线：柱子 hover 热区（持仓历史弹框共用） */
 #chartBody svg .trend-hot { pointer-events: all; cursor: pointer; }
 #chartBody svg :not(.trend-hot) { pointer-events: none; }
-#histChartBody svg .trend-hot { pointer-events: all; cursor: pointer; }
+#histChartBody svg .trend-hot { pointer-events: all; cursor: crosshair; }
 #histChartBody svg :not(.trend-hot) { pointer-events: none; }
+/* 交易点引线：徽标避让堆叠后指回所属行情点；挤不下时退化为贴合折线的小圆点 */
+.chart-marker .mk-lead { stroke-width: 1; stroke-dasharray: 2 2; stroke-opacity: .4; }
+.chart-marker.mk-buy .mk-lead { stroke: var(--up); }
+.chart-marker.mk-sell .mk-lead { stroke: var(--down); }
+.mk-dot-buy { fill: var(--up); }
+.mk-dot-sell { fill: var(--down); }
 /* 历史盈亏曲线：柱子 hover / 点按 弹出的当日数据浮框（此前无样式，补全套皮肤） */
 .trend-tip {
   position: fixed; z-index: 9999; pointer-events: none;
@@ -2451,6 +2460,12 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .trend-tip .t-up { color: var(--up); font-weight: 600; }
 .trend-tip .t-down { color: var(--down); font-weight: 600; }
 .trend-tip .t-muted { color: var(--text-muted); }
+/* 「推算」徽标：建仓段（早于首笔交易）的份额/成本是反推估算的，标在日期后面提醒口径 */
+.trend-tip .t-est {
+  margin-left: var(--sp-2); padding: 0 6px;
+  font-size: var(--fs-xs); font-weight: 500; line-height: 1.5;
+  color: var(--text-muted); border: 1px solid var(--border); border-radius: 999px;
+}
 /* 清仓落袋区块：分隔线 + 小标题 */
 .trend-tip .t-sep { height: 1px; background: var(--border); margin: 4px 0 4px; }
 .trend-tip .t-row.t-head > span:first-child { color: var(--text); font-weight: 600; }
@@ -3581,13 +3596,15 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 /* 手机上均分 N 份太挤，固定回落成 2 列网格 */
 @media (max-width: 640px) {
 }
-.cash-zero { margin-top: var(--sp-3); }
-.cash-zero-toggle {
+/* 收起入口（现金零余额账户 / 已清仓持仓 / 已清仓理财共用）：一行轻量文本按钮 */
+.zero-fold { margin-top: var(--sp-3); }
+.zero-fold-btn {
   display: inline-flex; align-items: center; gap: var(--sp-1);
   padding: 0; border: 0; background: none; font-family: inherit;
   font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer;
 }
-.cash-zero-toggle:hover { color: var(--text); }
+.zero-fold-btn:hover { color: var(--text); }
+.zero-fold-btn:focus-visible { outline: none; color: var(--text); text-decoration: underline; }
 .cash-tbl tr.is-zero td { color: var(--text-faint); }
 /* 机构名有自己的前景色，不跟着 td 变淡，零余额行会显得半亮半暗 */
 .cash-tbl tr.is-zero .cash-src { color: var(--text-muted); }
@@ -3666,7 +3683,7 @@ body[data-density="compact"] .holdings-table .hn-meta { margin-top: 0; }
    .skeleton-line 只定义了高度和圆角，没有背景色、没有 shimmer 动画，
    --sk-w 变量也从未被消费，所以它渲染出来是三根透明条（看不见）。
 
-   现在统一为三层机制（见 docs/ui-design-spec.md §7.17）：
+   现在统一为三层机制（与 app.js 里「全站统一加载动画」那段同口径）：
      ① 视图层 .view-fade      —— 切页瞬间整个视图淡入，消除硬切
      ② 区块层 .rise-in        —— 区块逐个上浮淡入（错落由 --d 控制）
      ③ 骨架层 .skeleton-line  —— 等待数据时的占位（shimmer 流光）
@@ -4019,14 +4036,8 @@ body[data-density="compact"] .holdings-table .hn-meta { margin-top: 0; }
 .adj-preview .warn { color: var(--up); }
 .adj-preview b { color: var(--primary); }
 /* 交易记录卡片样式（.adj-tx/.adj-block 等）已随「加减仓记录/分红记录迁入历史盈亏弹框表格视图」删除（2026-10-20），
-   表格复用 .asset-table + .hist-table 滚动容器。 */
-.adj-realized { font-size: var(--fs-md); margin-bottom: var(--sp-2); }
-.adj-realized b { color: var(--primary); }
-/* 加仓浮动盈亏：涨红跌绿（国内惯例），b 继承 span 的 up/down 色（覆盖上面的主题色 b 规则） */
-.adj-realized .adj-float b { color: inherit; font-weight: 600; }
-.adj-realized .adj-float.up { color: var(--up); }
-.adj-realized .adj-float.down { color: var(--down); }
-.adj-realized .adj-float.flat { color: var(--text-muted); }
+   表格复用 .asset-table + .hist-table 滚动容器。
+   头部汇总条（.adj-realized / .adj-float / .adj-div）2026-11-04 整块删除，弹框只剩表格。 */
 .adj-empty { font-size: var(--fs-sm); color: var(--text-muted); padding: var(--sp-1) 0; }
 .adj-calc { padding-top: var(--sp-1); }
 
@@ -4634,7 +4645,7 @@ textarea::placeholder {
 /* ============================================================================
    v3 · 工具类（utility）层
    ----------------------------------------------------------------------------
-   为什么手写而不是引入 Tailwind（详见 docs/ui-design-spec.md）：
+   为什么手写而不是引入 Tailwind（token 档位、断点白名单、类名引用都由本仓库自校）：
    ① DOM 由 app.js 的模板字符串生成（779 处 class），其中 64 处类名是运行时拼出来
       的（如 'lg-' + (v > 0 ? 'up' : 'down')），Tailwind JIT 的静态扫描看不到；
    ② 主题色由用户运行时取色（任意 hex），必须保留 CSS 变量间接层；
@@ -4714,22 +4725,12 @@ textarea::placeholder {
 /* SVG 文本也吃 font-variant-numeric，数字对齐与原内联声明保持一致 */
 .chart-label, .chart-label-up, .chart-label-down, .chart-label-cum { font-variant-numeric: tabular-nums; }
 .chart-legend { display: flex; gap: var(--sp-4); margin-top: var(--sp-2); font-size: var(--fs-md); flex-wrap: wrap; align-items: center; }
-/* 盈亏曲线：平安银行品牌橙（#E8541D / 深橙 #C8461A）。
-   只在本弹框作用域内覆盖 --cum-line，首页「盈亏走势」仍用原紫色，互不影响。 */
+/* 盈亏曲线：沿用全局 --cum-line（深色浅紫 / 亮色深紫），与首页「盈亏走势」同一语义色。
+   2026-11-04：此前在这里覆盖成固定品牌橙，既不跟主题变、也和全局紫割裂，故去掉本作用域覆盖。 */
 .chart-curve-wrap {
-  --cum-line: var(--brand-pingan);
-  --cum-line-rgb: 232, 84, 29;
   position: relative;
-  overflow-x: auto;          /* 全量数据超单屏宽度时横向滚动（初始滚到最右=最新一天）；桌面滚轮已映射横向 */
-  overscroll-behavior-x: contain;
+  overflow: hidden;          /* 2026-11-04：曲线改为一屏全览，画宽=容器宽，不再横向滚动 */
 }
-.chart-curve-wrap .grad-area-top { stop-color: var(--brand-pingan); stop-opacity: .22; }
-.chart-curve-wrap .grad-area-bottom { stop-color: var(--brand-pingan); stop-opacity: 0; }
-/* 曲线本体也偏暖橙（chart-line 用 var(--cum-line) 会拿到上面的覆盖值，这里再加深一档增强观感） */
-.chart-curve-wrap .chart-line { stroke: var(--brand-pingan-deep); }
-.chart-curve-wrap .chart-line-glow { stroke: var(--brand-pingan); stroke-opacity: .25; }
-/* 图例线段 key 跟随本弹框的橙色调（.chart-line-key 在全局用 --cum-line，这里在弹框作用域内覆盖） */
-.chart-curve-wrap ~ .chart-legend .chart-line-key { background: var(--brand-pingan-deep); }
 .chart-line-key { display: inline-block; width: 16px; height: 4px; border-radius: 2px; margin-right: var(--sp-1); vertical-align: middle; background: var(--cum-line); }
 /* 历史盈亏曲线上的交易点标记：B 买入(红) / S 卖出(绿)，涨红跌绿与全局口径一致 */
 .chart-marker rect { stroke-width: 1; }

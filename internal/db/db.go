@@ -939,12 +939,38 @@ func Create(h *Holding) (int64, error) {
 	}
 	h.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
 	h.Currency = normCurrency(h.Currency) // 币种统一小写（人民币归一 cny），防 'usd'/'USD' 混写导致前端漏折算
-	res, err := DB.Exec("INSERT INTO holdings(name,symbol,market,category,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost,asset_type,risk_plan) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+	res, err := DB.Exec("INSERT INTO holdings(name,symbol,market,category,currency,source_id,quantity,cost_price,current_price,prev_close,note,linked_symbol,buy_date,buy_plan,user_id,updated_at,transaction_cost,asset_type,risk_plan) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 		h.Name, h.Symbol, h.Market, h.Category, h.Currency, h.SourceID, h.Quantity, h.CostPrice, h.CurrentPrice, h.PrevClose, h.Note, h.LinkedSymbol, h.BuyDate, h.BuyPlan, h.UserID, h.UpdatedAt, h.TransactionCost, h.AssetType, h.RiskPlan)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	// 建仓即一笔 BUY：初始份额也是一次真实的份额变化，不落记录会让「历史盈亏」曲线
+	// 只有卖点没有买点（B），交易记录里也缺建仓行，且已平仓的累计买入成本算不出来。
+	// 日期用录入的买入日（空则今天），价格用录入成本价，费用用交易费（仅留痕）。
+	if h.Quantity > 0 && h.CostPrice >= 0 {
+		createdAt := strings.TrimSpace(h.BuyDate)
+		if _, e := time.Parse("2006-01-02", createdAt); e != nil {
+			createdAt = ""
+		}
+		tx := PositionTx{
+			HoldingID:   id,
+			TxType:      "BUY",
+			Quantity:    h.Quantity,
+			Price:       h.CostPrice,
+			Amount:      h.Quantity * h.CostPrice,
+			Fee:         h.TransactionCost,
+			RealizedPnl: 0,
+			Note:        "建仓",
+			CreatedAt:   txCreatedAt(createdAt),
+		}
+		// 建仓记录写失败不阻断建仓本身（持仓已落库，缺记录只影响曲线买点/交易记录展示）
+		_, _ = InsertPositionTx(&tx)
+	}
+	return id, nil
 }
 
 // roundByCategory 按类别约束价格小数位：股票 / 基金保留 4 位（美股/部分基金现价与成本价需 4 位精度），其余保留 2 位。
