@@ -480,6 +480,7 @@ let homeMarqueeData = null;      // 首页跑马灯数据：{ groups, total } �
 let finFlowsCache = [];          // 财务页收支汇总明细缓存（全年流水，供分类折叠下钻）
 
 async function boot() {
+  initFXModal();
   // 认证先行：无有效会话 → 认领/配对闸门（成功后由 onAuthed → enterApp 进入应用）
   const st = await fetchSession();
   if (!st || (!st.authed && st.mode !== 'readonly')) {
@@ -8216,8 +8217,35 @@ function kpiSegBar(segs, label) {
   return '<div class="kpi-bar" role="img" aria-label="' + label + '">' + parts + '</div>';
 }
 
+// 方案 B · 比例刻度表（2026-11-05 拍板）：百分比大号数字是主编码，微条只做辅助；
+// 名称、金额、百分比同一行，390 下天然纵向排列。颜色只做辅助，读不懂颜色也能读数字。
+// rows: [{ name, value, pct?, color?, note? }]；pct 缺省按 value 求和自动算，
+// 传字符串（如「未计价」）时不画条、只显示文字。
+function kpiSchemeB(rows, label) {
+  const list = (rows || []).filter(Boolean);
+  if (!list.length) return '';
+  const sum = list.reduce((a, r) => a + (Number(r.value) || 0), 0);
+  const parts = list.map((r) => {
+    let pct = r.pct;
+    if (pct === undefined || pct === null) pct = sum > 0 ? (Number(r.value || 0) / sum * 100) : 0;
+    const pctText = typeof pct === 'number' ? pct.toFixed(1) + '%' : String(pct);
+    const w = typeof pct === 'number' ? Math.max(0, Math.min(100, pct)) : 0;
+    const amt = r.value === undefined ? '' : yuanOfW(r.value);
+    return '<div class="kpi-prop">'
+      + '<div class="kp-top"><span class="kp-name">' + esc(r.name)
+      + (r.note ? '<i class="kp-note">' + esc(r.note) + '</i>' : '') + '</span>'
+      + '<span class="kp-amt">' + amt + '</span><b class="kp-pct">' + pctText + '</b></div>'
+      + (typeof pct === 'number'
+        ? '<div class="kp-track"><i style="--w:' + w + '%;--bc:' + (r.color || 'var(--primary)') + '"></i></div>'
+        : '')
+      + '</div>';
+  }).join('');
+  return '<div class="kpi-props" role="img" aria-label="' + esc(label) + '">' + parts + '</div>';
+}
+
 // 资产页当前子视图（顶部卡片与面板同步切换）
 let assetSub = 'accounts';
+
 // 跨页跳转的目标子视图（首页「今日待办 · 待还款」→ 资产页「收支」tab）。
 // 用「记下意图 + 渲染后兑现」而不是 setTimeout 点按钮：资产页是异步渲染的，
 // 定时器会在慢网络下抢跑，点到一个还没绑定事件的 tab。
@@ -8249,7 +8277,7 @@ function assetKpiCardHTML(c) {
     + '<div class="kpi-label">' + c.label + '</div>'
     + '<div class="kpi-main"><div class="kpi-value' + (c.tone ? ' ' + c.tone : '') + '">' + c.value + '</div></div>'
     + (c.sub ? '<div class="kpi-sub">' + c.sub + '</div>' : '')
-    + kpiSegBar(c.segs, c.label)
+    + (c.rows ? kpiSchemeB(c.rows, c.label) : kpiSegBar(c.segs, c.label))
     + '</div>';
 }
 
@@ -8267,32 +8295,66 @@ function assetKpiCardsAccounts() {
   const curA = assetData?.currency_assets || {};
   const hkA = Number(regA.hk || 0), usA = Number(regA.us || 0), cnA = Number(regA.cn || 0);
   const cnyA = Number(curA.cny || 0);
+  const unpriced = (assetData?.currency_unpriced || []);
   const REGION_COLORS = { cn: 'rgb(var(--cat-equity))', hk: 'rgb(var(--cat-hk))', us: 'rgb(var(--cat-us))' };
-  const CUR_NAMES = { cny: '人民币', hkd: '港币', usd: '美元' };
-  const CUR_COLORS = { cny: 'rgb(var(--cat-equity))', hkd: 'rgb(var(--cat-fund))', usd: 'rgb(var(--cat-cash))' };
-  const catSegs = [
-    { name: '持仓', value: eqMV, color: 'rgb(var(--cat-equity))' },
-    { name: '理财', value: wTotal, color: 'rgb(var(--cat-fund))' },
-    { name: '现金', value: cTotal, color: 'rgb(var(--cat-cash))' },
-  ];
-  const regionSegs = Object.entries(regA).filter(([, v]) => Number(v) > 0)
+  const CUR_NAMES = { cny: '人民币', hkd: '港币', usd: '美元', eur: '欧元' };
+  const CUR_COLORS = { cny: 'rgb(var(--cat-equity))', hkd: 'rgb(var(--cat-fund))', usd: 'rgb(var(--cat-cash))', eur: 'rgb(var(--cat-other))' };
+  // 币种分类：按折算后 CNY 占比；无汇率源的币种保留这一段并标「未计价」
+  const curRows = Object.entries(curA).filter(([, v]) => Number(v) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .map(([k, v]) => ({
+      name: CUR_NAMES[k] || k.toUpperCase(), value: Number(v),
+      color: CUR_COLORS[k] || 'var(--text-faint)',
+      note: unpriced.includes(k) ? '未计价' : '',
+    }));
+  // 境外资产占比：地区结构
+  const regionRows = Object.entries(regA).filter(([, v]) => Number(v) > 0)
     .sort((a, b) => Number(b[1]) - Number(a[1]))
     .map(([k, v]) => ({ name: (REGION_META[k] || {}).zh || k.toUpperCase(), value: Number(v), color: REGION_COLORS[k] || 'var(--text-faint)' }));
-  const curSegs = Object.entries(curA).filter(([, v]) => Number(v) > 0)
-    .sort((a, b) => Number(b[1]) - Number(a[1]))
-    .map(([k, v]) => ({ name: CUR_NAMES[k] || k.toUpperCase(), value: Number(v), color: CUR_COLORS[k] || 'var(--text-faint)' }));
+  // 汇兑收益率：只统计有汇率源的币种，未计价币种单列文字，不显示 0 冒充损益
+  const fx = assetData?.fx || {};
+  const fxRows = [];
+  Object.entries(fx.by_currency || {}).sort((a, b) => Math.abs(Number(b[1].allocated || 0)) - Math.abs(Number(a[1].allocated || 0))).forEach(([k, a]) => {
+    const w = Number(a.weighted_rate || 0), c = Number(a.current_rate || 0);
+    const rate = w > 0 ? (c / w - 1) * 100 : 0;
+    const gain = Number(a.gain_cny || 0);
+    fxRows.push({
+      name: CUR_NAMES[k] || k.toUpperCase(), value: gain,
+      pct: (rate >= 0 ? '+' : '−') + Math.abs(rate).toFixed(2) + '%',
+      color: gain >= 0 ? 'rgb(var(--up-rgb))' : 'rgb(var(--down-rgb))',
+    });
+  });
+  (fx.unpriced || []).forEach((u) => {
+    fxRows.push({
+      name: CUR_NAMES[u.currency] || String(u.currency || '').toUpperCase(), value: undefined,
+      pct: '未计价', note: '无汇率源', color: 'var(--text-faint)',
+    });
+  });
+  const gain = Number(fx.gain_cny || 0);
+  const pp = fx.pp;
+  const fxValue = (pp === null || pp === undefined) ? '—'
+    : (Number(pp) >= 0 ? '+' : '−') + Math.abs(Number(pp)).toFixed(2) + 'pp';
+  const fxSub = (fx.by_currency && Object.keys(fx.by_currency).length)
+    ? '汇兑损益 <span class="hl">' + signedYuanW(gain) + '</span> · 折净资产 <span class="hl">' + yuanOfW(Number(fx.net_asset || net)) + '</span>'
+    : '暂无换汇批次 · 点账户子行的换汇按钮录入成本';
+  const fxFoot = fx.start_date ? '自 ' + fx.start_date + ' 起计算' : '';
   return {
     cards: [
-      { ico: 'kpi-ico-equity', icon: 'bars', label: '持仓市值', value: yuanOfW(eqMV),
-        sub: '占总资产 <span class="hl">' + pctOf(eqMV, totalA) + '</span>', segs: catSegs },
-      { ico: 'kpi-ico-pct', icon: 'globe', label: '境外资产占比', value: pctOf(hkA + usA, totalA),
-        sub: '中国内地 <span class="hl">' + pctOf(cnA, totalA) + '</span> · <span class="hl">' + yuanOfW(cnA) + '</span>', segs: regionSegs },
-      { ico: 'kpi-ico-cash', icon: 'card', label: '外币资产占比', value: pctOf(totalA - cnyA, totalA),
-        sub: '人民币 <span class="hl">' + pctOf(cnyA, totalA) + '</span> · <span class="hl">' + yuanOfW(cnyA) + '</span>', segs: curSegs },
+      { ico: 'kpi-ico-cash', icon: 'card', label: '币种分类', value: pctOf(totalA - cnyA, totalA),
+        sub: '人民币 <span class="hl">' + pctOf(cnyA, totalA) + '</span> · <span class="hl">' + yuanOfW(cnyA) + '</span>',
+        rows: curRows },
+      { ico: 'kpi-ico-pct', icon: 'up', label: '汇兑收益率', value: fxValue, tone: pp === null || pp === undefined ? '' : (Number(pp) < 0 ? 'down' : 'up'),
+        sub: fxSub + (fxFoot ? ' · <span class="hl">' + fxFoot + '</span>' : ''), rows: fxRows },
       // 方案 14：净资产为正不再染红（红=涨），只在为负时用警示色
       { ico: 'kpi-ico-fund', icon: 'wallet', label: '净资产', value: yuanOfW(net), tone: net < 0 ? 'is-neg' : '',
         sub: '负债 <span class="hl">' + yuanOfW(lTotal) + '</span> · 负债率 <span class="hl">' + pctOf(lTotal, totalA) + '</span>',
-        segs: [{ name: '资产', value: totalA, color: 'var(--primary)' }, { name: '负债', value: lTotal, color: 'var(--warning)' }] },
+        rows: [
+          { name: '资产', value: totalA, pct: 100, color: 'var(--primary)' },
+          { name: '负债', value: lTotal, pct: totalA > 0 ? lTotal / totalA * 100 : 0, color: 'var(--warning)' },
+        ] },
+      { ico: 'kpi-ico-pct', icon: 'globe', label: '境外资产占比', value: pctOf(hkA + usA, totalA),
+        sub: '中国内地 <span class="hl">' + pctOf(cnA, totalA) + '</span> · <span class="hl">' + yuanOfW(cnA) + '</span>',
+        rows: regionRows },
     ],
   };
 }
@@ -8801,7 +8863,10 @@ function renderSources(body) {
   const list = assetSources;
   // 表格里子行是独立 <tr>，用 data-sub 标记所属账户；重渲染后据此恢复展开集合，
   // 避免编辑/转账等操作触发全局刷新时把已展开的子行收回去。
-  const openSubs = new Set();
+  // renderAssetTab 会整体重建 #assetTabBody（行节点全部消失），只靠 DOM 扫描会在
+  // loadAsset() 这类整页刷新后把展开态清零 —— 因此另有模块级 openSourceIds 兜底：
+  // 弹框保存后重渲染，账户仍保持展开，用户能立刻核对刷新后的三个数字。
+  const openSubs = new Set(openSourceIds);
   body.querySelectorAll('.atbl tr[data-sub]:not([hidden])').forEach((tr) => { if (tr.dataset.sub) openSubs.add(String(tr.dataset.sub)); });
   const prevScroll = body.scrollTop;
   // 「添加收支」「添加流水」入口已删（2026-10-22）：与首页功能重复——收支计划新建收敛到资产页「收支」子面板
@@ -8859,6 +8924,8 @@ function renderSources(body) {
       }
     }
     html += `</tbody></table>`;
+    // 新子账户口径说明（2026-11-05）：三处合计不是同一个数，差异必须写在明面上，不能悄悄改数
+    html += `<div class="tbl-foot">子账户合计为成本口径（可调用现金 + 已买入本金：权益成本 + 理财本金）；与账户市值差额 = 未实现盈亏，与净资产差额另含负债。币种按折算后 CNY 比较，无汇率源币种单列「未计价」。</div>`;
   }
   html += `</div></div>`;
   body.innerHTML = html;
@@ -8878,16 +8945,34 @@ function renderSources(body) {
   body.querySelectorAll('[data-act="edit-source"]').forEach((b) => b.onclick = () => openAssetSourceModal(Number(b.dataset.id)));
   body.querySelectorAll('[data-act="del-source"]').forEach((b) => b.onclick = () => assetDel('source', Number(b.dataset.id)));
   body.querySelectorAll('[data-act="add-sub"]').forEach((b) => b.onclick = () => openCashModal(null, Number(b.dataset.id)));
-  // 行展开/收起：整行（除操作列）都是点击区；子行是同一 tbody 内的独立 <tr>
+  // 行展开/收起：整行（除操作列）都是点击区；子行是同一 tbody 内的独立 <tr>。
+  // 账户行只切「币种组 / 负债」行；现金子账户行由币种组行自己控制（默认收起）。
   body.querySelectorAll('.atbl tr.row').forEach((tr) => {
     tr.addEventListener('click', (e) => {
       if (e.target.closest('td.op')) return;
       const id = tr.dataset.row;
       const open = !tr.classList.contains('open');
       tr.classList.toggle('open', open);
+      if (open) openSourceIds.add(id); else openSourceIds.delete(id);
       const tb = tr.parentNode;
-      if (tb) tb.querySelectorAll('tr[data-sub="' + id + '"]').forEach((r) => { r.hidden = !open; });
+      if (tb) tb.querySelectorAll('tr[data-sub="' + id + '"][data-grp="1"]').forEach((r) => { r.hidden = !open; });
     });
+  });
+  // 币种组行：点开展示该币种下的现金子账户（历史/编辑/转账/删除仍按子账户粒度）
+  body.querySelectorAll('.atbl tr.fxgrp').forEach((tr) => {
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('td.op')) return;
+      const key = tr.dataset.sub + '|' + tr.dataset.cur;
+      const open = !fxOpenGroups.has(key);
+      if (open) fxOpenGroups.add(key); else fxOpenGroups.delete(key);
+      tr.classList.toggle('open', open);
+      const tb = tr.parentNode;
+      if (tb) tb.querySelectorAll('tr.cashrow[data-sub="' + tr.dataset.sub + '"][data-cur="' + tr.dataset.cur + '"]').forEach((r) => { r.hidden = !open; });
+    });
+  });
+  // 换汇拆批：全屏弹框，保存后 loadAsset() 即时刷新卡片与子账户行
+  body.querySelectorAll('[data-act="fx-lots"]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); openFXModal(Number(b.dataset.source), b.dataset.currency); };
   });
   // 负债行的历史/编辑/删除（历史=余额变动：增加贷款/还款）
   body.querySelectorAll('[data-act="lb-hist"]').forEach((b) => b.onclick = () => openFlowHistory('liab', Number(b.dataset.id)));
@@ -9375,6 +9460,11 @@ $('#wealthNavForm').onsubmit = async (e) => {
 
 // ---- 子账户（现金）----
 // 现金已并入「账户」tab：作为各账户的子账户，在来源行下方折叠显示。
+// 币种组展开状态（sourceId|currency）：重渲染后保留，避免保存换汇批次后整组收回。
+const fxOpenGroups = new Set();
+// 账户展开状态（sourceId）：renderAssetTab 会整块重建表格，仅靠 DOM 扫描会丢态，
+// 因此保存换汇批次等整页刷新后，仍按这里记录的账户保持展开。
+const openSourceIds = new Set();
 function cashListOf(sourceId) {
   return ((assetData.cash || {}).items || [])
     .filter((c) => Number(c.source_id) === Number(sourceId))
@@ -9399,34 +9489,70 @@ function cashSubTrHtml(sourceId, open) {
   const items = cashListOf(sourceId);
   const libs = liabListOf(sourceId);
   const h = open ? '' : ' hidden';
-  if (!items.length && !libs.length)
-    return '<tr class="srow" data-sub="' + sourceId + '"' + h + '><td colspan="7"><div class="sub-empty">该账户暂无子账户，点右侧「＋」添加（弹框里勾选「负债」即建负债）。</div></td></tr>';
-  const seg = items.length > 0 && libs.length > 0;
+  // 币种子账户：后端按「账户 + 币种」归集 可调用 / 已买入本金 / 合计。
+  // 持仓与理财只挂账户、不挂具体现金子账户，所以同币种的小账户在这里并到一起；
+  // 现金子账户仍各自一行（保留历史/编辑/转账/删除），挂在币种组下面按需展开。
+  const subs = (assetData.subaccounts || []).filter((x) => Number(x.source_id) === Number(sourceId))
+    .sort((a, b) => Number(b.total_cny || 0) - Number(a.total_cny || 0));
+  if (!subs.length && !libs.length && !items.length)
+    return '<tr class="srow" data-sub="' + sourceId + '" data-grp="1"' + h + '><td colspan="7"><div class="sub-empty">该账户暂无子账户，点右侧「＋」添加（弹框里勾选「负债」即建负债）。</div></td></tr>';
+  const CUR_ZH = { cny: '人民币', hkd: '港币', usd: '美元', eur: '欧元' };
   let html = '';
-  if (seg) html += '<tr class="shead" data-sub="' + sourceId + '"' + h + '><td colspan="7"><span class="sl">子账户</span></td></tr>';
-  for (const c of items) {
-    const cur = (c.currency || 'cny').toLowerCase();
-    const nm = (c.name || '').trim() || (c.type || '').trim() || ('子账户 #' + c.id);
-    html += '<tr class="srow" data-sub="' + sourceId + '"' + h + '>' +
-      '<td><span class="sn" title="' + esc(nm) + '">' + esc(nm) + '</span>' +
-        (c.excluded ? '<span class="sn-excl" title="日常开销账户：不计入再平衡（既不算现金类也不算总市值）">日常</span>' : '') + '</td>' +
+  const cashByCur = {};
+  items.forEach((c) => {
+    const k = String(c.currency || 'cny').toLowerCase();
+    (cashByCur[k] = cashByCur[k] || []).push(c);
+  });
+  for (const sa of subs) {
+    const cur = String(sa.currency || 'cny').toLowerCase();
+    const gOpen = open && fxOpenGroups.has(sourceId + '|' + cur);
+    const share = Number(sa.share_of_source || 0);
+    const threeTip = '合计 = 可调用 + 已买入本金（权益成本 + 理财本金）；本组合计 ¥' + fmt(Number(sa.total_cny || 0))
+      + '，可调用 ¥' + fmt(Number(sa.available || 0)) + ' + 已买入 ¥' + fmt(Number(sa.invested || 0)) + '（原币）';
+    html += '<tr class="srow fxgrp' + (gOpen ? ' open' : '') + '" data-sub="' + sourceId + '" data-grp="1" data-cur="' + cur + '"' + h + '>' +
+      '<td><div class="fxg"><span class="chev">' + SC_CHEV + '</span>' +
+        '<span class="sn">' + (CUR_ZH[cur] || cur.toUpperCase()) + '</span>' +
+        '<span class="sn-tag">' + (Number(sa.cash_count) || 0) + ' 个子账户</span></div></td>' +
       '<td class="ty"></td>' +
       '<td class="cur">' + cur.toUpperCase() + '</td>' +
-      '<td class="num"' + wanTitle(Number(c.amount) || 0, curSymbolJS(cur)) + '>' + moneyCurW(Number(c.amount) || 0, cur) + '</td>' +
-      '<td class="share"></td><td class="num qty"></td>' +
+      '<td class="num" title="' + esc(threeTip) + '"><div class="fxthree">' +
+        '<span class="fxline"><em>可调用</em><b>' + moneyCurW(Number(sa.available || 0), cur) + '</b></span>' +
+        '<span class="fxline"><em>已买入</em><b>' + moneyCurW(Number(sa.invested || 0), cur) + '</b></span>' +
+        '<span class="fxline total"><em>合计</em><b>' + yuanOfW(Number(sa.total_cny || 0)) + '</b></span>' +
+      '</div></td>' +
+      '<td class="share" style="--p:' + Math.max(0, share).toFixed(1) + '%;--pn:' + (Math.min(100, Math.max(0, share)) / 100).toFixed(4) + '">' + share.toFixed(1) + '%</td>' +
+      '<td class="num qty">' + ((Number(sa.cash_count) || 0) || '—') + '</td>' +
       '<td class="op">' +
-        actBtn('hist', 'data-act="cash-hist" data-id="' + c.id + '"', '资金变动历史') +
-        actBtn('edit', 'data-act="edit-cash" data-id="' + c.id + '"', '编辑') +
-        actBtn('transfer', 'data-act="cash-transfer" data-id="' + c.id + '"', '转入其他子账户') +
-        actBtn('del', 'data-act="del-cash" data-id="' + c.id + '"', '删除', { danger: true }) +
+        (cur === 'cny'
+          ? '<span class="sn-excl" title="主货币记账，无需换汇拆批">主货币</span>'
+          : sa.priced
+            ? actBtn('fx', 'data-act="fx-lots" data-source="' + sourceId + '" data-currency="' + cur + '"', '换汇拆批')
+            : '<span class="sn-excl" title="' + cur.toUpperCase() + ' 暂无汇率源，暂不支持换汇拆批">无汇率源</span>') +
       '</td></tr>';
+    for (const c of (cashByCur[cur] || [])) {
+      const nm = (c.name || '').trim() || (c.type || '').trim() || ('子账户 #' + c.id);
+      const cHide = gOpen ? '' : ' hidden';
+      html += '<tr class="srow cashrow" data-sub="' + sourceId + '" data-cur="' + cur + '"' + cHide + '>' +
+        '<td><span class="sn' + (gOpen ? ' sn-indent' : '') + '" title="' + esc(nm) + '">' + esc(nm) + '</span>' +
+          (c.excluded ? '<span class="sn-excl" title="日常开销账户：不计入再平衡（既不算现金类也不算总市值）">日常</span>' : '') + '</td>' +
+        '<td class="ty"></td>' +
+        '<td class="cur">' + cur.toUpperCase() + '</td>' +
+        '<td class="num"' + wanTitle(Number(c.amount) || 0, curSymbolJS(cur)) + '>' + moneyCurW(Number(c.amount) || 0, cur) + '</td>' +
+        '<td class="share"></td><td class="num qty"></td>' +
+        '<td class="op">' +
+          actBtn('hist', 'data-act="cash-hist" data-id="' + c.id + '"', '资金变动历史') +
+          actBtn('edit', 'data-act="edit-cash" data-id="' + c.id + '"', '编辑') +
+          actBtn('transfer', 'data-act="cash-transfer" data-id="' + c.id + '"', '转入其他子账户') +
+          actBtn('del', 'data-act="del-cash" data-id="' + c.id + '"', '删除', { danger: true }) +
+        '</td></tr>';
+    }
   }
-  if (libs.length) html += '<tr class="shead" data-sub="' + sourceId + '"' + h + '><td colspan="7"><span class="sl">负债</span></td></tr>';
+  if (libs.length) html += '<tr class="shead" data-sub="' + sourceId + '" data-grp="1"' + h + '><td colspan="7"><span class="sl">负债</span></td></tr>';
   for (const l of libs) {
     const cur = (l.currency || 'cny').toLowerCase();
     const nm = (l.name || '').trim() || (l.type || '').trim() || ('负债 #' + l.id);
     // 负债金额以负数红字呈现（库中存正数，合计时扣减）；分段标题已说明性质，行内不再重复标记
-    html += '<tr class="srow" data-sub="' + sourceId + '"' + h + '>' +
+    html += '<tr class="srow" data-sub="' + sourceId + '" data-grp="1"' + h + '>' +
       '<td><span class="sn" title="' + esc(nm) + '">' + esc(nm) + '</span></td>' +
       '<td class="ty"></td>' +
       '<td class="cur">' + cur.toUpperCase() + '</td>' +
@@ -9439,6 +9565,169 @@ function cashSubTrHtml(sourceId, open) {
       '</td></tr>';
   }
   return html;
+}
+
+// ---- 换汇拆批弹框（2026-11-05）----
+// 总额口径 = 可调用现金 + 已买入本金（权益成本 + 理财本金），保存时后端还会再校验一次。
+// 批次按「账户 + 币种」整组替换；保存成功后 loadAsset() 重绘卡片与子账户行，无需手动刷新。
+let fxState = null;
+const FX_CUR_ZH = { cny: '人民币', hkd: '港币', usd: '美元', eur: '欧元' };
+
+function fxLocalDate() {
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function fxRowsHtml() {
+  const cur = fxState.currency;
+  return fxState.lots.map((l, i) => '' +
+    '<tr>' +
+      '<td class="fx-idx">第 ' + (i + 1) + ' 档</td>' +
+      '<td><input class="fx-in" type="number" step="0.01" min="0" inputmode="decimal" data-i="' + i + '" data-f="amount" value="' + esc(String(l.amount == null ? '' : l.amount)) + '" aria-label="第 ' + (i + 1) + ' 档金额（' + cur.toUpperCase() + '）"></td>' +
+      '<td><input class="fx-in" type="number" step="0.0001" min="0" inputmode="decimal" data-i="' + i + '" data-f="rate" value="' + esc(String(l.rate == null ? '' : l.rate)) + '" aria-label="第 ' + (i + 1) + ' 档汇率"></td>' +
+      '<td><input class="fx-in" type="date" data-i="' + i + '" data-f="trade_date" value="' + esc(l.trade_date || '') + '" aria-label="第 ' + (i + 1) + ' 档换汇日期"></td>' +
+      '<td><input class="fx-in" type="text" maxlength="40" data-i="' + i + '" data-f="note" value="' + esc(l.note || '') + '" placeholder="备注（可选）" aria-label="第 ' + (i + 1) + ' 档备注"></td>' +
+      '<td>' + actBtn('del', 'data-del="' + i + '"', '删除第 ' + (i + 1) + ' 档', { danger: true }) + '</td>' +
+    '</tr>').join('');
+}
+
+function fxCollect() {
+  return fxState.lots.map((l) => ({
+    amount: Number(l.amount) || 0,
+    rate: Number(l.rate) || 0,
+    trade_date: l.trade_date || '',
+    note: l.note || '',
+  }));
+}
+
+function fxRecalc() {
+  if (!fxState) return;
+  const cur = fxState.currency;
+  const d = fxState.data;
+  const lots = fxCollect();
+  const allocated = lots.reduce((a, l) => a + l.amount, 0);
+  const cost = lots.reduce((a, l) => a + l.amount * l.rate, 0);
+  const target = Number(d.total) || 0;
+  const diff = round2(target - allocated);
+  const weighted = allocated > 0.005 ? cost / allocated : 0;
+  const current = Number(d.current_rate) || 0;
+  const gain = (current > 0 && weighted > 0) ? allocated * (current - weighted) : 0;
+  const bad = Math.abs(diff) > 0.005;
+  $('#fxRate').textContent = '当前 1 ' + cur.toUpperCase() + ' = ' + current.toFixed(4) + ' CNY';
+  $('#fxSum').innerHTML =
+    '<span>目标 <b>' + moneyCurW(target, cur) + '</b></span>' +
+    '<span>已分配 <b>' + moneyCurW(allocated, cur) + '</b></span>' +
+    '<span class="fx-diff ' + (bad ? 'is-bad' : 'is-ok') + '">' + (bad ? (diff > 0 ? '还差 ' : '超出 ') + moneyCurW(Math.abs(diff), cur) : '已对平') + '</span>' +
+    '<span>加权平均 <b>' + (weighted > 0 ? weighted.toFixed(4) : '—') + '</b></span>' +
+    '<span>预估汇兑损益 <b class="' + (gain >= 0 ? 'up' : 'down') + '">' + signedYuanW(gain) + '</b></span>';
+  $('#fxErr').textContent = '';
+  $('#fxSave').disabled = bad;
+}
+
+function fxBindRows() {
+  const tbody = $('#fxLotBody');
+  tbody.querySelectorAll('input.fx-in').forEach((inp) => {
+    inp.addEventListener('input', () => {
+      const i = Number(inp.dataset.i);
+      const f = inp.dataset.f;
+      if (!fxState || !fxState.lots[i]) return;
+      fxState.lots[i][f] = f === 'note' ? inp.value : Number(inp.value);
+      fxRecalc();
+    });
+  });
+  tbody.querySelectorAll('[data-del]').forEach((b) => {
+    b.onclick = () => {
+      const i = Number(b.dataset.del);
+      fxState.lots.splice(i, 1);
+      tbody.innerHTML = fxRowsHtml();
+      fxBindRows();
+      fxRecalc();
+    };
+  });
+}
+
+async function openFXModal(sourceId, currency) {
+  const cur = String(currency || '').toLowerCase();
+  const sa = (assetData.subaccounts || []).find((x) => Number(x.source_id) === Number(sourceId) && String(x.currency).toLowerCase() === cur);
+  const modal = $('#fxModal');
+  $('#fxTitle').textContent = '换汇拆批 · ' + ((sa && sa.source_name) || '账户') + ' · ' + (FX_CUR_ZH[cur] || cur.toUpperCase());
+  $('#fxSub').innerHTML = '总额 <b>' + moneyCurW(Number((sa && sa.total) || 0), cur) + '</b> = 可调用 <b>' + moneyCurW(Number((sa && sa.available) || 0), cur) + '</b> + 已买入本金 <b>' + moneyCurW(Number((sa && sa.invested) || 0), cur) + '</b>';
+  $('#fxLotBody').innerHTML = '<tr><td colspan="6">加载中…</td></tr>';
+  $('#fxSum').innerHTML = '';
+  $('#fxErr').textContent = '';
+  $('#fxSave').disabled = true;
+  modal.hidden = false;
+  try {
+    const r = await api('/api/asset/fx-lots?source_id=' + sourceId + '&currency=' + encodeURIComponent(cur));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '加载失败');
+    fxState = {
+      sourceId: Number(sourceId), currency: cur, data: d,
+      lots: (d.lots || []).map((l) => ({ amount: Number(l.amount) || 0, rate: Number(l.rate) || 0, trade_date: l.trade_date || '', note: l.note || '' })),
+    };
+    // 首次录入：默认一档，金额=总额、汇率=当前价；也可点「按当前汇率全部归为一档」重置。
+    if (!fxState.lots.length) {
+      fxState.lots = [{ amount: round2(Number(d.total) || 0), rate: Number(d.current_rate) || 0, trade_date: fxLocalDate(), note: '' }];
+    }
+    $('#fxLotBody').innerHTML = fxRowsHtml();
+    fxBindRows();
+    fxRecalc();
+  } catch (e) {
+    $('#fxLotBody').innerHTML = '<tr><td colspan="6">' + esc(humanizeErr(null, e, '加载换汇批次失败')) + '</td></tr>';
+  }
+}
+
+async function saveFXModal() {
+  if (!fxState) return;
+  const lots = fxCollect();
+  const btn = $('#fxSave');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/asset/fx-lots', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: fxState.sourceId, currency: fxState.currency, lots }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      $('#fxErr').textContent = d.error || '保存失败';
+      btn.disabled = false;
+      return;
+    }
+    // 保存后保持该币种组展开，方便核对三个数字
+    const done = fxState;
+    fxOpenGroups.add(done.sourceId + '|' + done.currency);
+    fxState = null;
+    $('#fxModal').hidden = true;
+    toast('换汇批次已保存：' + lots.length + ' 档', 'ok');
+    await loadAsset();
+    fxOpenGroups.add(done.sourceId + '|' + done.currency);
+  } catch (e) {
+    $('#fxErr').textContent = humanizeErr(null, e, '保存失败');
+    btn.disabled = false;
+  }
+}
+
+function initFXModal() {
+  const modal = $('#fxModal');
+  $('#fxClose').onclick = () => { modal.hidden = true; fxState = null; };
+  $('#fxCancel').onclick = () => { modal.hidden = true; fxState = null; };
+  modal.addEventListener('click', (e) => { if (e.target === modal) { modal.hidden = true; fxState = null; } });
+  $('#fxAddLot').onclick = () => {
+    if (!fxState) return;
+    fxState.lots.push({ amount: 0, rate: Number(fxState.data.current_rate) || 0, trade_date: fxLocalDate(), note: '' });
+    $('#fxLotBody').innerHTML = fxRowsHtml();
+    fxBindRows();
+    fxRecalc();
+  };
+  $('#fxOneClick').onclick = () => {
+    if (!fxState) return;
+    fxState.lots = [{ amount: round2(Number(fxState.data.total) || 0), rate: Number(fxState.data.current_rate) || 0, trade_date: fxLocalDate(), note: '按当前汇率归为一档' }];
+    $('#fxLotBody').innerHTML = fxRowsHtml();
+    fxBindRows();
+    fxRecalc();
+  };
+  $('#fxSave').onclick = saveFXModal;
 }
 
 function bindCashActions(root) {

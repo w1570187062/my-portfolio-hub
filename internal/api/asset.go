@@ -45,6 +45,58 @@ func curSymbol(currency string) string {
 	}
 }
 
+// currencyPriced 表示该币种是否有可用汇率源。
+// 2026-11-05 起只对 USD / HKD 计算汇兑损益；EUR 暂无汇率源，不显示 0 冒充盈亏。
+func currencyPriced(currency string) bool {
+	switch strings.ToLower(strings.TrimSpace(currency)) {
+	case "usd", "$", "美元", "hkd", "hk$", "港币", "港元":
+		return true
+	default:
+		return false
+	}
+}
+
+// currentRateOf 返回「1 原币 = ? CNY」的当前中间价。未知币种返回 0（调用方据此排除汇兑计算）。
+func currentRateOf(currency string, cnyRate, hkdRate float64) float64 {
+	switch strings.ToLower(strings.TrimSpace(currency)) {
+	case "usd", "$", "美元":
+		return cnyRate
+	case "hkd", "hk$", "港币", "港元":
+		if hkdRate > 0 {
+			return cnyRate / hkdRate
+		}
+		return 0
+	case "cny", "rmb", "人民币":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// fxSubaccount 是「账户 + 币种」维度的子账户汇总。
+// 三部分口径：可调用现金 / 已买入本金（权益成本 + 理财本金）/ 合计。
+type fxSubaccount struct {
+	SourceID       int64   `json:"source_id"`
+	SourceName     string  `json:"source_name"`
+	Currency       string  `json:"currency"`
+	Available      float64 `json:"available"`
+	InvestedEquity float64 `json:"invested_equity"`
+	InvestedWealth float64 `json:"invested_wealth"`
+	Invested       float64 `json:"invested"`
+	Total          float64 `json:"total"`
+	TotalCNY       float64 `json:"total_cny"`
+	ShareOfSource  float64 `json:"share_of_source"`
+	CashCount      int     `json:"cash_count"`
+	LotsCount      int     `json:"lots_count"`
+	Allocated      float64 `json:"allocated"`
+	Unallocated    float64 `json:"unallocated"`
+	WeightedRate   float64 `json:"weighted_rate"`
+	CurrentRate    float64 `json:"current_rate"`
+	FXGainCNY      float64 `json:"fx_gain_cny"`
+	Priced         bool    `json:"priced"`
+	StartDate      string  `json:"start_date"`
+}
+
 func assetOverview(c *gin.Context) {
 	uid := currentUserID(c)
 	cnyRate, hkdRate, _ := market.FetchFXRates()
@@ -87,6 +139,23 @@ func assetOverview(c *gin.Context) {
 		return c
 	}
 
+	// 子账户聚合：key = source_id|currency。持仓/理财只挂 source_id，不挂具体现金子账户，
+	// 所以「已买入本金」只能按账户 + 币种归集（2026-11-05 方案，见 specs/asset-fx-lots/spec.md）。
+	type fxAgg struct {
+		avail, cost, principal float64
+		cashCount              int
+	}
+	fxGroups := map[string]*fxAgg{}
+	grp := func(sid int64, cur string) *fxAgg {
+		k := fmt.Sprintf("%d|%s", sid, curKey(cur))
+		g := fxGroups[k]
+		if g == nil {
+			g = &fxAgg{}
+			fxGroups[k] = g
+		}
+		return g
+	}
+
 	// 1) 权益类（基金/股票）
 	hs, _ := db.List(uid)
 	var eqMV, eqCV, eqPnl, eqDay float64
@@ -100,6 +169,7 @@ func assetOverview(c *gin.Context) {
 		eqDay += fxToCNY(v.DayPnl, h.Currency, cnyRate, hkdRate)
 		regAssets[regionOf(h.SourceID)] += cmv
 		curAssets[curKey(h.Currency)] += cmv
+		grp(h.SourceID, h.Currency).cost += v.CostValue
 		eqItems = append(eqItems, gin.H{
 			"id":           h.ID,
 			"name":         h.Name,
@@ -167,6 +237,11 @@ func assetOverview(c *gin.Context) {
 				wDays = daysBetweenDates(firstDate, snaps[len(snaps)-1].Date)
 			}
 		}
+		// 已买入本金：仅计仍在持有的产品（归档=已清仓，不再占用资金）；
+		// 本金口径与上面「当前金额 − 累计收益」一致。
+		if !w.Archived && !math.IsNaN(principal) && principal > 0.005 {
+			grp(w.SourceID, w.Currency).principal += principal
+		}
 		// 累计收益率 = 累计收益 ÷ 本金 × 100
 		cumReturnRate := math.NaN()
 		if !math.IsNaN(principal) && principal > 0.005 {
@@ -216,6 +291,9 @@ func assetOverview(c *gin.Context) {
 		curAssets[curKey(cc.Currency)] += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
 		regAssets[regionOf(cc.SourceID)] += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
 		cByCur[cc.Currency] += cc.Amount
+		agg := grp(cc.SourceID, cc.Currency)
+		agg.avail += cc.Amount
+		agg.cashCount++
 		cItems = append(cItems, gin.H{
 			"id":          cc.ID,
 			"name":        cc.Name,
@@ -253,7 +331,142 @@ func assetOverview(c *gin.Context) {
 
 	// 5) 消费模块已下线（2026-10-19）：consumptions 表保留兼容旧库，不再输出
 
+	// 6) 子账户（账户 + 币种）与汇兑汇总
+	lotsAll, _ := db.ListAllFXLots(uid)
+	lotByKey := map[string][]db.FXLot{}
+	for _, l := range lotsAll {
+		k := fmt.Sprintf("%d|%s", l.SourceID, curKey(l.Currency))
+		lotByKey[k] = append(lotByKey[k], l)
+	}
+
+	keys := make([]string, 0, len(fxGroups))
+	for k := range fxGroups {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	subaccounts := make([]fxSubaccount, 0, len(keys))
+	srcTotalCNY := map[int64]float64{}
+	for _, k := range keys {
+		agg := fxGroups[k]
+		parts := strings.SplitN(k, "|", 2)
+		sid, _ := strconv.ParseInt(parts[0], 10, 64)
+		cur := parts[1]
+		total := agg.avail + agg.cost + agg.principal
+		totalCNY := round2(fxToCNY(total, cur, cnyRate, hkdRate))
+		srcTotalCNY[sid] += totalCNY
+	}
+	for _, k := range keys {
+		agg := fxGroups[k]
+		parts := strings.SplitN(k, "|", 2)
+		sid, _ := strconv.ParseInt(parts[0], 10, 64)
+		cur := parts[1]
+		lots := lotByKey[k]
+		var allocated, costCNY float64
+		for _, l := range lots {
+			allocated += l.Amount
+			costCNY += l.Amount * l.Rate
+		}
+		total := agg.avail + agg.cost + agg.principal
+		totalCNY := round2(fxToCNY(total, cur, cnyRate, hkdRate))
+		var share float64
+		if st := srcTotalCNY[sid]; st > 0.005 {
+			share = round2(totalCNY / st * 100)
+		}
+		weighted := 0.0
+		if allocated > 0.005 {
+			weighted = round4(costCNY / allocated)
+		}
+		curRate := currentRateOf(cur, cnyRate, hkdRate)
+		priced := currencyPriced(cur)
+		gain := 0.0
+		if priced && curRate > 0 && allocated > 0.005 {
+			gain = round2(allocated * (curRate - weighted))
+		}
+		startDate := ""
+		if len(lots) > 0 {
+			startDate = lots[0].TradeDate
+		}
+		inv := agg.cost + agg.principal
+		subaccounts = append(subaccounts, fxSubaccount{
+			SourceID: sid, SourceName: srcName[sid], Currency: cur,
+			Available: round2(agg.avail), InvestedEquity: round2(agg.cost),
+			InvestedWealth: round2(agg.principal), Invested: round2(inv),
+			Total: round2(total), TotalCNY: totalCNY, ShareOfSource: share,
+			CashCount: agg.cashCount, LotsCount: len(lots),
+			Allocated: round2(allocated), Unallocated: round2(total - allocated),
+			WeightedRate: weighted, CurrentRate: round4(curRate),
+			FXGainCNY: gain, Priced: priced, StartDate: startDate,
+		})
+	}
+
+	// 汇兑汇总：只统计有汇率源且已录批次的币种；未计价币种单列，不显示 0 冒充盈亏。
+	type fxCurAgg struct {
+		allocated, cost, gain float64
+		start                 string
+	}
+	byCur := map[string]*fxCurAgg{}
+	var fxGain float64
+	fxStart := ""
+	for _, sa := range subaccounts {
+		if !sa.Priced {
+			continue
+		}
+		if sa.Allocated <= 0.005 {
+			continue
+		}
+		a := byCur[sa.Currency]
+		if a == nil {
+			a = &fxCurAgg{}
+			byCur[sa.Currency] = a
+		}
+		a.allocated += sa.Allocated
+		a.cost += sa.Allocated * sa.WeightedRate
+		a.gain += sa.FXGainCNY
+		if a.start == "" || (sa.StartDate != "" && sa.StartDate < a.start) {
+			a.start = sa.StartDate
+		}
+		fxGain += sa.FXGainCNY
+		if fxStart == "" || (sa.StartDate != "" && sa.StartDate < fxStart) {
+			fxStart = sa.StartDate
+		}
+	}
+	fxByCur := gin.H{}
+	for cur, a := range byCur {
+		w := 0.0
+		if a.allocated > 0.005 {
+			w = round4(a.cost / a.allocated)
+		}
+		fxByCur[cur] = gin.H{
+			"gain_cny":      round2(a.gain),
+			"allocated":     round2(a.allocated),
+			"weighted_rate": w,
+			"current_rate":  round4(currentRateOf(cur, cnyRate, hkdRate)),
+			"start_date":    a.start,
+		}
+	}
+	unpriced := make([]gin.H, 0)
+	curUnpricedSet := map[string]bool{}
+	for _, sa := range subaccounts {
+		// 主货币（CNY）不存在「汇率源」问题，不能混进未计价名单；
+		// currencyPriced 只认 usd/hkd，这里必须显式排除，否则币种卡会给人币打上「未计价」。
+		if sa.Priced || sa.Currency == "cny" || sa.Total <= 0.005 || curUnpricedSet[sa.Currency] {
+			continue
+		}
+		curUnpricedSet[sa.Currency] = true
+		unpriced = append(unpriced, gin.H{"currency": sa.Currency, "reason": "无汇率源"})
+	}
+	curUnpriced := make([]string, 0, len(curUnpricedSet))
+	for cur := range curUnpricedSet {
+		curUnpriced = append(curUnpriced, cur)
+	}
+	sort.Strings(curUnpriced)
+
 	netAsset := round2(eqMV + wTotal + cTotalCNY - lTotal)
+	var fxPP interface{}
+	if netAsset > 0.005 {
+		fxPP = round2(fxGain / netAsset * 100)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"equity": gin.H{
@@ -279,7 +492,19 @@ func assetOverview(c *gin.Context) {
 			"total": round2(lTotal),
 			"items": lItems,
 		},
-		"net_asset":          netAsset,
+		"net_asset":         netAsset,
+		"subaccounts":       subaccounts,
+		"currency_unpriced": curUnpriced,
+		"fx": gin.H{
+			"gain_cny":    round2(fxGain),
+			"pp":          fxPP,
+			"net_asset":   netAsset,
+			"priced":      []string{"usd", "hkd"},
+			"unpriced":    unpriced,
+			"by_currency": fxByCur,
+			"start_date":  fxStart,
+			"as_of":       today,
+		},
 		"currency_assets":    curAssets,
 		"region_assets":      regAssets,
 		"region_liabilities": regLiab,
@@ -1398,8 +1623,8 @@ func adjustCash(c *gin.Context) {
 func adjustLiability(c *gin.Context) {
 	var b struct {
 		LiabilityID int64   `json:"liability_id"`
-		Delta        float64 `json:"delta"`
-		Note         string  `json:"note"`
+		Delta       float64 `json:"delta"`
+		Note        string  `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})

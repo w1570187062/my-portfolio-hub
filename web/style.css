@@ -5672,7 +5672,12 @@ textarea::placeholder {
 .kpi-card .kpi-value.flat { color: var(--text); }
 /* 负值警示（方案 14）：净资产为负这类「状态异常」不用绿（绿在本项目=跌），改用警示色。 */
 .kpi-card .kpi-value.is-neg { color: var(--warning); }
-.kpi-card .kpi-sub { order: 4; margin-top: var(--sp-1); font-size: var(--fs-xs); font-weight: 400; color: var(--text-muted); }
+.kpi-card .kpi-sub { order: 4; margin-top: var(--sp-1); font-size: var(--fs-xs); font-weight: 400; color: var(--text-muted);
+  /* 副标里有「自 2026-11-05 起计算」这类日期串：中文默认可在任意字间断行，
+     会把「起计/算」「自 2026-11-05 起计/算」拆成两半，读起来像错字。
+     keep-all 让中文成词连排、只在空格/分隔点处换行；overflow-wrap:anywhere 兜底，
+     万一单段本身就宽过卡片，仍允许在段内断开，不产生横向溢出。 */
+  word-break: keep-all; overflow-wrap: anywhere; }
 .kpi-card .kpi-sub.up { color: var(--up); }
 .kpi-card .kpi-sub.down { color: var(--down); }
 /* 分级柔化（2026-11-02 H5）：kpi-sub 内的盈亏也走分级降饱和度 */
@@ -7145,4 +7150,75 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .modal-card.cf-drawer-card { width: 100%; max-width: 100%; height: 92vh; max-height: 92vh; border-radius: var(--r-lg) var(--r-lg) 0 0; }
   .cf-undo-toast { left: var(--sp-3); right: var(--sp-3); bottom: var(--sp-4); transform: none; max-width: none; }
 }
+
+/* ===== 方案 B · 比例刻度表（2026-11-05 拍板，资产页三张卡统一） =====
+   百分比文字是主编码（大号、加粗），金额与名称同行，颜色只做辅助。
+   这样 390 收拢后也不会只剩色块：名称、金额、百分比三者始终可读。
+   order:5 与 .kpi-bar 同位；.kpi-bar 仍供其他页使用，资产页不再调用。 */
+.kpi-card .kpi-props { order: 5; display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-2); }
+.kpi-prop { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kp-top { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.kp-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--text-muted); }
+.kp-note { margin-left: var(--sp-1); font-style: normal; font-size: var(--fs-xs); color: var(--text-faint); }
+.kp-amt { flex: 0 0 auto; font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.kp-pct { flex: 0 0 auto; font-size: var(--fs-xs); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+/* 2px 微条只承担「形状」，不参与读数；无百分比（未计价）时整条不渲染。 */
+.kp-track { height: 2px; border-radius: 2px; overflow: hidden; background: var(--bg-input); }
+.kp-track i { display: block; height: 100%; width: var(--w, 0%); background: var(--bc, var(--primary)); }
+
+/* ===== 子账户 · 币种组行（可调用 / 已买入 / 合计） ===== */
+.fxg { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.fxg .chev { display: inline-flex; flex: 0 0 auto; color: var(--text-faint); transition: transform .2s var(--e); }
+.fxgrp.open .chev { transform: rotate(90deg); }
+.sn-tag { flex: 0 0 auto; font-size: var(--fs-xs); color: var(--text-faint); }
+.fxthree { display: flex; flex-direction: column; gap: 2px; }
+.fxline { display: flex; align-items: baseline; justify-content: flex-end; gap: var(--sp-2); }
+.fxline em { font-style: normal; font-size: var(--fs-xs); color: var(--text-faint); }
+.fxline b { font-size: var(--fs-sm); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.fxline.total b { font-weight: 700; }
+.sn-indent { padding-left: var(--sp-4); }
+/* 新口径脚注：三处合计的差额必须写在明面上（成本口径 / 未实现盈亏 / 负债） */
+.tbl-foot { padding: var(--sp-2) var(--sp-1) 0; font-size: var(--fs-xs); line-height: 1.6; color: var(--text-faint); }
+
+/* ===== 换汇拆批 · 全屏弹框（桌面 90vh，移动端整屏 sheet） ===== */
+.fx-modal .modal-card.fx-card {
+  width: min(1080px, 94vw); height: 90vh; max-height: 90vh;
+  padding: var(--sp-5); gap: var(--sp-3);
+}
+.fx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.fx-head-main { min-width: 0; }
+.fx-card .m-head { margin: 0; padding-right: 0; }
+.fx-sub { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); line-height: 1.55; color: var(--text-muted); }
+.fx-note { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--primary-soft); font-size: var(--fs-sm); color: var(--text-muted); }
+.fx-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.fx-tools { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.fx-rate { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.fx-lots-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.fx-lots { width: 100%; border-collapse: collapse; }
+.fx-lots th { padding: var(--sp-2); text-align: left; font-size: var(--fs-xs); font-weight: 500; color: var(--text-muted); white-space: nowrap; }
+.fx-lots td { padding: var(--sp-2); border-top: 1px solid var(--border); }
+.fx-c-idx { width: 64px; }
+.fx-c-del { width: 44px; }
+/* 表格内输入框不额外撑高行（modal-card 全局给了 margin-top，这里清零） */
+.fx-lots input { width: 100%; margin-top: 0; }
+.fx-add { align-self: flex-start; }
+.fx-sum { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-sm); color: var(--text-muted); }
+.fx-sum b { color: var(--text); font-variant-numeric: tabular-nums; }
+.fx-sum .fx-diff.is-bad { color: var(--danger); }
+.fx-sum .fx-diff.is-ok { color: var(--primary); }
+
+@media (max-width: 640px) {
+  /* 移动端整屏 sheet：去掉外边距与圆角，档位行改两列网格，不横向滚动 */
+  .fx-modal { padding: 0; }
+  .fx-modal .modal-card.fx-card { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; padding: var(--sp-4); }
+  .fx-lots thead { display: none; }
+  .fx-lots tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); padding: var(--sp-2); border-top: 1px solid var(--border); }
+  .fx-lots td { border: 0; padding: 0; }
+  .fx-lots td:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .fx-lots td:nth-child(6) { grid-column: 2; grid-row: 1; justify-self: end; }
+  .fx-lots td:nth-child(4) { grid-column: 1; grid-row: 3; }
+  .fx-lots td:nth-child(5) { grid-column: 2; grid-row: 3; }
+  .fx-body { overflow: auto; }
+}
+
 

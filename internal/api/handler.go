@@ -300,6 +300,8 @@ func RegisterRoutes(r *gin.Engine) {
 
 		// 资产全景：来源 / 理财 / 负债 / 汇总 / AI 总结
 		g.GET("/asset/overview", assetOverview)
+		g.GET("/asset/fx-lots", fxLotsGet)
+		g.PUT("/asset/fx-lots", fxLotsPut)
 		g.GET("/asset/sources", listSources)
 		g.POST("/asset/sources", createSource)
 		g.PUT("/asset/sources/:id", updateSource)

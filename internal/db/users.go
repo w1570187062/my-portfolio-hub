@@ -43,6 +43,7 @@ func EnsureUsers() error {
 	for _, t := range []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
 		"cash_accounts", "consumptions", "operation_guides", "dca_plans",
+		"cash_fx_lots",
 	} {
 		addColumnIfMissing(t, "user_id", "INTEGER NOT NULL DEFAULT 0")
 	}
@@ -126,6 +127,7 @@ func CountUserData(userID int64) (map[string]int, error) {
 	tables := []string{
 		"holdings", "asset_sources", "wealth_products", "liabilities",
 		"cash_accounts", "consumptions", "operation_guides", "dca_plans",
+		"cash_fx_lots",
 	}
 	for _, t := range tables {
 		var n int
@@ -142,7 +144,8 @@ func CountUserData(userID int64) (map[string]int, error) {
 	out["position_tx"] = txn
 	// 合计条数（不含 AI 设置这类偏配置性的）
 	total := out["holdings"] + out["asset_sources"] + out["wealth_products"] + out["liabilities"] +
-		out["cash_accounts"] + out["consumptions"] + out["operation_guides"] + out["position_tx"]
+		out["cash_accounts"] + out["consumptions"] + out["operation_guides"] + out["position_tx"] +
+		out["cash_fx_lots"]
 	out["total"] = total
 	return out, nil
 }
@@ -181,6 +184,10 @@ func ClearUserData(userID int64) error {
 	}
 	// 资产全景
 	if _, err := DB.Exec(`DELETE FROM consumptions WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	// 换汇批次按账本直删（批次只挂 source_id，不挂现金子账户）
+	if _, err := DB.Exec(`DELETE FROM cash_fx_lots WHERE user_id=?`, userID); err != nil {
 		return err
 	}
 	// wealth / cash / liabilities 经 source 级联

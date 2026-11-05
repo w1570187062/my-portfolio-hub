@@ -1565,6 +1565,41 @@
     </div>
   </div>
 
+  <div id="fxModal" class="modal fx-modal" hidden>
+    <div class="modal-card fx-card">
+      <div class="fx-head">
+        <div class="fx-head-main">
+          <h2 class="m-head" id="fxTitle">换汇拆批</h2>
+          <p class="fx-sub" id="fxSub"></p>
+        </div>
+        <button class="icon-btn" id="fxClose" type="button" title="关闭" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <!-- 口径提示：这笔余额包含「已买入本金」，不是纯现金。避免用户按可调用现金录入导致永远对不平。 -->
+      <div class="fx-note">合计包含可调用现金与已买入本金（权益成本 + 理财本金），不是纯现金。</div>
+      <div class="fx-body">
+        <div class="fx-tools">
+          <button class="btn" id="fxOneClick" type="button">按当前汇率全部归为一档</button>
+          <span class="fx-rate" id="fxRate"></span>
+        </div>
+        <div class="fx-lots-wrap">
+          <table class="fx-lots">
+            <thead><tr><th class="fx-c-idx">档位</th><th>金额（原币）</th><th>汇率（1 原币 = CNY）</th><th>日期</th><th>备注</th><th class="fx-c-del"></th></tr></thead>
+            <tbody id="fxLotBody"></tbody>
+          </table>
+        </div>
+        <button class="btn fx-add" id="fxAddLot" type="button">＋ 添加一档</button>
+      </div>
+      <div class="fx-sum" id="fxSum"></div>
+      <div class="err" id="fxErr"></div>
+      <div class="modal-actions">
+        <button class="btn" id="fxCancel" type="button">取消</button>
+        <button class="btn primary" id="fxSave" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+
   <div id="flowModal" class="modal" hidden>
     <div class="modal-card">
       <h2 class="m-head" id="flowModalTitle">添加流水</h2>

@@ -56,6 +56,10 @@ func main() {
 	// FX rates: warm cache from DB and refresh in background (handlers no longer block on upstream).
 	market.StartFXUpdater()
 
+	// 换汇批次：老数据一次性按迁移日汇率建档（幂等），demo 实例额外落示例三档。
+	// 必须在汇率缓存就绪之后、路由注册之前执行，保证首屏 overview 就带 subaccounts/fx。
+	api.EnsureFXLots()
+
 	// 定时任务（快照/AI总结/备份/归零/提醒/扫描）只在「调度开启」的实例运行；
 	// 默认写实例开启、只读实例（如 demo）关闭，避免多实例重复推送/覆盖行情。
 	if api.SchedulerEnabled() {

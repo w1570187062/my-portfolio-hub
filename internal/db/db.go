@@ -1487,6 +1487,22 @@ func initAssetTables() error {
 				sent_at TEXT NOT NULL DEFAULT '',
 				PRIMARY KEY (plan_id, ym)
 			)`,
+		// 换汇批次：按「账户 + 币种」记录非主货币资金的实际换汇成本。
+		// 总额口径 = 可调用现金 + 已买入本金（权益成本 + 理财本金），
+		// 因此批次不挂单个现金子账户（持仓/理财只关联到账户，见 2026-11-05 方案）。
+		`CREATE TABLE IF NOT EXISTS cash_fx_lots (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				user_id INTEGER NOT NULL DEFAULT 0,
+				source_id INTEGER NOT NULL DEFAULT 0,
+				currency TEXT NOT NULL DEFAULT 'cny',
+				amount REAL NOT NULL DEFAULT 0,
+				rate REAL NOT NULL DEFAULT 0,
+				trade_date TEXT NOT NULL DEFAULT '',
+				note TEXT NOT NULL DEFAULT '',
+				origin TEXT NOT NULL DEFAULT 'manual',
+				created_at TEXT NOT NULL DEFAULT '',
+				updated_at TEXT NOT NULL DEFAULT ''
+			)`,
 	}
 	for _, s := range stmts {
 		if _, err := DB.Exec(s); err != nil {
@@ -1544,6 +1560,8 @@ func initAssetTables() error {
 		  )`)
 	// 索引：按账户查流水（历史弹框）
 	_, _ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_cash_flow_cash ON cash_flow(cash_id)`)
+	// 索引：按账本 + 账户 + 币种查换汇批次（总览与弹框都按这三列取）
+	_, _ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_cash_fx_lots ON cash_fx_lots(user_id, source_id, currency)`)
 	// source：流水来源标记（''=应用内操作 / 'mcp'=通过 MCP 服务写入），供流水表格打标签区分。
 	addColumnIfMissing("cash_flow", "source", "TEXT NOT NULL DEFAULT ''")
 	// 审计记录现金落账子账户：撤销时优先冲正回原账户，避免同金额多笔流水匹配错账户。
@@ -1654,7 +1672,6 @@ func GetSource(id int64) (*AssetSource, error) {
 	return &s, nil
 }
 
-
 // 数量上限：可切换的账本总数 5 个；账户/子账户/持仓/理财/负债/消费等数据每账本 200 条。
 const MaxUsers = 5
 const MaxEntities = 200
@@ -1723,6 +1740,10 @@ func DeleteSource(id int64) error {
 	}
 	// 现金账户随来源级联删除（含其流水）；默认现金账户不支持单独删除，只能走这里。
 	if err := DeleteCashBySource(id); err != nil {
+		return err
+	}
+	// 换汇批次随账户级联删除（批次不挂现金子账户，删现金账户不会带走它）
+	if _, err := DB.Exec(`DELETE FROM cash_fx_lots WHERE source_id=?`, id); err != nil {
 		return err
 	}
 	if _, err := DB.Exec(`UPDATE consumptions SET source_id=0 WHERE source_id=?`, id); err != nil {
