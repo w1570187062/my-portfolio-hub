@@ -1715,7 +1715,92 @@ function renderSummary(hs) {
     invPct.textContent = pct(totalPct);
     invPct.className = 'kpi-value ' + pCls;
   }
-  // 权益曲线由首页卡片渲染（renderHomeDashboard 内 renderRateSpark）。
+  // 锚点卡右侧的三段资产占比环（权益 / 理财 / 现金）
+  renderInvestAlloc(totalCNY);
+}
+
+// ===== 投资页「持仓」锚点卡 · 资产占比环（2026-11-05） =====
+// 口径（与卡面读数同源，不另算一套）：
+//   · 权益 = 本卡主数字「持仓市值」，直接用 renderSummary 里的 totalCNY（同一个变量）；
+//     与 /api/asset/overview 的 equity.market_value 只差后端逐项 round2 的 1 分钱（实测 ¥673,166.83 vs .84）
+//   · 理财 = overview.wealth.total，现金 = overview.cash.total —— 首页资产分布 chip、
+//     资产页环形图用的就是这两个字段
+//   · 分母只含这三段（总资产），不含负债：这里回答「资产怎么分布」，净资产另有其数
+// 合计为 0 / 某一段为 0：弧长按 0 写，SVG 只画底环，不出 NaN、不出空环。
+// 百分比用最大余数法按 0.1% 取整，三段展示值恒等于 100.0%。
+let mvRingRaf = 0;
+const MV_RING_R = 22;
+const MV_RING_C = 2 * Math.PI * MV_RING_R;
+
+function mvRingSplit(items) {
+  const total = items.reduce((a, p) => a + Math.max(p.v, 0), 0);
+  if (!(total > 0)) return { total: 0, parts: items.map((p) => ({ ...p, txt: '0.0%' })) };
+  // 以 0.1% 为单位做最大余数分配，避免三段四舍五入后合计 99.9% 或 100.1%
+  const raw = items.map((p) => (Math.max(p.v, 0) / total) * 1000);
+  const base = raw.map(Math.floor);
+  let left = 1000 - base.reduce((a, b) => a + b, 0);
+  raw
+    .map((r, i) => ({ i, frac: r - base[i] }))
+    .sort((a, b) => b.frac - a.frac)
+    .forEach((o) => { if (left > 0 && items[o.i].v > 0) { base[o.i] += 1; left -= 1; } });
+  return { total, parts: items.map((p, i) => ({ ...p, txt: (base[i] / 10).toFixed(1) + '%' })) };
+}
+
+// 扫环动画：0 → 目标角度一次跑完（750ms，easeOutCubic）。图例数字不做递增 —— 它是读数不是动效，
+// 逐帧改文本会让 11px 三位数跟着抖动，也和卡面主数字抢注意力。
+function mvRingPaint(host, parts, total) {
+  const segs = host.querySelectorAll('.alloc-ring-seg');
+  const lens = parts.map((p) => (total > 0 ? (Math.max(p.v, 0) / total) * MV_RING_C : 0));
+  const offs = [];
+  let acc = 0;
+  lens.forEach((l) => { offs.push(acc); acc += l; });
+  const draw = (prog) => {
+    const swept = MV_RING_C * prog;
+    segs.forEach((el, i) => {
+      const d = Math.max(0, Math.min(lens[i], swept - offs[i]));
+      el.setAttribute('stroke-dasharray', d.toFixed(2) + ' ' + MV_RING_C.toFixed(2));
+      el.setAttribute('stroke-dashoffset', (-offs[i]).toFixed(2));
+    });
+  };
+  cancelAnimationFrame(mvRingRaf);
+  mvRingRaf = 0;
+  // 减少动效：直接落终态，不跑 rAF
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { draw(1); return; }
+  draw(0);
+  const t0 = performance.now();
+  const DUR = 750;
+  const step = (now) => {
+    const t = Math.min(1, (now - t0) / DUR);
+    draw(1 - Math.pow(1 - t, 3));
+    mvRingRaf = t < 1 ? requestAnimationFrame(step) : 0;
+  };
+  mvRingRaf = requestAnimationFrame(step);
+}
+
+function renderInvestAlloc(equityCny) {
+  const host = document.getElementById('investAlloc');
+  if (!host) return;
+  // 总览没拿到就不画：此时理财/现金是「未知」，画成 0% 等于报错数
+  if (!assetData) { host.hidden = true; return; }
+  const parts = [
+    { label: '权益', v: Number(equityCny) || 0, color: 'rgb(var(--cat-equity))' },
+    { label: '理财', v: Number((assetData.wealth && assetData.wealth.total) || 0), color: 'rgb(var(--cat-wealth))' },
+    { label: '现金', v: Number((assetData.cash && assetData.cash.total) || 0), color: 'rgb(var(--cat-cash))' },
+  ];
+  const { total, parts: p } = mvRingSplit(parts);
+  const aria = '资产占比：' + p.map((s) => s.label + ' ' + s.txt).join('、');
+  host.hidden = false;
+  host.innerHTML =
+    `<svg class="alloc-ring" viewBox="0 0 56 56" role="img" aria-label="${aria}">`
+    + `<circle class="alloc-ring-track" cx="28" cy="28" r="${MV_RING_R}"/>`
+    + p.map((s) => `<circle class="alloc-ring-seg" cx="28" cy="28" r="${MV_RING_R}"`
+      + ` stroke-dasharray="0 ${MV_RING_C.toFixed(2)}" style="--alloc-c:${s.color}"/>`).join('')
+    + '</svg>'
+    + '<div class="alloc-legend">'
+    + p.map((s) => `<div class="alloc-leg"><span class="alloc-dot" style="--alloc-c:${s.color}"></span>`
+      + `<span>${s.label}</span><span class="alloc-leg-p">${s.txt}</span></div>`).join('')
+    + '</div>';
+  mvRingPaint(host, p, total);
 }
 
 // 首页「权益收益曲线」：固定近 30 日累计权益盈亏（数据复用盈亏日历 /api/pnl/history，
