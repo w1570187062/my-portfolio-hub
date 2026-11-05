@@ -5715,6 +5715,48 @@ textarea::placeholder {
 .kpi-card.anchor .kpi-value { font-size: 32px; letter-spacing: -1px; }
 .kpi-card.anchor .kpi-sub { margin-top: var(--sp-2); font-size: var(--fs-sm); }
 
+/* ===== 投资页「持仓」锚点卡 · 资产占比环（2026-11-05） =====
+   卡内改成「文本块 + 环块」的可换行横排：宽屏环在右侧、圆心对齐内容区中线；
+   卡宽不够（平板 2×2、手机）时环块自动换到文本块下一行，不压数字、不产生横向溢出。
+   环块不参与 KPI 数字布局，所以卡片里原有的数字/副标口径一个字都没动。
+   角标 .kpi-icon 仍在右上角，环块在它左侧，二者实测无重叠（见 README 记录）。 */
+.kpi-card.anchor.has-alloc {
+  flex-direction: row; flex-wrap: wrap;
+  align-items: center;
+  /* 多行时整组行块在内容区居中 —— 单行时等价于「环块垂直居中于内容区」 */
+  align-content: center;
+  column-gap: var(--sp-4); row-gap: var(--sp-2);
+}
+.kpi-card.anchor.has-alloc .kpi-body {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.kpi-alloc {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: var(--sp-2);
+}
+/* [hidden] 兜底：.kpi-alloc 自带 display:flex，作者样式会压过 UA 的 [hidden] */
+.kpi-alloc[hidden] { display: none; }
+.alloc-ring { display: block; width: 56px; height: 56px; flex: 0 0 auto; }
+.alloc-ring-track { fill: none; stroke: var(--bg-input); stroke-width: 8; }
+/* 环形分段：起点统一转到 12 点方向，弧长由 JS 写入 stroke-dasharray */
+.alloc-ring-seg {
+  fill: none; stroke: var(--alloc-c); stroke-width: 8;
+  transform: rotate(-90deg); transform-origin: 50% 50%;
+}
+.alloc-legend { display: flex; flex-direction: column; gap: 2px; min-width: 84px; }
+.alloc-leg {
+  display: flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-xs); line-height: 1.2; color: var(--text-muted);
+  white-space: nowrap;
+}
+.alloc-dot { width: var(--sp-2); height: var(--sp-2); border-radius: var(--r-xs); background: var(--alloc-c); flex: 0 0 auto; }
+.alloc-leg-p { margin-left: auto; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+/* 平板以上：文本块最小 200px（4px 网格）。卡宽不足时不是把数字挤扁，而是让环块换行 */
+@media (min-width: 641px) {
+  .kpi-card.anchor.has-alloc .kpi-body { flex-basis: 200px; min-width: 200px; }
+}
+
 /* 行模板：平级等宽（财务/资产）｜锚点 + 卫星（投资） */
 .kpi-row { display: grid; gap: var(--sp-3); align-items: stretch; }
 .kpi-row.cols-flat { grid-template-columns: repeat(4, 1fr); }
@@ -5746,6 +5788,9 @@ textarea::placeholder {
   .kpi-card.density-standard .kpi-value { font-size: var(--fs-xl); }
   .kpi-card.anchor { padding: var(--sp-4); }
   .kpi-card.anchor .kpi-value { font-size: var(--fs-2xl); }
+  /* 手机档：环缩到 40px、图例 76px，仍放不进右侧（卡宽 169px）→ 环块换到数字块下方 */
+  .alloc-ring { width: 40px; height: 40px; }
+  .alloc-legend { min-width: 76px; }
 }
 
 /* —— 净资产 Hero —— */

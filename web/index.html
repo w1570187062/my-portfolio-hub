@@ -278,11 +278,16 @@
   <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 3 卫星（今日 / 本月 / 收益率），统一 .kpi-card -->
   <section class="invest-hero" id="investHero">
     <div class="kpi-row cols-anchor">
-      <div class="kpi-card density-standard anchor">
+      <!-- has-alloc：右侧挂「资产占比环」（权益 / 理财 / 现金）。卡内文本包进 .kpi-body，
+           让「文本块 + 环块」成为可换行的一行 —— 宽屏环在右侧垂直居中，窄屏自动换到下一行。 -->
+      <div class="kpi-card density-standard anchor has-alloc">
         <div class="kpi-icon kpi-ico-equity"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="10" width="7" height="11" rx="1"/></svg></div>
-        <div class="kpi-label">持仓市值</div>
-        <div class="kpi-main"><div class="kpi-value" id="investMv">—</div></div>
-        <div class="kpi-sub" id="investMvSub">—</div>
+        <div class="kpi-body">
+          <div class="kpi-label">持仓市值</div>
+          <div class="kpi-main"><div class="kpi-value" id="investMv">—</div></div>
+          <div class="kpi-sub" id="investMvSub">—</div>
+        </div>
+        <div class="kpi-alloc" id="investAlloc" hidden></div>
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
