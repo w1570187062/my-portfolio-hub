@@ -39,10 +39,18 @@ node_modules/
 !.env.example
 
 # ── 本地流程说明 / 设计文档（仅本机参考）────────────────────
+# docs/ 只放行 screenshots/home.png（README 首页图）入库：
+# 其余 md 规格稿、设计稿、改版方案、一次性 HTML 原型、提交佐证截图全部留在本地。
+# 例：mcp-api.md、ui-design-spec.md、feature-upgrade-plan.md、*-proposal.html
+/docs/*
+!/docs/screenshots/
+/docs/screenshots/*
+!/docs/screenshots/home.png
 DEPLOY.md
-docs/deploy.md
 DESIGN_SYSTEM.md
-/docs/design-system-audit.md
+# 根目录一次性规格 / 任务清单（本机参考，多为 AI 协作中间产物）
+/spec.md
+/tasks.md
 
 # ── WorkBuddy / trae 工作目录（记忆、会话、分享包）──────────
 .workbuddy/
@@ -62,8 +70,9 @@ analysis/
 
 # ── 原型设计稿（一次性 HTML 预览，仅本地参考）───────────────
 tab-redesign-prototype/
+finance-bar-prototype/
+shield-prototype/
 hero-prototype.html
-docs/*-proposal.html
 
 # ── 本地验证用二进制（pf-smoke，跑全量构建前的冒烟库）────────
 /pf-smoke.exe
