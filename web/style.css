@@ -5939,7 +5939,7 @@ textarea::placeholder {
   .nw-chip { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); font-size: var(--fs-sm); }
   .nw-chip .d { width: 7px; height: 7px; }
   .nw-main > .nw-right .rate-spark-box { min-height: 192px; }
-  /* 盾贴着曲线块（.nw-spark）自己的右上角，块内定位，无需再挪位置 */
+  /* 盾牌水印靠 .nw-shield 的 inset + flex 居中，宽屏无需另调位置 */
 }
 /* 641–1340：芯片让一档内距，四枚仍等分一行 */
 @media (min-width: 641px) and (max-width: 1340px) {
@@ -5969,27 +5969,28 @@ textarea::placeholder {
   object-fit: contain; justify-self: start;
   border-radius: var(--r-sm);
 }
-/* 盾牌水印（2026-11-05 七改）：锚点改为「权益收益曲线」这一块自己的右上角（.nw-spark），
-   不再挂到 hero 卡外框。盾的右边与上边正好贴住曲线块的边界，全程在块内、不需要任何
-   overflow 裁切，也不会再出现「贴卡边框」的悬空感。
-   体量沿用上一版半尺寸 152px（300 的一半；150 不落 4px 网格被 check-ui 拦下）。
-   .nw-shield 是 0×0 绝对定位锚点 → 不参与 .nw-spark 的 flex 布局、不改块高；
-   z-index:-1 + .nw-spark isolation:isolate → 落在曲线 svg 与标题文字之下。
-   实测叠压：左列台账（数字/芯片/跑马灯）0，曲线块内为背景水印。
+/* 盾牌水印（2026-11-05 十改）：盾回到「权益收益曲线」的**背景**位置 —— 不再贴右上角，
+   改为在图表区内居中铺底，透明度整体调低一档（旧的 .18/.07 → .09/.04）。
+   尺寸：svg 占满 .nw-plot（100%×100%），靠 SVG 自带的 xMidYMid meet 等比缩放并居中 →
+   **盾的高度 = 图表区的整个高度**（宽高比不变、不拉伸）；宽度成为限制时自动按宽度收敛，
+   不会溢出卡片。九改的 82% + max-height:220px 会让 1920 宽屏只占图表高度的 63%，故去掉。
+   定位方式：图表块外包一层 .nw-plot（position:relative + flex:1），盾 inset:0 铺满它，
+   尺寸与 #homeRateSpark 完全一致 → 不用手写 header 高度这类魔数，也不改块高
+   （不能直接改成 grid 叠放：JS 会给曲线 svg 写死测量尺寸，grid 的 min-content 会被它撑大）。
+   z-index:-1 + .nw-spark isolation:isolate → 压在曲线 svg 之下；pointer-events:none 不挡 hover。
    ≤640 单列档不渲染（见下方断点内的 display:none）。 */
-.nw-spark { isolation: isolate; }
+.nw-spark { position: relative; isolation: isolate; }
+.nw-plot { position: relative; display: flex; flex: 1; min-height: 0; }
 .nw-shield {
-  position: absolute; top: 0; right: 0; z-index: -1;
-  width: 0; height: 0; pointer-events: none;
+  position: absolute; inset: 0; z-index: -1;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
 }
-.nw-shield svg {
-  position: absolute; top: 0; right: 0;
-  height: 152px; width: auto; max-width: none; aspect-ratio: 1;
-}
-.nw-shield .wm-a { stroke: rgba(var(--tint), .18); stroke-width: 1.7; }
-.nw-shield .wm-b { stroke: rgba(var(--tint), .07); stroke-width: 1.4; }
-:root[data-theme="light"] .nw-shield .wm-a { stroke: rgba(var(--tint), .13); }
-:root[data-theme="light"] .nw-shield .wm-b { stroke: rgba(var(--tint), .05); }
+.nw-shield svg { width: 100%; height: 100%; display: block; }
+.nw-shield .wm-a { stroke: rgba(var(--tint), .09); stroke-width: 1.5; }
+.nw-shield .wm-b { stroke: rgba(var(--tint), .04); stroke-width: 1.3; }
+:root[data-theme="light"] .nw-shield .wm-a { stroke: rgba(var(--tint), .075); }
+:root[data-theme="light"] .nw-shield .wm-b { stroke: rgba(var(--tint), .035); }
 /* 右列：曲线撑满两行（曲线随台账高度走，不额外加高） */
 .nw-right { display: flex; flex-direction: column; min-width: 0; }
 .nw-spark { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -6822,6 +6823,17 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 /* 设备改名输入框 */
 .dev-name-label { display: block; font-size: var(--fs-sm); color: var(--text-secondary); }
 .dev-name-label input { width: 100%; margin-top: var(--sp-1); }
+/* 改名弹框里的「设为主设备」次动作：与名称输入用分隔线划开，别被读成改名的一部分 */
+.dev-owner-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) 0 0;
+  border-top: 1px solid var(--border);
+}
+.dev-owner-row .tool-hint { margin: 0; }
 
 /* 恢复码卡片（2026-10-29）：明文只出现一次，字号放大、等宽、可整段选中 */
 .rec-card { width: 420px; }
