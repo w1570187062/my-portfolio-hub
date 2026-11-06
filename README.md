@@ -4,7 +4,7 @@
 
 > 在线 Demo：<https://www.mrchenyifei.icu:19999>（只读演示，行情定时刷新）
 
-![首页](docs/screenshots/home.png)
+![首页](assets/home.png)
 
 ## 功能一览
 
@@ -55,7 +55,7 @@
 
 ### MCP 服务
 
-内建零依赖 MCP 服务端（stdio / HTTP），供 AI 客户端查询账本并按名称 / 代码定位实体记录流水。默认关闭、零开销。
+内建零依赖 MCP 服务端（stdio / HTTP），供 AI 客户端查询账本并按名称 / 代码定位实体记录流水。默认关闭、零开销。配置项与工具列表见 [MCP 接口文档](docs/api/mcp.md)。
 
 ### 多账本 & 设备授权
 

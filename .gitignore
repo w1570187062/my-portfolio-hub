@@ -39,13 +39,13 @@ node_modules/
 !.env.example
 
 # ── 本地流程说明 / 设计文档（仅本机参考）────────────────────
-# docs/ 只放行 screenshots/home.png（README 首页图）入库：
-# 其余 md 规格稿、设计稿、改版方案、一次性 HTML 原型、提交佐证截图全部留在本地。
-# 例：mcp-api.md、ui-design-spec.md、feature-upgrade-plan.md、*-proposal.html
+# docs/ 只放行对外 API 文档（docs/api/）入库；其余 md 规格稿、设计稿、
+# 改版方案、一次性 HTML 原型、过程截图全部留在本地。
+# README 引用的截图统一放根目录 assets/，不埋进 docs 过程目录。
 /docs/*
-!/docs/screenshots/
-/docs/screenshots/*
-!/docs/screenshots/home.png
+!/docs/api/
+# 过程截图目录整体忽略（本地可看，不进 git）
+/docs/screenshots/
 DEPLOY.md
 DESIGN_SYSTEM.md
 # 根目录一次性规格 / 任务清单（本机参考，多为 AI 协作中间产物）
