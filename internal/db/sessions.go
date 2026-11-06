@@ -43,9 +43,10 @@ type Session struct {
 	Label        string `json:"label"` // 用户自定义设备名（空串=按 UA 自动命名）
 	Kind         string `json:"kind"`  // device | service
 	// Role 设备角色（2026-10-29 引入）：owner=主设备（管理员），member=普通设备。
-	//   - 只有 owner 能吊销他机 / 出码加设备 / 改操作 PIN / 删清账本 / 导入 / 转移管理员；
-	//   - member 只能读写账本业务数据、改自己设备名、退出自己；
-	//   - owner 全局唯一（同一时刻至多一个有效会话是 owner），可在设备页输 PIN 转移。
+	//   - 只有 owner 能改他机名 / 吊销他机 / 出码 / 改操作 PIN / 删清账本 / 导入；
+	//   - member 只能读写账本业务数据、改自己设备名、删除自己；
+	//   - owner 全局唯一（同一时刻至多一个有效会话是 owner）；任何设备凭操作 PIN
+	//     都可在设备页把主设备切到任意设备（含本机），见 SetOwnerDevice。
 	Role      string `json:"role"`
 	CreatedAt string `json:"created_at"`
 	LastSeen  string `json:"last_seen"`
@@ -318,18 +319,28 @@ func SetSessionRole(id int64, role string) error {
 	return err
 }
 
-// TransferOwnership 转移主设备：toID 升为 owner，fromID 降为 member。
-// 顺序刻意「先升后降」：中间一瞬间有两个 owner，但绝不会出现零 owner 的窗口——
-// 零 owner 会让出码 / 改 PIN / 删账本全部锁死，比短暂双主设备严重得多。
-func TransferOwnership(fromID, toID int64) error {
-	if fromID == toID {
-		return errors.New("不能转移给自己")
-	}
-	if _, err := DB.Exec(`UPDATE sessions SET role=? WHERE id=?`, RoleOwner, toID); err != nil {
+// SetOwnerDevice 把主设备切到指定会话（2026-11-05）：先把所有 owner 降为 member，
+// 再把目标升为 owner，两条 UPDATE 同一事务，任意时刻都不会出现「两个 owner」或「零 owner」。
+// 发起方不必是 owner，所以普通设备凭操作 PIN 也能把主设备切走（含把本机升为主设备），
+// 原主设备报废时不必再靠「吊销→自动提升」绕路。
+func SetOwnerDevice(id int64) error {
+	tx, err := DB.Begin()
+	if err != nil {
 		return err
 	}
-	_, err := DB.Exec(`UPDATE sessions SET role=? WHERE id=?`, RoleMember, fromID)
-	return err
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE sessions SET role=? WHERE role=?`, RoleMember, RoleOwner); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`UPDATE sessions SET role=? WHERE id=? AND revoked=0 AND expires_at>?`,
+		RoleOwner, id, time.Now().Format(sessionTimeFmt))
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errors.New("设备已下线，请刷新列表")
+	}
+	return tx.Commit()
 }
 
 // EnsureOwnerSession 保证「只要还有活设备，就有主设备」。

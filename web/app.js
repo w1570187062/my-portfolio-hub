@@ -257,8 +257,9 @@ window.addEventListener('hashchange', applyRoute);
 
 // ---- 认证层（2026-10-28）：身份由 HttpOnly Cookie 决定，前端不再自报 X-User-Id ----
 // 401 → 弹出认领/配对闸门；403+pin_required → 弹操作 PIN 输入框并自动重试一次；
-// 403+owner_required → 账本级不可逆操作（改 PIN / 恢复码 / 转移主设备 / 删清账本 / 导入）只属主设备；
-// 设备管理（改名 / 吊销他机 / 出码）自 2026-11-02 起不再看角色，由 PIN 兜底。
+// 403+owner_required → 账本级不可逆操作（改 PIN / 恢复码 / 删清账本 / 导入）只属主设备；
+// 2026-11-05 权限收敛：设备管理（改他机名 / 吊销他机 / 出码）也回到主设备专属，
+// 普通设备只能删自己、给自己改名；唯一例外是「凭操作 PIN 切换主设备」。
 // role: owner=主设备（管理员）/ member=普通设备；has_recovery=是否已有恢复码（不回传明文）。
 let authState = { authed: false, mode: '', user: null, users: [], read_only: false, has_pin: false, role: 'member', has_recovery: false };
 let authReturnHash = '';   // 进闸门前所在路由，认证成功后回跳
@@ -7474,6 +7475,8 @@ const ACT_ICONS = {
   checks: '<path d="M4 7 5.8 8.8 8.6 5.6"/><path d="M11.4 7.2h8"/><path d="M4 15 5.8 16.8 8.6 13.6"/><path d="M11.4 15.2h8"/>',
   // 理财净值：价格标签（净值 = 单位净值），用于「刷新净值」按钮
   nav: '<path d="M4 4h7l9 9-7 7-9-9V4Z"/><circle cx="8.4" cy="8.4" r="1.3"/>',
+  // 主设备：皇冠（设备行「设为主设备」，凭操作 PIN 切换）
+  crown: '<path d="M3.5 7.5 7.2 11 12 4.6l4.8 6.4 3.7-3.5-1.6 10.1H5.1L3.5 7.5Z"/><path d="M5.1 20h13.8"/>',
   // 换汇拆批：双向箭头 + 中间币种符号（16px 下只用两条错位箭头即可读作「兑换」）
   fx: '<path d="M4 8.5h9"/><path d="M10 5.8 12.7 8.5 10 11.2"/><path d="M20 15.5h-9"/><path d="M14 12.8 11.3 15.5 14 18.2"/>',
 };
@@ -15276,10 +15279,16 @@ function deviceKind(ua) {
 
 let devRenameId = 0;
 
-function openDeviceRename(id, label) {
+function openDeviceRename(id, label, isOwnerTarget, canSwitch) {
   devRenameId = id;
   const input = document.getElementById('devNameInput');
   input.value = label || '';
+  // 改名弹框里挂一个次动作：切换主设备。已经是主设备的那台只回显状态，不给按钮。
+  document.getElementById('devNameOwner').hidden = !canSwitch || !!isOwnerTarget;
+  document.getElementById('devNameOwnerCur').hidden = !isOwnerTarget;
+  document.getElementById('devNameOwnerHint').textContent = isOwnerDevice()
+    ? '输入操作 PIN 即可把主设备转给这台设备，本机将降为普通设备。'
+    : '输入操作 PIN 即可切换，本机将成为主设备。';
   document.getElementById('devNameModal').hidden = false;
   setTimeout(() => { input.focus(); input.select(); }, 50);
 }
@@ -15294,22 +15303,47 @@ async function saveDeviceRename() {
   loadAuthDevices();
 }
 
+// 切换主设备（2026-11-05）：任意设备 + 正确操作 PIN 都能切，PIN 由 api() 统一弹框 / 重试。
+// 两个入口共用：设备行的皇冠按钮、设备名称弹框里的「设为主设备」。
+async function switchOwnerDevice(id) {
+  const modal = document.getElementById('devNameModal');
+  const wasOpen = !!modal && !modal.hidden;
+  // PIN 弹框 DOM 顺序在改名弹框之前，先收起改名弹框，免得它盖住 PIN 输入框。
+  if (modal) modal.hidden = true;
+  try {
+    const r = await api('/api/session/transfer', { method: 'POST', body: JSON.stringify({ device_id: Number(id) }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (!d.pin_required) toast(d.error || '切换主设备失败', 'err');
+      if (wasOpen && modal) modal.hidden = false;
+      return;
+    }
+    const st2 = await fetchSession();
+    if (st2) authState = st2;
+    toast(d.role === 'owner' ? '已切换：本机现在是主设备' : '已把主设备切给该设备，本机现在是普通设备', 'ok');
+    loadAuthDevices();
+  } catch (e) {
+    // 取消 PIN 输入：恢复改名弹框，不吞掉已输入的名称
+    if (wasOpen && modal) modal.hidden = false;
+  }
+}
+
 // 当前设备是否主设备（管理员）。用函数而非变量，避免顶层初始化顺序踩 TDZ。
 const isOwnerDevice = () => authState.role === 'owner';
 
-// 按角色显示 / 隐藏管理入口（2026-11-02 调整）。
-// 设备管理类操作（改名 / 吊销他机 / 添加设备 / 邀请家人）不再要求主设备身份：有操作 PIN 就能做，
-// 所以 #deviceActions 对所有设备可见；仍归主设备的只剩账本级不可逆操作（改 PIN / 恢复码 / 删账本），
-// 对应 #pinSection 整块。后端同步放宽（handler.go 设备路由只看 PIN），前端只是不提前藏入口。
+// 按角色显示 / 隐藏管理入口（2026-11-05 收敛）。
+// 普通设备：只能删自己、给自己改名（设备行按钮在 loadAuthDevices 里按角色出），外加
+// 「凭 PIN 切换主设备」这个唯一例外；改他机名 / 吊销他机 / 出码、以及整个「操作 PIN」区
+// 都只给主设备看。后端同步收紧（handler.go / auth.go），前端只是不提前露出入口。
 function applyRoleUI() {
   const owner = isOwnerDevice();
   ['pinSection', 'pinTitle', 'pinRow', 'pinTools', 'pinTip'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = !owner;
   });
-  // 添加设备 / 邀请家人：全员可见（出码时后端要 PIN，由 api() 统一弹口令框）
+  // 添加设备 / 邀请家人：主设备专属（出码时后端仍要 PIN，由 api() 统一弹口令框）
   const actions = document.getElementById('deviceActions');
-  if (actions) actions.hidden = false;
+  if (actions) actions.hidden = !owner;
   const note = document.getElementById('devRoleNote');
   if (note) note.textContent = owner ? '主设备' : '普通设备';
 }
@@ -15337,8 +15371,10 @@ async function loadAuthDevices() {
       // 两行结构：首行「名称 + 本机 / 主设备」，次行「浏览器·系统 …… 最近活跃」。
       // 次行拆两段：描述可省略号、时间 flex:none 永远完整——手机上先压描述，别把时间吃掉。
       // 描述只在改过名时才重复「浏览器·系统」（未改名时它就是标题），手机/平板才追加设备类型。
-      // 按钮按角色出：改名 / 吊销他机 = 全员（吊销要 PIN）；「设为主设备」仍只给主设备看
-      // （转移会降级发起方，member 发起会凭空多出一个 owner）。
+      // 2026-11-05 按角色出按钮：
+      //   主设备   → 任意行可改名；他机可吊销（要 PIN）、可把主设备身份转出去；
+      //   普通设备 → 只有本机行有「改名」「删除自己」，外加「设为主设备」这个凭 PIN 的例外；
+      //              他机行一个按钮都不给，避免碰别人的设备。
       wrap.innerHTML = list.map((s) => {
         const auto = deviceLabel(s.ua);
         const kind = deviceKind(s.ua);
@@ -15346,9 +15382,13 @@ async function loadAuthDevices() {
           ? [auto, (kind === '手机' || kind === '平板') ? kind : ''].filter(Boolean).join(' · ')
           : kind;
         const seen = s.last_seen ? s.last_seen.slice(5, 16) : '';
-        const canRename = true;                       // 改自己 → 改他机：全员（无凭据变更）
-        const canRevoke = !s.current;                 // 吊销他机：全员 + PIN（主设备坏了也能清掉那台）
-        const canTransfer = owner && !s.current && s.role !== 'owner'; // 转移主设备：仍属主设备
+        const canRename = owner || s.current;          // 改他机名：仅主设备
+        const canRevokeSelf = !owner && s.current;      // 删除自己：仅普通设备（会话随即失效）
+        const canRevokeOther = owner && !s.current;     // 吊销他机：仅主设备 + PIN
+        const canRevoke = canRevokeSelf || canRevokeOther;
+        const revokeLabel = canRevokeSelf ? '删除自己' : '吊销';
+        // 切换主设备：主设备把身份转给他机，普通设备把身份切到本机
+        const canSwitchOwner = s.role !== 'owner' && (owner ? !s.current : s.current);
         return `
         <div class="device-row" data-id="${s.id}">
           <div class="device-main">
@@ -15363,61 +15403,61 @@ async function loadAuthDevices() {
             </span>
           </div>
           <div class="device-acts">
-            ${canTransfer ? `<button class="dev-act" type="button" data-act="transfer" data-id="${s.id}">设为主设备</button>` : ''}
-            ${canRename ? actBtn('edit', `data-act="rename" data-id="${s.id}" data-label="${escapeHtml(s.label || '')}"`, '改名') : ''}
-            ${canRevoke ? actBtn('del', `data-act="revoke" data-id="${s.id}"`, '吊销', { danger: true }) : ''}
+            ${canSwitchOwner ? actBtn('crown', `data-act="switch-owner" data-id="${s.id}"`, '设为主设备') : ''}
+            ${canRename ? actBtn('edit', `data-act="rename" data-id="${s.id}" data-label="${escapeHtml(s.label || '')}" data-owner="${s.role === 'owner'}" data-switch="${canSwitchOwner ? 1 : 0}"`, '改名') : ''}
+            ${canRevoke ? actBtn('del', `data-act="revoke" data-id="${s.id}" data-self="${canRevokeSelf ? 1 : 0}"`, revokeLabel, { danger: true }) : ''}
           </div>
         </div>`;
       }).join('');
       wrap.querySelectorAll('[data-act="rename"]').forEach((btn) => {
-        btn.onclick = () => openDeviceRename(Number(btn.dataset.id), btn.dataset.label || '');
+        btn.onclick = () => openDeviceRename(Number(btn.dataset.id), btn.dataset.label || '',
+          btn.dataset.owner === 'true', btn.dataset.switch === '1');
+      });
+      // 切换主设备：任意设备都只凭操作 PIN（由 api() 统一弹框 / 重试），成功后角色立即刷新
+      wrap.querySelectorAll('[data-act="switch-owner"]').forEach((btn) => {
+        btn.onclick = () => switchOwnerDevice(Number(btn.dataset.id));
       });
       // 登录保持的行内开关已删除（2026-11-02）：按钮文案「关浏览器即退出 / 改为长期登录」
       // 读起来像一句状态说明而不是操作，长在设备行里非常突兀；而「要不要长期登录」本来就该在
       // **登录那一刻**决定（闸门上的「记住这台设备」/ PIN 登录的「关闭浏览器后退出登录」）。
       // 后端 /api/session/persist 与 sessions.persist 列保留，供登录流程使用。
-      // 两段式确认：第一次点把图标换成对勾（armed），再点才执行（免开确认弹框）；他机吊销额外要 PIN。
+      // 两段式确认：第一次点把图标换成对勾（armed），再点才执行（免开确认弹框）；吊销他机额外要 PIN。
+      // 普通设备那个按钮是「删除自己」：成功后本会话立即失效，直接刷新回登录闸门。
       // 2026-11-02 改图标后：不能再靠 textContent 换文案，armed 态用「图标换成对勾 + 红底描边」表达，
       // 4 秒无操作自动复位。
       wrap.querySelectorAll('[data-act="revoke"]').forEach((btn) => {
+        const selfDel = btn.dataset.self === '1';
+        const label = selfDel ? '删除自己' : '吊销';
         const idle = () => {
           btn.dataset.armed = '';
           btn.classList.remove('armed');
           btn.innerHTML = actIcon('del');
-          btn.title = '吊销';
-          btn.setAttribute('aria-label', '吊销');
+          btn.title = label;
+          btn.setAttribute('aria-label', label);
         };
         btn.onclick = async () => {
           if (btn.dataset.armed !== '1') {
             btn.dataset.armed = '1';
             btn.classList.add('armed');
             btn.innerHTML = actIcon('check');
-            btn.title = '再点一次确认吊销';
-            btn.setAttribute('aria-label', '再点一次确认吊销');
+            const armTip = selfDel ? '再点一次确认删除自己（本机将退出登录）' : '再点一次确认吊销';
+            btn.title = armTip;
+            btn.setAttribute('aria-label', armTip);
             setTimeout(() => { if (btn.isConnected && btn.dataset.armed === '1') idle(); }, 4000);
             return;
           }
-          const r2 = await api('/api/session/devices/' + btn.dataset.id, { method: 'DELETE' });
-          if (r2.ok) { toast('已吊销该设备，其 Cookie 立即失效', 'ok'); loadAuthDevices(); }
-          else {
-            const d2 = await r2.json().catch(() => ({}));
-            toast(d2.error || '吊销失败', 'err');
-            loadAuthDevices(); // 恢复按钮
-          }
-        };
-      });
-      // 转移主设备：身份一交出去本机就变普通设备，必须输 PIN 二次确认
-      wrap.querySelectorAll('[data-act="transfer"]').forEach((btn) => {
-        btn.onclick = async () => {
-          const pin = await promptPIN();
-          if (!pin) return;
-          const r2 = await api('/api/session/transfer', { method: 'POST', body: JSON.stringify({ device_id: Number(btn.dataset.id), pin }) });
-          const d2 = await r2.json().catch(() => ({}));
-          if (!r2.ok) { toast(d2.error || '转移失败', 'err'); return; }
-          const st2 = await fetchSession();
-          if (st2) authState = st2;
-          toast('已把主设备转给该设备，本机现在是普通设备', 'ok');
-          loadAuthDevices();
+          try {
+            const r2 = await api('/api/session/devices/' + btn.dataset.id, { method: 'DELETE' });
+            if (r2.ok) {
+              if (selfDel) { location.reload(); return; }
+              toast('已吊销该设备，其 Cookie 立即失效', 'ok');
+              loadAuthDevices();
+            } else {
+              const d2 = await r2.json().catch(() => ({}));
+              toast(d2.error || '删除失败', 'err');
+              loadAuthDevices(); // 恢复按钮
+            }
+          } catch (e) { loadAuthDevices(); } // 取消 PIN：恢复按钮
         };
       });
     }
@@ -15530,6 +15570,8 @@ function closePIN(val) {
   on('authRoBtn', () => { document.getElementById('authGate').hidden = true; enterApp(authState); });
   const codeInput = document.getElementById('authCode');
   if (codeInput) codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doPair(); });
+  // 改一位就清掉上一次的错误提示，避免旧提示一直挂着让人以为「怎么输都不对」。
+  if (codeInput) codeInput.addEventListener('input', () => { document.getElementById('authPairErr').textContent = ''; });
   // 认领屏三个可选输入框都能回车提交
   ['authRename', 'authDevice', 'authPin'].forEach((id) => {
     const el = document.getElementById(id);
@@ -15567,6 +15609,7 @@ function closePIN(val) {
   if (devNameModal) devNameModal.onclick = (e) => { if (e.target === devNameModal) devNameModal.hidden = true; };
   on('devNameCancel', () => { document.getElementById('devNameModal').hidden = true; });
   on('devNameSave', saveDeviceRename);
+  on('devNameOwner', () => switchOwnerDevice(devRenameId));
   const devNameInput = document.getElementById('devNameInput');
   if (devNameInput) devNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveDeviceRename(); });
   on('inviteCancel', () => { document.getElementById('inviteModal').hidden = true; });

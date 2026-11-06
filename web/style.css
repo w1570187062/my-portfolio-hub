@@ -6765,25 +6765,12 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .device-meta-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .device-meta-seen { flex: none; color: var(--text-faint); }
 .device-acts { flex: none; display: flex; align-items: center; gap: var(--sp-1); }
-.dev-act {
-  border: 1px solid transparent;
-  background: none;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  line-height: 18px;
-  padding: 2px 8px;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.dev-act:hover { color: var(--text); background: var(--bg-soft); border-color: var(--border); }
-.dev-act.danger:hover { color: var(--danger); border-color: var(--danger); }
-/* 设备行的改名 / 吊销改图标（2026-11-02）：复用行内操作按钮族 .row-act（28×28、16px 线稿、跟随主题色），
-   与持仓/理财/平仓表的行内操作同一套语言。这里只补三点：
-   ① 与文字型 .dev-act 垂直对齐（.device-acts 已 align-items:center）；
-   ② 触屏没有 hover，必须常显（.row-act 的隐藏规则只在 `tbody tr` 内生效，这里是 div 行，本来就常显，
+/* 设备行的操作全是图标（2026-11-02 改名 / 删除，2026-11-05 设为主设备）：统一复用行内操作
+   按钮族 .row-act（28×28、16px 线稿、跟随主题色），与持仓/理财/平仓表同一套语言。这里只补三点：
+   ① 触屏没有 hover，必须常显（.row-act 的隐藏规则只在 `tbody tr` 内生效，这里是 div 行，本来就常显，
       这条兜底是防止以后设备行改成表格结构时被误隐藏）；
-   ③ 「确认吊销」的 armed 态：图标被换成对勾，再用红底 + 内描边把状态说明白。 */
+   ② 「确认删除 / 吊销」的 armed 态：图标换成对勾，再用红底 + 内描边把状态说明白；
+   ③ 窄屏时 .device-acts 独占第二行右对齐（见下方 640px 断点）。 */
 .device-acts .row-act { opacity: 1; }
 .device-acts .row-act.armed {
   color: var(--danger);

@@ -38,13 +38,14 @@
         <input id="authPin" type="password" inputmode="numeric" maxlength="6" placeholder="4–6 位数字，可留空" autocomplete="off">
       </label>
       </form>
-      <p class="auth-hint auth-hint-sm">这是第一台设备，将成为<b>主设备</b>：只有改 PIN、删清账本、导入这类账本级操作归它；设备管理（改名 / 吊销 / 加设备）任何设备输 PIN 都能做。建议设一个 PIN，它就是这些操作的口令。</p>
+      <p class="auth-hint auth-hint-sm">这是第一台设备，将成为<b>主设备</b>：改 PIN、删清账本、导入，以及设备管理（改他机名 / 吊销 / 加设备）都归它；普通设备只能删除自己、给自己改名。建议设一个 PIN——它也是普通设备切换主设备所需的口令。</p>
       <div class="auth-err" id="authClaimErr"></div>
       <button class="btn primary auth-submit" id="authClaimBtn" type="button">接入这台设备</button>
     </div>
 
     <div id="authPair" hidden>
-      <p class="auth-hint">在已登录的设备上打开：右上角头像 → 绑定设备 → 添加设备，获取 6 位配对码。</p>
+      <p class="auth-hint">在主设备上打开：右上角头像 → 绑定设备 → 添加设备，生成 6 位配对码。</p>
+      <p class="auth-hint auth-hint-sm">配对码只能用一次，设备码 5 分钟、邀请码 24 小时内有效，过期回主设备重新生成。配对只对当前浏览器有效，换浏览器或换电脑都要重新配对。</p>
       <label class="auth-field">配对码
         <input id="authCode" class="auth-code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">
       </label>

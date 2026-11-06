@@ -51,6 +51,8 @@ DESIGN_SYSTEM.md
 # 根目录一次性规格 / 任务清单（本机参考，多为 AI 协作中间产物）
 /spec.md
 /tasks.md
+# 按功能归档的规格稿 / 任务清单（specs/<feature>/spec.md + tasks.md），同属中间产物
+/specs/
 
 # ── WorkBuddy / trae 工作目录（记忆、会话、分享包）──────────
 .workbuddy/

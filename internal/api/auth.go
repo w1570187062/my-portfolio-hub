@@ -169,7 +169,9 @@ func pinValueOK(pin string) bool {
 	return db.CheckPIN(pin)
 }
 
-// OwnerGuard 主设备专属操作（2026-10-29）：出码 / 改操作 PIN / 删清账本 / 导入 / 转移管理员。
+// OwnerGuard 主设备专属操作（2026-10-29）：出码 / 改操作 PIN / 删清账本 / 导入。
+// 2026-11-05：设备行的「改他机名 / 吊销他机」按对象区分，在 handler 内自己判角色；
+// 「切换主设备」是刻意留下的例外，只看 PIN。
 // member 设备请求时直接 403 + owner_required，前端据此提示「该操作只有主设备可以执行」，
 // 不再弹 PIN 输入框（免得让用户白输一遍口令）。
 func OwnerGuard() gin.HandlerFunc {
@@ -424,9 +426,9 @@ type claimReq struct {
 
 // sessionClaim POST /api/session/claim —— 首台设备认领已有账本（不改 user_id，数据零迁移）。
 //
-// 首台设备直接成为主设备（owner）。2026-11-02 起「主设备」只剩账本级不可逆操作的专属权
-// （改操作 PIN / 恢复码 rotate / 删账本 / 清空 / 导入 / 转移身份）；设备管理（改名 / 吊销他机 /
-// 出码加设备）改为**任意设备 + 操作 PIN**，主设备坏了也能继续运维。
+// 首台设备直接成为主设备（owner）。2026-11-05 起设备管理（改他机名 / 吊销他机 / 出码）
+// 收回主设备专属；普通设备只能删自己、给自己改名，另可凭操作 PIN 把主设备切到任意设备
+// （含本机），作为原主设备报废时的自救通道。
 // 响应里带一份一次性明文恢复码，前端弹框要求用户抄下来（库里只存 bcrypt）。
 func sessionClaim(c *gin.Context) {
 	// 认领是「实例级一次性」操作，检查（无会话/无 owner）与建会话必须串行，
@@ -589,8 +591,8 @@ func sessionPair(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "配对码对应的账本已不存在"})
 		return
 	}
-	// 配对码接入的设备一律是普通设备（member）：管理类操作仍归主设备，
-	// 需要时由主设备在设备页输 PIN 把身份转移过来。
+	// 配对码接入的设备一律是普通设备（member）：管理类操作归主设备，
+	// 需要时可凭操作 PIN 在设备页把主设备身份切到自己（或别的设备）。
 	tok, s, err := db.CreateSession(pc.UserID, c.Request.UserAgent(), "device", db.RoleMember)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -822,15 +824,20 @@ func sessionDeviceRevoke(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "设备不存在"})
 		return
 	}
-	// 2026-11-02 权限放宽：吊销「别的设备」不再要求主设备身份，改成**任意设备 + 操作 PIN**。
-	// 原因：主设备坏了以后，正是最需要「把死掉那台吊销掉」的时候，而那时只剩 member 设备可用。
-	// 安全性由 PIN 承担（与删账本 / 清空同级）；吊销后会触发 EnsureOwnerSession()，
-	// 最早接入的在线设备自动升为主设备，实例不会卡在「零主设备」。
+	// 2026-11-05 权限收敛：吊销「别的设备」只归主设备；普通设备只能删自己（退出登录）。
+	// 主设备坏了的逃生通道改用「凭 PIN 切换主设备」，不再为此放开日常管理权限。
 	// 吊销自己等价于退出登录，任何设备都可以，不需要口令。
+	if id != sid && !isOwnerSession(c) {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"error":          "只有主设备可以删除其他设备",
+			"owner_required": true,
+		})
+		return
+	}
 	if id != sid {
-		// 防夺权（2026-11-03）：pinSatisfied 在「未设置 PIN」时恒为 true，而吊销主设备后
-		// EnsureOwnerSession 会按 last_seen 提升一台活设备 —— 任意 member 吊销 owner 就等于
-		// 把自己升成 owner。这里对「吊销主设备」单独要求：必须先设过 PIN 且输入正确。
+		// 防御性兜底（2026-11-03）：pinSatisfied 在「未设置 PIN」时恒为 true，而吊销主设备后
+		// EnsureOwnerSession 会按 last_seen 提升一台活设备。正常路径下 member 已被上面的
+		// 角色判断挡住；这里只在人工造出双 owner 之类的脏数据时兜底，要求已设 PIN 且输入正确。
 		if !authModeOff() && !readOnlyMode() {
 			if target, tErr := db.ActiveSessionByID(id); tErr == nil && target != nil && target.Role == db.RoleOwner {
 				if !db.HasPIN() || !db.CheckPIN(c.GetHeader(pinHeader)) {
@@ -854,10 +861,10 @@ func sessionDeviceRevoke(c *gin.Context) {
 // sessionDeviceRename PATCH /api/session/devices/:id —— 改设备显示名。
 // 浏览器拿不到计算机名/系统账户名（无此 Web API，且属指纹信息），只能让用户自己命名；
 // 传空串表示恢复「按 UA 自动识别」。只允许改自己账本授权范围内的会话。
-// 2026-11-02：改「别的设备」的名字不再要求主设备身份 —— 改名不涉及凭据、可随时改回，
-// 归属「设备管理」，与吊销同级放行；只是因为无凭据变更，不额外要 PIN（免得为改个名字输一次口令）。
+// 2026-11-05 权限收敛：普通设备只能给**自己**改名；改他机名归主设备（仍不需要 PIN）。
 func sessionDeviceRename(c *gin.Context) {
 	uid := currentUserID(c)
+	sid := currentSessionID(c)
 	id := parseID(c.Param("id"))
 	if id <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
@@ -872,6 +879,13 @@ func sessionDeviceRename(c *gin.Context) {
 	}
 	if !db.SessionHasUser(id, uid) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "设备不存在"})
+		return
+	}
+	if id != sid && !isOwnerSession(c) {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"error":          "只有主设备可以修改其他设备的名称",
+			"owner_required": true,
+		})
 		return
 	}
 	if err := db.SetSessionLabel(id, b.Label); err != nil {
@@ -1023,26 +1037,28 @@ func sessionRecoveryRotate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "recovery": code})
 }
 
-// ---- 主设备转移 ----
+// ---- 切换主设备 ----
 
 type transferReq struct {
 	DeviceID int64  `json:"device_id"`
-	PIN      string `json:"pin"`
+	PIN      string `json:"pin"` // 兼容旧调用：新前端走 X-Auth-Pin 请求头，由 api() 统一弹框 / 重试
 }
 
-// sessionTransfer POST /api/session/transfer —— 把主设备身份转给另一台已接入设备。
-// 转移等于交出管理权，所以：① 发起方必须是当前主设备；② 必须验证操作 PIN；③ 目标必须
-// 仍在本账本的授权范围内且未下线。转移后本机降为 member，前端立即隐藏管理入口。
+// sessionTransfer POST /api/session/transfer —— 把主设备切到指定设备（2026-11-05）。
+// 与旧的「转移」不同：发起方**不必是主设备**，任何已登录设备凭正确的操作 PIN 都能切，
+// 目标可以是任意已接入设备（含本机自己）。这是主设备报废后唯一的自救通道：先切主设备，
+// 再做改他机名 / 吊销他机 / 出码等主设备专属操作。
+// 安全约束：
+//   ① PIN 必须已设置且校验通过。pinValueOK 在「未设 PIN」时恒 true，直接放行等于
+//      任何登录态都能夺权（与「吊销主设备」防夺权的处理一致），所以这里单独挡掉；
+//   ② 目标必须仍在当前账本授权范围内且未下线；
+//   ③ db.SetOwnerDevice 事务内先清空全部 owner 再升目标，保证 owner 全局唯一。
 func sessionTransfer(c *gin.Context) {
 	sid := currentSessionID(c)
 	uid := currentUserID(c)
 	var b transferReq
 	if err := c.ShouldBindJSON(&b); err != nil || b.DeviceID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要转移到的设备"})
-		return
-	}
-	if b.DeviceID == sid {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "本机已经是主设备"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要切换到的设备"})
 		return
 	}
 	if !db.SessionHasUser(b.DeviceID, uid) {
@@ -1054,14 +1070,34 @@ func sessionTransfer(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "设备已下线，请刷新列表"})
 		return
 	}
-	if !pinValueOK(strings.TrimSpace(b.PIN)) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "需要操作 PIN", "pin_required": true})
+	if target.Role == db.RoleOwner {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该设备已经是主设备"})
 		return
 	}
-	if err := db.TransferOwnership(sid, b.DeviceID); err != nil {
+	if !authModeOff() && !readOnlyMode() {
+		if !db.HasPIN() {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "本实例未设置操作 PIN：请先在主设备上设置 PIN，再切换主设备", "pin_unset": true,
+			})
+			return
+		}
+		pin := c.GetHeader(pinHeader)
+		if pin == "" {
+			pin = strings.TrimSpace(b.PIN) // 兼容旧前端把 PIN 放在 body 的调用
+		}
+		if !db.CheckPIN(pin) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "需要操作 PIN", "pin_required": true})
+			return
+		}
+	}
+	if err := db.SetOwnerDevice(b.DeviceID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("[auth] 主设备转移：sid=%d → sid=%d（uid=%d label=%q）", sid, b.DeviceID, uid, target.Label)
-	c.JSON(http.StatusOK, gin.H{"ok": true, "role": db.RoleMember, "device_id": b.DeviceID})
+	role := db.RoleMember
+	if b.DeviceID == sid {
+		role = db.RoleOwner
+	}
+	log.Printf("[auth] 主设备切换：sid=%d → sid=%d（uid=%d label=%q）", sid, b.DeviceID, uid, target.Label)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "role": role, "device_id": b.DeviceID})
 }

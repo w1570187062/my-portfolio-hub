@@ -192,15 +192,13 @@ func RegisterRoutes(r *gin.Engine) {
 	g.Use(AuthGuard())
 	{
 		// 会话自助：退出 / 切换账本 / PIN / 设备管理 / 出码
-		// 2026-11-02 权限调整：**设备管理只看 PIN，不看主设备身份**。
-		// 起因：主设备一旦损坏 / 丢失，member 设备连「吊销那台死机」「加一台新设备」都做不了，
-		// 整个实例只能靠恢复码硬重置。设备类操作改由 PIN 兜底：
-		//   - 吊销他机、出码（device / invite）：任何设备 + 操作 PIN；
-		//   - 改他机显示名：任何设备（无凭据变更，不额外要 PIN）；
-		//   - 转移主设备：仍是主设备专属（TransferOwnership 只降级发起方，
-		//     member 发起会凭空多出一个 owner，破坏「全局至多一个 owner」）。
-		// 主设备真的没了也不需要人工救：RevokeSession 内部会 EnsureOwnerSession()，
-		// 吊销掉那台死机后，最早接入的在线设备自动升为主设备。
+		// 2026-11-05 权限收敛：**设备管理回到主设备专属**。普通设备（member）只能
+		// 「删除自己 / 给自己改名」，不能碰其他设备，也不能出码加设备 / 邀请家人。
+		//   - 改设备名 / 吊销设备 / 出码：仅主设备（吊销他机、出码仍额外要操作 PIN）；
+		//   - 删除自己（退出登录）、改自己设备名：任意设备，免 PIN；
+		//   - 切换主设备：**唯一例外**，任意设备 + 正确操作 PIN 都能把主设备切到任意设备
+		//     （含把本机升为主设备）。原主设备报废时的逃生通道就是它，不必再放宽日常权限。
+		//     db.SetOwnerDevice 在事务内先清空全部 owner 再升目标，全局唯一性由 DB 保证。
 		// 仍属主设备专属（账本级不可逆操作）：改/关操作 PIN、恢复码 rotate、删账本、清空账本、导入。
 		g.POST("/session/logout", sessionLogout)
 		g.POST("/session/switch", sessionSwitch)
@@ -208,11 +206,11 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/session/pin", OwnerGuard(), sessionPIN)                                    // 改/关卡 PIN 只属主设备
 		g.POST("/session/pin/reset", sessionPINReset)                                       // 忘记 PIN：用恢复码重置（需已登录，不需旧 PIN）
 		g.POST("/session/recovery/rotate", OwnerGuard(), PinGuard(), sessionRecoveryRotate) // 重新生成恢复码
-		g.POST("/session/transfer", OwnerGuard(), sessionTransfer)                          // 把主设备身份转移给指定设备
+		g.POST("/session/transfer", sessionTransfer)                                        // 切换主设备：任意设备 + 正确 PIN
 		g.GET("/session/devices", sessionDevices)
-		g.PATCH("/session/devices/:id", sessionDeviceRename)  // 改名：本机与他机都放行
-		g.DELETE("/session/devices/:id", sessionDeviceRevoke) // 吊销自己：免 PIN；吊销他机：任意设备 + PIN
-		g.POST("/session/code", PinGuard(), sessionCode)      // 出码（加设备 / 邀请家人）：任意设备 + PIN
+		g.PATCH("/session/devices/:id", sessionDeviceRename)       // 改名：本机放行；改他机仅主设备
+		g.DELETE("/session/devices/:id", sessionDeviceRevoke)      // 删自己免 PIN；吊销他机：主设备 + PIN
+		g.POST("/session/code", OwnerGuard(), PinGuard(), sessionCode) // 出码（加设备 / 邀请家人）：主设备 + PIN
 
 		// 多账本：账本列表/新增/删除/统计/清空（路径与字段沿用 users）
 		g.GET("/users", listUsers)
