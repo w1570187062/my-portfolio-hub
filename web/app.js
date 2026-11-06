@@ -8346,21 +8346,21 @@ function assetKpiCardsAccounts() {
   const fxFoot = fx.start_date ? '自 ' + fx.start_date + ' 起计算' : '';
   return {
     cards: [
-      { ico: 'kpi-ico-cash', icon: 'card', label: '币种分类', value: pctOf(totalA - cnyA, totalA),
-        sub: '人民币 <span class="hl">' + pctOf(cnyA, totalA) + '</span> · <span class="hl">' + yuanOfW(cnyA) + '</span>',
-        rows: curRows },
-      { ico: 'kpi-ico-pct', icon: 'up', label: '汇兑收益率', value: fxValue, tone: pp === null || pp === undefined ? '' : (Number(pp) < 0 ? 'down' : 'up'),
-        sub: fxSub + (fxFoot ? ' · <span class="hl">' + fxFoot + '</span>' : ''), rows: fxRows },
-      // 方案 14：净资产为正不再染红（红=涨），只在为负时用警示色
+      // 方案 14：净资产为正不再染红（红=涨），只在为负时用警示色；置顶为首卡
       { ico: 'kpi-ico-fund', icon: 'wallet', label: '净资产', value: yuanOfW(net), tone: net < 0 ? 'is-neg' : '',
         sub: '负债 <span class="hl">' + yuanOfW(lTotal) + '</span> · 负债率 <span class="hl">' + pctOf(lTotal, totalA) + '</span>',
         rows: [
           { name: '资产', value: totalA, pct: 100, color: 'var(--primary)' },
           { name: '负债', value: lTotal, pct: totalA > 0 ? lTotal / totalA * 100 : 0, color: 'var(--warning)' },
         ] },
+      { ico: 'kpi-ico-cash', icon: 'card', label: '币种分类', value: pctOf(totalA - cnyA, totalA),
+        sub: '人民币 <span class="hl">' + pctOf(cnyA, totalA) + '</span> · <span class="hl">' + yuanOfW(cnyA) + '</span>',
+        rows: curRows },
       { ico: 'kpi-ico-pct', icon: 'globe', label: '境外资产占比', value: pctOf(hkA + usA, totalA),
         sub: '中国内地 <span class="hl">' + pctOf(cnA, totalA) + '</span> · <span class="hl">' + yuanOfW(cnA) + '</span>',
         rows: regionRows },
+      { ico: 'kpi-ico-pct', icon: 'up', label: '汇兑收益率', value: fxValue, tone: pp === null || pp === undefined ? '' : (Number(pp) < 0 ? 'down' : 'up'),
+        sub: fxSub + (fxFoot ? ' · <span class="hl">' + fxFoot + '</span>' : ''), rows: fxRows },
     ],
   };
 }
