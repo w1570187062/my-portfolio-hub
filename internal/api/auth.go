@@ -608,6 +608,7 @@ func sessionPair(c *gin.Context) {
 	db.GrantSessionUser(s.ID, pc.UserID)
 	pairPersist := b.Persist == nil || *b.Persist
 	db.SetSessionPersist(s.ID, pairPersist) // 同 PIN 登录：落库值必须与 Cookie 形态一致
+	s.Persist = pairPersist                 // 响应里的 persist 直接取自这份结构，回写免得多查一次库
 	setSessionCookie(c, tok, pairPersist)
 	log.Printf("[auth] 设备配对成功：uid=%d scope=%s label=%q persist=%v（UA=%s）", pc.UserID, pc.Scope, pc.Label, pairPersist, s.UA)
 	c.JSON(http.StatusOK, buildState(s))
@@ -676,6 +677,7 @@ func sessionPinLogin(c *gin.Context) {
 	}
 	persist := b.Persist == nil || *b.Persist
 	db.SetSessionPersist(s.ID, persist) // CreateSession 落库默认 1，这里按请求覆盖（Cookie 形态与 DB 必须一致）
+	s.Persist = persist                 // 响应里的 persist 直接取自这份结构，回写免得多查一次库
 	setSessionCookie(c, tok, persist)
 	log.Printf("[auth] PIN 登录成功：授权 %d 个账本 persist=%v（UA=%s）", len(uids), persist, s.UA)
 	c.JSON(http.StatusOK, buildState(s))

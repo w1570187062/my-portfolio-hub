@@ -202,6 +202,11 @@ func CreateSession(userID int64, ua, kind, role string) (string, *Session, error
 		return "", nil, err
 	}
 	s.ID, _ = res.LastInsertId()
+	// INSERT 没写 persist，列定义是 NOT NULL DEFAULT 1（默认长期登录）。内存这份必须跟着置 true：
+	// 否则调用方建完会话立刻 buildState，会把「实际下发的是持久 Cookie」的会话报成 persist=false
+	// （2026-11-05 配对响应就是这么错的：DB 里是 1，结构体零值是 false）。
+	// 需要改登录保持的调用方（配对 / PIN 登录 / 认领后切换）再按需覆盖并同步这个字段。
+	s.Persist = true
 	return tok, s, nil
 }
 
