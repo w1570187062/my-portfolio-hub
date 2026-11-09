@@ -1096,6 +1096,39 @@ h2 > svg { color: var(--primary); }
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
+/* 今日待办（2026-11-09 从首页跑马灯迁入）：一行一类，右端计数/合计 + 箭头。
+   故意不复用 .alert-item：待办不可删除、不可已读，点击即跳页，视觉上要轻一档。 */
+.bell-todos { display: flex; flex-direction: column; gap: 2px; }
+.bell-todo {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.bell-todo:hover,
+.bell-todo:focus-visible { background: rgba(var(--tint), .1); outline: none; }
+.bell-todo .bt-label { flex: 1 1 auto; min-width: 0; font-size: var(--fs-sm); font-weight: 500; }
+.bell-todo .bt-meta {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.bell-todo .bt-go { flex: 0 0 auto; color: var(--text-faint); font-size: var(--fs-sm); }
+/* 有待办、但止盈止损为空时的轻量说明：不要用 .alert-empty 的大上下留白占满面板 */
+.alert-empty-lite {
+  padding: var(--sp-3) var(--sp-3) var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
 .alert-item {
   position: relative;
   display: flex;
@@ -3451,12 +3484,9 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
    一组连续的控件区，而不是三个各自孤立的块。 */
 .asset-subpanel[data-sub="flows"] .holding-toolbar { margin-bottom: var(--sp-3); }
 
-/* 手机档：4 张页级摘要卡 2×2，避免单列 4 张吃掉整个首屏。
-   选择器写成 `.kpi-row.asset-kpi-row.cols-flat` 提高特异性 —— 通用规则
-   `.kpi-row.cols-flat { 1fr }` 定义在文件末尾，同特异性下后定义者胜，两选一会被它压掉。 */
-@media (max-width: 640px) {
-  .kpi-row.asset-kpi-row.cols-flat { grid-template-columns: repeat(2, 1fr); }
-}
+/* 手机档：3 张页级摘要卡单列（2026-11-09 由 4 卡 2×2 改为 3 卡单列：
+   3 卡排 2 列会空出半行）。通用规则 `.kpi-row.cols-3 { 1fr }` 在文件末尾已覆盖，
+   这里不再重复声明 —— 留一条注释说明「为什么没有特例」。 */
 /* 资产子面板：账户 / 流水 / 负债 切换显隐 */
 .asset-subpanel { display: none; }
 .asset-subpanel.active { display: block; }
@@ -4677,6 +4707,9 @@ textarea::placeholder {
 .u-bold { font-weight: 600; }
 .u-sm { font-size: var(--fs-sm); }
 .u-break { overflow-wrap: anywhere; }
+/* 不可断行：用于「+¥2.10万」这类「符号 + 货币 + 数字」的组合，避免浏览器在 + 与 ¥ 之间断行，
+   把加号孤零零留在上一行末尾（中文 word-break:keep-all 的换行点落在这里）。 */
+.u-nw { white-space: nowrap; }
 /* —— 其他 —— */
 .u-block { display: block; }
 .u-va-icon { vertical-align: -2px; }
@@ -5699,6 +5732,35 @@ textarea::placeholder {
 .kpi-card .kpi-bar i { flex: 0 0 auto; width: var(--w); background: var(--bc, var(--primary)); }
 /* 卡内可视化由 `.kpi-bar`（6px 分段条，order:5）承担，不需要图例。 */
 
+/* ===== 卡内切面切换（2026-11-09 P1 · 资产分布卡） =====
+   分布卡用「标签行 + 右侧分段控件」代替右上角角标：这枚控件既是切换入口，也是
+   「这张卡有多个切面」的提示。标签与控件同一行、靠 justify-content 分居两端，
+   窄卡（≤640 单列 / 641–1340 三列）时控件自动换到第二行，不挤压标签。
+   order:2 与 .kpi-label 同层，保证它在主值之上。 */
+.kpi-card .kpi-head-row {
+  order: 2;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-2); flex-wrap: wrap; min-width: 0;
+}
+/* 这一行里的标签自己不再让位给角标（该卡没有角标），也不换行。
+   order 必须归零：`.kpi-card .kpi-label { order: 2 }` 在 flex 容器内比较的是兄弟节点的
+   order 值，不归零的话分段控件（默认 0）会排到标签左边，把「标签在左、控件在右」颠倒。 */
+.kpi-card .kpi-head-row .kpi-label { padding-right: 0; order: 0; }
+.kpi-seg {
+  flex: 0 0 auto; display: inline-flex; gap: 2px; padding: 2px;
+  border-radius: var(--r-xs); background: var(--bg-input);
+}
+.kpi-seg-btn {
+  border: 0; border-radius: var(--r-xs); background: transparent;
+  padding: 2px var(--sp-2); cursor: pointer;
+  font-family: inherit; font-size: var(--fs-2xs); font-weight: 500; line-height: 1.6;
+  color: var(--text-muted); white-space: nowrap;
+  transition: color .15s var(--e), background .15s var(--e);
+}
+.kpi-seg-btn:hover { color: var(--text); }
+.kpi-seg-btn.active { background: var(--bg-card); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
+.kpi-seg-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
 /* 密度 · standard：投资页卫星卡 / 财务页 4 KPI（默认档，无需 modifier） */
 .kpi-card.density-standard .kpi-label { padding-right: var(--sp-8); }
 .kpi-card.density-standard .kpi-value { font-size: var(--fs-2xl); }
@@ -5808,6 +5870,25 @@ textarea::placeholder {
   flex: 0 1 auto; min-width: 0;
   display: flex; flex-direction: column; gap: var(--sp-1);
 }
+/* 今日贡献是「宽卡专属」的富信息（三行 25px + 抬头 ≈ 95px）。卡片窄于 400px 时它换行到
+   正文下方、把整张卡顶高 100px —— 而四个 tab 里只有持仓卡带它，切 tab 时下方表格会明显上下跳。
+   这里用**容器查询**按卡内可用宽度判断，而不是视口断点：同为 1180 视口，资产页 3 卡与投资页
+   3 卡的卡宽不同，视口断点切不准。收起的是「贡献三条」，主数字/今日盈亏/占比都还在。 */
+.kpi-card.has-contrib { container-type: inline-size; }
+/* 选择器带上 .kpi-card.has-contrib 提高特异性：容器查询里的规则本身不带额外权重，
+   与下面 `.kpi-contrib { display:flex }` 同权重时后者（靠后）会赢，收起就失效。 */
+@container (max-width: 400px) {
+  .kpi-card.has-contrib .kpi-contrib { display: none; }
+}
+/* 同一套处理给「资产占比环」（has-alloc）：环块约 150px，卡宽不足时它会换到正文下方，
+   把锚点卡顶高 100px，四个 tab 里只有持仓卡这样 —— 切 tab 会看到下方表格整体下移。
+   阈值 400 取「实测卡宽 479 仍单行、372 已换行」之间（容器查询比的是卡片 content box，
+   锚点卡 padding 20×2 要先扣掉）。环里的三个占比在资产页与表格里都有，
+   窄卡收起不丢信息，换回宽屏自动恢复（JS 只管 [hidden]，不参与这个判断）。 */
+.kpi-card.has-alloc { container-type: inline-size; }
+@container (max-width: 400px) {
+  .kpi-card.has-alloc .kpi-alloc { display: none; }
+}
 .kpi-contrib {
   flex: 1 1 172px; min-width: 172px;
   display: flex; flex-direction: column;
@@ -5858,16 +5939,16 @@ textarea::placeholder {
   .kpi-contrib-rank { flex-basis: 14px; }
 }
 
-/* 行模板：平级等宽（财务/资产）｜锚点 + 卫星（投资） */
+/* 行模板：全站平级 3 卡（方案 3 卡制） */
 .kpi-row { display: grid; gap: var(--sp-3); align-items: stretch; }
-.kpi-row.cols-flat { grid-template-columns: repeat(4, 1fr); }
-/* 锚点 + 3 卫星：恒定 2×2，每卡等宽，不再按视口 / 行宽切 4 列（2026-11-05 定案）。
-   依据：4 列（1.6fr:1fr）在 1341–1810 视口只给「今日盈亏」278–372px，低于它同顶所需的 375px，
-   贡献轨道整段都会换行；两套布局只在这段反复出错，且每切一次就要维护一套比例。
-   恒 2×2 后四卡宽度只由「行宽的一半」决定（1280→609、1440→689、1920→1249），
-   宽度永远高于下限，不再有被挤窄的区间。代价是 2560 档两卡各约 1249 而锚点内容自然宽
-   约 575，卡片明显偏空——用户已决定先只记录现象，给内容设上限并居中的方案暂不实施。 */
-.kpi-row.cols-anchor { grid-template-columns: repeat(2, 1fr); }
+/* 平级 3 卡（2026-11-09 P0/P1 卡片收敛后）：财务页 + 资产页 4 个子 tab + 投资页 4 个子 tab
+   统一成「1 锚点 + 2 卫星」。1340 以下**保持 3 列**而不是退到 2 列 —— 3 张卡在 2 列里会空出
+   半行，而卡内比例尺行在 ~300px 宽度本来就能完整排下（手机档单列 137px 内宽都可读）。
+   只有 640 以下才收成单列。
+   （原「锚点 + 3 卫星」的 2×2 模板是「4 卡时代」的产物：4 列在 1341–1810 视口给「今日盈亏」的宽度
+   低于它同顶所需的 375px，贡献轨道会整段换行。P1 把各 tab 收到 3 卡后 3 列恒 >400px，
+   2×2 不再需要，该模板已随之删除。） */
+.kpi-row.cols-3 { grid-template-columns: repeat(3, 1fr); }
 /* 卡片区标题行：投资 / 财务 / 资产三页共用同一行高与同一上边距（眉标在左，控件在右）。
    作用是把「卡片上方留白」收敛成一处口径：页面 padding → 32px 行高 → 12px → 卡片。 */
 .kpi-head {
@@ -5881,14 +5962,8 @@ textarea::placeholder {
   letter-spacing: .5px; text-transform: uppercase;
 }
 .kpi-head-label::before { content: ""; width: 3px; height: 12px; border-radius: 2px; background: var(--primary); flex: 0 0 auto; }
-/* 只有平级 4 卡（财务 / 资产页）还按视口切 2×2：它们没有侧挂轨道，不涉及换行问题。
-   投资页的 cols-anchor 已在基础规则里恒为 2 列，这里**故意不再包含**它 —— 否则 1340 以上
-   又会退回 4 列，把那段落差重新引回来。 */
-@media (max-width: 1340px) {
-  .kpi-row.cols-flat { grid-template-columns: repeat(2, 1fr); }
-}
 @media (max-width: 640px) {
-  .kpi-row.cols-flat { grid-template-columns: 1fr; }
+  .kpi-row.cols-3 { grid-template-columns: 1fr; }
   .kpi-card.density-standard .kpi-value { font-size: var(--fs-xl); }
   .kpi-card.anchor { padding: var(--sp-4); }
   .kpi-card.anchor .kpi-value { font-size: var(--fs-2xl); }
@@ -5925,8 +6000,11 @@ textarea::placeholder {
   column-gap: var(--sp-8); row-gap: var(--sp-5);
   align-items: stretch; min-width: 0; flex: 1;
 }
-.nw-main > .nw-ledger { grid-area: 1 / 1 / 2 / 2; }
-.nw-main > .home-marquee { grid-area: 2 / 1 / 3 / 2; padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+/* 左列跨满两行（2026-11-09 跑马灯下线后）：它原先只占第 1 行，第 2 行留给跑马灯；
+   跑马灯删掉后右栏（跨 1–3 行）仍把 Hero 撑到曲线高度，左列却只剩内容高度，
+   表现为主数字贴顶、下方一大块空白。改成 1 / 3 让 ledger 与右栏等高，
+   配合自身的 justify-content:center 竖直居中。 */
+.nw-main > .nw-ledger { grid-area: 1 / 1 / 3 / 2; }
 .nw-main > .nw-right { grid-area: 1 / 2 / 3 / 3; }
 /* ≥1341px 宽屏：只加宽不给高 —— 列间距与芯片内距放大一档，曲线用固定高度，
    不再像旧版那样让整张卡跟着视口宽度一起变高。 */
@@ -6032,87 +6110,6 @@ textarea::placeholder {
 .nw-chip b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .nw-chip b.down { color: var(--down); }
 
-/* —— Hero 内单行步进跑马灯：待办 + 收益句子（2026-11-02 v3）——
-   位置：nw-left 底部、资产分布芯片之下。单行步进：每条停 4 秒，
-   0.45s transition 跳到下一条（JS 驱动 transition 属性，不用 keyframes）。
-   hover 暂停、prefers-reduced-motion 时静止显示第一条。
-   单行严格不换行：.hm-item 是 flex 行，justify-content:center 整体居中；
-   图标 flex-shrink:0 不动；.hm-text-wrap 用 min-width:0 + ellipsis 截断。 */
-.home-marquee {
-  /* 行高必须由同一个变量驱动 viewport 与 item：
-     2026-11-02 修 —— 原先 viewport 写 height:1.6em（跟 16px 父字号 = 25.6px），
-     item 写 1.6em（跟自身 11px = 17.6px），两者差 8px，视口里必然露出下一条的
-     半个字顶，看起来就是「文字被遮挡」。改成同一变量后 em 不再各算各的。
-     JS 渲染时会实测行高并覆盖这个变量（字体加载 / 断点变化后仍能对齐）。 */
-  --hm-row-h: calc(var(--fs-xs) * 1.6);
-  /* 2026-11-02：位置在资产芯片之上、且**不要分割线** —— 上下留白靠 .nw-left 的 gap
-     就够了，再加一条横线反而把「净资产 → 动态 → 资产构成」切成两段。 */
-  position: relative;
-  line-height: 1.6;
-}
-.home-marquee[hidden] { display: none; }
-.hm-viewport {
-  overflow: hidden;
-  position: relative;
-  height: var(--hm-row-h);
-}
-.hm-track {
-  display: flex;
-  flex-direction: column;
-  will-change: transform;
-  transform: translateY(0);
-}
-/* 每条一行，固定高度 + 整体居中；gap 让图标和文字不贴一起；两侧留 padding 避免图标贴边 */
-.hm-item {
-  height: var(--hm-row-h);
-  /* 行盒高度与 item 等高：flex 居中后文字不会上下溢出到视口外被裁 */
-  line-height: var(--hm-row-h);
-  width: 100%;
-  font-size: var(--fs-xs);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: var(--sp-1);
-  padding: 0 var(--sp-2);
-  /* 关键：item 本身不换行（它是 flex row），真正的截断在 .hm-text-wrap */
-  white-space: nowrap;
-}
-/* 装饰性 SVG 图标：不缩小、颜色由 type class 注入 currentColor */
-.hm-ic {
-  flex-shrink: 0;
-  width: 1em;
-  height: 1em;
-  display: block;
-  color: var(--text-muted);  /* 默认 */
-}
-.hm-ic-alert    { color: var(--warning, var(--primary)); }
-.hm-ic-dca      { color: var(--primary); }
-.hm-ic-repay    { color: var(--text-muted); }
-.hm-ic-income   { color: var(--up); }
-.hm-ic-maturity { color: var(--text-faint); }
-.hm-ic-sent     { color: var(--text-faint); }
-/* 文本块：flex child 不 grow、允许 shrink 到 0（min-width:0 是 ellipsis 前提）
-   配合父 justify-content:center：短时内容整体居中，长时文本 shrink 截断 */
-.hm-text-wrap {
-  min-width: 0;
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* 待办文本层级 */
-.hm-label { color: var(--text-faint); }
-.hm-name { color: var(--text); }
-.hm-info { color: var(--text-faint); }
-/* 收益句子：italic + faint 整体 */
-.hm-sent { color: var(--text-faint); font-style: italic; }
-/* 减速偏好：保留「内容轮播」，只去掉位移动画（瞬间换行）。
-   原先写的是 transform:none !important + JS 清 timer —— 等于完全静止。
-   开了系统「减弱动态效果」的手机用户看到的就是「跑马灯坏了」，
-   但轮播内容本身是有信息量的，不该因为不要动画就一并关掉。 */
-@media (prefers-reduced-motion: reduce) {
-  .hm-track { transition: none !important; }
-}
 /* 窄屏（≤640）：字号小一档，行高随字号重算；资产分布芯片仍强制一行四个 */
 @media (max-width: 640px) {
   /* 芯片一行四个（2026-11-02 修）：单行文字四个在 320–390 档都放不下，
@@ -6143,13 +6140,26 @@ textarea::placeholder {
   .nw-right .rate-spark-box { min-height: 108px; }
   /* 单列下主数字旁没有横向空白，水印不再出现 */
   .nw-shield { display: none; }
-  /* 跑马灯：行高跟字号一起缩 */
-  .home-marquee { --hm-row-h: calc(var(--fs-2xs) * 1.6); }
-  .hm-item { font-size: var(--fs-2xs); }
 }
 
-/* —— 投资页 KPI 行（原型场景 B：1 锚点 + 3 卫星，直接铺在页面底色上，不再套玻璃大卡） —— */
+/* —— 投资页 KPI 行（原型场景 B：1 锚点 + 2 卫星，直接铺在页面底色上，不再套玻璃大卡） —— */
 .invest-hero { margin-bottom: var(--sp-4); }
+/* 投资页 4 个 tab 的卡片：正文在卡内**垂直居中**（2026-11-09）。
+   三卡同行等高，锚点卡最高（带占比环 / 副标多一行 ≈117px），卫星卡正文只有 ≈80px，
+   贴顶时每张卡下方空出 50–60px，切换 tab 还会看到文字在卡里的落点变来变去。
+   只作用于投资页：资产页与财务页的卡把比例尺行（.kpi-props / .kpi-bar）用
+   margin-top:auto 钉在卡底，靠它让三张卡的条形落在同一基线上，居中会把这个约束打散。 */
+.invest-hero .kpi-card { justify-content: center; }
+/* 带右侧附加块的两张卡是**横排**：justify-content 管的是水平方向，必须归位；
+   垂直居中改用 align-content（整行在卡内居中）—— flex-wrap 容器只设 justify-content
+   是没用的，主轴是水平的。
+   align-items 保持各自原值：今日盈亏卡刻意让「今日贡献」抬头与卡标签同顶（两者相距 8px 内），
+   改成 center 会把右侧三条下移半行，反而破坏这层对齐关系；行高了 15px，
+   正文中心与卡中心只差 7px，肉眼看不出来。 */
+.invest-hero .kpi-card.has-contrib {
+  justify-content: normal;
+  align-content: center;
+}
 
 /* —— 子 Tab（持仓/理财 · 账户/流水/负债）：原型下划线样式 ——
    2026-11-04 方案 1 落地（UnderlineNav + 计数胶囊）：
@@ -6209,6 +6219,19 @@ textarea::placeholder {
    图标按钮 —— 不锁高度的话切 tab 时整张表会上下跳 8px。 */
 .invest-tools-row { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); min-height: var(--h-3); margin-bottom: var(--sp-3); }
 .invest-tools-row[hidden] { display: none; }
+/* 工具条左端的轻量 stat（2026-11-09 P1）：「本月盈亏」从独立 KPI 卡下沉后的落点。
+   margin-right:auto 把它推到左端、把右侧控件留在右端 —— 不改这一行的 justify-content，
+   否则「只有控件」的 tab（存款）会把控件甩到左边。 */
+.tools-stats {
+  margin-right: auto; min-width: 0;
+  display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap;
+  font-size: var(--fs-xs); color: var(--text-muted);
+}
+.tools-stats[hidden] { display: none; }
+.tools-stat { display: inline-flex; align-items: baseline; gap: var(--sp-1); white-space: nowrap; }
+.tools-stat b { font-size: var(--fs-sm); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.tools-stat b.up { color: var(--up); }
+.tools-stat b.down { color: var(--down); }
 .sub-tabs-tools:empty { display: none; }
 .sub-tabs-tools[hidden] { display: none; }
 .sub-tab {
@@ -6495,12 +6518,10 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .kpi-card.kpi-income .kpi-icon { background: rgba(var(--up-rgb), .12); color: var(--up); }
 .kpi-card.kpi-expense .kpi-icon { background: rgba(var(--down-rgb), .12); color: var(--down); }
 .kpi-card.kpi-surplus .kpi-icon { background: var(--primary-soft); color: var(--primary); }
-.kpi-card.kpi-rate .kpi-icon { background: rgba(var(--cum-line-rgb), .12); color: var(--cum-line); }
 .kpi-card.kpi-income .kpi-value { color: var(--up); }
 .kpi-card.kpi-expense .kpi-value { color: var(--down); }
 .kpi-card.kpi-surplus .kpi-value { color: var(--up); }
 .kpi-card.kpi-surplus .kpi-value.is-neg { color: var(--down); }
-.kpi-card.kpi-rate .kpi-value { color: var(--cum-line); }
 .kpi-card-err { align-items: center; justify-content: center; grid-column: 1 / -1; color: var(--danger); }
 
 /* 主导航视图（首页/投资/资产/设置/财务）占满整屏宽度：视图自身 max-width:none 之外，
@@ -7155,6 +7176,12 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
    这样 390 收拢后也不会只剩色块：名称、金额、百分比三者始终可读。
    order:5 与 .kpi-bar 同位；.kpi-bar 仍供其他页使用，资产页不再调用。 */
 .kpi-card .kpi-props { order: 5; display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-2); }
+/* 同一行里的卡片行数不等（3 行 / 2 行 / 1 行），比例尺若紧跟副标，三张卡的条形会各自停在
+   不同高度，底部各留一段空白（实测 17 / 47 / 77px）。把比例尺推到卡片底部（原型 .props 的
+   margin-top:auto），同一行内所有条形落在同一条基线上，空白全部收在条形上方。
+   只作用于 .kpi-row 内的卡片 —— 卡外的 .kpi-props（弹框、面板）保持紧随正文。 */
+.kpi-row .kpi-card .kpi-props,
+.kpi-row .kpi-card .kpi-bar { margin-top: auto; }
 .kpi-prop { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .kp-top { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
 .kp-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--text-muted); }

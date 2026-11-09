@@ -120,16 +120,18 @@
       <button id="pnlCalTopBtn" class="btn icon-btn" type="button" title="盈亏日历" aria-label="盈亏日历"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></button>
       <!-- 止盈止损提醒（2026-10-31）：铃铛 + 未读角标，放在盈亏日历右侧、头像左侧。
            止盈止损信号是「需要立刻处理」的信息，不能只沉在消息页，故独立成一个顶栏入口；
-           面板视觉与个人菜单同源（右侧下拉 / 发丝线 / 卡片底），不新造语言。 -->
+           面板视觉与个人菜单同源（右侧下拉 / 发丝线 / 卡片底），不新造语言。
+           2026-11-09：首页跑马灯下线，待还款 / 未来收入 / 定投待确认 / 存款到期四类待办
+           并入本面板顶部「今日待办」区（实时算、不落库，办完自动消失）。 -->
       <div class="bell-menu" id="bellMenu">
-        <button id="alertBellBtn" class="btn icon-btn" type="button" title="止盈止损提醒" aria-haspopup="true" aria-expanded="false" aria-label="止盈止损提醒">
+        <button id="alertBellBtn" class="btn icon-btn" type="button" title="提醒与今日待办" aria-haspopup="true" aria-expanded="false" aria-label="提醒与今日待办">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 4 1 5.5 2 6.5H4c1-1 2-2.5 2-6.5"/><path d="M10.5 19a1.5 1.5 0 0 0 3 0"/></svg>
           <span class="bell-badge" id="alertBadge" hidden>0</span>
         </button>
         <div class="alert-pop" id="alertPop" hidden>
           <div class="alert-pop-head">
-            <span class="alert-pop-title">止盈止损提醒</span>
-            <button class="alert-mark" type="button" id="alertReadAll">全部已读</button>
+            <span class="alert-pop-title">提醒</span>
+            <button class="alert-mark" type="button" id="alertReadAll" title="只把止盈止损提醒标为已读；今日待办办完才会消失">提醒已读</button>
           </div>
           <div class="alert-list" id="alertList"></div>
           <div class="alert-pop-foot">
@@ -217,15 +219,8 @@
             </div>
             <div class="nw-asset-row" id="homeAssetBreakdown"></div>
           </div>
-          <!-- 单行竖向步进跑马灯：待办 + 收益句子，每次完整跳一行。
-               D 档：宽屏落在台账末行（芯片之下、曲线左栏下方），手机档排在曲线之前。 -->
-          <div class="home-marquee" id="homeMarquee" hidden aria-label="首页动态">
-            <div class="hm-viewport">
-              <div class="hm-track" id="homeMarqueeTrack">
-                <!-- JS 渲染：每子 div 固定一行高 -->
-              </div>
-            </div>
-          </div>
+          <!-- 跑马灯已于 2026-11-09 下线：待办迁入顶栏铃铛（#alertPop「今日待办」区），
+               随机收益句子不承载数据、且抢 Hero 视线。 -->
           <div class="nw-right">
             <div class="nw-spark">
               <div class="rate-spark-head">
@@ -278,9 +273,12 @@
         <button class="sub-tab" data-view="closed" type="button" role="tab" aria-selected="false" tabindex="-1">平仓<span class="sub-tab-count" data-count="closed"></span></button>
       </div>
     </nav>
-  <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 3 卫星（今日 / 本月 / 收益率），统一 .kpi-card -->
+  <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 2 卫星（今日 / 收益率），统一 .kpi-card。
+       2026-11-09 P1：原第 3 张「本月盈亏」卡与首页 Hero 的「本月持仓」同源同值，
+       独立占卡位属重复计位；它下沉成锚点卡副标里的一个数字 + 工具条左侧的 stat，
+       主数字不再二次占位。四个 tab 统一 3 卡（cols-3），切 tab 无高度跳变。 -->
   <section class="invest-hero" id="investHero">
-    <div class="kpi-row cols-anchor">
+    <div class="kpi-row cols-3">
       <!-- has-alloc：右侧挂「资产占比环」（权益 / 理财 / 现金）。卡内文本包进 .kpi-body，
            让「文本块 + 环块」成为可换行的一行 —— 宽屏环在右侧垂直居中，窄屏自动换到下一行。 -->
       <div class="kpi-card density-standard anchor has-alloc">
@@ -297,7 +295,7 @@
       <div class="kpi-card density-standard has-contrib">
         <div class="kpi-icon kpi-ico-up"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
         <div class="kpi-body">
-          <div class="kpi-label" id="investDayLabel">今日盈亏</div>
+          <div class="kpi-label" id="investDayLabel">持仓今日盈亏</div>
           <div class="kpi-main"><div class="kpi-value" id="investDayPnl">—</div></div>
           <div class="kpi-sub" id="investDayPct">—</div>
         </div>
@@ -308,12 +306,6 @@
           </div>
           <ul class="kpi-contrib-list"></ul>
         </div>
-      </div>
-      <div class="kpi-card density-standard">
-        <div class="kpi-icon kpi-ico-down"><svg viewBox="0 0 24 24"><path d="M3 7l6 6 4-4 8 8"/><path d="M14 17h7v-7"/></svg></div>
-        <div class="kpi-label">本月盈亏</div>
-        <div class="kpi-main"><div class="kpi-value" id="investMonthPnl">—</div></div>
-        <div class="kpi-sub" id="investMonthPct">—</div>
       </div>
       <div class="kpi-card density-standard">
         <div class="kpi-icon kpi-ico-pct"><svg viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg></div>
@@ -333,7 +325,7 @@
   </section>
 
   <!-- 理财 / 存款 KPI：同样**占用这个顶部位置**，四个 tab 共用一块区域互换显隐。
-       每个 hero 的 4 张 .kpi-card 与 investHero 等高，切 tab 时只有内容替换、没有位移。 -->
+       每个 hero 的 3 张 .kpi-card 与 investHero 等高，切 tab 时只有内容替换、没有位移。 -->
   <section class="invest-hero" id="wealthHero" hidden>
     <div id="wealthKpiBody"></div>
   </section>
@@ -347,8 +339,11 @@
        一整排 KPI 卡片，读不出「这些按钮管的是下面这张表」；现在落在卡片与表格之间，
        上下各留 12–16px 间距，行内右对齐（与资产页流水工具条 .tl-tools 同一套排布）。
        不加 label：行密度自带「紧凑/标准」文字、图标按钮都有 title，tab 名已经说明是哪个视图，
-       再补一个「工具」只会多一份噪音。 -->
+       再补一个「工具」只会多一份噪音。
+       2026-11-09 P1：左侧新增 #investStats —— 「本月盈亏」从独立卡下沉后的落点，
+       与右侧控件同一行、左端对齐表格左缘。 -->
   <div class="invest-tools-row" id="investToolsRow">
+    <span class="tools-stats" id="investStats" hidden></span>
     <span class="sub-tabs-tools" id="investTools"></span>
   </div>
 
@@ -387,8 +382,10 @@
         </div>
       </div>
 
-      <!-- 4 个 KPI 小卡片（年度总收入 / 总支出 / 净结余 / 储蓄率），由 renderFinKpis 输出统一 .kpi-card -->
-      <div class="kpi-row cols-flat" id="finKpiGrid"></div>
+      <!-- 3 个 KPI 小卡片（年度总收入 / 总支出 / 净结余·储蓄率），由 renderFinKpis 输出统一 .kpi-card。
+           2026-11-09：储蓄率原本独立成第 4 张卡，它是「净结余 ÷ 收入」的派生值，
+           与净结余卡同权重并排会让两个数看起来是同级指标 —— 现并入净结余卡副标。 -->
+      <div class="kpi-row cols-3" id="finKpiGrid"></div>
     </div>
 
     <!-- 年度收支分析卡：内部上下排列（上=月度收支柱 / 下=子项金额热力图），下半部分=当月分类明细 -->

@@ -74,6 +74,7 @@ analysis/
 tab-redesign-prototype/
 finance-bar-prototype/
 shield-prototype/
+kpi-prototype/
 hero-prototype.html
 
 # ── 本地验证用二进制（pf-smoke，跑全量构建前的冒烟库）────────

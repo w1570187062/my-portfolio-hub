@@ -129,6 +129,11 @@ func assetOverview(c *gin.Context) {
 	}
 	// 按地域归集的资产/负债（均折 CNY）：map 结构，将来加市场不用再加字段
 	regAssets := map[string]float64{}
+	// 按账户（来源）归集的资产**市值**（折 CNY）：供资产页「资产分布 · 机构」切面。
+	// 与 regAssets 同分母（总资产 = 权益市值 + 理财金额 + 现金），但**不能用 subaccounts**：
+	// 那是「可用现金 + 持仓成本 + 理财本金」口径，拿它当机构分布会让同一张卡的主值（市值）
+	// 与行（成本）不同源，正是这个切面要消灭的问题。
+	srcAssets := map[int64]float64{}
 	// 按币种归集的资产总额（权益+理财+现金，均折 CNY）：供资产页「资产构成」卡按币种对比
 	curAssets := map[string]float64{}
 	curKey := func(c string) string {
@@ -168,6 +173,7 @@ func assetOverview(c *gin.Context) {
 		eqPnl += fxToCNY(v.Pnl, h.Currency, cnyRate, hkdRate)
 		eqDay += fxToCNY(v.DayPnl, h.Currency, cnyRate, hkdRate)
 		regAssets[regionOf(h.SourceID)] += cmv
+		srcAssets[h.SourceID] += cmv
 		curAssets[curKey(h.Currency)] += cmv
 		grp(h.SourceID, h.Currency).cost += v.CostValue
 		eqItems = append(eqItems, gin.H{
@@ -206,6 +212,7 @@ func assetOverview(c *gin.Context) {
 		}
 		wTotal += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
 		regAssets[regionOf(w.SourceID)] += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
+		srcAssets[w.SourceID] += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
 		wToday += fxToCNY(todayPnl, w.Currency, cnyRate, hkdRate)
 		wByCur[w.Currency] += amt
 		curAssets[curKey(w.Currency)] += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
@@ -290,6 +297,7 @@ func assetOverview(c *gin.Context) {
 		cTotalCNY += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
 		curAssets[curKey(cc.Currency)] += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
 		regAssets[regionOf(cc.SourceID)] += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
+		srcAssets[cc.SourceID] += fxToCNY(cc.Amount, cc.Currency, cnyRate, hkdRate)
 		cByCur[cc.Currency] += cc.Amount
 		agg := grp(cc.SourceID, cc.Currency)
 		agg.avail += cc.Amount
@@ -468,6 +476,22 @@ func assetOverview(c *gin.Context) {
 		fxPP = round2(fxGain / netAsset * 100)
 	}
 
+	// 机构切面：按账户市值降序输出（前端只取前 N + 其余合并，排序放后端保证口径一致）。
+	srcList := make([]gin.H, 0, len(srcAssets))
+	for sid, v := range srcAssets {
+		if math.Abs(v) <= 0.005 {
+			continue
+		}
+		name := srcName[sid]
+		if name == "" {
+			name = "未归集账户"
+		}
+		srcList = append(srcList, gin.H{"id": sid, "name": name, "value": round2(v)})
+	}
+	sort.Slice(srcList, func(i, j int) bool {
+		return srcList[i]["value"].(float64) > srcList[j]["value"].(float64)
+	})
+
 	c.JSON(http.StatusOK, gin.H{
 		"equity": gin.H{
 			"count":        len(hs),
@@ -507,6 +531,7 @@ func assetOverview(c *gin.Context) {
 		},
 		"currency_assets":    curAssets,
 		"region_assets":      regAssets,
+		"source_assets":      srcList,
 		"region_liabilities": regLiab,
 		"rate":               cnyRate,
 		"day":                today,
