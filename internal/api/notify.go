@@ -413,7 +413,9 @@ func pnlRowForScope(uid int64, scope string, hmap map[string]db.Holding) *db.Pnl
 
 // buildNetValueNotifyText 构造通知正文：触发来源 + 更新范围 + 日期 + 当日盈亏概览。
 // scope 限定只列出该范围内（美股/A股/基金）的持仓盈亏；"" / "all" 为全量（手动刷新）。
-func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool) {
+// 第二个返回值是本次推送实际读取的 pnl 行日期（美股即被推送的美股交易日），
+// 供上层做「按数据归属日」去重；取不到行时为推送当天。
+func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, string, bool) {
 	label := scopeLabelCN(scope)
 	var sb strings.Builder
 	hasData := false // 是否有真实持仓行；无任何有效数据时不发送
@@ -500,7 +502,7 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, bool
 		}
 	}
 	sb.WriteString("\n> 由「持仓侠」自动推送")
-	return sb.String(), hasData
+	return sb.String(), date, hasData
 }
 
 func moneyFmt(v float64) string {
@@ -545,17 +547,26 @@ func NotifyNetValueUpdated(uid int64, triggeredBy, scope string) {
 			log.Printf("[notify] 按推送策略(%s)跳过本次推送（触发：%s）", policyName(cfg.Policy), triggeredBy)
 			return
 		}
-		// 去重：同一 (uid, scope, 日期) 每天只推一次，跨进程也生效。
+		// 去重：同一 (uid, scope, 去重键) 只推一次，跨进程也生效。
 		// 多实例/重启新旧进程并存时，第二次会被去重跳过，根治「同一份净值被推 2 次」。
+		// 去重键默认 = 推送当天日期；美股 T+1 改用「数据归属日」：周六 07:00 推周五
+		// 收盘数据后，周日/周一 07:00 最新已收盘的美股交易日仍是周五，若按推送日去重
+		// 会连续 3 天重复推同一份数据（2026-11-07~11-09 复现）。按归属日去重后，
+		// 同一个美股交易日的净值只推一次。
 		cst := time.FixedZone("CST", 8*3600)
 		pushDate := time.Now().In(cst).Format("2006-01-02")
-		if !notifyMarkPushed(uid, scope, pushDate) {
-			log.Printf("[notify] 今日(%s)%s 净值已推送过，跳过重复发送（触发：%s）", pushDate, scopeLabelCN(scope), triggeredBy)
-			return
-		}
-		text, hasData := buildNetValueNotifyText(uid, triggeredBy, scope)
+		// 先构造正文并确认有真实数据，再写去重标记：若 07:00 行情临时拉空导致无数据，
+		// 不应把去重槽烧掉（美股的槽是整个周末长度的，烧掉就再也补不上了）。
+		text, dataDate, hasData := buildNetValueNotifyText(uid, triggeredBy, scope)
 		if !hasData {
 			log.Printf("[notify] 本次推送无有效持仓/信号数据，取消发送（触发：%s）", triggeredBy)
+			return
+		}
+		if scope == "us" && dataDate != "" {
+			pushDate = dataDate
+		}
+		if !notifyMarkPushed(uid, scope, pushDate) {
+			log.Printf("[notify] %s(%s) 净值已推送过，跳过重复发送（触发：%s）", dataDate, scopeLabelCN(scope), triggeredBy)
 			return
 		}
 		sendToChannels(cfg, "持仓净值更新", text)
