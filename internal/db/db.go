@@ -289,6 +289,22 @@ func GetAnalysisCache(symbol, date string) (*AnalysisCacheRow, error) {
 	return &r, nil
 }
 
+// GetLatestAnalysisCache 返回该 symbol 最近一次落库的缓存（不限当天）。
+// 行情源临时被网关拦截时，用它做 K 线降级展示，避免技术分析弹框直接报错。
+func GetLatestAnalysisCache(symbol string) (*AnalysisCacheRow, error) {
+	var r AnalysisCacheRow
+	err := DB.QueryRow(`SELECT symbol,date,bars_json,indicators_json,probability_json,daily_signals_json,valuation_json,generated_at
+		FROM analysis_cache WHERE symbol=? ORDER BY date DESC, generated_at DESC LIMIT 1`, symbol).
+		Scan(&r.Symbol, &r.Date, &r.BarsJSON, &r.IndicatorsJSON, &r.ProbabilityJSON, &r.DailySignalsJSON, &r.ValuationJSON, &r.GeneratedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 // SaveAnalysisCache upserts a cache row. JSON strings are stored as-is.
 func SaveAnalysisCache(symbol, date, barsJSON, indicatorsJSON, probabilityJSON, dailySignalsJSON, valuationJSON, generatedAt string) error {
 	_, err := DB.Exec(`INSERT INTO analysis_cache(symbol,date,bars_json,indicators_json,probability_json,daily_signals_json,valuation_json,generated_at)

@@ -24,6 +24,7 @@ type AnalysisResponse struct {
 	Category    string            `json:"category"`
 	Market      string            `json:"market"`
 	Error       string            `json:"error,omitempty"`
+	Warning     string            `json:"warning,omitempty"` // 实时行情源失败、展示缓存 K 线时的口径提示
 	GeneratedAt string            `json:"generated_at"`
 	Series      []market.KlineBar `json:"series,omitempty"`
 }
@@ -140,24 +141,30 @@ func getAnalysis(c *gin.Context) {
 		}
 	}
 
-	// ② 未命中缓存：实时抓取 K线，计算概率用于角标，落库缓存（K线+指标+概率）。
+	// ② 未命中新鲜缓存：实时抓取 K线。行情源全部失败（例如服务器出口被 WAF 拦截、
+	//    返回 HTML 而非 JSON）时降级展示最近一次缓存，不再把底层解析错误抛到弹框。
 	bars, err := market.FetchKline(symbol)
-	resp.Series = capSeries(bars)
 	if err != nil {
 		log.Printf("[analysis] fetch kline for %s (%s) failed: %v", h.Name, symbol, err)
-		resp.Error = "获取K线数据失败：" + err.Error()
+	} else if len(bars) < 30 {
+		log.Printf("[analysis] fetch kline for %s (%s): only %d bars", h.Name, symbol, len(bars))
+	}
+	if err != nil || len(bars) < 30 {
+		if cached, cachedAt := latestCachedBars(symbol); len(cached) > 0 {
+			resp.Series = capSeries(cached)
+			resp.Symbol = symForFetch
+			resp.GeneratedAt = cachedAt
+			resp.Warning = "行情源暂时不可用，展示 " + strings.Split(cachedAt, " ")[0] + " 的缓存K线"
+			c.JSON(http.StatusOK, gin.H{"analysis": resp, "cache": "stale"})
+			return
+		}
+		resp.Error = "行情源暂时不可用，请稍后再试"
 		resp.Symbol = symForFetch
 		resp.GeneratedAt = genAt
 		c.JSON(http.StatusOK, gin.H{"analysis": resp})
 		return
 	}
-	if len(bars) < 30 {
-		resp.Error = "K线数据不足（需要至少30个交易日）"
-		resp.Symbol = symForFetch
-		resp.GeneratedAt = genAt
-		c.JSON(http.StatusOK, gin.H{"analysis": resp})
-		return
-	}
+	resp.Series = capSeries(bars)
 
 	ind := market.CalculateIndicators(bars)
 	prob := market.CalculateProbability(ind)
@@ -177,6 +184,24 @@ func getAnalysis(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"analysis": resp, "cache": false})
 }
 
+// latestCachedBars 返回该 symbol 最近一次落库的完整日 K 线及其生成时间。
+// 只在实时行情源不可用时调用，返回的是明确标注了日期的旧数据，不做任何估算。
+func latestCachedBars(symbol string) ([]market.KlineBar, string) {
+	row, err := db.GetLatestAnalysisCache(symbol)
+	if err != nil {
+		log.Printf("[analysis] read cache %s failed: %v", symbol, err)
+		return nil, ""
+	}
+	if row == nil {
+		return nil, ""
+	}
+	var bars []market.KlineBar
+	if e := json.Unmarshal([]byte(row.BarsJSON), &bars); e != nil || len(bars) < 30 {
+		return nil, ""
+	}
+	return bars, row.GeneratedAt
+}
+
 // resolveSymbol converts the user-friendly symbol to the API format.
 func resolveSymbol(symbol, market string) string {
 	sym := strings.ToLower(strings.TrimSpace(symbol))
@@ -192,7 +217,9 @@ func resolveSymbol(symbol, market string) string {
 				switch code[0] {
 				case '6', '5', '9':
 					return "sh" + code
-				case '0', '2', '3':
+				// 15/16/18 开头的深市 ETF / LOF 走 sz，旧实现落到 "sh"+code
+				// 会拼出根本不存在的 sh159316（2026-11-13 线上日志实测）。
+				case '0', '1', '2', '3':
 					return "sz" + code
 				}
 			}
@@ -218,7 +245,7 @@ func resolveSymbol(symbol, market string) string {
 		switch sym[0] {
 		case '6', '5', '9':
 			return "sh" + sym
-		case '0', '2', '3':
+		case '0', '1', '2', '3':
 			return "sz" + sym
 		}
 		return sym

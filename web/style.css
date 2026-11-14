@@ -70,8 +70,9 @@
   --danger-rgb: 248, 113, 113;
   /* 警告色三元组：行情失效行 / 技术分析命中格此前散落为 rgba(245,166,35,...) / rgba(245,158,11,...) */
   --warning-rgb: 251, 191, 36;
-  --cum-line: #a78bfa;
-  --cum-line-rgb: 167, 139, 250;
+  /* 盈亏曲线跟随主题色：不再写死紫色。改 --primary/--tint（预设或自定义铅笔）即可整条曲线变色。 */
+  --cum-line: var(--primary);
+  --cum-line-rgb: var(--tint);
 
   /* ===== 盈亏日历配色（支付宝式两态，v4 收敛）=====
      旧方案按盈亏绝对值分 4 档深浅（up1..4 / down1..4），实际读起来像热力图，颜色抢了
@@ -383,7 +384,7 @@
   --up: #dc2626; --down: #15803d;--up-rgb: 220, 38, 38; --down-rgb: 21, 128, 61;
   --danger-rgb: 229, 69, 69;
   --warning-rgb: 180, 83, 9;
---cum-line: #7c3aed; --cum-line-rgb: 124, 58, 237;
+  /* --cum-line / --cum-line-rgb 在 :root 已绑定 --primary / --tint，日间沿用同一套主色，不再单独写死紫色 */
 }
 :root[data-theme="light"] .up { color: var(--up); }
 :root[data-theme="light"] .down { color: var(--down); }
@@ -3195,6 +3196,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .analysis-loading { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); padding: 40px; color: var(--text-muted); font-size: var(--fs-base); }
 .analysis-err { text-align: center; padding: 28px; color: var(--danger); font-size: var(--fs-base); }
 .analysis-time { font-size: var(--fs-sm); color: var(--text-faint); margin: -4px 0 10px; letter-spacing: .3px; }
+/* 行情源全部失败时展示缓存 K 线的口径提示：必须比时间戳更醒目，不能冒充实时数据 */
+.analysis-stale { color: var(--warning); font-weight: 600; }
 
 /* 迷你K线（纯SVG蜡烛图，涨红跌绿） */
 .kline-mini { background: var(--bg-card); border: var(--card-border); border-radius: var(--r-sm); padding: var(--sp-2) var(--sp-2) var(--sp-1); margin-bottom: var(--sp-3); }
@@ -3468,25 +3471,11 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 /* 资产概览：标题行走统一 .kpi-head / .kpi-head-hint（与投资/财务页同一行高与上边距）。
    2026-11-02 子 tab 提到卡片之前后，标题行跟在 tab 行下方 —— 间距统一由
    .sub-tabs 的 margin-bottom 提供，这里不再另加 */
-/* 资产页 4 张卡与下方表格的间距（2026-11-02）。
-   此前 .asset-kpi-row 没有下边距、.asset-subpanel 也没有上边距 →
-   卡片底部直接贴住表格上沿（实测 0～1px），四个子视图里三个如此，
-   视觉上像「一张大卡被劈成两半」。
-   对齐口径：财务页的卡片→内容间距是 20px（--sp-5，来自
-   #financeView 的 flex gap），资产页表格同样是带边框的
-   卡片壳（.as-card / .card asset-flow-card），故取同一个 20px。
-   流水子视图卡片与表格之间还夹着一行筛选工具条（.holding-toolbar，
-   自带 16px 下边距），所以那一档总间距是 20 + 16 = 36px。 */
-.asset-kpi-row { margin-bottom: var(--sp-5); }
-/* 流水子视图：卡片与筛选工具条之间已经是 20px（上面的 margin-bottom），
-   工具条自己又带 16px 下边距 → 工具条到表格又空 16px，整段看起来是 65px 的断裂。
-   这里把工具条的下边距收到 12px，让「卡片 → 工具条 → 表格」三段读起来是
-   一组连续的控件区，而不是三个各自孤立的块。 */
+/* 顶部 KPI 卡行已下线（2026-11-13）：tab 行之后直接是工具条 / 表格，
+   间距由 .sub-tabs 的 margin-bottom 提供，不再需要 .asset-kpi-row 的下边距。 */
+/* 流水子视图：工具条自带 16px 下边距，与 tab 行的间距叠加后整段偏松，
+   收到 12px 让「tab → 工具条 → 表格」三段读起来是一组连续的控件区。 */
 .asset-subpanel[data-sub="flows"] .holding-toolbar { margin-bottom: var(--sp-3); }
-
-/* 手机档：3 张页级摘要卡单列（2026-11-09 由 4 卡 2×2 改为 3 卡单列：
-   3 卡排 2 列会空出半行）。通用规则 `.kpi-row.cols-3 { 1fr }` 在文件末尾已覆盖，
-   这里不再重复声明 —— 留一条注释说明「为什么没有特例」。 */
 /* 资产子面板：账户 / 流水 / 负债 切换显隐 */
 .asset-subpanel { display: none; }
 .asset-subpanel.active { display: block; }
@@ -3565,7 +3554,9 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 }
 .flow-tl .tl-empty { padding: var(--sp-6) 0; text-align: center; color: var(--text-faint); font-size: var(--fs-sm); }
 /* 工具条左侧成组：区间下拉 + 类型筛选（列表已无表头，漏斗从 th 挪到这儿） */
-.tl-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+/* margin-left:auto 把区间 + 筛选钉在最右（2026-11-13 续）：工具条左栏加了收入/支出 stat，
+   用 auto 外边距保证「近N天 + 筛选」始终靠右，即使左栏 stat 为空也不会漂到中间。 */
+.tl-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-left: auto; }
 .flow-filter-btn {
   display: inline-flex;
   align-items: center;
@@ -4762,8 +4753,8 @@ textarea::placeholder {
 /* SVG 文本也吃 font-variant-numeric，数字对齐与原内联声明保持一致 */
 .chart-label, .chart-label-up, .chart-label-down, .chart-label-cum { font-variant-numeric: tabular-nums; }
 .chart-legend { display: flex; gap: var(--sp-4); margin-top: var(--sp-2); font-size: var(--fs-md); flex-wrap: wrap; align-items: center; }
-/* 盈亏曲线：沿用全局 --cum-line（深色浅紫 / 亮色深紫），与首页「盈亏走势」同一语义色。
-   2026-11-04：此前在这里覆盖成固定品牌橙，既不跟主题变、也和全局紫割裂，故去掉本作用域覆盖。 */
+/* 盈亏曲线：沿用全局 --cum-line（= 当前主题 --primary），与首页「盈亏走势」同一语义色。
+   2026-11-12：--cum-line 不再是固定紫，主题色 / 自定义色切换时曲线、面积、图例一起跟随。 */
 .chart-curve-wrap {
   position: relative;
   overflow: hidden;          /* 2026-11-04：曲线改为一屏全览，画宽=容器宽，不再横向滚动 */
@@ -5658,7 +5649,7 @@ textarea::placeholder {
 /* 首页 / 资产 / 投资 / 设置（含 AI / 设备 / 通知三个子页）/ 财务 / 再平衡：统一占满可用宽度
    （2026-10-23 起与财务页一致，超宽屏不再 1920 收边）
    页级 padding 也在这里统一，漏加会让该页卡片顶到屏幕边缘、顶部紧贴顶栏（2026-10-27 再平衡页踩过） */
-#homeView, #assetView, #holdingsView, #settingsView, #aiView, #devicesView, #notifyView, #financeView {
+#homeView, #assetView, #holdingsView, #overviewView, #settingsView, #aiView, #devicesView, #notifyView, #financeView {
   max-width: none;
   margin: 0 auto;
   padding: var(--sp-4) var(--sp-5) var(--sp-8);
@@ -5695,6 +5686,8 @@ textarea::placeholder {
 .kpi-card .kpi-icon.kpi-ico-pct { background: rgba(var(--cum-line-rgb), .12); color: var(--cum-line); }
 .kpi-card .kpi-icon.kpi-ico-cash { background: rgba(var(--cat-cash), .18); color: rgb(var(--cat-cash)); }
 .kpi-card .kpi-icon.kpi-ico-fund { background: rgba(var(--cat-fund), .15); color: rgb(var(--cat-fund)); }
+/* 待办 / 需处理：警示色角标，只用于状态提示，不参与涨跌语义 */
+.kpi-card .kpi-icon.kpi-ico-alert { background: rgba(var(--warning-rgb), .12); color: var(--warning); }
 /* 内部语义层级固定：眉标 → 标签 → 主值 → 副标 → 附加可视化（order 保证 DOM 顺序可变） */
 .kpi-card .kpi-eyebrow { order: 1; font-size: var(--fs-xs); font-weight: 500; color: var(--text-muted); letter-spacing: .5px; text-transform: uppercase; }
 .kpi-card .kpi-label { order: 2; font-size: var(--fs-sm); font-weight: 500; color: var(--text-muted); }
@@ -5887,8 +5880,31 @@ textarea::placeholder {
    窄卡收起不丢信息，换回宽屏自动恢复（JS 只管 [hidden]，不参与这个判断）。 */
 .kpi-card.has-alloc { container-type: inline-size; }
 @container (max-width: 400px) {
-  .kpi-card.has-alloc .kpi-alloc { display: none; }
+  .kpi-card.anchor.has-alloc .kpi-alloc { display: none; }
 }
+/* 资产页「净资产」卡也用同款环（2026-11-12）：环缩到 80px、图例两行，阈值比锚点卡的
+   400 低。实测资产页 3 卡 content 宽 1440→425 / 1280→371 都能同排不顶高，1024→286 会
+   把文本块挤到放不下主数字，故 340 以下整块收起（负债金额与负债率仍在副标，不丢读数）。 */
+@container (max-width: 340px) {
+  .kpi-card.has-alloc.is-net .kpi-alloc { display: none; }
+}
+/* ===== 资产页「净资产」卡 · 同款占比环（2026-11-12） =====
+   环、中心读数、图例全部复用投资页 .alloc-ring* 视觉件；差异只在尺寸：资产页是 3 卡平级
+   （非 anchor），卡宽更窄但整行统一 163px 高，故环 80px、图例两行、右让位 24px。
+   nowrap + 文本块 min-width:0：宁可由容器查询收起环，也不让环换行把整行卡片顶高 ——
+   四个子 tab 里只有「账户」tab 带环，换行会让切 tab 时下方表格上下跳。 */
+.kpi-card.has-alloc.is-net {
+  flex-direction: row; flex-wrap: nowrap; align-items: center;
+  column-gap: var(--sp-3);
+}
+.kpi-card.has-alloc.is-net .kpi-body {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.kpi-card.has-alloc.is-net .kpi-alloc { margin-right: var(--sp-6); }
+.kpi-card.has-alloc.is-net .alloc-ring-wrap { width: 80px; height: 80px; }
+.kpi-card.has-alloc.is-net .alloc-legend { min-width: 72px; }
+.kpi-card.has-alloc.is-net .alloc-center-v { font-size: var(--fs-xs); }
 .kpi-contrib {
   flex: 1 1 172px; min-width: 172px;
   display: flex; flex-direction: column;
@@ -5973,6 +5989,10 @@ textarea::placeholder {
      margin-right 归零：环块此时独占一行、靠 align-items 居中，保留右侧让位会把中心左移。 */
   .kpi-alloc { flex-basis: 100%; flex-direction: column; align-items: center; margin-right: 0; }
   .alloc-legend { width: 100%; min-width: 0; }
+  /* 资产页净资产卡：手机档是单列，各卡本来就是自然高度，环换行到文本块下方不造成跳变，
+     所以这里不随容器查询收起，保持环可见（带 > 子选择器提权，压过上面的隐藏规则）。 */
+  .kpi-card.has-alloc.is-net { flex-wrap: wrap; }
+  .kpi-card.has-alloc.is-net > .kpi-alloc { display: flex; margin-right: 0; }
 }
 
 /* —— 净资产 Hero —— */
@@ -6029,22 +6049,19 @@ textarea::placeholder {
 .nw-ledger { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; justify-content: center; }
 /* 顶部台账行：logo ｜ 净资产（eyebrow + 主数字） ｜ 今日/本月（右端对齐） */
 .nw-top {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: end;
-  column-gap: var(--sp-4); row-gap: var(--sp-2);
-  min-width: 0;
+  display: flex; flex-wrap: wrap; align-items: flex-end;
+  column-gap: var(--sp-4); row-gap: var(--sp-2); min-width: 0;
 }
-.nw-top .kpi-card.density-hero { min-width: 0; }
+.nw-top .kpi-card.density-hero { flex: 1 1 200px; min-width: 0; }
 .nw-top .kpi-card.density-hero .kpi-eyebrow { justify-content: flex-start; }
-.nw-top .hero-changes { justify-content: flex-end; align-self: end; }
+.nw-top .hero-changes { flex: 0 1 auto; justify-content: flex-end; align-self: flex-end; }
 /* 品牌标：与右侧「净资产 eyebrow + 主数字」整块等高。
    源文件 web/favicon.svg 是 32×32 正方形，height:100% + width:auto 按原比例放大，
    object-fit:contain 兜底不裁切、不拉伸；手机档跨两行（块高含今日/本月）。 */
 .nw-brand {
-  grid-row: 1; align-self: stretch;
-  width: auto; height: 100%; min-height: var(--sp-8);
-  object-fit: contain; justify-self: start;
+  flex: 0 0 auto;
+  width: auto; height: 64px; max-height: 64px;
+  object-fit: contain;
   border-radius: var(--r-sm);
 }
 /* 盾牌水印（2026-11-05 十改）：盾回到「权益收益曲线」的**背景**位置 —— 不再贴右上角，
@@ -6126,14 +6143,16 @@ textarea::placeholder {
   /* 台账单列：logo 跨「净资产 + 主数字」与「今日/本月」两行，与整块等高 */
   .nw-ledger { gap: var(--sp-3); justify-content: flex-start; }
   .nw-top {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-    column-gap: var(--sp-3); row-gap: var(--sp-2);
+    flex-wrap: wrap; align-items: center;
+    column-gap: var(--sp-3); row-gap: var(--sp-3);
   }
-  /* logo 高度=块高在 320 会自我放大：窄列让「今日/本月」折行 → 块变高 → logo 变宽
-     → 主数字列更窄 → 折更多行。故手机档封顶 92px（390 块高 88.5，仍按真实块高）。 */
-  .nw-brand { grid-row: 1 / span 2; align-self: stretch; height: 100%; max-height: 92px; }
-  .nw-top .hero-changes { grid-column: 2; grid-row: 2; justify-content: flex-start; }
+  /* 手机档：logo 与「净资产」同行（左 logo · 右数字），「今日/本月」独占下一行整宽。
+     旧版让 logo 跨两行、净资产卡被压进第 1 行轨道（仅 ~24px）后向下溢出，
+     与「今日/本月」纵向重叠（390 实测重叠 28px）；平板档（641–1340）三者在窄账列表中
+     同行则净资产列轨道被挤成 0 宽（实测 w:0）。改 flex 换行后两者都不会发生。 */
+  .nw-brand { height: 56px; max-height: 56px; }
+  .nw-top .kpi-card.density-hero { flex: 1 1 0; }
+  .nw-top .hero-changes { flex: 1 1 100%; justify-content: flex-start; }
   /* 主数字让位给 logo：390 档 34px 文本约 198px，可用 308 − logo − 12 ≈ 208px；
      320 档按视觉宽度折算到 24px 左右，避免 320 机型上数字溢出卡片。 */
   .kpi-card.density-hero .kpi-value { font-size: min(34px, calc((100vw - 176px) / 5.85)); letter-spacing: -.9px; }
@@ -6142,24 +6161,9 @@ textarea::placeholder {
   .nw-shield { display: none; }
 }
 
-/* —— 投资页 KPI 行（原型场景 B：1 锚点 + 2 卫星，直接铺在页面底色上，不再套玻璃大卡） —— */
-.invest-hero { margin-bottom: var(--sp-4); }
-/* 投资页 4 个 tab 的卡片：正文在卡内**垂直居中**（2026-11-09）。
-   三卡同行等高，锚点卡最高（带占比环 / 副标多一行 ≈117px），卫星卡正文只有 ≈80px，
-   贴顶时每张卡下方空出 50–60px，切换 tab 还会看到文字在卡里的落点变来变去。
-   只作用于投资页：资产页与财务页的卡把比例尺行（.kpi-props / .kpi-bar）用
-   margin-top:auto 钉在卡底，靠它让三张卡的条形落在同一基线上，居中会把这个约束打散。 */
-.invest-hero .kpi-card { justify-content: center; }
-/* 带右侧附加块的两张卡是**横排**：justify-content 管的是水平方向，必须归位；
-   垂直居中改用 align-content（整行在卡内居中）—— flex-wrap 容器只设 justify-content
-   是没用的，主轴是水平的。
-   align-items 保持各自原值：今日盈亏卡刻意让「今日贡献」抬头与卡标签同顶（两者相距 8px 内），
-   改成 center 会把右侧三条下移半行，反而破坏这层对齐关系；行高了 15px，
-   正文中心与卡中心只差 7px，肉眼看不出来。 */
-.invest-hero .kpi-card.has-contrib {
-  justify-content: normal;
-  align-content: center;
-}
+/* 投资页顶部 KPI hero 已整体下线（2026-11-13，四块常驻 hidden）。
+   原先「卡内正文垂直居中 / has-contrib 横排归位」这三条只服务于那四块 hero，
+   随卡片一并删除；.kpi-card 组件本身仍由持仓页以外的页面（财务页等）使用。 */
 
 /* —— 子 Tab（持仓/理财 · 账户/流水/负债）：原型下划线样式 ——
    2026-11-04 方案 1 落地（UnderlineNav + 计数胶囊）：
@@ -6278,7 +6282,7 @@ textarea::placeholder {
 .sub-tab.active .sub-tab-count { background: var(--primary-soft); border-color: rgba(var(--tint), .35); color: var(--primary); }
 
 /* —— 快捷功能 —— */
-.shortcut-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-2); }
+.shortcut-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-2); }
 /* 2026-11-02 起只有 4 个入口（定投 / 平仓迁到投资页），列数直接写死：
    auto-fit 会在 460–640 这类窄档只落 3 列，第 4 个单独掉到第二行；
    写死后 4 项永远只有「一排 4 格」和「2×2」两种形态。 */
@@ -6530,6 +6534,7 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 #app:has(#homeView:not([hidden])),
 #app:has(#holdingsView:not([hidden])),
 #app:has(#assetView:not([hidden])),
+#app:has(#overviewView:not([hidden])),
 #app:has(#settingsView:not([hidden])),
 #app:has(#aiView:not([hidden])),
 #app:has(#devicesView:not([hidden])),
@@ -7248,5 +7253,107 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .fx-lots td:nth-child(5) { grid-column: 2; grid-row: 3; }
   .fx-body { overflow: auto; }
 }
+
+/* ===== 数据总览 #/overview（2026-11-13，落地原型 data-overview-v1-refactored.html）=====
+   结构：规则网格（DOM=视觉=Tab 顺序）+ 按主题/来源分组 + 一卡多切面 + 渐进披露 + 异常收口。
+   与便签原型唯一的视觉差别：不画拟物装饰、不用彩色卡底、不画没有真实历史序列的折线。 */
+.ov-page { max-width: 1400px; margin-inline: auto; }
+.ov-back { display: inline-flex; align-items: center; gap: var(--sp-1); padding: 0; border: 0; background: none; color: var(--primary); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.ov-back span { font-size: var(--fs-lg); }
+.ov-title { font-size: var(--fs-xl); font-weight: 700; margin: var(--sp-2) 0 var(--sp-1); }
+.ov-sub { font-size: var(--fs-sm); color: var(--text-muted); margin: 0 0 var(--sp-5); }
+/* 顶部 3 卡直接复用全站 .kpi-card / .kpi-row.cols-3（与持仓页同一套壳、同一套角标）；
+   这里只补页面级的下间距，列数与断点一律走 .kpi-row，不再另立一套私有 KPI 样式。 */
+.ov-kpi-row { margin-bottom: var(--sp-5); }
+.ov-spark { width: 72px; height: 24px; flex: 0 0 auto; }
+.ov-spark polyline { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.ov-spark.up polyline { stroke: var(--up); }
+.ov-spark.down polyline { stroke: var(--down); }
+.ov-spark.flat polyline { stroke: var(--text-faint); }
+
+/* 异常收口：正常卡保持中性，只有真实待办/缺失汇率源才进这条 */
+.ov-alert-strip { background: var(--bg-card); border: 1px solid rgba(var(--warning-rgb), .35); border-left: 3px solid var(--warning); border-radius: var(--r); padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4); }
+.ov-alert-head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: 600; }
+.ov-alert-count { font-size: var(--fs-2xs); padding: 0 var(--sp-2); border-radius: 999px; background: var(--primary-soft); color: var(--primary); }
+.ov-fold { margin-left: auto; font-size: var(--fs-xs); color: var(--text-muted); background: none; border: 0; cursor: pointer; font-family: inherit; }
+/* 收起/展开靠 hidden 属性：作者样式的 display:flex 会盖过 UA 的 [hidden]{display:none}，
+   必须写成 :not([hidden])，否则点「收起」列表纹丝不动（2026-11-13 实测修复）。 */
+.ov-alert-list:not([hidden]) { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.ov-alert-item { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--bg-soft); font-size: var(--fs-xs); color: var(--text-muted); min-width: 0; }
+.ov-alert-item b { color: var(--text); font-weight: 600; flex: 0 0 auto; }
+.ov-alert-item button { font-size: var(--fs-xs); color: var(--primary); background: none; border: 0; cursor: pointer; white-space: nowrap; font-family: inherit; flex: 0 0 auto; }
+
+.ov-tools { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); flex-wrap: wrap; }
+.ov-viewseg, .ov-seg { display: flex; gap: 2px; padding: 2px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.ov-viewseg button, .ov-seg button { padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); font-size: var(--fs-xs); color: var(--text-muted); background: none; border: 0; cursor: pointer; font-family: inherit; }
+.ov-viewseg button[aria-pressed="true"], .ov-seg button[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary); }
+.ov-scope { margin-left: auto; font-size: var(--fs-2xs); color: var(--text-faint); }
+
+.ov-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); align-items: stretch; }
+.ov-group { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); }
+.ov-group::before { content: ''; width: 3px; height: 14px; border-radius: 2px; background: var(--primary); }
+.ov-note { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r); padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; container-type: inline-size; transition: border-color .15s; }
+.ov-note:hover, .ov-note:focus-within { border-color: var(--primary); }
+.ov-note.has-alert { border-color: rgba(var(--warning-rgb), .5); }
+.ov-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.ov-title2 { font-size: var(--fs-base); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ov-src { font-size: var(--fs-2xs); padding: 0 var(--sp-1); border-radius: var(--r-xs); background: var(--bg-soft); color: var(--text-faint); flex: 0 0 auto; }
+.ov-badge { font-size: var(--fs-2xs); color: var(--warning); flex: 0 0 auto; white-space: nowrap; }
+.ov-more { margin-left: auto; font-size: var(--fs-xs); color: var(--primary); background: none; border: 0; cursor: pointer; font-family: inherit; flex: 0 0 auto; white-space: nowrap; }
+.ov-main { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-2); }
+.ov-mlabel { font-size: var(--fs-xs); color: var(--text-muted); }
+.ov-mvalue { font-size: var(--fs-lg); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.ov-mvalue.up, .ov-rval.up { color: var(--up); }
+.ov-mvalue.down, .ov-rval.down { color: var(--down); }
+.ov-mvalue.warn, .ov-rval.warn { color: var(--warning); }
+.ov-msub { font-size: var(--fs-2xs); color: var(--text-faint); margin-top: 2px; }
+/* 24px 固定槽：切面控件 / bullet / 口径提示三选一，保证同行卡片等高、切切面不跳变 */
+.ov-extra { height: 24px; display: flex; align-items: center; gap: var(--sp-2); flex: 0 0 auto; }
+.ov-extra.bullet-wrap { flex-direction: column; align-items: stretch; gap: 2px; }
+.ov-hint { font-size: var(--fs-2xs); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-bullet { position: relative; height: 8px; background: var(--bg-soft); border-radius: 2px; }
+.ov-bullet::before { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--w); background: var(--primary); border-radius: 2px; }
+.ov-bullet::after { content: ''; position: absolute; top: -2px; bottom: -2px; left: var(--target); width: 2px; background: var(--text); border-radius: 2px; }
+.ov-bullet-note { font-size: var(--fs-2xs); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+.ov-rows { display: flex; flex-direction: column; margin-top: auto; }
+.ov-row { display: grid; grid-template-columns: 1fr auto; column-gap: var(--sp-3); align-items: baseline; position: relative; min-height: 32px; padding: var(--sp-1) 0; border-top: 1px solid var(--border); }
+.ov-row:first-child { border-top: 0; }
+.ov-rlabel { font-size: var(--fs-sm); color: var(--text-muted); }
+.ov-rright { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; }
+.ov-rval { font-size: var(--fs-md); font-weight: 700; font-variant-numeric: tabular-nums; }
+.ov-rsub { font-size: var(--fs-2xs); color: var(--text-faint); white-space: nowrap; }
+/* 占比条绝对定位贴行底，不占行高 —— 否则有 bar 的卡比没 bar 的卡高 */
+.ov-bar { position: absolute; left: 0; right: 0; bottom: 2px; height: 3px; background: var(--bg-soft); border-radius: 999px; overflow: hidden; }
+.ov-bar::before { content: ''; display: block; width: var(--w); height: 100%; background: var(--primary); border-radius: 999px; }
+.ov-bar.warn::before { background: var(--warning); }
+.ov-cardfoot { font-size: var(--fs-2xs); color: var(--text-faint); border-top: 1px dashed var(--border); padding-top: var(--sp-1); }
+.ov-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s; }
+.ov-detail > div { overflow: hidden; min-height: 0; }
+.ov-detail p { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.6; margin: 0; }
+.ov-go { margin-top: var(--sp-2); padding: 0; font-size: var(--fs-xs); color: var(--primary); background: none; border: 0; cursor: pointer; font-family: inherit; }
+.ov-note.expanded .ov-detail { grid-template-rows: 1fr; }
+.ov-note.expanded .ov-cardfoot { border-top-style: solid; }
+.ov-back:focus-visible, .ov-fold:focus-visible, .ov-more:focus-visible, .ov-go:focus-visible,
+.ov-viewseg button:focus-visible, .ov-seg button:focus-visible, .ov-alert-item button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* 窄卡收起图形与副标：容器查询规则必须带 .ov-note 前缀提权，否则被后面的 display:flex 盖掉 */
+@container (max-width: 300px) {
+  .ov-note .ov-spark, .ov-note .ov-rsub, .ov-note .ov-bullet, .ov-note .ov-bullet-note { display: none; }
+}
+@media (max-width: 1340px) {
+  /* 数据总览与全站 KPI 卡同制：1340 以下仍 3 列，只靠卡片自身的容器查询收起窄卡图形。
+     若这里降到 2 列，按主题分组的每组 3 卡必然留半行空位，且切视图时高度跳变。 */
+  /* 快捷功能 5 项：平板档 3 列，避免第 5 项孤零零掉到第二行 */
+  .shortcut-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .ov-grid { grid-template-columns: 1fr; }
+  .ov-scope { margin-left: 0; width: 100%; }
+  .ov-viewseg { width: 100%; }
+  .ov-viewseg button { flex: 1 1 0; }
+  /* 手机档 2 列（沿用 4 项时的 2×2 动作栅格）：5 项 = 两行满 + 末行落 1 张，
+     所有卡片等宽；不再走 3 列（会留空角）或被末张拉通成异形宽。 */
+  .shortcut-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .ov-note, .ov-detail { transition: none; } }
 
 

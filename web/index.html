@@ -101,10 +101,10 @@
       <button class="nav-pill" data-view="home" type="button" onclick="navigate('home')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 12 3l9 9"/><path d="M5 10v10h14V10"/></svg><span>首页</span>
       </button>
-      <button class="nav-pill" data-view="invest" type="button" onclick="navigate('invest')">
+      <button class="nav-pill" data-view="invest" type="button" onclick="navigate('invest', true)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-3 4 4 5-6"/></svg><span>投资</span>
       </button>
-      <button class="nav-pill" data-view="asset" type="button" onclick="navigate('asset')">
+      <button class="nav-pill" data-view="asset" type="button" onclick="navigate('asset', true)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 3.4"/></svg><span>资产</span>
       </button>
       <button class="nav-pill" data-view="finance" type="button" onclick="navigate('finance')">
@@ -260,6 +260,36 @@
     </section>
   </div>
 
+  <!-- 数据总览（2026-11-13）：由首页「快捷功能」进入，不占主导航。
+       规则网格 + 按主题/来源分组 + 一卡多切面 + 渐进披露 + 异常收口。
+       所有读数来自现有接口，接口缺失或字段为空时一律渲染「—」，不填充演示数值。 -->
+  <div id="overviewView" hidden>
+    <div class="ov-page">
+      <button class="ov-back" type="button" id="ovBack"><span aria-hidden="true">‹</span> 返回首页</button>
+      <h1 class="ov-title">数据总览</h1>
+      <p class="ov-sub">按主题聚合当前账本的资产与收支，口径与分母写在每张卡的副标里</p>
+      <!-- 顶部 3 卡与持仓页同一套 .kpi-card（含右上角 .kpi-icon 角标），
+           .ov-kpi-row 只负责与下方提醒条的间距；列数/断点走全站 .kpi-row.cols-3。 -->
+      <div class="kpi-row cols-3 ov-kpi-row" id="ovKpis"></div>
+      <section class="ov-alert-strip" id="ovAlertStrip" hidden>
+        <div class="ov-alert-head">
+          <span>需要留意</span><span class="ov-alert-count" id="ovAlertCount"></span>
+          <button class="ov-fold" type="button" id="ovFold" aria-expanded="true">收起</button>
+        </div>
+        <div class="ov-alert-list" id="ovAlertList"></div>
+      </section>
+      <div class="ov-tools">
+        <div class="ov-viewseg" id="ovViewSeg">
+          <button type="button" data-view="topic" aria-pressed="true">按主题</button>
+          <button type="button" data-view="source" aria-pressed="false">按来源</button>
+          <button type="button" data-view="alert" aria-pressed="false">仅异常</button>
+        </div>
+        <span class="ov-scope" id="ovScope"></span>
+      </div>
+      <div class="ov-grid" id="ovGrid"></div>
+    </div>
+  </div>
+
   <!-- 投资页 = 视图切换条 + 内容区（2026-11-02，原型 B）。
        视图切换条提到页面第一位（在 KPI 卡片之前），保留下划线 tab 样式 ——
        与资产页的「账户 / 现金 / 流水 / 收支」子 tab 是同一套 .sub-tabs 组件，
@@ -273,11 +303,12 @@
         <button class="sub-tab" data-view="closed" type="button" role="tab" aria-selected="false" tabindex="-1">平仓<span class="sub-tab-count" data-count="closed"></span></button>
       </div>
     </nav>
-  <!-- 投资页 KPI 行：1 锚点（持仓市值）+ 2 卫星（今日 / 收益率），统一 .kpi-card。
-       2026-11-09 P1：原第 3 张「本月盈亏」卡与首页 Hero 的「本月持仓」同源同值，
-       独立占卡位属重复计位；它下沉成锚点卡副标里的一个数字 + 工具条左侧的 stat，
-       主数字不再二次占位。四个 tab 统一 3 卡（cols-3），切 tab 无高度跳变。 -->
-  <section class="invest-hero" id="investHero">
+  <!-- 投资页顶部 KPI 行已整体下线（2026-11-13）：四个二级子页不再各自摆一排指标卡，
+       指标统一收进「数据总览」#/overview。下面四块 hero 保留为常驻 hidden 的兼容容器 ——
+       renderSummary / renderWealthKpi / renderDepositKpi 等仍往里面写派生读数，
+       工具条 #investStats 的「本月盈亏」也仍由 renderSummary 计算；容器不显示、不占位。
+       注意：不要再写「按 homeSection 显隐 hero」的逻辑，否则卡片会复活。 -->
+  <section class="invest-hero" id="investHero" hidden>
     <div class="kpi-row cols-3">
       <!-- has-alloc：右侧挂「资产占比环」（权益 / 理财 / 现金）。卡内文本包进 .kpi-body，
            让「文本块 + 环块」成为可换行的一行 —— 宽屏环在右侧垂直居中，窄屏自动换到下一行。 -->
