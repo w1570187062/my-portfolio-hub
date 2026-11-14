@@ -3047,8 +3047,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   color: var(--text-muted);
 }
 
-/* ===== 小工具面板：撑满浏览器宽度（突破 920px 内容区限制 + 去掉 560px 面板限宽） ===== */
-#toolsView.page-view { max-width: none; }
+/* ===== 小工具面板：与全站主视图同款收边（1400px 居中），不再拉满带鱼屏 ===== */
+#toolsView.page-view { max-width: 1400px; }
 #toolsView .ac-panel { max-width: none; }
 #fxFrom, #fxTo { width: 96px; min-width: 96px; }
 
@@ -5650,7 +5650,8 @@ textarea::placeholder {
    （2026-10-23 起与财务页一致，超宽屏不再 1920 收边）
    页级 padding 也在这里统一，漏加会让该页卡片顶到屏幕边缘、顶部紧贴顶栏（2026-10-27 再平衡页踩过） */
 #homeView, #assetView, #holdingsView, #overviewView, #settingsView, #aiView, #devicesView, #notifyView, #financeView {
-  max-width: none;
+  /* 与「数据总览」.ov-page 同款收边：超宽屏统一封顶 1400px 居中，不再拉满带鱼屏 */
+  max-width: 1400px;
   margin: 0 auto;
   padding: var(--sp-4) var(--sp-5) var(--sp-8);
 }
