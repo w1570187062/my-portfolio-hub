@@ -13089,13 +13089,15 @@ function renderDeposits(box) {
   const list = depositsCache || [];
   // 提示语（原 investToolbar 右侧的 toolbar-gain）合并到区头、排在新增按钮前
   const pending = list.filter((d) => d.status !== 'settled' && d.matured);
-  // 「共 N 笔」移到工具条最左侧（与理财/账户等工具条左栏 stat 同风格）；右侧仅保留待落袋提示 / 利率说明 + 新增按钮。
+  // 「共 N 笔」移到工具条最左侧（与理财/账户等工具条左栏 stat 同风格）；右侧仅在有到期待落袋时显示提示 + 新增按钮。
   const hint = pending.length
     ? '已到期待落袋 <b>' + pending.length + '</b> 笔 · 行内点「确认落袋」把本金+利息入账'
-    : '预计利息按「年利率 × 天数 / 365」估算';
+    : '';
   const head = `<div class="asset-toolbar">`
     + `<span class="tools-stats" id="depStats"><span class="tools-stat">共 <b>${list.length}</b> 笔</span></span>`
-    + `<div class="sec-actions"><span class="toolbar-gain dep-hint">${hint}</span><button class="btn icon-btn asset-add" id="depAddBtn" type="button" title="新增存款" aria-label="新增存款">${actIcon('plus')}</button></div></div>`;
+    + `<div class="sec-actions">`
+    + (hint ? `<span class="toolbar-gain dep-hint">${hint}</span>` : '')
+    + `<button class="btn icon-btn asset-add" id="depAddBtn" type="button" title="新增存款" aria-label="新增存款">${actIcon('plus')}</button></div></div>`;
   if (!list.length) {
     box.innerHTML = head + emptyStateHTML({
       icon: EMPTY_ICONS.deposit,
