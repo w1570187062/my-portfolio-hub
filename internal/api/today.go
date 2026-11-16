@@ -41,11 +41,15 @@ type todayItem struct {
 
 // todayGroup 一类待办。
 type todayGroup struct {
-	Key    string      `json:"key"` // alert | dca | repay | maturity
+	Key    string      `json:"key"` // alert | dca | repay | income | maturity
 	Label  string      `json:"label"`
 	Count  int         `json:"count"`
 	Amount float64     `json:"amount"` // 折 CNY 合计；止盈止损没有金额，恒 0
 	Items  []todayItem `json:"items"`
+	// BadgeCount 计入铃铛数字角标的条数（2026-11-16）：只算「当天 / 超期未确认」，
+	// 日期大于今天的当月/一次性待办仍进铃铛列表（Count），但不点亮徽标。
+	// 前端角标 = 未读提醒 + 各组 BadgeCount；分组列表与 total 仍用 Count，两处口径刻意不同。
+	BadgeCount int `json:"badge_count"`
 }
 
 // alertKindCN 提醒类型的中文短名（与前端 alertKindMeta 的 tag 文案保持一致）。
@@ -78,7 +82,7 @@ func todayBrief(c *gin.Context) {
 
 	// ---- 1) 止盈止损触达：未读提醒 ----
 	if as, err := db.ListAlerts(uid, 50, true); err == nil && len(as) > 0 {
-		g := todayGroup{Key: "alert", Label: "止盈止损", Count: len(as), Items: make([]todayItem, 0, 4)}
+		g := todayGroup{Key: "alert", Label: "止盈止损", Count: len(as), BadgeCount: len(as), Items: make([]todayItem, 0, 4)}
 		for i, a := range as {
 			if i >= 4 {
 				break
@@ -111,6 +115,7 @@ func todayBrief(c *gin.Context) {
 					continue
 				}
 				g.Count += p.PendingCount
+				g.BadgeCount += p.PendingCount // DCA 期次都是已生成到今天（含超期）的待确认，无未来日期
 				amt := fxToCNY(p.Amount*float64(p.PendingCount), p.Currency, cnyRate, hkdRate)
 				g.Amount += amt
 				if len(g.Items) < 4 {
@@ -159,9 +164,11 @@ func todayBrief(c *gin.Context) {
 
 			if p.Type == "expense" {
 				due, sub := false, ""
+				badge := false // 当天/超期未确认才点亮角标；未来日期只进列表
 				if p.Pattern == "one_time" {
 					if p.OneTimeDate != "" && p.OneTimeDate <= horizon30 {
 						due, sub = true, p.OneTimeDate+" 到期"
+						badge = p.OneTimeDate <= today
 					}
 				} else {
 					if p.EndDate != "" && p.EndDate < today {
@@ -178,9 +185,9 @@ func todayBrief(c *gin.Context) {
 					days := int(dueDay.Sub(todayStart).Hours() / 24)
 					switch {
 					case days < 0:
-						due, sub = true, "每月 "+strconv.Itoa(d)+" 号 · 已逾期 "+strconv.Itoa(-days)+" 天"
+						due, sub, badge = true, "每月 "+strconv.Itoa(d)+" 号 · 已逾期 "+strconv.Itoa(-days)+" 天", true
 					case days == 0:
-						due, sub = true, "每月 "+strconv.Itoa(d)+" 号 · 今天到期"
+						due, sub, badge = true, "每月 "+strconv.Itoa(d)+" 号 · 今天到期", true
 					case days <= 7:
 						due, sub = true, "每月 "+strconv.Itoa(d)+" 号 · 还有 "+strconv.Itoa(days)+" 天"
 					}
@@ -189,6 +196,9 @@ func todayBrief(c *gin.Context) {
 					continue
 				}
 				gRepay.Count++
+				if badge {
+					gRepay.BadgeCount++
+				}
 				amt := fxToCNY(p.Amount, p.Currency, cnyRate, hkdRate)
 				gRepay.Amount += amt
 				if len(gRepay.Items) < 4 {
@@ -271,6 +281,9 @@ func todayBrief(c *gin.Context) {
 			g.Count++
 			amt := fxToCNY(d.Amount, d.Currency, cnyRate, hkdRate)
 			g.Amount += amt
+			if d.EndDate <= today { // 已到期/今天到期未落袋才点亮角标；未来 7 天内到期只进列表
+				g.BadgeCount++
+			}
 			if len(g.Items) < 4 {
 				sub := d.EndDate + " 到期"
 				if d.EndDate <= today {

@@ -701,15 +701,30 @@ func AdjustHolding(id int64, txType string, quantity, price, fee float64, note, 
 		if newQty <= 0 {
 			return nil, 0, fmt.Errorf("加仓后份额必须大于 0")
 		}
+		// 清仓后又买入（手动加仓 / 定投 / 红利再投）：份额已回正，必须同步清除 closed 与快照。
+		// 否则会留下 quantity>0 但 closed=true 的分叉行——前端按 quantity 当在持显示、
+		// 再平衡却按 closed 排除，用户看到「它还挂在列表里」。
+		cur.Closed = false
+		cur.LastQuantity = 0
+		cur.LastCostPrice = 0
 		// 成交金额(含手续费)并入成本，得到摊薄后的平均成本；按类别规整小数位（根因：早期未截断导致如 138.45769393791218 的超长尾数）
 		newCost = roundByCategory(cur.Category, (cur.Quantity*cur.CostPrice+quantity*price+fee)/newQty)
 	case "SELL":
-		if quantity > cur.Quantity {
+		// 容差比较：quantity 已按类别规整到 4 位，而库中份额可能是历史浮点尾巴
+		// （如 98193.26999999999），规整值 98193.27 会比库中值大 ~1e-11 —— 硬比较
+		// 会把它误判成「超过份额」，一键清仓/按金额清仓都会卡在这里。
+		if quantity > cur.Quantity+1e-9 {
 			return nil, 0, fmt.Errorf("减仓数量不能超过当前份额")
+		}
+		// 规整后略超库中份额（≤1e-9）的，夹回库中份额，避免 newQty 变负、并让清仓判定稳定触发。
+		if quantity > cur.Quantity {
+			quantity = cur.Quantity
 		}
 		realized = (price-cur.CostPrice)*quantity - fee
 		newQty = cur.Quantity - quantity
-		if newQty <= 0 {
+		// 1e-9 容差：份额是 4 位口径，按金额清仓时 quantity=(金额−费)/净值 折算再 round4，
+		// 与库中全量相减常留下 ~1e-12 级正残差，若用 <=0 会判成「未清仓」而挂一个几乎为 0 的尾巴。
+		if newQty <= 1e-9 {
 			// 清仓：保留清仓前的份额与成本快照，供历史盈亏重算；持仓行标记 closed 且份额归零（列表显示为空仓）
 			cur.LastQuantity = cur.Quantity
 			cur.LastCostPrice = roundByCategory(cur.Category, cur.CostPrice)

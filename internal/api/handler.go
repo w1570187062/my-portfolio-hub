@@ -660,6 +660,11 @@ func updateHolding(c *gin.Context) {
 	}
 	if e == nil {
 		h.BuyPlan = ex.BuyPlan
+		// 清仓状态与快照同理：编辑表单不回传 closed / last_*，Go 结构绑定为零值，
+		// 若整行 UPDATE 会把已清仓标的的 closed 抹成 false、快照清零，导致状态分叉。
+		h.Closed = ex.Closed
+		h.LastQuantity = ex.LastQuantity
+		h.LastCostPrice = ex.LastCostPrice
 		// 止盈止损方案同理：持仓编辑表单不回传 risk_plan，必须保留旧值，
 		// 否则用户改个份额就把辛苦调好的价位清零（与 buy_plan 同一个坑）。
 		if strings.TrimSpace(h.RiskPlan) == "" {
@@ -799,16 +804,23 @@ func adjustHolding(c *gin.Context) {
 		Note          string  `json:"note"`
 		Date          string  `json:"date"`            // 交易日期（YYYY-MM-DD 可回填历史）；为空则取当前时间
 		CashAccountID int64   `json:"cash_account_id"` // 资金往来账户：加仓付款 / 减仓回款；为空则回落到该来源的默认现金账户
+		CloseAll      bool    `json:"close_all"`       // 一键清仓：忽略前端折算的 quantity，按库中当前全量份额卖出
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
-	if cur, gErr := db.Get(id); gErr != nil || cur == nil {
+	cur, gErr := db.Get(id)
+	if gErr != nil || cur == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "持仓不存在"})
 		return
 	} else if !owned(c, cur.UserID) {
 		return
+	}
+	// 一键清仓（数量/金额两种计算模式通用）：quantity 以库中当前全量份额为准，
+	// 不再信前端按 (金额−手续费)/净值 折算出的带尾差份额 —— 那是「清仓两次仍在列表」的根因。
+	if req.CloseAll && strings.EqualFold(strings.TrimSpace(req.Type), "SELL") {
+		req.Quantity = cur.Quantity
 	}
 	h, realized, err := db.AdjustHolding(id, req.Type, req.Quantity, req.Price, req.Fee, strings.TrimSpace(req.Note), strings.TrimSpace(req.Date))
 	if err != nil {

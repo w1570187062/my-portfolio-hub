@@ -127,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ---- 视图路由（hash）：每个常驻视图都有后缀 URL，刷新保持当前路径 ----
 // 设置 / AI 配置 / 设备 / 通知只在右上角个人菜单里有入口，不占主导航。
-const VIEWS = ['home', 'invest', 'asset', 'finance', 'overview', 'settings', 'ai', 'devices', 'notify'];
+const VIEWS = ['home', 'invest', 'asset', 'finance', 'overview', 'rebalance', 'settings', 'ai', 'devices', 'notify'];
 
 // 数据总览（#/overview）视图态：声明在 VIEWS 附近，避免顶层 applyRoute() 间接访问触发 TDZ。
 // 「按主题 / 按来源 / 仅异常」只是看同一批数据的哪一面，属视图偏好，存 localStorage；
@@ -142,6 +142,12 @@ let ovState = {
 };
 // 实现体在文件末尾的模块里赋值（避免顶层引用尚未初始化的状态）；applyRoute 只需这一个入口。
 let showOverviewView = () => {};
+
+// 再平衡（#/rebalance，2026-11-16）：由首页快捷入口进入，不占主导航。
+// 只复用数据总览的控件与视觉语言（KPI 卡 / 异常条 / bullet / 分段 / token），
+// 页面内容是再平衡专属：目标 vs 实际 + 调仓清单 + 目标配置 + 节奏。
+// 业务数据不缓存 —— 每次进入重新拉 /api/rebalance 与 rebalance_targets 设置。
+let showRebalanceView = () => {};
 
 // 2026-10-20 tab 重构：原 hash 'holdings' 兼容映射到 'invest'（持仓/理财视图）。
 function viewFromHash() {
@@ -158,7 +164,7 @@ function setActiveNav(view) {
 }
 // 隐藏全部常驻视图（列表必须与 VIEWS 一一对应，漏一个就会两页叠着显示）
 function hideAllViews() {
-  ['homeView', 'holdingsView', 'assetView', 'financeView', 'overviewView', 'settingsView', 'aiView', 'devicesView', 'notifyView'].forEach((id) => {
+  ['homeView', 'holdingsView', 'assetView', 'financeView', 'overviewView', 'rebalanceView', 'settingsView', 'aiView', 'devicesView', 'notifyView'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
@@ -240,6 +246,7 @@ function applyRoute() {
   else if (v === 'asset') showAssetView();
   else if (v === 'finance') showFinanceView();
   else if (v === 'overview') showOverviewView();
+  else if (v === 'rebalance') showRebalanceView();
   else if (v === 'settings') showSettingsView();
   else if (v === 'ai') showAiView();
   else if (v === 'devices') showDevicesView();
@@ -258,7 +265,8 @@ function viewIdOf(v) {
       : v === 'asset' ? 'assetView'
         : v === 'finance' ? 'financeView'
           : v === 'overview' ? 'overviewView'
-            : v === 'settings' ? 'settingsView'
+            : v === 'rebalance' ? 'rebalanceView'
+              : v === 'settings' ? 'settingsView'
               : v === 'ai' ? 'aiView'
                 : v === 'devices' ? 'devicesView'
                   : v === 'notify' ? 'notifyView'
@@ -1719,7 +1727,7 @@ function renderHoldRow(h, pool, pdi, hideDay) {
         ${isFail ? '<span class="fail-badge" data-fail="' + esc(h.symbol) + '" title="点击查看失败原因">' + actIcon('warn') + '</span>' : ''}
         ${holdTypeTag(h)}<span class="hn-name" title="${nameTitle}">${esc(h.name)}</span>
         <span class="hn-acts">
-          ${actBtn('adjust', `data-adjust="${h.id}"`, '修改')}
+          ${actBtn('adjust', `data-adjust="${h.id}"`, '交易')}
           ${supportsAnalysis(h) ? actBtn('analysis', 'data-ana="' + h.id + '"', '技术分析') : ''}
         </span>
       </div>
@@ -1728,7 +1736,7 @@ function renderHoldRow(h, pool, pdi, hideDay) {
         <!-- 手机端：表头与「操作」列都收起，改用元信息行右侧这三枚图标（.hn-acts-m 桌面隐藏）。
              放在元信息行而不是名称行 —— 名称行让出 116px 后只剩 8 个字可读。 -->
         <span class="hn-acts-m">
-          ${actBtn('adjust', `data-adjust="${h.id}"`, '修改')}
+          ${actBtn('adjust', `data-adjust="${h.id}"`, '交易')}
           ${actBtn('edit', `data-edit="${h.id}"`, '编辑持仓')}
           ${actBtn('del', `data-del="${h.id}"`, '删除持仓', { danger: true })}
         </span>
@@ -2712,7 +2720,7 @@ async function openAdjust(id) {
   await loadCashAccounts();
   renderAdjCashSelect(h);   // 复用：填充（改名后的）加减仓面板资金账户下拉（#add_cash_id）
   renderDivCashSelect(h);
-  $('#adjustTitle').textContent = '加减仓 · ' + (h.name || h.symbol);
+  $('#adjustTitle').textContent = '交易 · ' + (h.name || h.symbol);
   // 分红面板复位
   $('#div_mode').value = 'per_share';
   $('#div_per_share').value = '';
@@ -2738,11 +2746,8 @@ async function openAdjust(id) {
   syncDivMethodUI();
   prefillAdjCalc(h);
   renderAdjModePills();
-  renderAdjSidePills();
-  syncAdjModeUI();
-  // 默认展示「加减仓」（原调仓）tab
-  document.querySelectorAll('#adjustModal .adj-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'calc'));
-  document.querySelectorAll('#adjustModal .adj-panel').forEach((p) => { p.hidden = p.dataset.panel !== 'calc'; });
+  // 默认展示「买入」tab（applyAdjustTab 内部会渲染方向胶囊 + 同步字段显隐）
+  applyAdjustTab('buy');
   $('#adjustModal').hidden = false;
   const firstInput = document.querySelector('#adjustModal .adj-calc input');
   if (firstInput) firstInput.focus();
@@ -2985,14 +2990,64 @@ async function revertAdjTx(id, txID) {
     },
   });
 }
-// 修改持仓弹框 tab 切换（加减仓 / 分红）
+// 交易弹框 tab：买入 / 卖出 / 赎回共用同一套输入与 calcAdd 计算链路（避免 ID 冲突、重复逻辑），
+// 分红独立 panel。赎回=按份额比例快捷卖出，「全部」档走 close_all（等价原一键清仓）。
+function applyAdjustTab(tab) {
+  const isDiv = tab === 'dividend';
+  const isRedeem = tab === 'redeem';
+  document.querySelectorAll('#adjustModal .adj-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab));
+  document.querySelectorAll('#adjustModal .adj-panel').forEach((p) => { p.hidden = p.dataset.panel !== (isDiv ? 'dividend' : 'calc'); });
+  if (isDiv) return;
+  // 赎回固定按份额：隐藏「计算方式 / 买卖方向」，显示份额档位
+  const mr = document.getElementById('addModeRow'); if (mr) mr.hidden = isRedeem;
+  const sr = document.getElementById('addSideRow'); if (sr) sr.hidden = isRedeem;
+  const rr = document.getElementById('redeemRatioRow'); if (rr) rr.hidden = !isRedeem;
+  document.getElementById('addSide').value = isRedeem ? 'sell' : tab;
+  if (isRedeem) document.getElementById('addMode').value = 'qty';
+  renderAdjSidePills();
+  syncAdjModeUI();
+  syncAdjSideUI();
+  // 切 tab 作废上一次试算，避免跨 tab 误用
+  const res = document.getElementById('addResult'); if (res) res.innerHTML = '';
+  lastAdd = null;
+  const ab = document.getElementById('addApply'); if (ab) { ab.disabled = true; ab.textContent = '计入持仓'; }
+  if (isRedeem) renderRedeemRatios();
+}
 document.querySelectorAll('#adjustModal .adj-tab').forEach((b) => {
-  b.addEventListener('click', () => {
-    const tab = b.dataset.tab;
-    document.querySelectorAll('#adjustModal .adj-tab').forEach((x) => x.classList.toggle('active', x === b));
-    document.querySelectorAll('#adjustModal .adj-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
-  });
+  b.addEventListener('click', () => applyAdjustTab(b.dataset.tab));
 });
+
+// 赎回份额档位：份额取自当前持仓全量 × 比例后归整，避开金额折算尾差；「全部」档提交 close_all。
+function renderRedeemRatios() {
+  const box = document.getElementById('redeemRatioPills');
+  if (!box) return;
+  const hid = document.getElementById('adj_id').value;
+  const h = allHoldings.find((x) => String(x.id) === String(hid));
+  const q0 = h ? (Number(h.quantity) || 0) : (parseFloat(document.getElementById('addOldQty').value) || 0);
+  const opts = [[0.25, '1/4'], [1 / 3, '1/3'], [0.5, '1/2'], [1, '全部']];
+  box.innerHTML = opts.map(([r, label]) => `<button type="button" class="at-chip-toggle" data-r="${r}" data-label="${label}">${label}</button>`).join('');
+  box.querySelectorAll('button').forEach((b) => {
+    b.onclick = () => {
+      box.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      const r = parseFloat(b.dataset.r);
+      const isAll = r >= 1;
+      const q1 = roundByCat(isAll ? q0 : q0 * r, calcCat);
+      document.getElementById('addNewQty').value = q1;
+      document.getElementById('addAmount').value = '';
+      document.getElementById('addMode').value = 'qty';
+      document.getElementById('addSide').value = 'sell';
+      syncAdjModeUI();
+      calcAdd(); // 复用卖出试算：写结果区 + 生成 lastAdd
+      if (lastAdd) {
+        lastAdd.clearAll = isAll;
+        lastAdd.redeemLabel = b.dataset.label;
+        lastAdd.note = isAll ? '一键清仓' : '份额赎回 ' + b.dataset.label;
+      }
+      const ab = document.getElementById('addApply');
+      if (ab) { ab.disabled = !lastAdd; ab.textContent = isAll ? '确认清仓' : '确认赎回'; }
+    };
+  });
+}
 
 let pendingDelId = null;
 let pendingSnapDelete = null;
@@ -3068,9 +3123,9 @@ $('#confirmOk').onclick = async () => {
     const a = lastAdd;
     const id = $('#adj_id').value;
     try {
-      const r = await api('/api/holdings/' + id + '/adjust', { method: 'POST', body: JSON.stringify({ type: a.side || 'buy', quantity: a.q1, price: a.p1, fee: a.fee, cash_account_id: Number($('#add_cash_id').value) || 0, note: '调仓计入', date: normDateInput($('#add_date')) }) });
-      if (!r.ok) { let m = '计入失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(humanizeErr(r, null, m), 'err'); return; }
-      toast('已计入持仓（作为一笔' + (a.side === 'sell' ? '卖出' : '买入') + '交易）', 'ok');
+      const r = await api('/api/holdings/' + id + '/adjust', { method: 'POST', body: JSON.stringify({ type: a.side || 'buy', quantity: a.q1, price: a.p1, fee: a.fee, close_all: !!a.clearAll, cash_account_id: Number($('#add_cash_id').value) || 0, note: a.note || (a.clearAll ? '一键清仓' : '调仓计入'), date: normDateInput($('#add_date')) }) });
+      if (!r.ok) { let m = a.clearAll ? '清仓失败' : '计入失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(humanizeErr(r, null, m), 'err'); return; }
+      toast(a.clearAll ? '已清仓，该持仓已移入「已平仓」' : (a.redeemLabel ? '已赎回 ' + a.redeemLabel + ' 份额' : ('已计入持仓（作为一笔' + (a.side === 'sell' ? '卖出' : '买入') + '交易）')), 'ok');
       $('#adjustModal').hidden = true;
       await load();
     } catch (e) { toast(humanizeErr(null, e, '保存失败')); }
@@ -4123,17 +4178,19 @@ async function renderHomeDashboard() {
     // 2026-11-02 收敛为 4 项（审读报告 P2-2）：只留每天真会点的动作。
     // 「定投计划」迁到投资页 tab 行右端（周期触发，不需要每天手动按）、
     // 「新增平仓」迁到平仓 tab 的同一位置（低频批量补录，属它自己的视图）。
-    // 2026-11-13 补第 5 项「数据总览」：它是查看型入口（不是记一笔的动作），
-    // 所以排在四个动作之后；点进去是 #/overview，不在主导航占一格。
+    // 2026-11-13 补第 5 项「数据总览」、2026-11-16 补第 6 项「再平衡」：
+    // 两者都是查看型入口（不是记一笔的动作），排在四个动作之后；
+    // 点进去分别是 #/overview 与 #/rebalance，均不在主导航占一格。
     const items = [
       { ico: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="9"/>', label: '新增持仓', fn: () => openAddPick() },
       { ico: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/>', label: '理财快照', fn: () => openSnapModal() },
       { ico: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', label: '记收入', fn: async () => { await openFlowModal('in'); } },
       { ico: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>', label: '记支出', fn: async () => { await openFlowModal('out'); } },
       { ico: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', label: '数据总览', fn: () => navigate('overview') },
+      { ico: '<path d="M4 7h16"/><path d="M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="16" cy="17" r="2"/>', label: '再平衡', fn: () => navigate('rebalance') },
     ];
     // 每个快捷功能取一个独立强调色（注入 --tint，仅作用于该微件子树，不影响全局强调色）
-    const SC_TINTS = ['217, 165, 43', '42, 163, 155', '232, 110, 145', '56, 132, 232', '138, 120, 220'];
+    const SC_TINTS = ['217, 165, 43', '42, 163, 155', '232, 110, 145', '56, 132, 232', '138, 120, 220', '245, 158, 11'];
     // 必须是原生 <button>：此前用 <div> + JS 挂 cursor/onclick，
     // 结果 role/tabindex/键盘事件全没有——Tab 键走不到这些入口，屏幕阅读器也读不出是按钮。
     // cursor:pointer 由 CSS 的 .shortcut 提供，不再用 JS 写内联样式（内联只允许 --x: v）。
@@ -7460,16 +7517,23 @@ $('#addClear').onclick = () => {
 };
 $('#addApply').onclick = () => {
   if (!lastAdd) { toast('请先点击「计算」生成补仓方案', 'err'); return; }
-  const name = ($('#adjustTitle').textContent || '').replace('加减仓 · ', '');
-  const sideLabel = lastAdd.side === 'sell' ? '卖出' : '买入';
+  const name = ($('#adjustTitle').textContent || '').replace('交易 · ', '');
+  const isClear = !!lastAdd.clearAll;
+  const redeem = lastAdd.redeemLabel || '';
   pendingApplyAdd = true;
   const btn = $('#confirmOk');
-  btn.textContent = '确认计入';
-  btn.classList.remove('danger');
-  btn.classList.add('primary');
-  $('#confirmTitle').textContent = '计入持仓';
-  $('#confirmMsg').textContent = '将把这笔操作作为一笔「' + sideLabel + '」交易计入「' + name + '」：' + sideLabel + ' ' + fmtCat(lastAdd.q1, calcCat) + ' 份 × ¥' + fmtCat(lastAdd.p1, calcCat)
-    + '，手续费 ¥' + fmt(lastAdd.fee) + '。计入后该持仓的数量与成本/盈亏将按交易流水重新核算。';
+  btn.textContent = isClear ? '确认清仓' : '确认计入';
+  btn.classList.toggle('danger', isClear);
+  btn.classList.toggle('primary', !isClear);
+  $('#confirmTitle').textContent = isClear ? '一键清仓' : '计入持仓';
+  $('#confirmMsg').textContent = isClear
+    ? '将卖出「' + name + '」的全部 ' + fmtCat(lastAdd.q1, calcCat) + ' 份（卖出价 ¥' + fmtCat(lastAdd.p1, calcCat)
+      + '，手续费 ¥' + fmt(lastAdd.fee) + '）。清仓后份额归零、该持仓移入「已平仓」，历史盈亏完整保留。'
+    : (redeem ? '将赎回「' + name + '」的 ' + redeem + ' 份额（' + fmtCat(lastAdd.q1, calcCat) + ' 份，卖出价 ¥' + fmtCat(lastAdd.p1, calcCat)
+      + '，手续费 ¥' + fmt(lastAdd.fee) + '）。计入后按卖出交易流水重算剩余份额与盈亏。'
+      : '将把这笔操作作为一笔「' + (lastAdd.side === 'sell' ? '卖出' : '买入') + '」交易计入「' + name + '」：'
+      + (lastAdd.side === 'sell' ? '卖出' : '买入') + ' ' + fmtCat(lastAdd.q1, calcCat) + ' 份 × ¥' + fmtCat(lastAdd.p1, calcCat)
+      + '，手续费 ¥' + fmt(lastAdd.fee) + '。计入后该持仓的数量与成本/盈亏将按交易流水重新核算。');
   $('#confirmModal').hidden = false;
 };
 
@@ -8394,7 +8458,7 @@ function renderAssetCashPanel(body) {
     const w = Math.min(100, Math.abs(x.cny) / maxCny * 100).toFixed(1);
     const sub = (!genericName(x.name) && x.name !== x.source_name) ? '<span class="cash-sub">· ' + esc(x.name) + '</span>' : '';
     return '<tr' + (Math.abs(x.cny) <= 0.005 ? ' class="is-zero"' : '') + '>' +
-      '<td><div class="cash-acct"><span class="cash-src">' + esc(x.source_name || '未分类') + '</span>' + sub + '</div></td>' +
+      '<td><div class="cash-acct">' + accountLogo(x.source_name || '') + '<span class="cash-src">' + esc(x.source_name || '未分类') + '</span>' + sub + '</div></td>' +
       '<td><span class="cash-cur">' + x.cur.toUpperCase() + '</span></td>' +
       '<td class="num">' + moneyCur(x.amount || 0, x.cur) + '</td>' +
       '<td class="num">' + (isFx ? money(x.cny) : '<span class="u-muted">—</span>') + '</td>' +
@@ -11780,7 +11844,9 @@ function bellTodoGroups() {
   return gs.filter((g) => g.key !== 'alert' && Number(g.count) > 0);
 }
 function bellTodoCount() {
-  return bellTodoGroups().reduce((a, g) => a + (Number(g.count) || 0), 0);
+  // 角标只算「当天 / 超期未确认」：后端每组下发 badge_count（未来日期的当月/一次性待办
+  // 仍进铃铛列表 count，但不点亮徽标）。旧数据无该字段时回退 count，避免升级空窗期角标消失。
+  return bellTodoGroups().reduce((a, g) => a + (Number(g.badge_count != null ? g.badge_count : g.count) || 0), 0);
 }
 function bellTodoHTML() {
   const gs = bellTodoGroups();
@@ -11882,18 +11948,32 @@ async function loadAlerts() {
   } catch (_) { /* 未登录/离线：保留旧数据，不打断主流程 */ }
   alertBusy = false;
 }
-async function markAlertsRead(ids) {
+// notify=true 仅用于「提醒已读」按钮：用户主动点击必须给反馈；
+// 打开详情 / 跳持仓时自动标已读属于顺带行为，弹 toast 反而打断操作。
+async function markAlertsRead(ids, opts = {}) {
+  const notify = !!opts.notify;
+  const before = alertUnread;
   try {
     const r = await api('/api/alerts/read', { method: 'POST', body: JSON.stringify({ ids: ids || [] }) });
-    if (r.ok) {
-      const d = await r.json();
-      // 角标 = 未读提醒 + 待办数：「全部已读」只清提醒，待办要等业务办完才消失
-      updateAlertBadge((Number(d.unread) || 0) + bellTodoCount());
-      if (!ids || !ids.length) alertCache = alertCache.map((a) => ({ ...a, read_at: a.read_at || '1' }));
-      else alertCache = alertCache.map((a) => (ids.includes(a.id) ? { ...a, read_at: a.read_at || '1' } : a));
-      renderAlertList();
+    if (!r.ok) { if (notify) toast(humanizeErr(r, null, '标记已读失败'), 'err'); return; }
+    const d = await r.json();
+    // 角标 = 未读提醒 + 待办数：「全部已读」只清提醒，待办要等业务办完才消失
+    alertUnread = Number(d.unread) || 0;
+    updateAlertBadge(alertUnread + bellTodoCount());
+    if (!ids || !ids.length) alertCache = alertCache.map((a) => ({ ...a, read_at: a.read_at || '1' }));
+    else alertCache = alertCache.map((a) => (ids.includes(a.id) ? { ...a, read_at: a.read_at || '1' } : a));
+    renderAlertList();
+    if (notify) {
+      // 只清提醒、待办仍在，角标可能不归零；把「清了几条 / 剩下的是待办」说清，避免误以为没生效
+      const n = Math.max(0, before - alertUnread);
+      const rest = bellTodoCount();
+      toast(n > 0
+        ? `已将 ${n} 条提醒标为已读${rest ? `，剩余 ${rest} 项为今日待办` : ''}`
+        : (rest ? `没有未读提醒，剩余 ${rest} 项为今日待办` : '没有未读提醒'), 'ok');
     }
-  } catch (_) { /* 忽略 */ }
+  } catch (e) {
+    if (notify) toast(humanizeErr(null, e, '标记已读失败'), 'err');
+  }
 }
 // 删除单条提醒记录（列表右侧悬停出现的垃圾桶图标）
 async function deleteAlertRecord(aid) {
@@ -12044,7 +12124,7 @@ function bindAlertBell() {
     }
   });
   const readAll = document.getElementById('alertReadAll');
-  if (readAll) readAll.onclick = (e) => { e.stopPropagation(); markAlertsRead([]); };
+  if (readAll) readAll.onclick = (e) => { e.stopPropagation(); markAlertsRead([], { notify: true }); };
   // 详情弹框：关闭 / 查看持仓 / 点遮罩关闭 / Esc 关闭
   const dlg = document.getElementById('alertDetailModal');
   const dClose = document.getElementById('alertDetailClose');
@@ -12448,6 +12528,8 @@ async function switchUser(id) {
     // 数据总览的业务数据不跨账本缓存：停留在 #/overview 切账本时也要重新取一遍，
     // 否则页面上仍是上一个账本的数字（其余视图由 load()/loadAsset() 各自重渲染）。
     { const ovEl = $('#overviewView'); if (ovEl && !ovEl.hidden) showOverviewView(); }
+    // 再平衡同理：目标权重与快照都按账本隔离，切账本停留在本页也必须整页重取。
+    { const rbEl = $('#rebalanceView'); if (rbEl && !rbEl.hidden) showRebalanceView(); }
     await loadAISettings();
     toast('已切换到账本：' + st.user.name, 'ok');
   } catch (e) { toast('切换账本失败：' + e.message, 'err'); }
@@ -13128,7 +13210,7 @@ function renderDeposits(box) {
     return `<tr>
       <td><div class="hold-name">${esc(d.name || '')}</div>${d.note ? `<div class="hold-code">${esc(d.note)}</div>` : ''}</td>
       <td class="num">${cur}${fmt(d.amount || 0)}</td>
-      <td>${esc(acct)}</td>
+      <td><div class="dep-acct">${accountLogo(d.source_name || d.account_name || '')}<span>${esc(acct)}</span></div></td>
       <td class="num">${esc(d.start_date || '—')}</td>
       <td class="num">${esc(d.end_date || '—')}${!settled && d.matured ? ' <span class="dep-due">已到期</span>' : ''}</td>
       <td class="num">${(d.rate || 0).toFixed(2)}%</td>
@@ -16209,6 +16291,353 @@ function closePIN(val) {
       fold.setAttribute('aria-expanded', String(!open));
       fold.textContent = open ? '展开' : '收起';
     });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
+  else wire();
+})();
+
+// ============================================================
+// 再平衡 #/rebalance（2026-11-16）：方案 A 落地。
+// 只复用数据总览的控件与视觉语言（KPI 卡 / 异常条 / bullet / 分段），
+// 布局是再平衡专属：左「目标 vs 实际 + 调仓清单」右「目标配置 + 节奏」。
+// 数据铁律：只用 GET /api/rebalance 与 GET /api/settings/rebalance_targets 的真实字段；
+//   缺失 / 失败一律「—」，不估算、不填演示值；金额原始单位是元，展示层转「万」。
+//   写操作走 POST /api/rebalance/log 与 PUT /api/settings/rebalance_targets，
+//   金额与目标由服务端重算，前端只传勾选 key 与配置，避免前后端口径漂移。
+// ============================================================
+(function () {
+  const DASH = '—';
+  const RB_KEY = { stock: '股票', fund: '基金', wealth: '理财', cash: '现金' };
+  const RB_COLOR = { stock: '255, 159, 10', fund: '94, 92, 230', wealth: '42, 163, 155', cash: '100, 210, 255' };
+  const RB_ORDER = ['stock', 'fund', 'wealth', 'cash'];
+  const FREQ_NAME = { monthly: '每月 monthly', quarterly: '每季 quarterly', manual: '手动 manual' };
+  let wired = false;
+  let gen = 0;
+  let snap = null;            // GET /rebalance 的最近一次快照
+  let cfg = null;             // 当前生效的目标配置（GET settings 解析后）
+  let checked = {};           // 调仓清单勾选状态：key -> bool
+  let viewMode = (localStorage.getItem('pf_rebalance_view') === 'amount') ? 'amount' : 'weight';
+
+  const N = (v) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const S = (v) => esc(v == null ? '' : v);
+  const Y = (v) => { const n = N(v); return n == null ? DASH : yuanOfW(n); };
+  // 有符号金额（元）：正=卖出、负=买入；展示层用「买/卖」语义而非涨跌色
+  const SY = (v) => { const n = N(v); if (n == null) return DASH; return (n > 0 ? '+' : n < 0 ? NEG : '') + yuanOfW(Math.abs(n)); };
+  const PP = (v) => { const n = N(v); return n == null ? DASH : (n > 0 ? '+' : n < 0 ? NEG : '') + Math.abs(n).toFixed(1) + 'pp'; };
+  const PCT = (v) => { const n = N(v); return n == null ? DASH : n.toFixed(1) + '%'; };
+  const A = (v) => Array.isArray(v) ? v : [];
+  const toneOf = (n) => n == null ? 'flat' : n > 0 ? 'warn' : n < 0 ? 'down' : 'flat';
+
+  // 两类接口：快照 + 配置。配置首次访问由后端 seed 默认值，前端只负责解析 payload 字符串。
+  async function fetchAll() {
+    const out = { snap: null, cfg: null };
+    await Promise.all([
+      (async () => { try { const r = await api('/api/rebalance'); if (r.ok) out.snap = await r.json(); } catch (_) {} })(),
+      (async () => {
+        try {
+          const r = await api('/api/settings/rebalance_targets');
+          if (r.ok) { const d = await r.json(); let c = null; try { c = JSON.parse(d.payload || 'null'); } catch (_) {} if (c && Array.isArray(c.targets)) out.cfg = c; }
+        } catch (_) {}
+      })(),
+    ]);
+    return out;
+  }
+
+  const ICO = {
+    wallet: '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5"/><path d="M16 12h2"/>',
+    warn: '<path d="M12 3l9 16H3L12 3Z"/><path d="M12 9v5M12 17h.01"/>',
+    cash: '<path d="M4 12h16M12 4v16"/>',
+  };
+  const kpi = (anchor, icoCls, ico, label, val, sub, valCls) => '<div class="kpi-card density-standard' + (anchor ? ' anchor' : '') + '">'
+    + '<div class="kpi-icon ' + icoCls + '"><svg viewBox="0 0 24 24">' + ico + '</svg></div>'
+    + '<div class="kpi-label">' + S(label) + '</div>'
+    + '<div class="kpi-main"><div class="kpi-value ' + (valCls || 'flat') + '">' + S(val) + '</div></div>'
+    + '<div class="kpi-sub">' + S(sub) + '</div></div>';
+
+  function renderKpis() {
+    const box = $('#rbKpis');
+    if (!box) return;
+    const total = snap.total_cny;
+    const md = snap.max_drift && typeof snap.max_drift === 'object' ? snap.max_drift : null;
+    const mdVal = md ? PP(md.drift) : (total == null ? DASH : '达标');
+    const mdLabel = md ? (RB_KEY[md.key] || S(md.label || md.key) || '类别') + (N(md.drift) > 0 ? '超配' : '低配') : '四类均在容差内';
+    const tol = cfg ? N(cfg.drift_alert) : null;
+    const pending = N(snap.pending_count);
+    box.innerHTML = kpi(true, 'kpi-ico-fund', ICO.wallet, '组合总市值', Y(total),
+        '股票 + 基金 + 理财 + 现金 · 全部折 CNY · 分母：四类现值合计', '')
+      + kpi(false, md ? 'kpi-ico-alert' : 'kpi-ico-pct', md ? ICO.warn : ICO.cash, '最大偏离', mdVal,
+        mdLabel + ' · 提醒阈值 ' + (tol == null ? DASH : '±' + tol + 'pp'), md ? 'warn' : 'flat')
+      + kpi(false, 'kpi-ico-cash', ICO.cash, '需调配金额', Y(snap.need_cny),
+        (pending == null ? DASH : pending + ' 项待确认') + ' · 卖出所得自动配平买入', '');
+  }
+
+  function renderAlerts() {
+    const strip = $('#rbAlertStrip');
+    if (!strip) return;
+    const out = [];
+    A(snap.buckets).forEach((b) => {
+      const d = N(b.drift);
+      if (d == null || b.action === 'none') return;
+      const label = RB_KEY[b.key] || S(b.label || b.key);
+      const act = d > 0 ? '卖出' : '买入';
+      out.push('<div class="ov-alert-item"><b>' + label + (d > 0 ? '超配' : '低配') + '</b><span>实际 '
+        + PCT(b.weight) + ' / 目标 ' + PCT(b.target) + '，建议' + act + ' ' + Y(Math.abs(N(b.amount) || 0)) + '</span></div>');
+    });
+    if (snap.overdue) {
+      const days = N(snap.days_since);
+      out.push('<div class="ov-alert-item"><b>再平衡已逾期</b><span>'
+        + (days == null || days < 0 ? '尚无记录，建议做一次检视' : '距上次 ' + days + ' 天，'
+          + (FREQ_NAME[cfg && cfg.freq] || S(cfg && cfg.freq || SNAP_FREQ())) + ' 应检视') + '</span></div>');
+    }
+    strip.hidden = !out.length;
+    const cnt = $('#rbAlertCount'); if (cnt) cnt.textContent = out.length + ' 条';
+    const list = $('#rbAlertList'); if (list) list.innerHTML = out.join('');
+  }
+  function SNAP_FREQ() { return snap && snap.config ? snap.config.freq : null; }
+
+  // bullet 统一比例尺：取四类实际/目标的最大权重向上取整到 10 的整数倍，至少 20pp。
+  // 这样四条共用一把尺，横向可直接比较；副标里写明比例尺，避免「看着像满仓」的误读。
+  function bulletScale(buckets) {
+    let mx = 0;
+    A(buckets).forEach((b) => { mx = Math.max(mx, N(b.weight) || 0, N(b.target) || 0); });
+    return Math.max(20, Math.ceil(mx / 10) * 10);
+  }
+  const wPct = (v, scale) => { const n = N(v); return n == null ? 0 : Math.max(0, Math.min(100, n / scale * 100)); };
+
+  function renderAlloc() {
+    const box = $('#rbAlloc');
+    if (!box) return;
+    const buckets = A(snap.buckets);
+    const scale = bulletScale(buckets);
+    const note = $('#rbAllocNote');
+    if (note) note.textContent = '数据量口径 · 比例尺 0–' + scale + '%';
+    const scope = $('#rbScope');
+    if (scope) {
+      const ex = N(snap.cash_excluded_n);
+      scope.textContent = '金额 = 偏离% × 总市值 · 折 CNY'
+        + (ex > 0 ? ' · 已剔除 ' + ex + ' 个日常开销账户 ' + Y(snap.cash_excluded_amt) : '');
+    }
+    const row = (b) => {
+      const key = S(b.key);
+      const drift = N(b.drift);
+      const tone = toneOf(drift);
+      const amt = N(b.amount);
+      const act = amt == null ? DASH : amt > 0 ? '应卖出 ' + Y(amt) : amt < 0 ? '应买入 ' + Y(-amt) : '无需调整';
+      const actCls = amt == null ? '' : amt > 0 ? 'warn' : amt < 0 ? 'down' : '';
+      const value = viewMode === 'amount'
+        ? '<b>' + Y(b.market_value) + '</b>'
+        : '<b>' + PCT(b.weight) + '</b>';
+      const sub = viewMode === 'amount'
+        ? '目标占比 ' + PCT(b.target)
+        : '目标 ' + PCT(b.target);
+      return '<div class="rb-alloc-row">'
+        + '<div class="rb-alloc-top">'
+        + '<span class="rb-alloc-name"><i class="rb-alloc-dot" style="--rb-c: rgb(' + (RB_COLOR[b.key] || '148, 163, 184') + ')"></i>' + S(RB_KEY[b.key] || b.label || b.key) + '</span>'
+        + '<span class="rb-alloc-num">实际 ' + value + ' · ' + sub + '</span>'
+        + '<span class="rb-alloc-drift ' + tone + '">' + PP(drift) + '</span>'
+        + '</div>'
+        + '<div class="ov-bullet' + (drift > 0 ? ' warn' : '') + '" style="--w:' + wPct(b.weight, scale).toFixed(1) + '%;--target:' + wPct(b.target, scale).toFixed(1) + '%"></div>'
+        + '<div class="rb-alloc-bot"><span>' + (b.count == null ? DASH : b.count + ' 只/笔') + '</span><span class="' + actCls + '">' + S(act) + '</span></div>'
+        + '</div>';
+    };
+    box.innerHTML = buckets.map(row).join('') || '<div class="rb-empty">' + DASH + '（暂无四类配置数据）</div>';
+  }
+
+  function renderActions() {
+    const box = $('#rbActions');
+    if (!box) return;
+    const pend = A(snap.buckets).filter((b) => b.action === 'sell' || b.action === 'buy');
+    const badge = $('#rbPendingBadge');
+    if (badge) { badge.textContent = pend.length + ' 项待确认'; badge.hidden = !pend.length; }
+    const foot = $('#rbActionsFoot');
+    if (foot) foot.textContent = '仅记录排期，不自动下单 · 金额取服务端重算值 · Σ卖出 = Σ买入';
+    const row = (b) => {
+      const key = S(b.key);
+      const sell = b.action === 'sell';
+      const amt = Math.abs(N(b.amount) || 0);
+      const label = RB_KEY[b.key] || S(b.label || b.key);
+      return '<div class="rb-action-row">'
+        + '<input class="rb-chk" type="checkbox" data-key="' + key + '"' + (checked[b.key] !== false ? ' checked' : '') + ' aria-label="选择' + label + '">'
+        + '<span class="rb-action-ic ' + (sell ? 'sell' : 'buy') + '">' + (sell ? '卖' : '买') + '</span>'
+        + '<span class="rb-action-txt"><b>' + (sell ? '卖出' : '买入') + label + '</b><div>实际 ' + PCT(b.weight) + ' / 目标 ' + PCT(b.target) + ' · 偏离 ' + PP(b.drift) + '</div></span>'
+        + '<span class="rb-action-amt ' + (sell ? 'warn' : 'down') + '">' + (sell ? '−' : '+') + Y(amt) + '</span>'
+        + '</div>';
+    };
+    box.innerHTML = pend.map(row).join('') || '<div class="rb-empty">当前没有需要调整的项目</div>';
+    const btn = $('#rbRecordBtn');
+    if (btn) btn.disabled = !pend.length;
+  }
+
+  function targetPct(key) {
+    const items = A(cfg && cfg.targets).find((t) => t.key === key);
+    return items ? N(items.pct) : null;
+  }
+  function renderConfig() {
+    const box = $('#rbSliders');
+    if (!box) return;
+    if (!cfg) { box.innerHTML = '<div class="rb-empty">' + DASH + '（目标配置读取失败）</div>'; return; }
+    box.innerHTML = RB_ORDER.map((key) => {
+      const pct = targetPct(key);
+      return '<div class="rb-slider-row"><label><span>' + RB_KEY[key]
+        + ' <b class="rb-pct" data-key="' + key + '">' + (pct == null ? DASH : pct + '%') + '</b></span>'
+        + '<input type="range" min="0" max="100" step="1" data-key="' + key + '" value="' + (pct == null ? 0 : pct) + '" aria-label="' + RB_KEY[key] + '目标权重">'
+        + '</label></div>';
+    }).join('');
+    const freq = $('#rbFreq'); if (freq) freq.value = cfg.freq || 'monthly';
+    const drift = $('#rbDrift'); if (drift) drift.value = cfg.drift_alert == null ? '' : cfg.drift_alert;
+    const goal = $('#rbGoal'); if (goal) goal.value = cfg.goal_pct == null ? '' : cfg.goal_pct;
+    updateSum();
+  }
+  function updateSum() {
+    let sum = 0;
+    document.querySelectorAll('#rbSliders input[type=range]').forEach((el) => { sum += Number(el.value) || 0; });
+    const el = $('#rbSum');
+    if (!el) return sum;
+    el.textContent = sum + '% / 100%';
+    el.className = sum === 100 ? 'rb-sum-ok' : 'rb-sum-bad';
+    return sum;
+  }
+
+  function renderRhythm() {
+    const box = $('#rbRhythm');
+    if (!box) return;
+    const days = N(snap.days_since);
+    const interval = N(snap.interval_days);
+    const ll = snap.last_log;
+    const date = ll && ll.date ? S(ll.date) : DASH;
+    const dayTxt = days == null || days < 0 ? DASH : days + ' 天';
+    const freq = SNAP_FREQ() || (cfg && cfg.freq);
+    box.innerHTML = '<div class="rb-rhy-row"><span>上次再平衡</span><b>' + date + '</b></div>'
+      + '<div class="rb-rhy-row"><span>距今</span><b class="' + (snap.overdue ? 'warn' : '') + '">' + dayTxt + '</b></div>'
+      + '<div class="rb-rhy-row"><span>设定频率</span><b>' + S(FREQ_NAME[freq] || freq || DASH) + '</b></div>'
+      + '<div class="rb-rhy-row"><span>应检视周期</span><b>' + (interval == null ? DASH : interval + ' 天') + '</b></div>';
+    const foot = $('#rbRhythmFoot');
+    if (foot) foot.textContent = snap.overdue
+      ? (days == null || days < 0 ? '尚无再平衡记录，建议做一次检视' : '已超过应检视周期 ' + Math.max(0, days - (interval || 0)) + ' 天')
+      : '当前在检视周期内';
+  }
+
+  function renderAll() {
+    renderKpis(); renderAlerts(); renderAlloc(); renderActions(); renderConfig(); renderRhythm();
+  }
+
+  // 路由入口：每次进入重新拉数，用 gen 丢弃在途结果（切账本不会串数据）
+  showRebalanceView = async function () {
+    const el = $('#rebalanceView');
+    if (el) el.hidden = false;
+    const my = ++gen;
+    const alloc = $('#rbAlloc');
+    if (alloc && !snap) alloc.innerHTML = '<div class="rb-empty">正在读取当前账本数据…</div>';
+    const D = await fetchAll();
+    if (my !== gen || !el || el.hidden) return;
+    snap = D.snap || {};
+    cfg = D.cfg;
+    checked = {};
+    renderAll();
+    playRiseIn(el, '.kpi-card, .ov-alert-strip, .rb-card', 60, true);
+  };
+
+  async function reload() {
+    const my = ++gen;
+    const D = await fetchAll();
+    if (my !== gen) return;
+    snap = D.snap || {}; cfg = D.cfg; renderAll();
+  }
+
+  function pickedKeys() {
+    return A(snap.buckets).filter((b) => {
+      const el = document.querySelector('#rbActions .rb-chk[data-key="' + String(b.key).replace(/"/g, '') + '"]');
+      return (b.action === 'sell' || b.action === 'buy') && (!el || el.checked);
+    }).map((b) => ({ key: b.key, label: b.label, action: b.action, amount: b.amount }));
+  }
+
+  function wire() {
+    if (wired) return;
+    wired = true;
+    const back = $('#rbBack');
+    if (back) back.onclick = () => navigate('home');
+    const seg = $('#rbViewSeg');
+    if (seg) seg.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-view]');
+      if (!b) return;
+      viewMode = b.dataset.view === 'amount' ? 'amount' : 'weight';
+      localStorage.setItem('pf_rebalance_view', viewMode);
+      seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      renderAlloc();
+    });
+    const actions = $('#rbActions');
+    if (actions) actions.addEventListener('change', (e) => {
+      if (!e.target.matches('.rb-chk')) return;
+      checked[e.target.dataset.key] = e.target.checked;
+    });
+    const record = $('#rbRecordBtn');
+    if (record) record.onclick = () => {
+      const picks = pickedKeys();
+      if (!picks.length) { toast('请先勾选至少一项调整', 'err'); return; }
+      openConfirm({
+        title: '记录本次再平衡',
+        msg: '将记录 ' + picks.length + ' 项调整（卖出与买入金额以服务端重算为准），并写入操作历史。此操作只做记录，不会自动下单。',
+        okText: '确认记录',
+        onOk: async () => {
+          try {
+            const r = await api('/api/rebalance/log', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ actions: picks, note: '' }),
+            });
+            if (r.ok) { toast('本次再平衡已记录', 'ok'); await reload(); }
+            else { let m = '记录失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m, 'err'); }
+          } catch (e) { toast(humanizeErr(null, e, '记录失败')); }
+        },
+      });
+    };
+    const cfgBtn = $('#rbCfgBtn');
+    if (cfgBtn) cfgBtn.onclick = () => { const c = $('#rbConfigCard'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+    const sliders = $('#rbSliders');
+    if (sliders) sliders.addEventListener('input', (e) => {
+      if (!e.target.matches('input[type=range]')) return;
+      const lab = sliders.querySelector('.rb-pct[data-key="' + e.target.dataset.key + '"]');
+      if (lab) lab.textContent = e.target.value + '%';
+      updateSum();
+    });
+    const reset = $('#rbCfgReset');
+    if (reset) reset.onclick = () => {
+      const def = { stock: 15, fund: 30, wealth: 40, cash: 15 };
+      RB_ORDER.forEach((key) => {
+        const el = sliders && sliders.querySelector('input[type=range][data-key="' + key + '"]');
+        if (el) { el.value = def[key]; const lab = sliders.querySelector('.rb-pct[data-key="' + key + '"]'); if (lab) lab.textContent = def[key] + '%'; }
+      });
+      const freq = $('#rbFreq'); if (freq) freq.value = 'monthly';
+      const drift = $('#rbDrift'); if (drift) drift.value = '1';
+      const goal = $('#rbGoal'); if (goal) goal.value = '';
+      updateSum();
+      toast('已填入默认值，点保存后生效', 'ok');
+    };
+    const save = $('#rbSaveBtn');
+    if (save) save.onclick = async () => {
+      const sum = updateSum();
+      if (sum !== 100) { toast('目标权重合计须为 100%（当前 ' + sum + '%）', 'err'); return; }
+      const targets = RB_ORDER.map((key) => {
+        const src = A(cfg && cfg.targets).find((t) => t.key === key) || {};
+        const el = sliders && sliders.querySelector('input[type=range][data-key="' + key + '"]');
+        return { key: key, pct: Number(el ? el.value : 0), exp: N(src.exp) || 0, vol: N(src.vol) || 0 };
+      });
+      const freqEl = $('#rbFreq'), driftEl = $('#rbDrift'), goalEl = $('#rbGoal');
+      const goalRaw = goalEl && String(goalEl.value || '').trim();
+      const next = {
+        targets: targets,
+        freq: freqEl ? freqEl.value : 'monthly',
+        drift_alert: driftEl ? (N(driftEl.value) == null ? 1 : N(driftEl.value)) : 1,
+        goal_pct: goalRaw ? N(goalRaw) : null,
+      };
+      try {
+        const r = await api('/api/settings/rebalance_targets', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payload: JSON.stringify(next) }),
+        });
+        if (r.ok) { toast('再平衡目标已保存', 'ok'); await reload(); }
+        else { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} toast(m, 'err'); }
+      } catch (e) { toast(humanizeErr(null, e, '保存失败')); }
+    };
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
   else wire();

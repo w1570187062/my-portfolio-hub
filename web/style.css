@@ -596,6 +596,21 @@ w {
   color: var(--logo-c);
   font-size: var(--fs-xs); font-weight: 700; letter-spacing: .3px;
 }
+/* 现金表账户列 / 存款表账户列复用同一枚账户徽标（accountLogo 生成的品牌色首字卡）。
+   .src-ico 的外观原本只定义在 .hg-l / .atbl .alg 作用域下，这两张表需单独挂上。 */
+.cash-tbl .cash-acct .src-ico,
+.dep-table .dep-acct .src-ico { color: var(--primary); flex: 0 0 auto; }
+.cash-tbl .cash-acct .src-ico { align-self: center; } /* cash-acct 是 baseline 对齐，徽标单独居中 */
+.cash-tbl .cash-acct .src-ico.src-logo,
+.dep-table .dep-acct .src-ico.src-logo {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--sp-5); height: var(--sp-5); vertical-align: middle;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--logo-c) 16%, transparent);
+  color: var(--logo-c);
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .3px;
+}
+.dep-table .dep-acct { display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; }
 /* 多币种账户的组头合计按币种分段（HK$340,000 + $26,000），文字比单个金额长，允许换行 */
 .hg-stat b.mix-amt { font-weight: 500; font-size: var(--fs-sm); white-space: normal; }
 
@@ -1478,7 +1493,9 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--sp-3) 28px;
+  /* 左右与内容列（max-width:1400 + padding:20px）对齐：窄屏 20px，宽屏随 1400 带居中收边。
+     header 背景条仍全宽 sticky，只让内部内容对齐；勿把 max-width 加到 header 上收窄背景。 */
+  padding: var(--sp-3) max(20px, calc((100% - 1400px) / 2 + 20px));
   background: var(--bg-glass);
   backdrop-filter: blur(14px) saturate(var(--sat));
   border-bottom: 1px solid var(--border);
@@ -4135,6 +4152,8 @@ body[data-density="compact"] .holdings-table .hn-meta { margin-top: 0; }
 .crb-suggest.f-suggest { position: fixed; z-index: 200; }
 /* 市场胶囊行：标签 + 一组小胶囊（沿用 .at-chip-toggle 的胶囊外观） */
 .f-pills-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+/* author 的 display:flex 会压过 UA 的 [hidden]{display:none}（交易弹框赎回 tab 隐藏计算方式/方向行时踩过） */
+.f-pills-row[hidden] { display: none; }
 .f-pill-cap { flex: 0 0 auto; min-width: 28px; font-size: var(--fs-sm); color: var(--text-muted); }
 .f-pills { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 /* 添加持仓弹框：高级选项折叠（备注 / 资产类型标签）——主流程只留高频字段 */
@@ -6283,7 +6302,8 @@ textarea::placeholder {
 .sub-tab.active .sub-tab-count { background: var(--primary-soft); border-color: rgba(var(--tint), .35); color: var(--primary); }
 
 /* —— 快捷功能 —— */
-.shortcut-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-2); }
+/* 2026-11-16 加第 6 项「再平衡」：桌面 6 列；1340 以下由下方媒体查询降为 3 列（2 行） */
+.shortcut-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-2); }
 /* 2026-11-02 起只有 4 个入口（定投 / 平仓迁到投资页），列数直接写死：
    auto-fit 会在 460–640 这类窄档只落 3 列，第 4 个单独掉到第二行；
    写死后 4 项永远只有「一排 4 格」和「2×2」两种形态。 */
@@ -6536,6 +6556,7 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 #app:has(#holdingsView:not([hidden])),
 #app:has(#assetView:not([hidden])),
 #app:has(#overviewView:not([hidden])),
+#app:has(#rebalanceView:not([hidden])),
 #app:has(#settingsView:not([hidden])),
 #app:has(#aiView:not([hidden])),
 #app:has(#devicesView:not([hidden])),
@@ -7357,4 +7378,88 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 }
 @media (prefers-reduced-motion: reduce) { .ov-note, .ov-detail { transition: none; } }
 
+/* ===== 再平衡 #/rebalance（2026-11-16，方案 A 落地）=====
+   只复用数据总览的控件与视觉语言（.ov-page/.ov-back/.ov-title/.ov-sub/.kpi-card/
+   .ov-alert-strip/.ov-viewseg/.ov-bullet/.ov-scope），布局是再平衡专属：
+   左栏「目标 vs 实际」+「调仓清单」，右栏「目标配置」+「节奏」。
+   色纪律：超配 warn（黄）、低配 down（绿）、数据缺失「—」；内联只允许 --x: v。 */
+.rb-page { max-width: 1400px; }
+.rb-dash { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+.rb-main, .rb-side { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+/* .card 基础是 align-items:center（横向 flex 用）；本页卡片是 column，若沿用 center
+   会让所有直接子元素收缩到内容宽度挤在中间、两侧留大片空白。必须显式 stretch 撑满。 */
+.rb-card { flex-direction: column; align-items: stretch; gap: var(--sp-3); min-width: 0; }
+.rb-card-head { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--h-2); }
+.rb-card-title { display: flex; align-items: center; gap: var(--sp-2); margin: 0; font-size: var(--fs-base); font-weight: 700; }
+.rb-card-title::before { content: ''; width: 3px; height: 14px; border-radius: 2px; background: var(--primary); flex: 0 0 auto; }
+.rb-card-note { font-size: var(--fs-2xs); color: var(--text-faint); }
+.rb-card-head .ov-badge { margin-left: auto; }
+.rb-card-head .rb-mini { margin-left: auto; }
+.rb-card-foot { font-size: var(--fs-2xs); color: var(--text-faint); border-top: 1px dashed var(--border); padding-top: var(--sp-2); }
 
+/* 目标 vs 实际：每类一行，bullet 条=当前占比、竖线=目标，统一比例尺 */
+.rb-alloc { display: flex; flex-direction: column; }
+.rb-alloc-row { padding: var(--sp-3) 0; border-top: 1px solid var(--border); min-width: 0; }
+.rb-alloc-row:first-child { padding-top: 0; border-top: 0; }
+.rb-alloc-top { display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.rb-alloc-name { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 600; flex: 0 0 auto; min-width: 40px; }
+.rb-alloc-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; background: var(--rb-c, var(--primary)); }
+.rb-alloc-num { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rb-alloc-num b { font-size: var(--fs-md); font-weight: 700; color: var(--text); }
+.rb-alloc-drift { margin-left: auto; font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rb-alloc-drift.warn { color: var(--warning); }
+.rb-alloc-drift.down { color: var(--down); }
+.rb-alloc-drift.flat { color: var(--text-muted); }
+.rb-alloc-row .ov-bullet { width: 100%; }
+.rb-alloc-bot { display: flex; justify-content: space-between; gap: var(--sp-2); font-size: var(--fs-2xs); color: var(--text-faint); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.rb-alloc-bot b { color: var(--text-secondary); font-weight: 600; }
+.rb-alloc-bot .warn { color: var(--warning); }
+.rb-alloc-bot .down { color: var(--down); }
+
+/* 调仓清单：勾选 + 动作徽标 + 金额 */
+.rb-actions { display: flex; flex-direction: column; }
+.rb-action-row { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) 0; border-top: 1px solid var(--border); min-width: 0; }
+.rb-action-row:first-child { padding-top: 0; border-top: 0; }
+.rb-chk { width: 16px; height: 16px; accent-color: var(--primary); flex: 0 0 auto; cursor: pointer; }
+.rb-action-ic { width: 28px; height: 28px; border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; font-size: var(--fs-xs); font-weight: 700; }
+.rb-action-ic.sell { background: rgba(var(--warning-rgb), .12); color: var(--warning); }
+.rb-action-ic.buy { background: rgba(var(--down-rgb), .12); color: var(--down); }
+.rb-action-txt { min-width: 0; }
+.rb-action-txt b { font-size: var(--fs-sm); }
+.rb-action-txt div { font-size: var(--fs-2xs); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb-action-amt { margin-left: auto; font-size: var(--fs-md); font-weight: 700; font-variant-numeric: tabular-nums; flex: 0 0 auto; white-space: nowrap; }
+.rb-action-amt.warn { color: var(--warning); }
+.rb-action-amt.down { color: var(--down); }
+.rb-btn-row { display: flex; gap: var(--sp-2); }
+.rb-btn-row .btn:first-child { flex: 1; }
+
+/* 目标配置：滑块 + 合计校验 + 字段 */
+.rb-sliders { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rb-slider-row label { display: block; font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-slider-row label > span { display: flex; justify-content: space-between; margin-bottom: 2px; }
+.rb-slider-row label b { color: var(--text); font-variant-numeric: tabular-nums; }
+.rb-slider-row input[type=range] { width: 100%; accent-color: var(--primary); }
+.rb-sumline { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-2) 0; border-top: 1px dashed var(--border); font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-sumline b { font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.rb-sum-ok { color: var(--down); }
+.rb-sum-bad { color: var(--warning); }
+.rb-fields { display: flex; flex-direction: column; gap: var(--sp-2); }
+.rb-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-muted); }
+.rb-field select, .rb-field input { width: auto; min-width: 0; padding: var(--sp-2); background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text); font: inherit; font-size: var(--fs-sm); }
+.rb-mini { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.rb-save { width: 100%; }
+
+/* 节奏 */
+.rb-rhythm { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rb-rhy-row { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--fs-xs); }
+.rb-rhy-row span { color: var(--text-muted); }
+.rb-rhy-row b { font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.rb-rhy-row b.warn { color: var(--warning); }
+.rb-empty { font-size: var(--fs-xs); color: var(--text-muted); padding: var(--sp-2) 0; }
+
+@media (max-width: 1340px) {
+  .rb-dash { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .rb-card-head { flex-wrap: wrap; }
+}

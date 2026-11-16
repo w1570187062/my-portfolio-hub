@@ -290,6 +290,69 @@
     </div>
   </div>
 
+  <!-- 再平衡（2026-11-16）：由首页「快捷功能」进入，不占主导航。
+       只复用数据总览的控件与视觉语言（KPI 卡 / 异常条 / bullet / 分段），
+       内容是再平衡专属：目标 vs 实际 + 调仓清单 + 目标配置 + 节奏。
+       所有读数来自 GET /api/rebalance 与 GET /api/settings/rebalance_targets，
+       接口缺失或字段为空一律渲染「—」，不填充演示数值。 -->
+  <div id="rebalanceView" hidden>
+    <div class="ov-page rb-page">
+      <button class="ov-back" type="button" id="rbBack"><span aria-hidden="true">‹</span> 返回首页</button>
+      <h1 class="ov-title">再平衡</h1>
+      <p class="ov-sub">按四类现值计算目标偏差，卖出所得自动配平买入 · 分母：四类市值合计</p>
+      <div class="kpi-row cols-3 ov-kpi-row" id="rbKpis"></div>
+      <section class="ov-alert-strip" id="rbAlertStrip" hidden>
+        <div class="ov-alert-head"><span>需要留意</span><span class="ov-alert-count" id="rbAlertCount"></span></div>
+        <div class="ov-alert-list" id="rbAlertList"></div>
+      </section>
+      <div class="ov-tools">
+        <div class="ov-viewseg" id="rbViewSeg">
+          <button type="button" data-view="weight" aria-pressed="true">按权重</button>
+          <button type="button" data-view="amount" aria-pressed="false">按金额</button>
+        </div>
+        <span class="ov-scope" id="rbScope"></span>
+      </div>
+      <div class="rb-dash">
+        <div class="rb-main">
+          <article class="card rb-card" id="rbAllocCard">
+            <div class="rb-card-head"><h2 class="rb-card-title">目标 vs 实际</h2><span class="rb-card-note" id="rbAllocNote"></span></div>
+            <div class="rb-alloc" id="rbAlloc"></div>
+            <div class="rb-card-foot">条 = 当前占比 · 竖线 = 目标位置 · 统一比例尺 · 分母 四类现值合计</div>
+          </article>
+          <article class="card rb-card" id="rbActionsCard">
+            <div class="rb-card-head"><h2 class="rb-card-title">本次调仓清单</h2><span class="ov-badge" id="rbPendingBadge"></span><span class="rb-card-note">勾选后记录</span></div>
+            <div class="rb-actions" id="rbActions"></div>
+            <div class="rb-card-foot" id="rbActionsFoot"></div>
+            <div class="rb-btn-row">
+              <button class="btn primary" type="button" id="rbRecordBtn">记录本次再平衡</button>
+              <button class="btn" type="button" id="rbCfgBtn">调整目标权重 →</button>
+            </div>
+          </article>
+        </div>
+        <div class="rb-side">
+          <article class="card rb-card" id="rbConfigCard">
+            <div class="rb-card-head"><h2 class="rb-card-title">目标配置</h2><button class="rb-mini" type="button" id="rbCfgReset">恢复默认</button></div>
+            <div class="rb-sliders" id="rbSliders"></div>
+            <div class="rb-sumline"><span>目标合计</span><b id="rbSum"></b></div>
+            <div class="rb-fields">
+              <label class="rb-field"><span>检视频率</span>
+                <select id="rbFreq"><option value="monthly">每月 monthly</option><option value="quarterly">每季 quarterly</option><option value="manual">手动 manual</option></select>
+              </label>
+              <label class="rb-field"><span>偏离阈值 (pp)</span><input id="rbDrift" type="number" min="0.5" max="50" step="0.5"></label>
+              <label class="rb-field"><span>年度收益目标 %（可选）</span><input id="rbGoal" type="number" step="0.5" placeholder="不设"></label>
+            </div>
+            <button class="btn primary rb-save" type="button" id="rbSaveBtn">保存配置</button>
+          </article>
+          <article class="card rb-card" id="rbRhythmCard">
+            <div class="rb-card-head"><h2 class="rb-card-title">再平衡节奏</h2></div>
+            <div class="rb-rhythm" id="rbRhythm"></div>
+            <div class="rb-card-foot" id="rbRhythmFoot"></div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 投资页 = 视图切换条 + 内容区（2026-11-02，原型 B）。
        视图切换条提到页面第一位（在 KPI 卡片之前），保留下划线 tab 样式 ——
        与资产页的「账户 / 现金 / 流水 / 收支」子 tab 是同一套 .sub-tabs 组件，
@@ -1030,9 +1093,11 @@
 
   <div id="adjustModal" class="modal" hidden>
     <div class="modal-card" style="width:480px; max-width:94vw;">
-      <h2 id="adjustTitle">加减仓</h2>
+      <h2 id="adjustTitle">交易</h2>
       <div class="adj-tabs">
-        <button type="button" class="adj-tab active" data-tab="calc">加减仓</button>
+        <button type="button" class="adj-tab active" data-tab="buy">买入</button>
+        <button type="button" class="adj-tab" data-tab="sell">卖出</button>
+        <button type="button" class="adj-tab" data-tab="redeem">赎回</button>
         <button type="button" class="adj-tab" data-tab="dividend">分红</button>
       </div>
 
@@ -1080,11 +1145,15 @@
         <input type="hidden" id="adj_id">
         <div class="adj-calc">
           <div class="adj-pills">
-            <div class="f-pills-row">
+            <div class="f-pills-row" id="redeemRatioRow" hidden>
+              <span class="f-pill-cap">赎回份额</span>
+              <div id="redeemRatioPills" class="f-pills"></div>
+            </div>
+            <div class="f-pills-row" id="addModeRow">
               <span class="f-pill-cap">计算方式</span>
               <div id="addModePills" class="f-pills"></div>
             </div>
-            <div class="f-pills-row">
+            <div class="f-pills-row" id="addSideRow">
               <span class="f-pill-cap">买卖方向</span>
               <div id="addSidePills" class="f-pills"></div>
             </div>
