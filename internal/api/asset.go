@@ -1241,6 +1241,17 @@ func containsStr(list []string, s string) bool {
 	return false
 }
 
+// isReversalFlow 判断一条流水是否为「冲正 / 回退」的反向记账行。
+// 三种独立 type 覆盖现金回退、收支计划撤销、理财冲正；负债流水的回退没有独立 type
+// （反向记成 loan/repay），只能靠 note 前缀「回退：」识别（见 rollbackFlow）。
+func isReversalFlow(f db.AggFlow) bool {
+	switch f.Type {
+	case "rollback", "cf_reverse", "wealth_reverse":
+		return true
+	}
+	return strings.HasPrefix(f.Note, "回退：")
+}
+
 type finCatRow struct {
 	Category string  `json:"category"`
 	Type     string  `json:"type"` // "income" | "expense"
@@ -1318,6 +1329,12 @@ func financeSummary(c *gin.Context) {
 	// 同一笔还款会同时写 cash_flow（现金出账）与 liability_flows（负债减记）两条流水，
 	// 去重已在 db.ListFlows 合并层完成（DedupRepayFlows），这里拿到的 flows 已无重复。
 	for _, f := range flows {
+		// 冲正/回退流水是「把之前那笔反过来记」的账面冲销，不构成新的资金收支，整条跳过。
+		// 原始交易仍按它的发生日计入 —— 只排除反向记账这一行。不跳过的话，某月会出现
+		// 「负债偿还 −1480」这类负额分类：热力图没法画负面积，KPI 也会被冲正反复拉扯。
+		if isReversalFlow(f) {
+			continue
+		}
 		cny := toCNY(f.Amount, f.Currency)
 		// 符号归一：现金流水 amount 自带方向（入账正/出账负）；负债流水 amount 恒为正，
 		// 语义由 type 决定（loan=融资流入 / repay=偿还流出）。

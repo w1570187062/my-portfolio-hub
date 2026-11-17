@@ -518,6 +518,7 @@ let homeRecentFilter = 'all';    // 首页最新流水类型过滤：all | in | 
 let homeRecentFlowsData = [];    // 首页最新流水全量缓存（近 45 天最近 8 笔，供类型过滤重渲染）
 let homeRecentFlowsSig = '';     // 已渲染流水的数据签名：内容没变就不重绘，避免骨架屏闪一下造成抖动
 let homeRecentFlowsGen = 0;      // 请求序号：只让最后一次请求落 DOM，防止并发刷新乱序覆盖
+let homeRecentFlowsPromise = null; // 在飞的「首页最新流水」请求：并发调用合并成一次
 let homeRateHoverData = null;    // 权益曲线 hover 弹框所需序列（由 renderRateSpark 赋值）
 let bellBriefData = null;        // 铃铛「今日待办」数据：{ groups, total } 来自 /api/today/brief
 let finFlowsCache = [];          // 财务页收支汇总明细缓存（全年流水，供分类折叠下钻）
@@ -544,7 +545,7 @@ async function enterApp(st) {
 
 function showApp() {
   $('#app').hidden = false;
-  load();
+  load({ boot: true });   // boot:财务页走「只按新汇率重画」分支，不重发 summary/flow
   // 方案 16：AI 设置（/api/ai/settings + /api/mcp/config + /api/mcp/status）不在首屏拉，
   // 改由 showAiView() / aiChatOpen() 首次真正用到时触发（见 ensureAiSettings）。
   // #app 在 boot() 前一直 hidden，顶层 syncViewToggle() 测得 0 宽导致滑块白块不可见；
@@ -582,16 +583,53 @@ function humanizeErr(r, e, fallback) {
   return fallback || '操作失败';
 }
 
-// 理财总览数据（/api/asset/overview）：首页总市值卡「理财」段与首页理财视图共用。
+// 理财总览数据（/api/asset/overview）：首页总市值卡「理财」段、资产页、数据总览共用。
 // 只赋值 assetData，不触发资产页渲染（renderAssetTab 仅资产页需要）。
-async function fetchOverview() {
-  try {
+// 2026-11-17：首屏有两条路径同时要它 —— load() 的首页总市值卡 + 资产页的 loadAsset()，
+// 原来各拉一次，F5 停在 #/asset 时同一个 URL 发两遍。这里做「同时只留一个」：
+// 并发调用共享同一个 promise，先到的那份负责赋值 assetData，后到的直接复用。
+// 注意只在「并发」范围内合并，不缓存结果：任何一次新的进入/刷新（不重叠）都会真发请求。
+let _ovInflight = null;
+function loadOverviewJson() {
+  if (_ovInflight) return _ovInflight;
+  const p = (async () => {
     const r = await api('/api/asset/overview');
-    if (r.ok) assetData = await r.json();
-  } catch (_) { /* 理财数据失败不阻塞首页：总市值卡降级为仅持仓 */ }
+    if (!r.ok) { const err = new Error('资产总览加载失败'); err.status = r.status; throw err; }
+    const d = await r.json();
+    assetData = d;
+    return d;
+  })();
+  _ovInflight = p;
+  const clear = () => { if (_ovInflight === p) _ovInflight = null; };
+  p.then(clear, clear);
+  return p;
+}
+async function fetchOverview() {
+  try { return await loadOverviewJson(); } catch (_) { return null; } // 失败不阻塞首页：总市值卡降级为仅持仓
 }
 
-async function load() {
+// 盈亏历史（/api/pnl/history）在首屏同样被两处需要：loadPrevPnlDay() 取昨日回退行、
+// renderRateSpark() 画首页权益曲线。原来各发一次 → 首屏两个同样的请求。
+// 统一走这里：并发共享一份请求，顺带把 calData（日历/曲线共用的 date→row 表）填好。
+let _calInflight = null;
+function ensureCalData() {
+  if (_calInflight) return _calInflight;
+  const p = (async () => {
+    const r = await api('/api/pnl/history');
+    if (!r.ok) { const err = new Error('盈亏历史加载失败'); err.status = r.status; throw err; }
+    const d = await r.json();
+    const hist = d.history || [];
+    calData = {};
+    hist.forEach((h) => { calData[h.date] = h; });
+    return hist;
+  })();
+  _calInflight = p;
+  const clear = () => { if (_calInflight === p) _calInflight = null; };
+  p.then(clear, clear);
+  return p;
+}
+
+async function load(opts) {
   try {
     homeLoadError = false;
     // 首屏数据合并为单次请求：/api/home 聚合 holdings/summary/fx/sources/spark，
@@ -624,10 +662,16 @@ async function load() {
     ]);
     renderFiltered();
     loadCashflow(); // 首页紧凑卡片：本月收支计划（不阻塞主渲染）
-    // 首屏数据就绪后，重渲染依赖 overview 的常驻视图（首页净资产/资产分布依赖 assetData；财务概览重渲染幂等）
+    // 首屏数据就绪后，重渲染依赖 overview 的常驻视图（首页净资产/资产分布依赖 assetData）
     const _v = viewFromHash();
     if (_v === 'home') showHomeView();
-    else if (_v === 'finance') showFinanceView();
+    else if (_v === 'finance') {
+      // 启动时 applyRoute 已经拉过一轮 summary + 全年流水。这里只按刚拿到的汇率重画热力图，
+      // 不再重发请求 —— 否则首屏连发两轮、整卡重画两次（「刷新好几下」的那一半来源）。
+      // 非启动路径的 load()（记完一笔账后的全局刷新）仍走 showFinanceView() 重新取数。
+      if (opts && opts.boot) refreshFinanceRates();
+      else showFinanceView();
+    }
   } catch (e) {
     homeLoadError = true;
     toast(humanizeErr(null, e, '加载失败'));
@@ -654,11 +698,9 @@ async function loadManualClosed() {
 async function loadPrevPnlDay() {
   prevPnlDay = null;
   try {
-    const r = await api('/api/pnl/history');
-    if (!r.ok) return;
-    const d = await r.json();
+    const hist = await ensureCalData();   // 与首页权益曲线共享同一次请求（并发时合并）
     const today = ymd(new Date());
-    const rows = (d.history || []).filter((x) => x && x.date && x.date < today);
+    const rows = hist.filter((x) => x && x.date && x.date < today);
     if (!rows.length) return;
     rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const row = rows[rows.length - 1];
@@ -2150,12 +2192,8 @@ async function renderRateSpark(rangeDays, netVal) {
   
   const rDays = 30;  // 首页权益曲线固定近 30 日累计
   try {
-    if (!Object.keys(calData).length) {
-      const r = await api('/api/pnl/history');
-      if (!r.ok) return;
-      const d = await r.json();
-      (d.history || []).forEach((h) => { calData[h.date] = h; });
-    }
+    // calData 已由 ensureCalData() 填过就直接用；没填过则走共享取数（与 loadPrevPnlDay 并发时合并成一次请求）
+    if (!Object.keys(calData).length) await ensureCalData();
     const sortedDates = Object.keys(calData).sort();
     // 每日盈亏增量（CNY）：只用 equity_pnl_cny —— 后端叠加理财之前存的纯持仓盈亏。
     // 不能写成 `|| total_cny` 兜底：equity_pnl_cny 为 0 有两种正常情况（周末全市场休市、
@@ -2679,12 +2717,22 @@ let pendingApplyAdd = false; // 确认弹框：计入持仓 pending 标记
 let cashAccountsCache = [];
 // 添加流水弹框：负债账户缓存（与现金账户合并进同一下拉，按前缀区分 c:/l:）
 let flowLibsCache = [];
-async function loadCashAccounts() {
-  try {
-    const r = await api('/api/asset/cash');
-    if (r.ok) { const d = await r.json(); cashAccountsCache = d.cash || []; }
-  } catch (_) {}
-  return cashAccountsCache;
+// 在飞标记：同一个动作里常常有两条路径同时要现金账户（如 loadCashflow 先要一次、面板再要一次），
+// 合并成一个请求。不缓存，非重叠调用照常重新拉。
+let cashAccountsInflight = null;
+function loadCashAccounts() {
+  if (cashAccountsInflight) return cashAccountsInflight;
+  const p = (async () => {
+    try {
+      const r = await api('/api/asset/cash');
+      if (r.ok) { const d = await r.json(); cashAccountsCache = d.cash || []; }
+    } catch (_) {}
+    return cashAccountsCache;
+  })();
+  cashAccountsInflight = p;
+  const clear = () => { if (cashAccountsInflight === p) cashAccountsInflight = null; };
+  p.then(clear, clear);
+  return p;
 }
 // 兜底账户选取（2026-10-16 移除「默认子账户」概念）：与后端 PickCashAccount 同口径——
 // 同来源同币种下余额最大（并列取较新创建）。各类资金账户下拉的预选都走它。
@@ -2746,7 +2794,7 @@ async function openAdjust(id) {
   syncDivMethodUI();
   prefillAdjCalc(h);
   renderAdjModePills();
-  // 默认展示「买入」tab（applyAdjustTab 内部会渲染方向胶囊 + 同步字段显隐）
+  // 默认展示「买入」tab（applyAdjustTab 内部按 tab 设置买卖方向 + 同步字段显隐）
   applyAdjustTab('buy');
   $('#adjustModal').hidden = false;
   const firstInput = document.querySelector('#adjustModal .adj-calc input');
@@ -2769,8 +2817,8 @@ function renderDivCashSelect(h) {
   sel.value = def ? String(def.id) : '0';
 }
 
-// 修改持仓弹框（加减仓）：计算方式 / 买卖方向 改为胶囊（沿用添加持仓的 at-chip-toggle 外观）。
-// 值仍承载在隐藏 input（id 保持 addMode / addSide），下方 calcAdd/apply 逻辑无需改动。
+// 修改持仓弹框（加减仓）：计算方式改为胶囊（沿用添加持仓的 at-chip-toggle 外观）；
+// 买卖方向由顶部 tab 决定，不再有独立胶囊。值仍承载在隐藏 input（addMode / addSide），calcAdd/apply 逻辑无需改动。
 function renderAdjModePills() {
   const box = document.getElementById('addModePills');
   if (!box) return;
@@ -2785,25 +2833,8 @@ function renderAdjModePills() {
     };
   });
 }
-function renderAdjSidePills() {
-  const box = document.getElementById('addSidePills');
-  if (!box) return;
-  const cur = document.getElementById('addSide').value || 'buy';
-  const opts = [['buy', '买入'], ['sell', '卖出']];
-  box.innerHTML = opts.map(([v, l]) => `<button type="button" class="at-chip-toggle${cur === v ? ' on' : ''}" data-v="${v}">${l}</button>`).join('');
-  box.querySelectorAll('button').forEach((b) => {
-    b.onclick = () => {
-      document.getElementById('addSide').value = b.dataset.v;
-      renderAdjSidePills();
-      syncAdjSideUI();
-      // 切换方向后旧试算结果（按另一方向算的）作废
-      const r = document.getElementById('addResult'); if (r) r.innerHTML = '';
-      lastAdd = null;
-      const ab = document.getElementById('addApply'); if (ab) ab.disabled = true;
-    };
-  });
-}
-// 买卖方向切换：动态更新下方输入标签（买入=补仓 / 卖出=减仓）
+// 买卖方向由顶部 tab（买入/卖出/赎回）决定，写入隐藏 input#addSide；
+// 旧的「买卖方向」胶囊已删除（2026-11-16），下方函数只同步输入标签文案。
 function syncAdjSideUI() {
   const isSell = document.getElementById('addSide').value === 'sell';
   const qL = document.getElementById('addQtyLabel');
@@ -2998,13 +3029,11 @@ function applyAdjustTab(tab) {
   document.querySelectorAll('#adjustModal .adj-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab));
   document.querySelectorAll('#adjustModal .adj-panel').forEach((p) => { p.hidden = p.dataset.panel !== (isDiv ? 'dividend' : 'calc'); });
   if (isDiv) return;
-  // 赎回固定按份额：隐藏「计算方式 / 买卖方向」，显示份额档位
+  // 赎回固定按份额：隐藏「计算方式」，显示份额档位。买卖方向由 tab 决定，无独立控件。
   const mr = document.getElementById('addModeRow'); if (mr) mr.hidden = isRedeem;
-  const sr = document.getElementById('addSideRow'); if (sr) sr.hidden = isRedeem;
   const rr = document.getElementById('redeemRatioRow'); if (rr) rr.hidden = !isRedeem;
   document.getElementById('addSide').value = isRedeem ? 'sell' : tab;
   if (isRedeem) document.getElementById('addMode').value = 'qty';
-  renderAdjSidePills();
   syncAdjModeUI();
   syncAdjSideUI();
   // 切 tab 作废上一次试算，避免跨 tab 误用
@@ -4217,27 +4246,38 @@ async function renderHomeDashboard() {
   if (rf) {
     const hasRows = !!rf.querySelector('.recent-group, .recent-empty');
     if (!hasRows) rf.innerHTML = '<div class="recent-sk"><div class="skeleton-line" style="--sk-w:32%"></div><div class="skeleton-line" style="--sk-w:84%"></div><div class="skeleton-line" style="--sk-w:66%"></div></div>';
-    const myGen = ++homeRecentFlowsGen;
-    try {
-      const end = new Date();
-      const start = new Date(end.getTime() - 45 * 864e5);
-      const fmtD = (d) => d.toISOString().slice(0, 10);
-      const r = await api(`/api/asset/flows?start=${fmtD(start)}&end=${fmtD(end)}`);
-      if (r.ok) {
-        const d = await r.json();
-        // 已有更新的刷新就丢弃本次结果（不打断后面的曲线渲染）
-        if (myGen === homeRecentFlowsGen) {
-          const next = (d.flows || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
-          // 只比渲染真正用到的字段，避免后端附加字段变化时误判成「数据变了」
-          const sig = JSON.stringify(next.map((f) => [f.id, f.date, f.amount, f.direction, f.name, f.ref_name, f.note, f.currency, f.snapshot]));
-          homeRecentFlowsData = next;
-          if (sig !== homeRecentFlowsSig || !hasRows) {
-            homeRecentFlowsSig = sig;
-            renderRecentFlows();
+    // 并发合并（2026-11-17）：启动时 applyRoute 与 load() 各调一次本函数，原来会连发两个
+    // /api/asset/flows 请求，且后一个调用先把 gen 顶掉、让先到的那份结果白拿。现在同一时刻
+    // 只留一个在飞，后来者等它。跨账本切换由 homeRecentFlowsGen(++) 作废旧请求，切账本时
+    // 还要把 homeRecentFlowsPromise 清掉（见 switchUser），否则新账本会一直等旧账本的请求。
+    if (!homeRecentFlowsPromise) {
+      const myGen = ++homeRecentFlowsGen;
+      homeRecentFlowsPromise = (async () => {
+        try {
+          const end = new Date();
+          const start = new Date(end.getTime() - 45 * 864e5);
+          const fmtD = (d) => d.toISOString().slice(0, 10);
+          const r = await api(`/api/asset/flows?start=${fmtD(start)}&end=${fmtD(end)}`);
+          if (r.ok) {
+            const d = await r.json();
+            // 已有更新的刷新就丢弃本次结果（不打断后面的曲线渲染）
+            if (myGen === homeRecentFlowsGen) {
+              const next = (d.flows || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
+              // 只比渲染真正用到的字段，避免后端附加字段变化时误判成「数据变了」
+              const sig = JSON.stringify(next.map((f) => [f.id, f.date, f.amount, f.direction, f.name, f.ref_name, f.note, f.currency, f.snapshot]));
+              homeRecentFlowsData = next;
+              if (sig !== homeRecentFlowsSig || !hasRows) {
+                homeRecentFlowsSig = sig;
+                renderRecentFlows();
+              }
+            }
           }
-        }
-      }
-    } catch (_) { if (!hasRows && myGen === homeRecentFlowsGen) rf.innerHTML = '<div class="recent-empty">流水加载失败</div>'; }
+        } catch (_) { if (!hasRows && myGen === homeRecentFlowsGen) rf.innerHTML = '<div class="recent-empty">流水加载失败</div>'; }
+      })();
+      homeRecentFlowsPromise.then(() => { homeRecentFlowsPromise = null; });
+    } else {
+      await homeRecentFlowsPromise;
+    }
   }
   // 首页「权益收益曲线」复用已预取的 calData；今日待办已改由顶栏铃铛承载
   renderRateSpark();
@@ -4341,64 +4381,118 @@ let finYear = String(new Date().getFullYear());
 let finMonthsData = [];          // /api/finance/summary 的 months 数组（12 月）
 let finHmMonth = 0;             // 收支分析卡当前选中月份下标（0–11），同时驱动热力图与分类明细
 let finMonthAutoFrom = 0;       // 方案 6：自动跳月的来源月（1–12，0 = 未发生自动跳月），用于提示文案
+// 取数状态（2026-11-17：修「刷新财务页会刷好几次」）
+// 启动路径上 applyRoute() 先拉一轮 summary + 全年流水，load() 拿回 /api/home 后又调一次
+// showFinanceView() 再拉一轮、整卡重画一次 —— 首屏 2 轮请求 + 2 次重绘，肉眼就是页面闪两下。
+// 现在：① 同年度并发取数合并为一次（finFetch）；② /api/home 回来的那一轮只按新汇率重画，
+// 不再重拉（汇率是财务页唯一依赖 /api/home 的数据源，见 flowToCny）。
+let finSummaryData = null;      // /api/finance/summary 最近一次的响应体
+let finDataYear = '';           // 上面这份数据属于哪个年度
+let finFetch = null;            // { year, promise }：进行中的取数，并发调用共享
+let finPaintedFx = '';          // 上次绘制用的汇率快照（usd:hkd），用于判断是否需要为汇率重画
+
+// 取数：同一年度只发一轮。第二个调用方拿到同一个 promise 的返回值，不再发请求。
+function fetchFinanceData(year) {
+  if (finFetch && finFetch.year === year) return finFetch.promise;
+  const promise = (async () => {
+    // 汇总与全年流水并行拉取（月度详情需要逐笔流水做下钻）
+    const [sumR, flowR] = await Promise.all([
+      api(`/api/finance/summary?year=${encodeURIComponent(year)}`),
+      api(`/api/asset/flows?start=${year}-01-01&end=${year}-12-31`),
+    ]);
+    // 连点年份箭头时先发的旧年度可能后回来：只让「仍是当前年度」的结果写缓存，
+    // 否则旧年度的数据会把新年度覆盖掉，接着按新年度绘制时会取到错的数据（或干脆画不出）。
+    const alive = () => year === finYear;
+    if (flowR.ok) { const df = await flowR.json(); if (alive()) finFlowsCache = df.flows || []; }
+    let d = null;
+    if (sumR.ok) d = await sumR.json();
+    if (d && alive()) { finSummaryData = d; finDataYear = year; }
+    return d;
+  })();
+  finFetch = { year, promise };
+  // 成功/失败都要摘掉进行中的标记，否则下次进入会一直拿到这份（可能已失败的）promise
+  promise.catch(() => {}).then(() => { if (finFetch && finFetch.promise === promise) finFetch = null; });
+  return promise;
+}
+
+// 拿已有数据重画（不请求）。keepMonth=true 保留用户当前选中的月份，
+// 供「汇率刷新」「同一年度二次进入」这类不该重置交互状态的场合使用。
+function paintFinance({ keepMonth = false } = {}) {
+  const d = finSummaryData;
+  const heatmap = document.getElementById('finHeatmap');
+  if (!d || finDataYear !== finYear) return;
+  finPaintedFx = usdRate + ':' + hkdRate;
+  finMonthsData = d.months || [];
+  renderFinKpis(d);
+  // 年份边界禁用 prev/next（后端仅接受 2000–2999）
+  const y = Number(finYear);
+  const prev = document.getElementById('finYearPrev');
+  const next = document.getElementById('finYearNext');
+  if (prev) prev.disabled = y <= 2000;
+  if (next) next.disabled = y >= 2999;
+  // 收支分析卡：默认选中当前月；当前月没有记录时自动落到该年「最近有数据的月份」。
+  // 方案 6：原先无条件选当前月 → 11 月初打开财务页首屏就是「当月暂无收支子项」，
+  // 而数据全在 10 月，等于一进来就是空页；往年（curIdx 找不到）也不该硬跳 12 月。
+  if (!keepMonth || !finMonthsData.length) {
+    const curYm = finYear + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+    const curIdx = finMonthsData.findIndex((m) => m.ym === curYm);
+    const monthHasData = (i) => {
+      const mm = finMonthsData[i];
+      return !!mm && Math.abs(Number(mm.income) || 0) + Math.abs(Number(mm.expense) || 0) > 0;
+    };
+    const withData = finMonthsData.map((_, i) => i).filter(monthHasData);
+    const hasCur = curIdx >= 0 && monthHasData(curIdx);
+    if (hasCur) {
+      finHmMonth = curIdx;
+      finMonthAutoFrom = 0;
+    } else if (withData.length) {
+      finHmMonth = Math.max(...withData);          // 最近有记录的那个月
+      finMonthAutoFrom = curIdx >= 0 ? curIdx + 1 : 0; // 0 = 该年没有「当前月」这一格
+    } else {
+      // 整年零记录：留在当前月（往年则落到 12 月），空状态只留一处
+      finHmMonth = curIdx >= 0 ? curIdx : 11;
+      finMonthAutoFrom = 0;
+    }
+  }
+  finHmMonth = Math.min(Math.max(finHmMonth, 0), Math.max(0, finMonthsData.length - 1));
+  if (heatmap) { heatmap.hidden = false; renderFinHeatmap(); }
+  // 区块层错落上浮：KPI 卡片 → 热力图卡 → 分类明细卡依次入场。
+  // 放在数据就绪之后 —— 骨架占位期间先播的是骨架屏动画。
+  playRiseIn($('#financeView'), '.kpi-section, .fin-heatmap-card', 60);
+}
+
+// /api/home 回来后：汇率（usdRate/hkdRate）是财务页唯一依赖它的数据（flowToCny 折 CNY）。
+// 只在「画的时候用的汇率」与当前汇率不一致时才重画 —— 首屏那次绘制若已经用到新汇率，
+// 这里直接返回，一次也不多画（否则仍是两轮重绘，肉眼照样闪）。
+// 绝不在这里重发 summary/flow —— 那正是首屏连闪两下的来源。
+function refreshFinanceRates() {
+  const fx = usdRate + ':' + hkdRate;
+  const repaintIfStale = () => { if (finPaintedFx !== fx) paintFinance({ keepMonth: true }); };
+  if (finSummaryData && finDataYear === finYear) { repaintIfStale(); return; }
+  if (finFetch && finFetch.year === finYear) { finFetch.promise.then(repaintIfStale).catch(() => {}); return; }
+  showFinanceView();
+}
 
 async function renderFinanceView() {
   const kpiGrid = document.getElementById('finKpiGrid');
   const yearLabel = document.getElementById('finYearLabel');
   const heatmap = document.getElementById('finHeatmap');
   if (yearLabel) yearLabel.textContent = finYear;
-  if (kpiGrid) kpiGrid.innerHTML = '';
-  if (heatmap) heatmap.hidden = true;
+  const year = finYear;
+  // 该年度已有渲染结果时不清屏：清屏再画会让同一页闪两下（返回本页、汇率刷新都会走到这里）
+  const hasCache = !!finSummaryData && finDataYear === year;
+  if (!hasCache) {
+    if (kpiGrid) kpiGrid.innerHTML = '';
+    if (heatmap) heatmap.hidden = true;
+  }
   try {
-    const year = finYear;
-    // 汇总与全年流水并行拉取（月度详情需要逐笔流水做下钻）
-    const [sumR, flowR] = await Promise.all([
-      api(`/api/finance/summary?year=${encodeURIComponent(year)}`),
-      api(`/api/asset/flows?start=${year}-01-01&end=${year}-12-31`),
-    ]);
-    if (flowR.ok) { const df = await flowR.json(); finFlowsCache = df.flows || []; }
-    let d = null;
-    if (sumR.ok) d = await sumR.json();
-    if (d) {
-      finMonthsData = d.months || [];
-      renderFinKpis(d);
-      // 年份边界禁用 prev/next（后端仅接受 2000–2999）
-      const y = Number(finYear);
-      const prev = document.getElementById('finYearPrev');
-      const next = document.getElementById('finYearNext');
-      if (prev) prev.disabled = y <= 2000;
-      if (next) next.disabled = y >= 2999;
-      // 收支分析卡：默认选中当前月；当前月没有记录时自动落到该年「最近有数据的月份」。
-      // 方案 6：原先无条件选当前月 → 11 月初打开财务页首屏就是「当月暂无收支子项」，
-      // 而数据全在 10 月，等于一进来就是空页；往年（curIdx 找不到）也不该硬跳 12 月。
-      const curYm = year + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
-      const curIdx = finMonthsData.findIndex((m) => m.ym === curYm);
-      const monthHasData = (i) => {
-        const mm = finMonthsData[i];
-        return !!mm && Math.abs(Number(mm.income) || 0) + Math.abs(Number(mm.expense) || 0) > 0;
-      };
-      const withData = finMonthsData.map((_, i) => i).filter(monthHasData);
-      const hasCur = curIdx >= 0 && monthHasData(curIdx);
-      if (hasCur) {
-        finHmMonth = curIdx;
-        finMonthAutoFrom = 0;
-      } else if (withData.length) {
-        finHmMonth = Math.max(...withData);          // 最近有记录的那个月
-        finMonthAutoFrom = curIdx >= 0 ? curIdx + 1 : 0; // 0 = 该年没有「当前月」这一格
-      } else {
-        // 整年零记录：留在当前月（往年则落到 12 月），空状态只留一处
-        finHmMonth = curIdx >= 0 ? curIdx : 11;
-        finMonthAutoFrom = 0;
-      }
-      if (heatmap) { heatmap.hidden = false; renderFinHeatmap(); }
-      // 区块层错落上浮：KPI 卡片 → 热力图卡 → 分类明细卡依次入场。
-      // 放在数据就绪之后 —— 骨架占位期间先播的是骨架屏动画。
-      playRiseIn($('#financeView'), '.kpi-section, .fin-heatmap-card', 60);
-    } else if (kpiGrid) {
-      kpiGrid.innerHTML = '<div class="kpi-card kpi-card-err">加载失败</div>';
-    }
+    const d = await fetchFinanceData(year);
+    // 等待期间年度被切走（连点年份箭头）：旧结果直接丢弃
+    if (year !== finYear) return;
+    if (d) paintFinance({ keepMonth: hasCache });
+    else if (kpiGrid) kpiGrid.innerHTML = '<div class="kpi-card kpi-card-err">加载失败</div>';
   } catch (_) {
-    if (kpiGrid) kpiGrid.innerHTML = '<div class="kpi-card kpi-card-err">加载失败</div>';
+    if (year === finYear && kpiGrid) kpiGrid.innerHTML = '<div class="kpi-card kpi-card-err">加载失败</div>';
   }
 }
 
@@ -4668,13 +4762,53 @@ function flowToCny(f) {
   if (c === 'HKD') return v * (hkdRate || 1);
   return v;
 }
+// 方向敏感金额：正=进账、负=出账。不能只看 amount 的符号 —— 负债流水 amount 恒为正（repay 也是），
+// 而 rollback/冲正这类回退流水的 amount 是正数但语义是「抵消支出」。后端统一按 direction 判方向
+// （见 financeSummary 的 signed 归一），前端细项必须同一口径，否则回退行会被当成一笔正常支出，
+// 把分类内部的方块面积吹大（实测某月「其他支出」分类流水合计比净额多 19%）。
+function flowSignedCny(f) {
+  const v = flowToCny(f);
+  const d = f && f.direction;
+  if (d === 'out') return -v;
+  if (d === 'in') return v;
+  return (Number(f && f.amount) || 0) < 0 ? -v : v;
+}
+// 热力图只画「真实产生资金收支」的流水。以下类型是账面腾挪或冲销，不构成收入/支出，一律不进方块：
+//   rollback / cf_reverse / wealth_reverse —— 回退与冲正（原始交易仍按发生日计入，不重复画一次反向）
+//   transfer_in / transfer_out            —— 内部转账（钱只是换了个账户）
+//   adjust_buy / adjust_sell              —— 持仓买卖（买卖本金不是收支；卖出后的落袋收益另走 gain 分类）
+//   wealth_* / deposit_* / dca_*          —— 理财申赎、存款存取、定投扣款（同一笔钱换个形态，盈亏不落账）
+// 计入的：手动调整（真实余额变动）、工资、分红、利息、消费支出、负债偿还等。
+const HM_SKIP_TYPES = new Set([
+  'rollback', 'cf_reverse', 'wealth_reverse',
+  'transfer_in', 'transfer_out',
+  'adjust_buy', 'adjust_sell',
+  'wealth_deposit', 'wealth_redeem', 'wealth_clear',
+  'deposit_out', 'deposit_back',
+  'dca_buy',
+]);
+const HM_SKIP_CATS = new Set(['transfer', 'invest']);
+function hmFlowCounts(f) {
+  if (!f) return false;
+  if (HM_SKIP_TYPES.has(f.type)) return false;
+  if (HM_SKIP_CATS.has(flowCatOf(f))) return false;
+  return true;
+}
 
 // treemap 容器尺寸观察者：窗口缩放 / 布局变动后重画，避免几何过期把右侧、底部裁掉。
 // 内容全是绝对定位，不会反噬容器尺寸，无重入循环；元素是静态节点，全局只建一个。
 let _treemapRO = null;
+let _tmLastBox = '';   // 上次实际绘制的画布尺寸（WxH），用来吃掉 RO 自己的回声
 function ensureTreemapRO(wrap) {
   if (_treemapRO || !wrap || typeof ResizeObserver === 'undefined') return;
-  _treemapRO = new ResizeObserver(() => { renderCatTreemap(); });
+  // 每次绘制都会先改 --tmh（高度随当月数据量变），RO 会因此回调一次；此时尺寸与刚画完的
+  // 完全一致，重画纯属重复（整块 DOM 重建 → 观感上就是「刷新了一下」）。按尺寸去重。
+  _treemapRO = new ResizeObserver((entries) => {
+    const r = entries && entries[0] && entries[0].contentRect;
+    const key = r ? Math.round(r.width) + 'x' + Math.round(r.height) : '';
+    if (key && key === _tmLastBox) return;
+    renderCatTreemap();
+  });
   _treemapRO.observe(wrap);
 }
 
@@ -4682,9 +4816,10 @@ function ensureTreemapRO(wrap) {
 // 二级方块=该分类下逐笔流水细项（面积=细项金额，实色填充）。squarified treemap 两层嵌套。
 // 画布高度按当月数据量动态调整：分类/细项越多越高，空月回落，避免「数据少时空一屏、数据多时挤成一团」。
 function treemapHeight(nCats, nSubs, narrow) {
-  // 窄屏（竖排后方块独占一行）宽度只有 300～430，高度刻意压得比桌面低，避免方块被拉成细长条
-  const minH = narrow ? 200 : 300, maxH = narrow ? 360 : 540;
-  const perCat = narrow ? 80 : 108;                                    // 每类至少容纳表头 + 一行细项
+  // 窄屏（竖排后收入/支出上下堆叠）宽度只有 300～430，高度刻意压得比桌面低，避免方块被拉成细长条；
+  // 2026-11-17 上限 360 → 420：拆成两个阵营后要额外容纳 2 条阵营表头 + 间隙，360 时支出段只剩 ~130 高。
+  const minH = narrow ? 200 : 300, maxH = narrow ? 420 : 540;
+  const perCat = narrow ? 88 : 108;                                    // 每类至少容纳表头 + 一行细项
   const extra = Math.min(140, Math.max(0, nSubs - nCats) * 8);         // 细项比分类多时适度加高
   return Math.round(Math.max(minH, Math.min(maxH, nCats * perCat + extra)));
 }
@@ -4700,25 +4835,29 @@ function renderCatTreemap() {
   if (!m || !m.items || !m.items.length) {
     wrap.style.setProperty('--tmh', (narrow ? 180 : 220) + 'px');
     wrap.innerHTML = '<div class="hm-box empty">' + esc(finEmptyText()) + '</div>';
+    _tmLastBox = wrap.clientWidth + 'x' + wrap.clientHeight;   // 空态也算已画，免得 RO 回声再写一遍
     return;
   }
   const monthYm = m.ym;
   // 每个分类聚合当月逐笔流水（折 CNY）作为二级细项
   const cats = m.items.map((it) => {
     const flows = (finFlowsCache || []).filter((f) =>
-      (f.date || '').slice(0, 7) === monthYm && flowCatOf(f) === it.category);
-    const subs = flows.map((f) => ({
-      amt: flowToCny(f),
-      title: flowTitleOf(f, finCatLabel(it.category)),
-    })).filter((s) => s.amt > 0);
-    // signed：正=资金流入、负=流出。分类汇总金额可能是负的（如某月落袋收益净亏损、
-    // 退款大于支出的分类），方向和正负号必须按 signed 判，不能只看 type。
-    const signed = it.type === 'income' ? (it.amount || 0) : -(it.amount || 0);
-    return { amt: Math.abs(it.amount) || 0, signed, category: it.category, type: it.type, subs };
-  }).filter((c) => c.amt > 0);
+      (f.date || '').slice(0, 7) === monthYm && flowCatOf(f) === it.category && hmFlowCounts(f));
+    // 细项金额取「按本分类方向取舍」的定向金额：支出分类里只有真正出账的流水成块。
+    const subs = flows.map((f) => {
+      const s = flowSignedCny(f);
+      return { amt: it.type === 'income' ? s : -s, title: flowTitleOf(f, finCatLabel(it.category)) };
+    }).filter((s) => s.amt > 0);
+    // 阵营（收入/支出）只认 type，不认金额符号：某月「负债偿还」汇总为负（还款冲正多于还款）时，
+    // 按符号判会把它画成收入色 + 号，等于把支出记成收入。
+    return { amt: Math.abs(it.amount) || 0, raw: it.amount || 0, category: it.category, type: it.type, subs };
+  // 净额为负的分类不画：它必然由冲正/回退造成（真实收付不会被冲成负数），画出来只会是一个
+  // 既没有细项、颜色又和标题相反的怪条。阵营合计仍取 KPI 口径，缺的这块由阵营内归一化吸收。
+  }).filter((c) => c.amt > 0 && c.raw > 0);
   if (!cats.length) {
     wrap.style.setProperty('--tmh', (narrow ? 180 : 220) + 'px');
     wrap.innerHTML = '<div class="hm-box empty">' + esc(finEmptyText()) + '</div>';
+    _tmLastBox = wrap.clientWidth + 'x' + wrap.clientHeight;
     return;
   }
   // 高度随当月数据量动态调整（会触发 ResizeObserver 重画，值不变时不会循环）
@@ -4728,42 +4867,132 @@ function renderCatTreemap() {
     const W = wrap.clientWidth, H = wrap.clientHeight;
     // 尺寸未就绪（如视图刚切走/仍隐藏）：直接返回，ResizeObserver 会在容器有尺寸后重画
     if (W <= 0 || H <= 0) return;
-    const rects = squarifyTreemap(cats, 0, 0, W, H);
-    wrap.innerHTML = rects.map((r) => {
-      const c = r.i;
-      const isInc = c.signed >= 0;
-      const label = finCatLabel(c.category);
-      const amtStr = (isInc ? '+' : '−') + moneyLabelShort(c.amt, 'cny');
-      // 窄块（手机竖排后分类多）放不下「名称 + 金额」：先砍金额（进 title），再砍名称，避免文字互相挤压/溢出
-      const showCatAmt = r.w >= 92;
-      const showCatName = r.w >= 46;
-      return `<div class="hm-cat ${isInc ? 'inc' : 'exp'}${c.subs.length ? '' : ' no-subs'}" title="${esc(label + ' ' + amtStr)}" ` +
-        `style="--l:${r.x.toFixed(1)}px;--t:${r.y.toFixed(1)}px;--w:${r.w.toFixed(1)}px;--h:${r.h.toFixed(1)}px;">` +
-        `<div class="hm-cat-head">${showCatName ? `<span class="hm-cat-name">${esc(label)}</span>` : ''}` +
-        `${showCatAmt ? `<span class="hm-cat-amt">${esc(amtStr)}</span>` : ''}</div>` +
-        `<div class="hm-subs"></div></div>`;
-    }).join('');
+    _tmLastBox = W + 'x' + H;
+    // ── 一级：先分「收入 / 支出」两个阵营，阵营面积严格 ∝ 该阵营合计 ──
+    // 混排（所有分类一起 squarify）会把「收入 : 支出」的整体比例藏进一堆方块里，且分母被迫
+    // 退化成 Σ|分类金额|（负数分类会同时吹大两侧），与上方 KPI、柱图浮层的两个数对不上。
+    // 阵营合计用后端给的 income/expense（净额口径，与 KPI 同源），阵营内部再按 |分类金额| 铺。
+    const incCats = cats.filter((c) => c.type === 'income');
+    const expCats = cats.filter((c) => c.type === 'expense');
+    const sumAmt = (arr) => arr.reduce((a, c) => a + c.amt, 0);
+    let incTotal = Math.max(0, Number(m.income) || 0);
+    let expTotal = Math.max(0, Number(m.expense) || 0);
+    // 极端兜底：两侧净额都为 0（全被冲正抹平）时退回分类绝对值和，至少还能看出结构
+    if (incTotal + expTotal <= 0) { incTotal = sumAmt(incCats); expTotal = sumAmt(expCats); }
+    const zones = [];
+    if (incTotal > 0) zones.push({ key: 'inc', label: '收入', total: incTotal, cats: incCats });
+    if (expTotal > 0) zones.push({ key: 'exp', label: '支出', total: expTotal, cats: expCats });
+    const zSum = zones.reduce((a, z) => a + z.total, 0) || 1;
+    // 宽箱左右分（收入恒在左）、窄箱上下分（收入恒在上）：位置固定，切换月份不会左右对调。
+    // 判据是「小阵营切出来还剩多宽」而不是 W>=H —— 手机竖排后画布约 300–420 宽，按宽高比
+    // 判会切成左右两栏，支出栏只剩 ~150 宽且常常被横向滚动藏在屏幕外，等于看不见支出。
+    const minFrac = zones.length > 1 ? Math.min(...zones.map((z) => z.total / zSum)) : 1;
+    const sideBySide = W * minFrac >= 160 && H * minFrac >= 90;
+    const ZGAP = 6;         // 阵营间隙
+    const ZH = 18;          // 阵营表头高度，与 .hm-zone-head 的 CSS 固定 height 一致
+    const nz = zones.length;
+    const gapTotal = ZGAP * Math.max(0, nz - 1);
+    // 表头是固定开销，必须先从可分配尺寸里扣掉再按金额比例分，否则矮的那一段被表头吃掉更大占比，
+    // 又回到「面积不成比例」（上下堆叠时最明显：18px 对 285px 是 6%，对 185px 就成了 10%）。
+    const availW = Math.max(0, W - gapTotal);
+    const availH = Math.max(0, H - gapTotal - ZH * nz);
+    // 阵营长度同样走保底：收入:支出 = 99:1 的月份，支出那条只剩 3–5px，等于「支出消失了」。
+    // 不足下限的按下限给（左右分 90px 才放得下表头；上下分 56px = 表头 + 一条细带），余下按比例压缩；
+    // 被放大时表头 title 标出真实占比，不让读者把放大后的面积误读成占比。
+    const zLens = waterFill(zones.map((z) => z.total), sideBySide ? availW : availH,
+      sideBySide ? 90 : 56, 0.32);
+    const placed = [];      // 按 DOM 顺序记录「元素 ↔ 分类」，供二级细项回填
+    const out = [];
+    let pos = 0;
+    zones.forEach((z, zi) => {
+      const last = zi === nz - 1;
+      const frac = z.total / zSum;
+      const want = sideBySide ? availW * frac : availH * frac + ZH;
+      const got = sideBySide ? zLens[zi] : zLens[zi] + ZH;
+      let zx = 0, zy = 0, zw = W, zh = H;
+      if (nz > 1) {
+        if (sideBySide) {
+          zw = last ? W - pos : got;
+          zx = pos; pos += zw + ZGAP;
+        } else {
+          zh = last ? H - pos : got;
+          zy = pos; pos += zh + ZGAP;
+        }
+      }
+      zw = Math.max(0, zw); zh = Math.max(0, zh);
+      const zoneLifted = Math.abs(got - want) > 1.5;
+      const showHead = zw >= 84 && zh >= ZH + 24;   // 太窄/太矮的阵营不放表头，把高度全让给方块
+      const bodyH = Math.max(0, zh - (showHead ? ZH : 0));
+      // 分类层保底：最小短边 34px（桌面）/ 30px（窄屏）。低于这个尺寸的色块既看不出颜色，
+      // 也放不下一个字；分不到的小分类会落到同阵营底部的「小项带」里（见 layoutTreemap）。
+      const catAmtSum = z.cats.reduce((a, c) => a + c.amt, 0) || 1;
+      const rects = bodyH > 6 ? layoutTreemap(z.cats, zw, bodyH, narrow ? 30 : 34, 4) : [];
+      const isInc = z.key === 'inc';
+      const zoneNote = zoneLifted ? `（占比 ${(frac * 100).toFixed(1)}%，面积已放大以便阅读）` : '';
+      out.push(`<div class="hm-zone ${z.key}" title="${esc(z.label + ' ' + (isInc ? '+' : '−') + moneyLabelShort(z.total, 'cny') + zoneNote)}" ` +
+        `style="--l:${zx.toFixed(1)}px;--t:${zy.toFixed(1)}px;--w:${zw.toFixed(1)}px;--h:${zh.toFixed(1)}px;">` +
+        (showHead ? `<div class="hm-zone-head"><span>${z.label}</span><b>${(isInc ? '+' : '−') + moneyLabelShort(z.total, 'cny')}</b></div>` : '') +
+        `<div class="hm-zone-body">` +
+        rects.map((r) => {
+          const c = r.i;
+          placed.push(c);
+          const label = finCatLabel(c.category);
+          const amtStr = (isInc ? '+' : '−') + moneyLabelShort(c.amt, 'cny');
+          // 被搬进「小项带」的块：面积不再等比于金额，hover 时说明真实占比，避免误读
+          const liftedCat = !!r.band;
+          const catNote = liftedCat ? `（占比 ${(c.amt / catAmtSum * 100).toFixed(1)}%，已放大显示）` : '';
+          // 窄块（手机竖排后分类多）放不下「名称 + 金额」：先砍金额（进 title），再砍名称，避免文字互相挤压/溢出
+          const showCatAmt = r.w >= 92 && r.h >= 16;
+          const showCatName = r.w >= 38 && r.h >= 16;
+          // 高度不足 16px 的条文字必然被裁成半行，干脆只留色带，信息走 title
+          const head = r.h >= 16
+            ? `<div class="hm-cat-head">${showCatName ? `<span class="hm-cat-name">${esc(label)}</span>` : ''}` +
+              `${showCatAmt ? `<span class="hm-cat-amt">${esc(amtStr)}</span>` : ''}</div>`
+            : '';
+          return `<div class="hm-cat ${isInc ? 'inc' : 'exp'}${c.subs.length ? '' : ' no-subs'}" ` +
+            `title="${esc(label + ' ' + amtStr + catNote)}" ` +
+            `style="--l:${r.x.toFixed(1)}px;--t:${r.y.toFixed(1)}px;--w:${r.w.toFixed(1)}px;--h:${r.h.toFixed(1)}px;">` +
+            head + `<div class="hm-subs"></div></div>`;
+        }).join('') + `</div></div>`);
+    });
+    wrap.innerHTML = out.join('');
     // 二级：逐块测量 .hm-subs 实际尺寸后再切细项（表头高度由 flex 自然决定，不硬编码）
     wrap.querySelectorAll('.hm-cat').forEach((el, i) => {
-      const c = rects[i] && rects[i].i;
+      const c = placed[i];
       const box = el.querySelector('.hm-subs');
       if (!c || !box || !c.subs.length) return;
       const iw = box.clientWidth, ih = box.clientHeight;
       if (iw < 12 || ih < 12) return;
-      const isInc = c.signed >= 0;
+      const isInc = c.type === 'income';
       const GAP = 3;   // 细项方块间距（太小的方块不留，避免挤出负尺寸）
-      const sr = squarifyTreemap(c.subs, 0, 0, iw, ih);
-      // 透明度随面积（金额）映射：组内最大 → 最实，最小 → 最透；sqrt 压缩让小方块也有可辨色阶
-      const maxAmt = c.subs.reduce((a, s) => Math.max(a, s.amt), 0);
+      // 细项面积按 k 缩放到一级分类总额：两者口径本来就不等 —— 分类总额含无流水的进项
+      // （落袋收益金额、理财派息），又有回退流水在总额里被冲掉，所以 Σ|逐笔| ≠ 分类金额。
+      // 不缩放的话「分类面积=分类金额」这条契约在二级就断了：明细块之和会大于/小于外框。
+      // 缩放只作用于面积，块里显示的数字仍是逐笔真实金额（title 也一致）。
+      const subSum = c.subs.reduce((a, s) => a + s.amt, 0);
+      const k = subSum > 0 ? c.amt / subSum : 1;
+      const items = c.subs.map((s) => ({ amt: s.amt * k, real: s.amt, title: s.title }));
+      // 细项层同样的两段式：短边不足 22px 的细项落到分类块底部的小项带里。
+      const sr = layoutTreemap(items, iw, ih, narrow ? 19 : 22, 2);
+      // 透明度随面积（金额）映射：组内最大 → 最实，最小 → 最透；sqrt 压缩让小方块也有可辨色阶。
+      // 下限抬到 .45：原来是 .3，深色底上小方块会淡到和分类底色（.14 透明度）分不开，
+      // 视觉面积比实际面积小一截 —— 这正是「收支面积不成比例」的观感来源之一。
+      const maxAmt = items.reduce((a, s) => Math.max(a, s.amt), 0);
       box.innerHTML = sr.map((s) => {
         const g = (s.w > GAP + 6 && s.h > GAP + 6) ? GAP : 0;
         // 只显示金额，名称/描述过长一律收进 title 悬停，避免方块内文字堆积
-        // 阈值按「−¥2,352」这类最长串的实测宽度取，窄于此一律不画（手机窄屏方块普遍 40–60px）
-        const showAmt = s.w >= 50 && s.h >= 18;
-        const amtStr = (isInc ? '+' : '−') + moneyLabelShort(s.i.amt, 'cny');
-        const op = maxAmt > 0 ? 0.3 + 0.62 * Math.sqrt(s.i.amt / maxAmt) : 0.6;
+        // 阈值按「−¥2,352」这类最长串的实测宽度取；小项带的格子矮一档，单独放宽，
+        // 否则带子里所有块都落到阈值下、看起来像一排空占位。
+        const showAmt = s.w >= (s.band ? 44 : 58) && s.h >= (s.band ? 14 : 19) && Math.abs(s.i.real) >= 0.01;
+        // 不足 1 元的流水（余额同步产生的几分钱手动调整）四舍五入会显示成「¥0」，改用两位小数
+        const tinyAmt = Math.abs(s.i.real) < 1;
+        const amtStr = (isInc ? '+' : '−') + (tinyAmt
+          ? '¥' + Math.abs(s.i.real).toFixed(2)
+          : moneyLabelShort(s.i.real, 'cny'));
+        const lifted = !!s.band;
+        const op = maxAmt > 0 ? 0.45 + 0.5 * Math.sqrt(s.i.amt / maxAmt) : 0.6;
         const inner = showAmt ? `<span class="hm-box-amt">${esc(amtStr)}</span>` : '';
-        return `<div class="hm-sub ${isInc ? 'inc' : 'exp'}" title="${esc(s.i.title + ' ' + amtStr)}" ` +
+        return `<div class="hm-sub ${isInc ? 'inc' : 'exp'}" title="${esc(s.i.title + ' ' + amtStr + (lifted ? '（面积已放大）' : ''))}" ` +
           `style="--l:${(s.x + g / 2).toFixed(1)}px;--t:${(s.y + g / 2).toFixed(1)}px;--w:${Math.max(1, s.w - g).toFixed(1)}px;--h:${Math.max(1, s.h - g).toFixed(1)}px;--op:${op.toFixed(2)};">${inner}</div>`;
       }).join('');
     });
@@ -4784,12 +5013,126 @@ function selectHmMonth(idx) {
   renderCatTreemap();
 }
 
+// ── 面积保底：max-min 公平分配（water-filling）──
+// 面积严格 ∝ 金额时，占比 0.2% 的分类折算下来只有 30–60px²（≈7×8），深色底上等于没画。
+// 做法：先把「分不到 floor」的块抬到 floor，抬升消耗的面积从剩下的块按权重扣回来。
+// 性质：① Σ输出 恒等于 total（不会在最后一列留缝）；② 大块之间仍严格等比、顺序不变；
+// ③ floor 自带预算上限 maxShare，块数一多时自动收窄，避免所有块被抬成一样大（那就不是热力图了）。
+// 这是 treemap 库的通用处理方式：ECharts 的 visibleMin 是直接隐藏小节点、d3-hierarchy 的
+// treemap 不提供保底，所以这里自己算，不引第三方包。
+function waterFill(weights, total, floor, maxShare) {
+  const n = weights.length;
+  const out = new Array(n).fill(0);
+  if (!(total > 0) || !n) return out;
+  const ws = weights.map((v) => Math.max(0, Number(v) || 0));
+  const sum = ws.reduce((a, b) => a + b, 0);
+  if (!(sum > 0)) return ws.map(() => total / n);
+  // floor 预算：保底总面积不超过 total 的 maxShare（默认 40%）
+  const f = Math.min(Math.max(0, floor), total * (maxShare > 0 ? maxShare : 0.4) / n);
+  if (!(f > 0)) { ws.forEach((w, i) => { out[i] = total * w / sum; }); return out; }
+  const order = ws.map((w, i) => ({ i, w })).sort((a, b) => a.w - b.w);
+  let free = total, rest = sum, k = 0;
+  for (; k < n; k++) {
+    const share = rest > 0 ? free * order[k].w / rest : free;
+    if (share < f - 0.01) { out[order[k].i] = f; free -= f; rest -= order[k].w; } else break;
+  }
+  const tail = n - k;
+  if (tail > 0) {
+    for (let j = k; j < n; j++) out[order[j].i] = rest > 0 ? free * order[j].w / rest : free / tail;
+  }
+  // 浮点误差补到最大块，保证 Σ == total
+  let acc = 0;
+  for (let i = 0; i < n; i++) acc += out[i];
+  const diff = total - acc;
+  if (Math.abs(diff) > 1e-6) out[order[n - 1].i] += diff;
+  return out;
+}
+
+// ── 布局：面积 ∝ 金额 + 小项保底 ──
+// 只给面积设下限不够用：实测残条里的小块会得到 15×75 —— 面积达标，形状依然看不见
+// （squarify 对多个等面积小块的天然解就是这种薄片）。所以改成两段式：
+//   ① 按金额正常 squarify；
+//   ② 把短边 < S 的项挑出来，在底部拉一条固定高度的带子（行内等分、每块至少 S×S），
+//      主区域变矮后重排；重排又可能出现新的细条，所以整个「检测→搬移」循环收敛为止。
+// 带内是等分不是等比，所以带内每块 hover 会标出真实占比（r.band = true）。
+// 两处兜底：容器自己摊不开（细项多而块小）不搬；带子吃掉一半高度就不再搬。
+function layoutTreemap(items, w, h, S, gap) {
+  const out = [];
+  if (!items.length || w <= 2 || h <= 2) return out;
+  const amtSum = items.reduce((a, it) => a + Math.max(0, it.amt), 0);
+  if (!(amtSum > 0)) return out;
+  const all = items.map((it) => ({ it }));
+  const minSide = S * 0.95;
+  const cellMinW = Math.max(40, Math.round(S * 1.5));
+  // 极扁 / 极窄的区域（只够放一行或一列，比如收入是支出 100 倍的那个月，支出阵营被压到 56px 高）：
+  // squarify 会把末尾几个切成一两像素的竖条，直接按金额分宽度，并给宽度也设下限。
+  if (h <= S * 1.8 || w <= S * 1.8) {
+    const flat = h <= S * 1.8;
+    const lens = waterFill(items.map((it) => it.amt), flat ? w : h, S, 0.5);
+    const order = items.map((it, i) => ({ it, len: lens[i] })).sort((a, b) => b.len - a.len);
+    let c = 0;
+    order.forEach((o) => {
+      out.push(flat ? { i: o.it, x: c, y: 0, w: o.len, h } : { i: o.it, x: 0, y: c, w, h: o.len });
+      c += o.len;
+    });
+    return out;
+  }
+  const bandH = (n) => {
+    const cols = Math.max(1, Math.min(n, Math.floor(w / cellMinW)));
+    const rows = Math.ceil(n / cols);
+    let cellH = S;
+    const budget = h * 0.55;
+    if (rows * cellH > budget) cellH = Math.max(14, Math.floor(budget / rows));
+    return Math.min(h * 0.62, rows * cellH);
+  };
+  let pool = all.slice(), band = [];
+  for (let pass = 0; pass < 8 && pool.length; pass++) {
+    const bh = band.length ? bandH(band.length) : 0;
+    const hRegion = Math.max(0, h - bh - (band.length ? (gap || 0) : 0));
+    if (hRegion < 8) { band = []; break; }        // 带子把主区域吃光了，退回纯等比
+    const rects = squarifyTreemap(pool.map((p) => p.it), 0, 0, w, hRegion);
+    const bad = rects.filter((r) => Math.min(r.w, r.h) < minSide)
+      .sort((a, b) => a.w * a.h - b.w * b.h);
+    if (!bad.length) break;
+    if (band.length && bh >= h * 0.58) break;     // 带子已到上限，再搬只会把主区域压得更惨
+    // 可负担性：带子至少要给每块摊到 2.2×S²，否则硬搬不如等比（小容器里细项多时如此）
+    if (w * h < (band.length + bad.length) * S * S * 2.2) break;
+    // 至少留一块给 squarify，别把整个盒子都搬进带子
+    const moved = bad.slice(0, Math.min(bad.length, Math.max(1, pool.length - 1))).map((r) => r.i);
+    band = band.concat(moved);
+    pool = pool.filter((p) => !moved.includes(p.it));
+  }
+  if (!band.length || !pool.length) return squarifyTreemap(items, 0, 0, w, h);
+  band.sort((a, b) => (b.amt || 0) - (a.amt || 0));
+  const n = band.length;
+  const bh = bandH(n);
+  const cols = Math.max(1, Math.min(n, Math.floor(w / cellMinW)));
+  const rows = Math.ceil(n / cols);
+  const cellH = Math.max(1, bh / rows);
+  let k = 0;
+  const y0 = h - bh;
+  for (let r = 0; r < rows; r++) {
+    const cnt = Math.min(cols, n - k);
+    if (cnt <= 0) break;
+    const cw = w / cnt;      // 行内等分填满，末行不满也不会留空洞
+    for (let c = 0; c < cnt; c++, k++) {
+      out.push({ i: band[k], x: c * cw, y: y0 + r * cellH, w: cw, h: cellH, band: true });
+    }
+  }
+  const hRegion = Math.max(0, h - bh - (gap || 0));
+  if (pool.length && hRegion > 4) {
+    squarifyTreemap(pool.map((p) => p.it), 0, 0, w, hRegion).forEach((r) => out.push(r));
+  }
+  return out;
+}
+
 // squarified treemap：输入 [{amt,...}]，在 (x,y,w,h) 内按面积布局，返回 {i,x,y,w,h}
-function squarifyTreemap(items, x, y, w, h) {
-  const total = items.reduce((s, i) => s + i.amt, 0);
+// areas 可选：外部已算好的面积（含保底），传了就不再按 amt 等比换算。
+function squarifyTreemap(items, x, y, w, h, areas) {
+  const total = areas ? areas.reduce((s, a) => s + a, 0) : items.reduce((s, i) => s + i.amt, 0);
   const out = [];
   if (total <= 0 || w <= 0 || h <= 0) return out;
-  const scaled = items.map((i) => ({ i, area: (i.amt / total) * (w * h) })).sort((a, b) => b.area - a.area);
+  const scaled = items.map((i, idx) => ({ i, area: areas ? areas[idx] : (i.amt / total) * (w * h) })).sort((a, b) => b.area - a.area);
   let rx = x, ry = y, rw = w, rh = h, idx = 0;
   const worst = (row, len) => {
     const s = row.reduce((a, b) => a + b.area, 0);
@@ -5417,16 +5760,26 @@ const FIN_CATS = [
 ];
 // 用户自定义分类（settings flow_categories，P3）：与内置分类合并进选择器与统计
 let customFlowCats = [];
-async function loadCustomFlowCats() {
-  try {
-    const r = await api('/api/settings/flow_categories');
-    if (r.ok) {
-      const d = await r.json();
-      let ls = [];
-      try { ls = JSON.parse(d.payload || '[]'); } catch (_) { ls = []; }
-      customFlowCats = (Array.isArray(ls) ? ls : []).filter((c) => c && c.key);
-    }
-  } catch (_) { customFlowCats = []; }
+// 并发合并：启动停在 #/settings 时，showSettingsView（→loadFinCatSettings）与 load() 的
+// loadCustomFlowCats 会各拉一次同一个 URL。这里只留一个在飞，后来的等它。
+let flowCatsInflight = null;
+function loadCustomFlowCats() {
+  if (flowCatsInflight) return flowCatsInflight;
+  const p = (async () => {
+    try {
+      const r = await api('/api/settings/flow_categories');
+      if (r.ok) {
+        const d = await r.json();
+        let ls = [];
+        try { ls = JSON.parse(d.payload || '[]'); } catch (_) { ls = []; }
+        customFlowCats = (Array.isArray(ls) ? ls : []).filter((c) => c && c.key);
+      }
+    } catch (_) { customFlowCats = []; }
+  })();
+  flowCatsInflight = p;
+  const clear = () => { if (flowCatsInflight === p) flowCatsInflight = null; };
+  p.then(clear, clear);
+  return p;
 }
 function finCatDef(key) {
   const b = FIN_CATS.find((c) => c.key === key);
@@ -7506,9 +7859,10 @@ $('#addCalc').onclick = calcAdd;
 $('#addClear').onclick = () => {
   ['addOldPrice','addOldQty','addNewQty','addAmount','addFee','addNewPrice'].forEach(id => { $('#'+id).value = ''; });
   $('#addMode').value = 'qty';
-  $('#addSide').value = 'buy';
+  // 方向跟随当前 tab（买入/卖出/赎回），不再有独立胶囊可切回 buy
+  const activeTab = document.querySelector('#adjustModal .adj-tab.active')?.dataset.tab || 'buy';
+  $('#addSide').value = activeTab === 'buy' ? 'buy' : 'sell';
   renderAdjModePills();
-  renderAdjSidePills();
   syncAdjModeUI();
   syncAdjSideUI();
   $('#addResult').innerHTML = '';
@@ -7816,9 +8170,9 @@ async function loadAsset(opts) {
       + '<div class="skeleton-block sk-table"></div>';
   }
   try {
-    const r = await api('/api/asset/overview');
-    if (!r.ok) { toast(humanizeErr(r, null, '资产总览加载失败'), 'err'); return; }
-    assetData = await r.json();
+    // 走共享取数（loadOverviewJson）：首屏与 load() 的 fetchOverview 撞上时只发一个请求
+    try { await loadOverviewJson(); }
+    catch (err) { toast(humanizeErr(err && err.status ? { status: err.status } : null, err, '资产总览加载失败'), 'err'); return; }
     await loadSourcesCache();
     if (silent) return;
     renderAssetTab();
@@ -11927,22 +12281,38 @@ function updateAlertBadge(n) {
   b.hidden = v <= 0;
   b.textContent = v > 99 ? '99+' : String(v);
 }
+// 今日待办（/api/today/brief）：顶栏铃铛与数据总览共用同一份。并发时合并成一个请求
+// （启动停在 #/overview 时两处会同时要它，原来各发一次）。
+let briefInflight = null;
+function loadTodayBrief() {
+  if (briefInflight) return briefInflight;
+  const p = (async () => {
+    const r = await api('/api/today/brief');
+    if (!r.ok) { const err = new Error('待办加载失败'); err.status = r.status; throw err; }
+    return r.json();
+  })();
+  briefInflight = p;
+  const clear = () => { if (briefInflight === p) briefInflight = null; };
+  p.then(clear, clear);
+  return p;
+}
+
 async function loadAlerts() {
   if (alertBusy) return;
   alertBusy = true;
   try {
     // 两个来源并拉：止盈止损（落库事件）+ 今日待办（实时算出）。
     // 任一失败都不影响另一个：各自 catch 成 null，沿用旧数据。
-    const [ar, br] = await Promise.all([
+    const [ar, brief] = await Promise.all([
       api('/api/alerts?limit=50').catch(() => null),
-      api('/api/today/brief').catch(() => null),
+      loadTodayBrief().catch(() => null),
     ]);
     if (ar && ar.ok) {
       const d = await ar.json();
       alertCache = d.items || [];
       alertUnread = Number(d.unread) || 0;
     }
-    if (br && br.ok) bellBriefData = await br.json();
+    if (brief) bellBriefData = brief;
     updateAlertBadge(alertUnread + bellTodoCount());
     renderAlertList();
   } catch (_) { /* 未登录/离线：保留旧数据，不打断主流程 */ }
@@ -12515,6 +12885,18 @@ async function switchUser(id) {
     homeRecentFlowsGen++;         // 让切换前在途的流水请求失效，避免回落旧账本数据
     { const rf = $('#homeRecentFlows'); if (rf) rf.innerHTML = ''; }
     finFlowsCache = [];
+    // summary 与在途请求同样按账本隔离：否则 paintFinance 会拿上一账本的 finSummaryData 直接重画
+    finSummaryData = null;
+    finDataYear = '';
+    finFetch = null;
+    // 「并发合并」的在飞标记也要清：留着的话新账本会等上一账本的请求、直接复用它返回的数据
+    homeRecentFlowsPromise = null;
+    cashflowInflight = null;
+    cashAccountsInflight = null;
+    _ovInflight = null;
+    _calInflight = null;
+    flowCatsInflight = null;
+    briefInflight = null;
     bellBriefData = null;  // 铃铛里的待办数据按账本隔离
     cashflowPlans = [];
     cashflowDone = {};
@@ -12689,22 +13071,33 @@ let cashflowMonth = '';        // 当前展示的月份 YYYY-MM
 const cfNowYm = (function () { const d = new Date(); const m = String(d.getMonth() + 1).padStart(2, '0'); return d.getFullYear() + '-' + m; })();
 let cashflowLiabilities = [];  // 编辑弹框内「关联负债」下拉用
 
-async function loadCashflow() {
-  try {
-    await loadCashAccounts(); // 卡片需展示关联账户名，确保缓存就绪
-    const r = await api('/api/cashflow/plans');
-    if (!r.ok) return;
-    const d = await r.json();
-    cashflowPlans = d.plans || [];
-    cashflowMonth = d.month || '';
-    // 后端 map key 为字符串，这里归一成数字 key 便于匹配
-    const done = {};
-    const raw = d.done || {};
-    Object.keys(raw).forEach((k) => { done[Number(k)] = raw[k]; });
-    cashflowDone = done;
-  } catch (e) {
-    // 静默失败，不阻塞首页渲染
-  }
+// 在飞的「收支计划」取数：首页紧凑卡（load → loadCashflow）与资产页「收支」面板
+// （renderAssetCashflowPanel → loadCashflow）在首屏会同时触发，原来各拉一遍 plans + cash。
+// 并发时只留一个请求，后来的等它；不缓存结果，非重叠的调用照常真发请求。
+let cashflowInflight = null;
+function loadCashflow() {
+  if (cashflowInflight) return cashflowInflight;
+  const p = (async () => {
+    try {
+      await loadCashAccounts(); // 卡片需展示关联账户名，确保缓存就绪
+      const r = await api('/api/cashflow/plans');
+      if (!r.ok) return;
+      const d = await r.json();
+      cashflowPlans = d.plans || [];
+      cashflowMonth = d.month || '';
+      // 后端 map key 为字符串，这里归一成数字 key 便于匹配
+      const done = {};
+      const raw = d.done || {};
+      Object.keys(raw).forEach((k) => { done[Number(k)] = raw[k]; });
+      cashflowDone = done;
+    } catch (e) {
+      // 静默失败，不阻塞首页渲染
+    }
+  })();
+  cashflowInflight = p;
+  const clear = () => { if (cashflowInflight === p) cashflowInflight = null; };
+  p.then(clear, clear);
+  return p;
 }
 // 计划日排序用：返回 1..31 日的数字（收支计划面板按月卡展示，月度计划取 day_of_month）
 function cfSortDay(p) {
@@ -12839,15 +13232,6 @@ async function openCashflowModal(p) {
   if (!modal.dataset.dismissBound) {
     modal.addEventListener('click', (e) => { if (e.target === modal) closeCashflowDrawer(); });
     modal.dataset.dismissBound = '1';
-  }
-  const delBtn = document.getElementById('cfDeleteBtn');
-  if (delBtn) {
-    delBtn.hidden = !isEdit;
-    delBtn.onclick = () => {
-      if (!isEdit) return;
-      closeCashflowDrawer();
-      cfDeletePlans([p.id], `已删除「${p.title}」`);
-    };
   }
   modal.hidden = false;
 }
@@ -15369,7 +15753,9 @@ async function loadAuthDevices() {
     + '<div class="skeleton-line" style="--sk-w:55%"></div>'
     + '<div class="skeleton-line" style="--sk-w:62%"></div>';
   try {
-    const st = await fetchSession();
+    // 会话在 boot 时已经拿过：这里只在「还没登录态」时才补拉，避免进设备页多打一次 /api/session
+    // （设备列表本身仍走 /api/session/devices 取最新的）。
+    const st = (authState.authed || authState.mode) ? authState : await fetchSession();
     if (st) authState = st;
     if (!authState.authed) { wrap.innerHTML = '<div class="auth-hint">未登录</div>'; return; }
     const r = await api('/api/session/devices');
@@ -15742,20 +16128,25 @@ function closePIN(val) {
     const end = ymd(now);
     const start = ymd(new Date(now.getTime() - 90 * 864e5));
     const reqs = [
-      ['ov', '/api/asset/overview'],
       ['fin', '/api/finance/summary?year=' + end.slice(0, 4)],
-      ['brief', '/api/today/brief'],
       ['dep', '/api/asset/deposits'],
       ['plans', '/api/cashflow/plans?month=' + end.slice(0, 7)],
-      ['pnl', '/api/pnl/history'],
       ['flows', '/api/asset/flows?start=' + start + '&end=' + end],
       ['fx', '/api/fx'],
     ];
     const out = {};
-    await Promise.all(reqs.map(async (pair) => {
-      const k = pair[0], url = pair[1];
-      try { const r = await api(url); out[k] = r.ok ? await r.json() : null; } catch (_) { out[k] = null; }
-    }));
+    // 总览与盈亏历史走共享取数：启动时停在 #/overview，load() 的 fetchOverview / loadPrevPnlDay
+    // 已经在飞，这里再去发同一个 URL 就是纯重复（各 ×2 → ×1）。
+    // 仍要与其余请求并行 —— 改成顺序 await 会白白多等一个 RTT。
+    await Promise.all([
+      (async () => { try { out.ov = await loadOverviewJson(); } catch (_) { out.ov = null; } })(),
+      (async () => { try { out.pnl = { history: await ensureCalData() }; } catch (_) { out.pnl = null; } })(),
+      (async () => { try { out.brief = await loadTodayBrief(); } catch (_) { out.brief = null; } })(),
+      ...reqs.map(async (pair) => {
+        const k = pair[0], url = pair[1];
+        try { const r = await api(url); out[k] = r.ok ? await r.json() : null; } catch (_) { out[k] = null; }
+      }),
+    ]);
     return out;
   }
 

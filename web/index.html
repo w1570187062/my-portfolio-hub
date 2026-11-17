@@ -514,6 +514,7 @@
           <!-- 方案 6：该月无数据时会自动落到最近有记录的月份，这里说明「为什么不是你选的那个月」 -->
           <div class="hm-auto-hint" id="hmAutoHint" hidden></div>
           <div class="hm-treemap-scroll"><div class="hm-treemap" id="catTreemap"></div></div>
+          <div class="hm-scale-note">面积 ≈ 金额 · 占比过小的方块已放大到最小可见尺寸，悬停看真实占比</div>
         </div>
       </div>
       <!-- 2026-11-03 下线「收支分类明细」：上半部分的热力图已经把「分类 → 逐笔金额」
@@ -1153,10 +1154,6 @@
               <span class="f-pill-cap">计算方式</span>
               <div id="addModePills" class="f-pills"></div>
             </div>
-            <div class="f-pills-row" id="addSideRow">
-              <span class="f-pill-cap">买卖方向</span>
-              <div id="addSidePills" class="f-pills"></div>
-            </div>
           </div>
           <input type="hidden" id="addMode" value="qty">
           <input type="hidden" id="addSide" value="buy">
@@ -1247,7 +1244,6 @@
         </label>
         <div id="cfErr" class="err"></div>
         <div class="modal-actions" data-no-cancel="1">
-          <button class="btn danger-ghost cf-delete-btn" type="button" id="cfDeleteBtn" hidden>删除计划</button>
           <span class="cf-done-slot" id="cfDoneBtnSlot"></span>
           <button class="btn primary" type="submit">保存</button>
         </div>

@@ -3972,7 +3972,7 @@ body[data-density="compact"] .holdings-table .hn-meta { margin-top: 0; }
 #userDeleteModal { background: rgba(0, 0, 0, .68); }
 
 /* ===== 交互型胶囊统一规范 =====
-   全站可点击胶囊（资产类型多选 / 计算方式 / 买卖方向 / AI 总结三维 / tab / 筛选 chip）
+   全站可点击胶囊（资产类型多选 / 计算方式 / AI 总结三维 / tab / 筛选 chip）
    统一到同一套尺寸，避免各弹框各调一档：
      字号   var(--fs-md) 13px
      内边距 var(--sp-1) var(--sp-3) = 4px 12px（实测渲染高 ≈28px）
@@ -6386,7 +6386,9 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 
 
 /* ===== 财务页 · 年度收支热力图（2026-10-23 原型） ===== */
-/* 热力图局部色：收入=绿 / 支出=红（本页专用，与全局涨红跌绿区分）。复用主题感知的 --down/--up。 */
+/* 热力图局部色：沿用本页 KPI 卡口径 —— 收入 = --up、支出 = --down（本页专用，与全局涨红跌绿区分）。
+   注意 --up 在本主题下是红、--down 是绿，即本页「收入红 / 支出绿」；改色只改这一对变量，
+   KPI 卡（.kpi-income/.kpi-expense）与本卡必须同时改，否则图例和数字会打架。 */
 :root { --hm-inc: var(--up); --hm-exp: var(--down); }
 /* 收支分析卡：纵向堆叠（上=图表整体，下=分类明细）。
    必须显式写 column——全局 .card 是 flex row + align-items:center，不覆盖的话两个子块会并排互相挤压 */
@@ -6482,9 +6484,11 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   position: relative; width: 100%; height: var(--tmh, 400px);
   border-radius: var(--r-sm); overflow: hidden; background: var(--bg-soft);
 }
-/* 窄屏不牺牲热力图宽度：保留最小宽度，超出部分横向滚动而非压扁方块 */
+/* 窄屏不牺牲热力图宽度：保留最小宽度，超出部分横向滚动而非压扁方块。
+   2026-11-17：420 → 300。收支拆成上下两段后，窄屏每个阵营独占整幅宽度，分类块足够宽；
+   420（以及 340）会让 390px 机型稳定溢出 24–70px，分类右侧金额被裁掉还得横向滚才能看全。 */
 @media (max-width: 640px) {
-  .hm-treemap { min-width: 420px; }
+  .hm-treemap { min-width: 300px; }
 }
 .hm-box {
   position: absolute; left: var(--l, 0); top: var(--t, 0); width: var(--w, 0); height: var(--h, 0);
@@ -6500,7 +6504,26 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .hm-box-amt { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
 .hm-box.empty { position: static; width: 100%; height: 100%; background: transparent; color: var(--text-muted); text-shadow: none; text-align: center; }
 
+/* 口径说明：面积≈金额，但占比过小的方块按最小可见尺寸放大过 —— 不写清楚的话，
+   读者会拿放大后的方块反推占比，又回到「面积不成比例」的误读。 */
+.hm-scale-note { margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--text-muted); opacity: .78; line-height: 1.4; }
+
 /* ===== 二级热力图：外框=分类（面积=分类金额），内层方块=逐笔细项（面积=细项金额） ===== */
+/* 一级阵营容器（2026-11-17）：收入 / 支出各自一个纵向条带，条带宽度严格 ∝ 该阵营合计，
+   阵营内部再按分类金额铺 —— 混排时整体比例会被大小不一的方块吃掉，跟 KPI 上两个数对不上。
+   表头高度 18px 由 CSS 固定，JS 里 ZH=18 直接扣减，两边必须一致，否则方块会溢出或留缝。 */
+.hm-zone {
+  position: absolute; left: var(--l, 0); top: var(--t, 0); width: var(--w, 0); height: var(--h, 0);
+  display: flex; flex-direction: column; box-sizing: border-box;
+}
+.hm-zone-head {
+  flex: 0 0 auto; height: 18px; display: flex; align-items: center; justify-content: space-between;
+  gap: 4px; padding: 0 2px; font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap;
+}
+.hm-zone-head b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.hm-zone.inc .hm-zone-head b { color: var(--hm-inc); }
+.hm-zone.exp .hm-zone-head b { color: var(--hm-exp); }
+.hm-zone-body { position: relative; flex: 1; min-height: 0; }
 .hm-cat {
   position: absolute; left: var(--l, 0); top: var(--t, 0); width: var(--w, 0); height: var(--h, 0);
   border-radius: 4px; box-sizing: border-box; padding: 3px;
@@ -7175,7 +7198,6 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   border-radius: 0; box-shadow: var(--sh-3);
 }
 .cf-drawer-card h2 { padding-right: var(--sp-8); }
-.cf-delete-btn { margin-right: auto; }
 
 @media (max-width: 640px) {
   .cf-head { align-items: center; }
