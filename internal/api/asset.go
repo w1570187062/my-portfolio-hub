@@ -74,7 +74,8 @@ func currentRateOf(currency string, cnyRate, hkdRate float64) float64 {
 }
 
 // fxSubaccount 是「账户 + 币种」维度的子账户汇总。
-// 三部分口径：可调用现金 / 已买入本金（权益成本 + 理财本金）/ 合计。
+// 口径：可调用现金 / 已买入本金（权益成本 + 理财本金）/ 定期存款（存期中，2026-11-17 起计入）/ 合计。
+// 合计 = 可调用 + 已买入本金 + 定期存款，四项相加可逐行验算。
 type fxSubaccount struct {
 	SourceID       int64   `json:"source_id"`
 	SourceName     string  `json:"source_name"`
@@ -83,6 +84,7 @@ type fxSubaccount struct {
 	InvestedEquity float64 `json:"invested_equity"`
 	InvestedWealth float64 `json:"invested_wealth"`
 	Invested       float64 `json:"invested"`
+	Deposits       float64 `json:"deposits"` // 存期中定期存款（原生币种），归属扣款时关联的子账户
 	Total          float64 `json:"total"`
 	TotalCNY       float64 `json:"total_cny"`
 	ShareOfSource  float64 `json:"share_of_source"`
@@ -146,9 +148,11 @@ func assetOverview(c *gin.Context) {
 
 	// 子账户聚合：key = source_id|currency。持仓/理财只挂 source_id，不挂具体现金子账户，
 	// 所以「已买入本金」只能按账户 + 币种归集（2026-11-05 方案，见 specs/asset-fx-lots/spec.md）。
+	// deposits：定期存款（存期中）归属到扣款时关联的子账户 —— 钱已从子账户扣走停在 deposits 表，
+	// 不加回的话净资产会凭空少一块；不计入 available（存款不可调用），单独成列让合计可验算。
 	type fxAgg struct {
-		avail, cost, principal float64
-		cashCount              int
+		avail, cost, principal, deposits float64
+		cashCount                        int
 	}
 	fxGroups := map[string]*fxAgg{}
 	grp := func(sid int64, cur string) *fxAgg {
@@ -316,6 +320,57 @@ func assetOverview(c *gin.Context) {
 		})
 	}
 
+	// 3.6) 定期存款（存期中）计入现金口径：新增存款时钱已从子账户扣走（deposit_out 流水）、
+	// 本体停在 deposits 表，此前 netAsset 在存期中会凭空少一块。归属到扣款时关联的活期子账户
+	// （来源/币种沿用该子账户，子账户已删则回落存款自带的 source_id），但不改 cash_accounts
+	// 余额本身 —— 扣款流水仍在，改余额会与流水对不上账；再平衡仍只看 cash_accounts，
+	// 存款天然不参与四类配置比例。settled 已落袋的本金+利息已入账，不重复计。
+	if deps, e := db.ListDeposits(uid); e == nil && len(deps) > 0 {
+		cashByID := map[int64]db.Cash{}
+		for _, cc := range cashs {
+			cashByID[cc.ID] = cc
+		}
+		type depAgg struct {
+			amt float64
+			n   int
+		}
+		depByCash := map[int64]*depAgg{}
+		for _, dep := range deps {
+			if dep.Status != "active" || dep.Amount == 0 {
+				continue
+			}
+			base := cashByID[dep.CashAccountID]
+			sid := base.SourceID
+			if sid == 0 {
+				sid = dep.SourceID
+			}
+			cur := curKey(dep.Currency)
+			if cur == "" {
+				cur = curKey(base.Currency)
+			}
+			v := fxToCNY(dep.Amount, dep.Currency, cnyRate, hkdRate)
+			cTotalCNY += v
+			curAssets[cur] += v
+			regAssets[regionOf(sid)] += v
+			srcAssets[sid] += v
+			grp(sid, cur).deposits += dep.Amount // 原生币种累计，与 avail 同口径
+			d := depByCash[dep.CashAccountID]
+			if d == nil {
+				d = &depAgg{}
+				depByCash[dep.CashAccountID] = d
+			}
+			d.amt += dep.Amount
+			d.n++
+		}
+		// 现金 tab / 账户抽屉的子账户行挂上存款归属（原生币种金额 + 笔数），前端据此打徽标
+		for _, it := range cItems {
+			if d, ok := depByCash[it["id"].(int64)]; ok {
+				it["deposits_amt"] = round2(d.amt)
+				it["deposits_n"] = d.n
+			}
+		}
+	}
+
 	// 4) 负债（按来源地域归集，供前端拆分各地域净资产）
 	libs, _ := db.ListLiabilities(uid)
 	var lTotal float64
@@ -360,7 +415,7 @@ func assetOverview(c *gin.Context) {
 		parts := strings.SplitN(k, "|", 2)
 		sid, _ := strconv.ParseInt(parts[0], 10, 64)
 		cur := parts[1]
-		total := agg.avail + agg.cost + agg.principal
+		total := agg.avail + agg.cost + agg.principal + agg.deposits
 		totalCNY := round2(fxToCNY(total, cur, cnyRate, hkdRate))
 		srcTotalCNY[sid] += totalCNY
 	}
@@ -375,7 +430,7 @@ func assetOverview(c *gin.Context) {
 			allocated += l.Amount
 			costCNY += l.Amount * l.Rate
 		}
-		total := agg.avail + agg.cost + agg.principal
+		total := agg.avail + agg.cost + agg.principal + agg.deposits
 		totalCNY := round2(fxToCNY(total, cur, cnyRate, hkdRate))
 		var share float64
 		if st := srcTotalCNY[sid]; st > 0.005 {
@@ -400,6 +455,7 @@ func assetOverview(c *gin.Context) {
 			SourceID: sid, SourceName: srcName[sid], Currency: cur,
 			Available: round2(agg.avail), InvestedEquity: round2(agg.cost),
 			InvestedWealth: round2(agg.principal), Invested: round2(inv),
+			Deposits: round2(agg.deposits),
 			Total: round2(total), TotalCNY: totalCNY, ShareOfSource: share,
 			CashCount: agg.cashCount, LotsCount: len(lots),
 			Allocated: round2(allocated), Unallocated: round2(total - allocated),

@@ -8789,16 +8789,18 @@ function renderAssetCashPanel(body) {
   if (!body) return;
   const items = (assetData?.cash?.items || []).map((it) => {
     const cur = String(it.currency || 'cny').toLowerCase();
-    return { ...it, cur, cny: cnyOf(Number(it.amount || 0), cur) };
+    const depAmt = Number(it.deposits_amt || 0); // 归属本子账户的存期中定期存款（原生币种）
+    const cny = cnyOf(Number(it.amount || 0), cur);
+    return { ...it, cur, depAmt, cny, depCny: cnyOf(depAmt, cur), rowCny: cny + cnyOf(depAmt, cur) };
   });
   if (!items.length) {
     body.innerHTML = '<p class="u-muted">还没有现金账户。到「账户」tab 给银行 / 券商添加子账户后，这里会按机构列出余额分布。</p>';
     return;
   }
-  const total = Number(assetData?.cash?.total || 0) || items.reduce((a, x) => a + x.cny, 0);
-  const live = items.filter((x) => Math.abs(x.cny) > 0.005).sort((a, b) => Math.abs(b.cny) - Math.abs(a.cny));
-  const zero = items.filter((x) => Math.abs(x.cny) <= 0.005);
-  const maxCny = Math.max(1, ...live.map((x) => Math.abs(x.cny)));
+  const total = Number(assetData?.cash?.total || 0) || items.reduce((a, x) => a + x.rowCny, 0);
+  const live = items.filter((x) => Math.abs(x.rowCny) > 0.005).sort((a, b) => Math.abs(b.rowCny) - Math.abs(a.rowCny));
+  const zero = items.filter((x) => Math.abs(x.rowCny) <= 0.005);
+  const maxCny = Math.max(1, ...live.map((x) => Math.abs(x.rowCny)));
   if (assetSub === 'cash') renderAssetKpis('cash');
 
   // 顶部 KPI 卡行已下线，表格内不再重复一遍合计条。
@@ -8808,14 +8810,22 @@ function renderAssetCashPanel(body) {
   const genericName = (n) => !n || n === '余额' || /账户$/.test(n);
   const rowOf = (x) => {
     const isFx = x.cur !== 'cny' && x.cur !== 'rmb';
-    const pct = total > 0 ? Math.abs(x.cny) / total * 100 : 0;
-    const w = Math.min(100, Math.abs(x.cny) / maxCny * 100).toFixed(1);
+    // 定期存款（存期中）归属到扣款时关联的子账户：余额格只显示 cash_accounts.amount（不动，
+    // 与流水对账一致），存款金额以徽标挂在账户列；折 CNY / 占现金按「余额 + 存款」算，
+    // 这样各行占比加总仍为 100%（现金总额口径已含存款）。
+    const depAmt = x.depAmt;
+    const rowCny = x.rowCny;
+    const pct = total > 0 ? rowCny / total * 100 : 0;
+    const w = Math.min(100, rowCny / maxCny * 100).toFixed(1);
     const sub = (!genericName(x.name) && x.name !== x.source_name) ? '<span class="cash-sub">· ' + esc(x.name) + '</span>' : '';
-    return '<tr' + (Math.abs(x.cny) <= 0.005 ? ' class="is-zero"' : '') + '>' +
-      '<td><div class="cash-acct">' + accountLogo(x.source_name || '') + '<span class="cash-src">' + esc(x.source_name || '未分类') + '</span>' + sub + '</div></td>' +
+    const depTag = depAmt > 0.005
+      ? '<span class="cash-dep" title="存期中定期存款 ' + (x.deposits_n || '') + ' 笔，归属本子账户；到期落袋后回到余额">定期存款 ' + moneyCur(depAmt, x.cur) + (Number(x.deposits_n) > 1 ? ' ×' + x.deposits_n : '') + '</span>'
+      : '';
+    return '<tr' + (rowCny <= 0.005 ? ' class="is-zero"' : '') + '>' +
+      '<td><div class="cash-acct">' + accountLogo(x.source_name || '') + '<span class="cash-src">' + esc(x.source_name || '未分类') + '</span>' + sub + depTag + '</div></td>' +
       '<td><span class="cash-cur">' + x.cur.toUpperCase() + '</span></td>' +
       '<td class="num">' + moneyCur(x.amount || 0, x.cur) + '</td>' +
-      '<td class="num">' + (isFx ? money(x.cny) : '<span class="u-muted">—</span>') + '</td>' +
+      '<td class="num">' + (isFx || depAmt > 0.005 ? money(rowCny) : '<span class="u-muted">—</span>') + '</td>' +
       '<td class="num"><div class="cash-share"><span class="cash-share-bar"><i style="--w:' + w + '%"></i></span>' +
         '<span class="cash-pct">' + pct.toFixed(1) + '%</span></div></td>' +
       '</tr>';
@@ -9783,8 +9793,12 @@ function cashSubTrHtml(sourceId, open) {
     const cur = String(sa.currency || 'cny').toLowerCase();
     const gOpen = open && fxOpenGroups.has(sourceId + '|' + cur);
     const share = Number(sa.share_of_source || 0);
-    const threeTip = '合计 = 可调用 + 已买入本金（权益成本 + 理财本金）；本组合计 ¥' + fmt(Number(sa.total_cny || 0))
-      + '，可调用 ¥' + fmt(Number(sa.available || 0)) + ' + 已买入 ¥' + fmt(Number(sa.invested || 0)) + '（原币）';
+    const depAmt = Number(sa.deposits || 0); // 存期中定期存款，归属到本「账户+币种」组
+    const threeTip = '合计 = 可调用 + 已买入本金（权益成本 + 理财本金）'
+      + (depAmt > 0.005 ? ' + 定期存款（存期中）' : '')
+      + '；本组合计 ¥' + fmt(Number(sa.total_cny || 0))
+      + '，可调用 ¥' + fmt(Number(sa.available || 0)) + ' + 已买入 ¥' + fmt(Number(sa.invested || 0))
+      + (depAmt > 0.005 ? ' + 定期存款 ¥' + fmt(depAmt) : '') + '（原币）';
     html += '<tr class="srow fxgrp' + (gOpen ? ' open' : '') + '" data-sub="' + sourceId + '" data-grp="1" data-cur="' + cur + '"' + h + '>' +
       '<td><div class="fxg"><span class="chev">' + SC_CHEV + '</span>' +
         '<span class="sn">' + (CUR_ZH[cur] || cur.toUpperCase()) + '</span>' +
@@ -9794,6 +9808,7 @@ function cashSubTrHtml(sourceId, open) {
       '<td class="num" title="' + esc(threeTip) + '"><div class="fxthree">' +
         '<span class="fxline"><em>可调用</em><b>' + moneyCurW(Number(sa.available || 0), cur) + '</b></span>' +
         '<span class="fxline"><em>已买入</em><b>' + moneyCurW(Number(sa.invested || 0), cur) + '</b></span>' +
+        (depAmt > 0.005 ? '<span class="fxline"><em>定期</em><b>' + moneyCurW(depAmt, cur) + '</b></span>' : '') +
         '<span class="fxline total"><em>合计</em><b>' + yuanOfW(Number(sa.total_cny || 0)) + '</b></span>' +
       '</div></td>' +
       '<td class="share" style="--p:' + Math.max(0, share).toFixed(1) + '%;--pn:' + (Math.min(100, Math.max(0, share)) / 100).toFixed(4) + '">' + share.toFixed(1) + '%</td>' +
@@ -9810,7 +9825,8 @@ function cashSubTrHtml(sourceId, open) {
       const cHide = gOpen ? '' : ' hidden';
       html += '<tr class="srow cashrow" data-sub="' + sourceId + '" data-cur="' + cur + '"' + cHide + '>' +
         '<td><span class="sn' + (gOpen ? ' sn-indent' : '') + '" title="' + esc(nm) + '">' + esc(nm) + '</span>' +
-          (c.excluded ? '<span class="sn-excl" title="日常开销账户：不计入再平衡（既不算现金类也不算总市值）">日常</span>' : '') + '</td>' +
+          (c.excluded ? '<span class="sn-excl" title="日常开销账户：不计入再平衡（既不算现金类也不算总市值）">日常</span>' : '') +
+          (Number(c.deposits_amt || 0) > 0.005 ? '<span class="sn-excl sn-dep" title="存期中定期存款 ' + fmt(Number(c.deposits_amt)) + '（原生币种）×' + (c.deposits_n || 1) + '，归属本子账户；不计入可调用余额">定期 ' + (c.deposits_n || 1) + ' 笔</span>' : '') + '</td>' +
         '<td class="ty"></td>' +
         '<td class="cur">' + cur.toUpperCase() + '</td>' +
         '<td class="num"' + wanTitle(Number(c.amount) || 0, curSymbolJS(cur)) + '>' + moneyCurW(Number(c.amount) || 0, cur) + '</td>' +

@@ -2826,6 +2826,8 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
      chip 形态 + 底纹已足以把它降级为辅助信息，不必再压暗。 */
   color: var(--text-muted); background: var(--bg-soft); white-space: nowrap;
 }
+/* 定期存款归属徽标（账户抽屉子账户行）：与「日常」同形态，主色底区分语义 */
+.atbl .sn-excl.sn-dep { color: var(--primary); background: var(--primary-soft); }
 .atbl tr.srow td.num { font-size: var(--fs-sm); font-weight: 500; color: var(--text-muted); }
 .atbl tr.srow td.num.neg { color: rgb(var(--down-rgb)); }
 .atbl .sub-empty { padding: 8px 12px 8px 32px; font-size: var(--fs-sm); color: var(--text-faint); }
@@ -3627,6 +3629,9 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .cash-tbl .cash-acct { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
 .cash-tbl .cash-src { font-weight: 600; color: var(--text); white-space: nowrap; }
 .cash-tbl .cash-sub { font-size: var(--fs-sm); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 定期存款归属徽标（现金 tab）：存款不计入余额格，单独挂标签让「钱在哪儿」可对上 */
+.cash-tbl .cash-dep { display: inline-block; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: 3px;
+  font-size: var(--fs-2xs); font-weight: 600; color: var(--primary); background: var(--primary-soft); white-space: nowrap; }
 .cash-tbl .cash-cur { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: .5px; color: var(--text-muted); }
 .cash-tbl .cash-share { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
 .cash-share-bar {
