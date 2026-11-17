@@ -31,6 +31,11 @@
 - 提交前先看 `git status` 与 `git diff --stat`，确认暂存内容与本次任务一致。
 - 不执行 `git reset --hard`、`git checkout -- <path>`、`git clean -f` 等破坏性操作，除非用户明确要求。
 
+## 验证与测试
+
+- 用户明说「改完就行 / 不用测试验证」时，改完即止，不自行跑 Playwright / 截图 / 自检脚本。
+- 不确定是否需要验证时，先向用户确认，不要默认开测。
+
 ## 推送
 
 - gitea 可正常推送：`git push gitea main`。
