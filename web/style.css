@@ -7474,6 +7474,7 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .rb-detail-h span { margin-left: auto; font-size: var(--fs-2xs); color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rb-d-row { display: flex; align-items: baseline; gap: var(--sp-2); padding: 3px 0; font-size: var(--fs-xs); min-width: 0; }
 .rb-d-name { color: var(--text-secondary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-d-acct { font-style: normal; color: var(--text-faint); } /* 「机构 / 名称」前缀的机构段 */
 .rb-d-amt { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
 .rb-d-pct { color: var(--text-faint); font-variant-numeric: tabular-nums; flex: 0 0 44px; text-align: right; }
 .rb-d-more .rb-d-name, .rb-d-more .rb-d-amt { color: var(--text-faint); }

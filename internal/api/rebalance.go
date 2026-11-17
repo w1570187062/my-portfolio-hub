@@ -220,9 +220,12 @@ func loadRebalanceConfig(uid int64) rbConfig {
 // rbItem 类内单项明细（折 CNY），供「目标 vs 实际」进度条点击展开「资金去向」：
 // 用户关心的不是百分比，而是「这笔钱具体在哪些标的 / 账户里、各多少金额」。
 // 与该类 MarketValue 同口径：理财取最新快照、现金剔除日常开销账户（excluded=1）。
+// Account 是所属来源账户（机构）名：cash 的 Name 只是子账户名（如「余额」），
+// 不带前缀就分不清是哪家银行的；股票/基金/理财同理按 source_id 归属。
 type rbItem struct {
-	Name   string  `json:"name"`
-	Amount float64 `json:"amount"` // 折 CNY，元
+	Account string  `json:"account,omitempty"` // 所属来源账户名（展示用）
+	Name    string  `json:"name"`
+	Amount  float64 `json:"amount"` // 折 CNY，元
 }
 
 // rbBucket 是再平衡四类聚合行。
@@ -282,6 +285,14 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 	items := map[string][]rbItem{} // 类内单项明细：与 mv 完全同口径，只多留名字
 	var snapExclN int
 	var snapExclAmt float64
+	// 所属来源账户名：现金子账户的 Name 只是「余额 / 灵活宝」这类占位名，
+	// 明细行必须带「机构 / 名称」前缀才定位得到钱在哪儿
+	srcName := map[int64]string{}
+	if srcs, e := db.ListSources(uid); e == nil {
+		for _, s := range srcs {
+			srcName[s.ID] = s.Name
+		}
+	}
 
 	// 1) 股票 / 基金：按 holdings.category 分流（closed=0 才算在持）
 	hs, _ := db.List(uid)
@@ -300,7 +311,7 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 		}
 		mv[key] += cmv
 		cnt[key]++
-		items[key] = append(items[key], rbItem{Name: h.Name, Amount: round2(cmv)})
+		items[key] = append(items[key], rbItem{Account: srcName[h.SourceID], Name: h.Name, Amount: round2(cmv)})
 	}
 
 	// 2) 理财：最新快照金额（archived 已清仓归档，不再计入）
@@ -316,7 +327,7 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 			ramt := fxToCNY(amt, w.Currency, cnyRate, hkdRate)
 			mv[rbClassWealth] += ramt
 			cnt[rbClassWealth]++
-			items[rbClassWealth] = append(items[rbClassWealth], rbItem{Name: w.Name, Amount: round2(ramt)})
+			items[rbClassWealth] = append(items[rbClassWealth], rbItem{Account: srcName[w.SourceID], Name: w.Name, Amount: round2(ramt)})
 		}
 	}
 
@@ -336,7 +347,7 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 			}
 			mv[rbClassCash] += amt
 			cnt[rbClassCash]++
-			items[rbClassCash] = append(items[rbClassCash], rbItem{Name: cc.Name, Amount: round2(amt)})
+			items[rbClassCash] = append(items[rbClassCash], rbItem{Account: srcName[cc.SourceID], Name: cc.Name, Amount: round2(amt)})
 		}
 	}
 

@@ -16829,8 +16829,12 @@ function closePIN(val) {
     const its = A(b.items);
     if (!its.length) return '';
     const tot = N(b.market_value);
+    // 「机构 / 名称」前缀：cash 的 name 只是「余额」这类子账户占位名，股票/基金/理财
+    // 也只有标的名 —— 不带所属账户定位不到钱在哪儿。无 account（来源未归集）时只显示名称。
+    const nameOf = (it) => (it.account ? '<i class="rb-d-acct">' + S(it.account) + '</i> / ' : '') + S(it.name);
     const rows = its.slice(0, RB_ITEM_MAX).map((it) =>
-      '<div class="rb-d-row"><span class="rb-d-name">' + S(it.name) + '</span>'
+      '<div class="rb-d-row"><span class="rb-d-name" title="' + S((it.account ? it.account + ' / ' : '') + it.name) + '">'
+      + nameOf(it) + '</span>'
       + '<span class="rb-d-amt">' + Y(it.amount) + '</span>'
       + '<span class="rb-d-pct">' + (tot ? (N(it.amount) / tot * 100).toFixed(1) + '%' : DASH) + '</span></div>'
     ).join('');
