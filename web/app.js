@@ -13608,10 +13608,10 @@ function renderDeposits(box) {
       : (d.expected_interest_manual ? '按银行对账单手填的预计利息' : '按 本金 × 年利率 × 天数 / 365 自动估算');
     const acct = [d.account_name, d.source_name].filter(Boolean).join(' · ') || '—';
     const ops = settled
-      ? `<button class="row-act" disabled title="已落袋的存款本金+利息流水已入账，删除会破坏账目，故不可删" aria-label="已落袋不可删除">${actIcon('trash')}</button>`
+      ? `<button class="row-act" disabled title="已落袋的存款本金+利息流水已入账，删除会破坏账目，故不可删" aria-label="已落袋不可删除">${actIcon('del')}</button>`
       : `<button class="row-act" data-dep-settle="${d.id}" title="确认落袋（本金+利息入账）" aria-label="确认落袋">${actIcon('check')}</button>
          <button class="row-act" data-dep-edit="${d.id}" title="编辑" aria-label="编辑">${actIcon('edit')}</button>
-         <button class="row-act danger" data-dep-del="${d.id}" title="删除（提前支取，本金退回账户）" aria-label="删除">${actIcon('trash')}</button>`;
+         <button class="row-act danger" data-dep-del="${d.id}" title="删除（提前支取，本金退回账户）" aria-label="删除">${actIcon('del')}</button>`;
     return `<tr>
       <td><div class="dep-acct">${accountLogo(d.source_name || d.account_name || '')}<span>${esc(acct)}</span></div></td>
       <td><div class="hold-name">${esc(d.name || '')}</div>${d.note ? `<div class="hold-code">${esc(d.note)}</div>` : ''}</td>
@@ -13624,7 +13624,7 @@ function renderDeposits(box) {
       <td class="row-act-cell">${ops}</td>
     </tr>`;
   }).join('');
-  box.innerHTML = head + `<div class="card asset-flow-card"><table class="asset-table dep-table"><thead><tr>
+  box.innerHTML = head + `<div class="card asset-flow-card dep-card"><table class="asset-table dep-table"><thead><tr>
     <th>账户</th><th>名称</th><th class="num">金额</th><th class="num">起息日</th><th class="num">到期时间</th><th class="num">利率</th><th class="num">预计利息</th><th>状态</th><th class="num">操作</th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
   const add = box.querySelector('#depAddBtn');

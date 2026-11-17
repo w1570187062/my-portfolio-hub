@@ -6685,15 +6685,21 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .flow-tag.cat { margin-left: var(--sp-1); }
 .flow-tag.cat.neu { background: var(--bg-soft); color: var(--text-muted); }
 
-/* 存款表：数值列不换行；到期未落袋提示 */
+/* 存款表：数值列不换行；账户/名称列允许收缩（自动布局下让出宽度），保证 9 列在窄容器
+   也不会把最右的操作列挤出 .asset-flow-card 的 overflow:hidden —— 2026-11-17 修
+   「删除按钮恒看不见」：根因不是 opacity（那批常显修复治标不治本），是全列 nowrap
+   把表格自然宽度撑过容器、末列被整体裁掉。 */
 .dep-table th, .dep-table td { white-space: nowrap; }
-/* 操作列贴表格最右；存款只有几笔，按钮常显，不跟持仓表走「悬停淡入」——
-   窄屏横向滚动时行 hover 会被滚动打断，最右的删除按钮会一直停在 opacity:0 看不见。
-   同时把最后一枚按钮的右外边距清零，避免被 .asset-flow-card 的 overflow:hidden 裁掉。 */
+.dep-table :is(th, td):nth-child(1), .dep-table :is(th, td):nth-child(2) { white-space: normal; }
+.dep-table td:nth-child(1), .dep-table td:nth-child(2) { overflow: hidden; }
+.dep-table .dep-acct > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dep-table .hold-name, .dep-table .hold-code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 操作列回归全站统一的「行悬停淡入」（触屏由 @media (hover:none) 常显）；
+   兜底：极端窄容器表格自身横向滚动（.dep-card），不再被静默裁掉。 */
 .dep-table :is(th, td):last-child { text-align: right; }
 .dep-table td:last-child { padding-right: var(--sp-3); }
-.dep-table td:last-child .row-act { opacity: 1; }
 .dep-table td:last-child .row-act:last-child { margin-right: 0; }
+.dep-card { overflow-x: auto; }
 /* 存款空态统一走 .empty-state */
 .dep-due { color: var(--down); font-size: var(--fs-xs); }
 .dep-settle-desc { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.7; margin: 0 0 var(--sp-3); }
