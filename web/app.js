@@ -6228,9 +6228,13 @@ function openCalDay(date) {
       + '<td><span class="cal-kb' + (kind === 'wealth' ? ' is-wealth' : '') + '">' + (kind === 'wealth' ? '理财' : '持仓') + '</span>' + name + '</td>'
       + '<td class="num ' + clsPnlFlat(cny) + '">' + fmtPnl(cny) + '</td></tr>';
     const lines = [];
+    // 0 明细行不上表：当天快照先落位、行情/净值未更新时会写入整批 ¥0.00 占位条目，
+    // 逐条 0 是冗余信息；非 0 行照常展示，真数据写入后自动补齐（0 值求和不影响汇总）。
+    const nz = (n) => Math.abs(Number(n) || 0) >= 0.005;
     syms.forEach((s) => {
       // 优先用快照时折算的 CNY 值；旧快照无该字段则用当前汇率回退折算
       const cny = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl);
+      if (!nz(cny)) return;
       equityCNY += cny;
       lines.push(line('equity', calCurSym(s.currency) + (s.symbol || ''), s.name || '', cny));
     });
@@ -6238,9 +6242,18 @@ function openCalDay(date) {
     wts.forEach((w) => {
       const code = w.code || codeByName[w.name] || '';
       const cny = (typeof w.pnl_cny === 'number') ? w.pnl_cny : 0;
+      if (!nz(cny)) return;
       wealthCNY += cny;
       lines.push(line('wealth', code ? calCurSym(w.currency) + code : '<span class="u-muted">—</span>', w.name || '', cny));
     });
+    if (!lines.length && Math.abs(v) < 0.005) {
+      // 整日 0 且无任何非零明细：当天是「快照已写入、数据未更新」的占位行，不展示 0 报表；
+      // 历史日期则说「无明细」（真平盘日两种文案等价，都不渲染 0 值表）。
+      const msg = date === ymd(new Date()) ? '该日盈亏数据尚未更新，待当日快照写入后展示。' : '该日无盈亏明细。';
+      $('#calModalBody').innerHTML = '<div class="u-row u-wrap u-gap-3 u-mb-2"><p class="u-muted">' + msg + '</p>' + CAL_NAV_HTML + '</div>';
+      $('#calModal').hidden = false;
+      return;
+    }
     rows = lines.length
       ? '<div class="cal-detail-wrap"><table class="cal-detail-tbl"><thead><tr><th>代码</th><th>名称</th><th class="num">盈亏 (CNY)</th></tr></thead><tbody>' + lines.join('') + '</tbody></table></div>'
       : '<p class="u-muted">无明细。</p>';

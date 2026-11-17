@@ -2854,6 +2854,7 @@ func holdingPnlHistory(c *gin.Context) {
 	var prevTotal, prevMV float64
 	var lastClose float64
 	haveClose := false
+	todayBJ := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
 	for i, p := range series {
 		// 已清仓：曲线截止清仓日（含），之后的行情与持仓无关，不能再算成持仓盈亏
 		if closed && closedDate != "" && p.Date > closedDate {
@@ -2862,11 +2863,13 @@ func holdingPnlHistory(c *gin.Context) {
 		if startDate != "" && p.Date < startDate {
 			continue
 		}
-		// 周末冗余行过滤：快照任务周末照跑，会把昨收原样写进 price_daily（美股周日行），
-		// 每日明细里多出 day_pnl=0 的重复假行。周末且收盘价与上一保留行完全相同 → 跳过；
-		// 清仓日行永不跳（已实现盈亏要落在那一行），周六行是美股周五真实收盘，正常保留。
+		// 周末/今日未更新冗余行过滤：快照任务周末照跑，会把昨收原样写进 price_daily（美股周日行）；
+		// 当天行情/净值尚未更新时（写入价与上一保留行相同），工作日的「今天」同样多出
+		// day_pnl=0 的重复假行。两种情况且收盘价与上一保留行完全相同 → 跳过，等真数据
+		// 写入后自然恢复展示；清仓日行永不跳（已实现盈亏要落在那一行），周六行是美股周五
+		// 真实收盘，正常保留。
 		if wd, e := time.ParseInLocation("2006-01-02", p.Date, time.FixedZone("CST", 8*3600)); e == nil &&
-			(wd.Weekday() == time.Saturday || wd.Weekday() == time.Sunday) &&
+			(wd.Weekday() == time.Saturday || wd.Weekday() == time.Sunday || p.Date == todayBJ) &&
 			!(closed && p.Date == closedDate) &&
 			haveClose && math.Abs(p.Close-lastClose) < 1e-9 {
 			continue
