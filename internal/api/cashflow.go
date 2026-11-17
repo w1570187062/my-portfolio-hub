@@ -636,8 +636,11 @@ func recordPlanTransaction(uid int64, p *db.CashflowPlan, actual float64, cashAc
 		if e3 != nil {
 			return "", 0, e3
 		}
+		// 关联负债的还款必须按「负债偿还」落账，不能沿用计划自带分类（living 等）或空值回落 other_out：
+		// db.DedupRepayFlows 只把 cash 侧 category=debt 的负额当去重 key，分类写错会让同一笔还款在
+		// 资产流水/财务明细里显示两次（现金侧 + 负债侧）。一次性还款端点已显式写 CatDebt，这里对齐。
 		if e3 := db.AddCashAmountCat(acc.ID, -actual, "cf_repay", "cashflow_plan", p.ID, p.Title,
-			"待还款「"+p.Title+"」还款扣款（还款至"+l.Name+"）", planFlowCategory(p, "expense")); e3 != nil {
+			"待还款「"+p.Title+"」还款扣款（还款至"+l.Name+"）", db.CatDebt); e3 != nil {
 			return "", 0, e3
 		}
 		// 记住负债 id；撤销时据此还原债务余额，并按 cashflow_plan 反查流水冲回子账户扣款
