@@ -13479,7 +13479,7 @@ if (cfAmtModalEl) cfAmtModalEl.addEventListener('click', (e) => { if (e.target =
 // ============================================================================
 // 存款（定期存款 / 大额存单）：首页「存款」分段视图
 // 新增时从子账户扣款（投资活动流水）；到期后必须「确认落袋」才把本金+利息入账，
-// 利息落 invest_int（被动收入）。表格列：名称 / 金额 / 账户 / 起息日 / 到期时间 / 利率 / 预计利息 / 状态 / 操作
+// 利息落 invest_int（被动收入）。表格列：账户 / 名称 / 金额 / 起息日 / 到期时间 / 利率 / 预计利息 / 状态 / 操作
 // ============================================================================
 let depositsCache = [];
 let depositSettleId = 0;
@@ -13585,6 +13585,8 @@ function renderDeposits(box) {
       ? `<span class="flow-tag cat neu">已落袋</span>`
       : (d.matured ? `<span class="flow-tag cat out">待落袋</span>` : `<span class="flow-tag cat in">存期中</span>`);
     const interest = settled ? (d.actual_interest || 0) : (d.expected_interest || 0);
+    const interestTitle = settled ? '落袋时确认的实际利息'
+      : (d.expected_interest_manual ? '按银行对账单手填的预计利息' : '按 本金 × 年利率 × 天数 / 365 自动估算');
     const acct = [d.account_name, d.source_name].filter(Boolean).join(' · ') || '—';
     const ops = settled
       ? `<button class="row-act" disabled title="已落袋的存款本金+利息流水已入账，删除会破坏账目，故不可删" aria-label="已落袋不可删除">${actIcon('trash')}</button>`
@@ -13592,19 +13594,19 @@ function renderDeposits(box) {
          <button class="row-act" data-dep-edit="${d.id}" title="编辑" aria-label="编辑">${actIcon('edit')}</button>
          <button class="row-act danger" data-dep-del="${d.id}" title="删除（提前支取，本金退回账户）" aria-label="删除">${actIcon('trash')}</button>`;
     return `<tr>
+      <td><div class="dep-acct">${accountLogo(d.source_name || d.account_name || '')}<span>${esc(acct)}</span></div></td>
       <td><div class="hold-name">${esc(d.name || '')}</div>${d.note ? `<div class="hold-code">${esc(d.note)}</div>` : ''}</td>
       <td class="num">${cur}${fmt(d.amount || 0)}</td>
-      <td><div class="dep-acct">${accountLogo(d.source_name || d.account_name || '')}<span>${esc(acct)}</span></div></td>
       <td class="num">${esc(d.start_date || '—')}</td>
       <td class="num">${esc(d.end_date || '—')}${!settled && d.matured ? ' <span class="dep-due">已到期</span>' : ''}</td>
       <td class="num">${(d.rate || 0).toFixed(2)}%</td>
-      <td class="num">${cur}${fmt(interest)}</td>
+      <td class="num" title="${interestTitle}">${cur}${fmt(interest)}</td>
       <td>${status}</td>
       <td class="row-act-cell">${ops}</td>
     </tr>`;
   }).join('');
   box.innerHTML = head + `<div class="card asset-flow-card"><table class="asset-table dep-table"><thead><tr>
-    <th>名称</th><th class="num">金额</th><th>账户</th><th class="num">起息日</th><th class="num">到期时间</th><th class="num">利率</th><th class="num">${'预计利息'}</th><th>状态</th><th class="num">操作</th>
+    <th>账户</th><th>名称</th><th class="num">金额</th><th class="num">起息日</th><th class="num">到期时间</th><th class="num">利率</th><th class="num">预计利息</th><th>状态</th><th class="num">操作</th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
   const add = box.querySelector('#depAddBtn');
   if (add) add.onclick = () => openDepositModal(null);
@@ -13629,6 +13631,9 @@ function openDepositModal(d) {
   document.getElementById('dep_name').value = isEdit ? (d.name || '') : '';
   document.getElementById('dep_amount').value = isEdit ? round4(d.amount) : '';
   document.getElementById('dep_rate').value = isEdit ? (d.rate || 0) : '';
+  // 手填值 0 = 自动估算，弹框里留空比填 0.00 更直观（填 0 会覆盖成「预计 0 利息」）。
+  document.getElementById('dep_expected_override').value = isEdit && d.expected_interest_override > 0
+    ? String(round2(d.expected_interest_override)) : '';
   document.getElementById('dep_start').value = isEdit ? (d.start_date || '') : new Date().toISOString().slice(0, 10);
   document.getElementById('dep_end').value = isEdit ? (d.end_date || '') : '';
   document.getElementById('dep_note').value = isEdit ? (d.note || '') : '';
@@ -13654,6 +13659,7 @@ $('#depositForm').onsubmit = async (e) => {
     name: document.getElementById('dep_name').value.trim(),
     amount: round4(parseFloat(document.getElementById('dep_amount').value) || 0),
     rate: round4(parseFloat(document.getElementById('dep_rate').value) || 0),
+    expected_interest_override: round2(parseFloat(document.getElementById('dep_expected_override').value) || 0),
     start_date: document.getElementById('dep_start').value || '',
     end_date: document.getElementById('dep_end').value || '',
     cash_account_id: Number(document.getElementById('dep_account').value) || 0,
@@ -16396,7 +16402,7 @@ function closePIN(val) {
       ]),
       foot: '口径：本金按笔加总（不含已落袋）· 预计利息按 年利率×天数/365 估算',
       hint: '利息只在确认落袋后才写进流水',
-      detail: '本金 / 预计利息 / 已落袋利息 / 到期标记均来自 /api/asset/deposits 逐笔字段，按各笔 currency 折 CNY 后加总。后端对已落袋笔用 actual_interest，存期中笔用 expected_interest，两者不相加。',
+      detail: '本金 / 预计利息 / 已落袋利息 / 到期标记均来自 /api/asset/deposits 逐笔字段，按各笔 currency 折 CNY 后加总。后端对已落袋笔用 actual_interest，存期中笔用 expected_interest（手填覆盖值优先），两者不相加。',
       go: 'invest-deposits', goLabel: '投资 · 存款',
     };
 

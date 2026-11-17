@@ -20,9 +20,10 @@ import (
 
 type depositResp struct {
 	db.Deposit
-	ExpectedInterest float64 `json:"expected_interest"` // 按 年利率×天数/365 估算
-	Days             int     `json:"days"`              // 起息日→到期天数
-	Matured          bool    `json:"matured"`           // 已过到期时间仍未落袋
+	ExpectedInterest       float64 `json:"expected_interest"`        // 手填优先，否则按 年利率×天数/365 估算
+	ExpectedInterestManual bool    `json:"expected_interest_manual"` // 是否用了手填值（前端给单元格加提示）
+	Days                   int     `json:"days"`                     // 起息日→到期天数
+	Matured                bool    `json:"matured"`                  // 已过到期时间仍未落袋
 }
 
 func listDeposits(c *gin.Context) {
@@ -37,7 +38,13 @@ func listDeposits(c *gin.Context) {
 	for _, d := range list {
 		r := depositResp{Deposit: d}
 		if d.Status != "settled" {
-			r.ExpectedInterest = db.ExpectedInterest(d.Amount, d.Rate, d.StartDate, d.EndDate)
+			// 银行按 360 天或含首尾日计息时，公式值会与对账单差几元；手填值优先。
+			if d.ExpectedInterestOverride > 0 {
+				r.ExpectedInterest = d.ExpectedInterestOverride
+				r.ExpectedInterestManual = true
+			} else {
+				r.ExpectedInterest = db.ExpectedInterest(d.Amount, d.Rate, d.StartDate, d.EndDate)
+			}
 			r.Days = depositDays(d.StartDate, d.EndDate)
 			r.Matured = d.EndDate != "" && d.EndDate <= today
 		} else {
@@ -61,13 +68,14 @@ func depositDays(start, end string) int {
 // parseDeposit 绑定并校验存款表单。creditBack = 编辑时可先行冲正的旧扣款额（用于放大余额校验）。
 func parseDeposit(c *gin.Context, uid int64, d *db.Deposit, creditBack float64) error {
 	var b struct {
-		Name          string  `json:"name"`
-		Amount        float64 `json:"amount"`
-		CashAccountID int64   `json:"cash_account_id"`
-		Rate          float64 `json:"rate"`
-		StartDate     string  `json:"start_date"`
-		EndDate       string  `json:"end_date"`
-		Note          string  `json:"note"`
+		Name                     string  `json:"name"`
+		Amount                   float64 `json:"amount"`
+		CashAccountID            int64   `json:"cash_account_id"`
+		Rate                     float64 `json:"rate"`
+		StartDate                string  `json:"start_date"`
+		EndDate                  string  `json:"end_date"`
+		ExpectedInterestOverride float64 `json:"expected_interest_override"`
+		Note                     string  `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&b); err != nil {
 		return errString("参数格式错误")
@@ -100,6 +108,10 @@ func parseDeposit(c *gin.Context, uid int64, d *db.Deposit, creditBack float64) 
 	}
 	if b.CashAccountID <= 0 {
 		return errString("请选择扣款 / 落袋子账户")
+	}
+	d.ExpectedInterestOverride = math.Round(b.ExpectedInterestOverride*100) / 100
+	if d.ExpectedInterestOverride < 0 {
+		return errString("预计利息不能为负")
 	}
 	acc, err := db.GetCash(b.CashAccountID)
 	if err != nil || acc == nil || acc.UserID != uid {

@@ -6682,9 +6682,13 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 
 /* 存款表：数值列不换行；到期未落袋提示 */
 .dep-table th, .dep-table td { white-space: nowrap; }
-/* 操作列贴表格最右 + 悬停显隐（.row-act-cell，与持仓子表同款）；收窄右内边距让按钮贴到表格右缘 */
+/* 操作列贴表格最右；存款只有几笔，按钮常显，不跟持仓表走「悬停淡入」——
+   窄屏横向滚动时行 hover 会被滚动打断，最右的删除按钮会一直停在 opacity:0 看不见。
+   同时把最后一枚按钮的右外边距清零，避免被 .asset-flow-card 的 overflow:hidden 裁掉。 */
 .dep-table :is(th, td):last-child { text-align: right; }
-.dep-table td:last-child { padding-right: 2px; }
+.dep-table td:last-child { padding-right: var(--sp-3); }
+.dep-table td:last-child .row-act { opacity: 1; }
+.dep-table td:last-child .row-act:last-child { margin-right: 0; }
 /* 存款空态统一走 .empty-state */
 .dep-due { color: var(--down); font-size: var(--fs-xs); }
 .dep-settle-desc { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.7; margin: 0 0 var(--sp-3); }

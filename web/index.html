@@ -1843,6 +1843,9 @@
           <label>金额<input id="dep_amount" type="number" step="0.01" min="0.01" placeholder="0.00" /></label>
           <label>年利率（%）<input id="dep_rate" type="number" step="0.01" min="0" max="20" placeholder="如 2.75" /></label>
         </div>
+        <label>预计利息（可改，留空自动估算）
+          <input id="dep_expected_override" type="number" step="0.01" min="0" placeholder="本金 × 年利率 × 天数 / 365" />
+        </label>
         <div class="df-row">
           <label>起息日<input id="dep_start" type="date" /></label>
           <label>到期时间<input id="dep_end" type="date" /></label>
