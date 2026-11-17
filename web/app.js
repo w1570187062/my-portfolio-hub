@@ -12107,6 +12107,9 @@ function onAcctPopClick(e) {
     const curId = localStorage.getItem('pf_user');
     if (String(item.dataset.id) !== String(curId)) switchUser(item.dataset.id);
   } else if (act === 'theme') {
+    // 与其余菜单项一致：主题切换是「选完即走」，面板不能留在原地挡住刚换完的页面。
+    // 原来只有这一支没关面板，切完主题弹层还挂着，用户得再点一次头像或空白处。
+    closeAcctMenu();
     const next = THEME_MODES.includes(item.dataset.theme) ? item.dataset.theme : 'dark';
     localStorage.setItem('pf_theme', next);
     applyTheme(next); // 内部已同步菜单勾选态，无需再调 syncAcctTheme
