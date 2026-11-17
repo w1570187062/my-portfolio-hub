@@ -2175,8 +2175,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
   letter-spacing: 0;
   color: var(--text-faint);
 }
-/* 暗色模式下下拉展开选项：显式底色+文字，避免白字白底看不见 */
-.modal-card select option {
+/* 暗色模式下原生下拉展开项统一走主题色：工具条（流水页 #flowRange / 收支页 #cfSortSel）
+   和再平衡页字段 (#rbFreq) 都不在 .modal-card 内，原来只给弹框 option 上色，
+   这三处展开后是深底深字看不见。全局规则一次覆盖，避免每加一个 select 就补一条。 */
+select option {
   background: var(--bg-card);
   color: var(--text);
 }
@@ -2394,6 +2396,10 @@ html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
    否则暗色主题下图标为深色而看不清（收支弹框截止日期 / 添加持仓交易日期等）。 */
 input[type="date"] { color-scheme: dark; }
 :root[data-theme="light"] input[type="date"] { color-scheme: light; }
+/* 原生 <select> 展开面板同样依赖 color-scheme 决定选项文字/底色；
+   流水 / 收支工具条与再平衡字段此前只设置了关闭态颜色，展开后暗色主题看不清。 */
+select { color-scheme: dark; }
+:root[data-theme="light"] select { color-scheme: light; }
 /* 原生 <input type="date"> 空值时浏览器会显示 yyyy/mm/日 格式占位（跟随浏览器语言，无法改成英文）。
    空值时隐藏该占位：年/月/日各字段与分隔符都是「子伪元素」，不继承父级 ::-webkit-datetime-edit 的
    color，必须逐个列出，否则聚焦后仍会显示。填入日期后正常显示；仍可用右侧日历图标选择。 */
