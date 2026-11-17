@@ -7448,6 +7448,31 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .rb-alloc-bot .warn { color: var(--warning); }
 .rb-alloc-bot .down { color: var(--down); }
 
+/* 资金去向：点击条右端箭头 chip 行内展开（grid 0fr→1fr，与站内折叠动画同构）。
+   无悬停展开 —— 2026-11-17 定稿为纯点击，chip 是常驻状态指示器，整个条区域都是点击热区。 */
+.rb-bullet-wrap { display: flex; align-items: center; gap: var(--sp-2); cursor: pointer; }
+.rb-bullet-wrap .ov-bullet { flex: 1; width: auto; min-width: 0; }
+.rb-toggle { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 999px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-faint); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0; transition: transform .2s ease, color .15s, background .15s, border-color .15s; }
+.rb-toggle svg { width: 12px; height: 12px; display: block; }
+.rb-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.rb-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.rb-alloc-row.open .rb-toggle { transform: rotate(180deg); color: var(--primary);
+  background: rgba(var(--tint), .12); border-color: rgba(var(--tint), .35); }
+.rb-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s ease; }
+.rb-detail > div { overflow: hidden; min-height: 0; }
+.rb-alloc-row.open .rb-detail { grid-template-rows: 1fr; }
+.rb-detail-in { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); background: var(--bg-soft); border-radius: var(--r-sm); }
+.rb-detail-h { display: flex; align-items: baseline; gap: var(--sp-2); margin-bottom: 4px; }
+.rb-detail-h b { font-size: var(--fs-xs); color: var(--text); }
+.rb-detail-h span { margin-left: auto; font-size: var(--fs-2xs); color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rb-d-row { display: flex; align-items: baseline; gap: var(--sp-2); padding: 3px 0; font-size: var(--fs-xs); min-width: 0; }
+.rb-d-name { color: var(--text-secondary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-d-amt { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.rb-d-pct { color: var(--text-faint); font-variant-numeric: tabular-nums; flex: 0 0 44px; text-align: right; }
+.rb-d-more .rb-d-name, .rb-d-more .rb-d-amt { color: var(--text-faint); }
+
 /* 调仓清单：勾选 + 动作徽标 + 金额 */
 .rb-actions { display: flex; flex-direction: column; }
 .rb-action-row { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) 0; border-top: 1px solid var(--border); min-width: 0; }

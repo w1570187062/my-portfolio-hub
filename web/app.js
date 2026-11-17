@@ -16804,6 +16804,52 @@ function closePIN(val) {
   }
   const wPct = (v, scale) => { const n = N(v); return n == null ? 0 : Math.max(0, Math.min(100, n / scale * 100)); };
 
+  // 「资金去向」明细：buckets[].items 由后端随快照一并返回（与市值同口径，折 CNY、金额降序）。
+  // 交互为点击展开/折叠（2026-11-17 定稿方案 B）：条右端箭头 chip 是唯一入口，无悬停展开。
+  const RB_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+  const RB_ITEM_MAX = 8; // 逐项最多显示 8 条，其余折叠成一行，防超大账本把卡片拉长
+
+  function rbDetailHTML(b) {
+    const its = A(b.items);
+    if (!its.length) return '';
+    const tot = N(b.market_value);
+    const rows = its.slice(0, RB_ITEM_MAX).map((it) =>
+      '<div class="rb-d-row"><span class="rb-d-name">' + S(it.name) + '</span>'
+      + '<span class="rb-d-amt">' + Y(it.amount) + '</span>'
+      + '<span class="rb-d-pct">' + (tot ? (N(it.amount) / tot * 100).toFixed(1) + '%' : DASH) + '</span></div>'
+    ).join('');
+    const rest = its.slice(RB_ITEM_MAX);
+    const restRow = rest.length
+      ? '<div class="rb-d-row rb-d-more"><span class="rb-d-name">其余 ' + rest.length + ' 项</span>'
+        + '<span class="rb-d-amt">' + Y(rest.reduce((s, it) => s + (N(it.amount) || 0), 0)) + '</span>'
+        + '<span class="rb-d-pct"></span></div>'
+      : '';
+    return '<div class="rb-detail"><div><div class="rb-detail-in">'
+      + '<div class="rb-detail-h"><b>资金去向 · ' + (N(b.count) == null ? DASH : b.count) + ' 只/笔</b>'
+      + '<span>合计 ' + Y(b.market_value) + ' · 占组合 ' + PCT(b.weight) + '</span></div>'
+      + rows + restRow
+      + '</div></div></div>';
+  }
+
+  // 点击展开/折叠：事件委托挂在 #rbAlloc 上（innerHTML 每次重画也不需要重新绑定）。
+  // 触发区 = 整个条区域（.rb-bullet-wrap），chip 是常驻的状态指示器。
+  function wireAllocToggle(box) {
+    if (!box || box.dataset.rbToggleWired) return;
+    box.dataset.rbToggleWired = '1';
+    box.addEventListener('click', (e) => {
+      const trig = e.target.closest('.rb-bullet-wrap');
+      if (!trig) return;
+      const rowEl = trig.closest('.rb-alloc-row');
+      if (!rowEl) return;
+      const btn = trig.querySelector('.rb-toggle');
+      const open = rowEl.classList.toggle('open');
+      if (btn) {
+        btn.setAttribute('aria-expanded', String(open));
+        btn.setAttribute('aria-label', open ? '收起资金去向' : '展开资金去向');
+      }
+    });
+  }
+
   function renderAlloc() {
     const box = $('#rbAlloc');
     if (!box) return;
@@ -16817,7 +16863,7 @@ function closePIN(val) {
       scope.textContent = '金额 = 偏离% × 总市值 · 折 CNY'
         + (ex > 0 ? ' · 已剔除 ' + ex + ' 个日常开销账户 ' + Y(snap.cash_excluded_amt) : '');
     }
-    const row = (b) => {
+    const row = (b, i) => {
       const key = S(b.key);
       const drift = N(b.drift);
       const tone = toneOf(drift);
@@ -16830,17 +16876,26 @@ function closePIN(val) {
       const sub = viewMode === 'amount'
         ? '目标占比 ' + PCT(b.target)
         : '目标 ' + PCT(b.target);
-      return '<div class="rb-alloc-row">'
+      const bullet = '<div class="ov-bullet' + (drift > 0 ? ' warn' : '') + '" style="--w:' + wPct(b.weight, scale).toFixed(1) + '%;--target:' + wPct(b.target, scale).toFixed(1) + '%"></div>';
+      // 有明细才给展开入口：chip 是状态指示，整个条区域都可点击
+      const hasItems = A(b.items).length > 0;
+      const bulletHtml = hasItems
+        ? '<div class="rb-bullet-wrap">' + bullet
+          + '<button type="button" class="rb-toggle" aria-expanded="false" aria-label="展开资金去向">' + RB_CHEV + '</button></div>'
+        : bullet;
+      return '<div class="rb-alloc-row" data-rb-i="' + i + '">'
         + '<div class="rb-alloc-top">'
         + '<span class="rb-alloc-name"><i class="rb-alloc-dot" style="--rb-c: rgb(' + (RB_COLOR[b.key] || '148, 163, 184') + ')"></i>' + S(RB_KEY[b.key] || b.label || b.key) + '</span>'
         + '<span class="rb-alloc-num">实际 ' + value + ' · ' + sub + '</span>'
         + '<span class="rb-alloc-drift ' + tone + '">' + PP(drift) + '</span>'
         + '</div>'
-        + '<div class="ov-bullet' + (drift > 0 ? ' warn' : '') + '" style="--w:' + wPct(b.weight, scale).toFixed(1) + '%;--target:' + wPct(b.target, scale).toFixed(1) + '%"></div>'
+        + bulletHtml
         + '<div class="rb-alloc-bot"><span>' + (b.count == null ? DASH : b.count + ' 只/笔') + '</span><span class="' + actCls + '">' + S(act) + '</span></div>'
+        + rbDetailHTML(b)
         + '</div>';
     };
     box.innerHTML = buckets.map(row).join('') || '<div class="rb-empty">' + DASH + '（暂无四类配置数据）</div>';
+    wireAllocToggle(box);
   }
 
   function renderActions() {

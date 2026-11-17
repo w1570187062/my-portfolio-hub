@@ -217,6 +217,15 @@ func loadRebalanceConfig(uid int64) rbConfig {
 }
 
 // rbBucket 单个类别的实测结果，直接作为 API 输出单元。
+// rbItem 类内单项明细（折 CNY），供「目标 vs 实际」进度条点击展开「资金去向」：
+// 用户关心的不是百分比，而是「这笔钱具体在哪些标的 / 账户里、各多少金额」。
+// 与该类 MarketValue 同口径：理财取最新快照、现金剔除日常开销账户（excluded=1）。
+type rbItem struct {
+	Name   string  `json:"name"`
+	Amount float64 `json:"amount"` // 折 CNY，元
+}
+
+// rbBucket 是再平衡四类聚合行。
 type rbBucket struct {
 	Key         string  `json:"key"`
 	Label       string  `json:"label"`
@@ -229,9 +238,10 @@ type rbBucket struct {
 	Amount      float64 `json:"amount"`       // 偏离金额（正=卖出，负=买入）
 	// Contrib 收益影响（元/年）= (实际权重 − 目标权重) × 总市值 × 该类预期年化。
 	// 四类相加恒等于组合的「超额收益金额」—— 因此能直接回答「这一类拖累了多少收益」。
-	Contrib float64 `json:"contrib"`
-	Action  string  `json:"action"` // sell | buy | none
-	Count   int     `json:"count"`  // 包含几只/几笔
+	Contrib float64        `json:"contrib"`
+	Action  string         `json:"action"`        // sell | buy | none
+	Count   int            `json:"count"`         // 包含几只/几笔
+	Items   []rbItem       `json:"items,omitempty"` // 类内单项明细，金额降序；AI 通道会裁掉（见 rebalanceForAI）
 }
 
 // rbSnapshot 一次计算的完整结果：四类明细 + 总市值 + 收益 / 风险聚合。
@@ -269,6 +279,7 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 	cnyRate, hkdRate, _ := market.FetchFXRates()
 	mv := map[string]float64{}
 	cnt := map[string]int{}
+	items := map[string][]rbItem{} // 类内单项明细：与 mv 完全同口径，只多留名字
 	var snapExclN int
 	var snapExclAmt float64
 
@@ -289,6 +300,7 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 		}
 		mv[key] += cmv
 		cnt[key]++
+		items[key] = append(items[key], rbItem{Name: h.Name, Amount: round2(cmv)})
 	}
 
 	// 2) 理财：最新快照金额（archived 已清仓归档，不再计入）
@@ -301,8 +313,10 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 			if !found || amt == 0 {
 				continue
 			}
-			mv[rbClassWealth] += fxToCNY(amt, w.Currency, cnyRate, hkdRate)
+			ramt := fxToCNY(amt, w.Currency, cnyRate, hkdRate)
+			mv[rbClassWealth] += ramt
 			cnt[rbClassWealth]++
+			items[rbClassWealth] = append(items[rbClassWealth], rbItem{Name: w.Name, Amount: round2(ramt)})
 		}
 	}
 
@@ -322,6 +336,7 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 			}
 			mv[rbClassCash] += amt
 			cnt[rbClassCash]++
+			items[rbClassCash] = append(items[rbClassCash], rbItem{Name: cc.Name, Amount: round2(amt)})
 		}
 	}
 
@@ -373,6 +388,11 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 			b.Action = "buy"
 		default:
 			b.Action = "none"
+		}
+		// 明细按金额降序，前端展开「资金去向」直接用；金额与 mv 同口径（已折 CNY）
+		if its := items[k]; len(its) > 0 {
+			sort.Slice(its, func(a, b int) bool { return its[a].Amount > its[b].Amount })
+			b.Items = its
 		}
 		snap.Buckets = append(snap.Buckets, b)
 
@@ -551,6 +571,18 @@ func init() {
 // 金额一律人民币元；drift/weight/target 为百分比，amount 正=应卖出、负=应买入，Σamount 恒为 0。
 func rebalanceForAI(uid int64) map[string]interface{} {
 	full := rebalancePayload(uid)
+	// buckets 里的 items 单项明细只服务页面的「资金去向」展开，对模型是几十行无用 JSON —— 裁掉。
+	if bs, ok := full["buckets"].([]rbBucket); ok {
+		trim := make([]map[string]interface{}, 0, len(bs))
+		for _, b := range bs {
+			trim = append(trim, map[string]interface{}{
+				"key": b.Key, "label": b.Label, "market_value": b.MarketValue, "weight": b.Weight,
+				"target": b.Target, "drift": b.Drift, "amount": b.Amount, "contrib": b.Contrib,
+				"action": b.Action, "count": b.Count,
+			})
+		}
+		full["buckets"] = trim
+	}
 	out := map[string]interface{}{
 		"total_cny":         full["total_cny"],
 		"buckets":           full["buckets"],
