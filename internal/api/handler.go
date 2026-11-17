@@ -165,10 +165,17 @@ func enrich(h db.Holding, userID int64) HoldingView {
 }
 
 // costBasisOf 返回「已平仓」盈亏率的分母（累计本金）。
-// 优先用 position_tx 的 BUY 金额合计；早期持仓建仓时未写交易流水（只有减仓 SELL 记录），
-// 此时回落到清仓前快照 last_quantity × last_cost_price（AdjustHolding 清仓时写入）。
-// 两者都没有则返回 0，前端按「—」展示（不做除零）。
+// 分子 realized_pnl 按「清仓前全量份额 × 加权成本」计算，分母必须同口径（全量本金）：
+// BUY 流水可能只覆盖账本启用后的补仓（早期建仓没写流水），此时 BUY 合计远小于真实本金，
+// 盈亏率被放大 —— 百事可乐 66.2/134.99=+49.04% 的根因（真实本金 1093.8，应为 +6.05%）。
+// 因此清仓前快照 last_quantity × last_cost_price（AdjustHolding 清仓时写入的全量成本）
+// 大于流水合计时以快照为准；两者都无则返回 0，前端按「—」展示（不做除零）。
 func costBasisOf(h db.Holding, invested float64) float64 {
+	if h.LastQuantity > 0 && h.LastCostPrice > 0 {
+		if snap := h.LastQuantity * h.LastCostPrice; snap > invested {
+			return round2(snap)
+		}
+	}
 	if invested > 0.005 {
 		return round2(invested)
 	}
@@ -2629,7 +2636,9 @@ func holdingPnlHistory(c *gin.Context) {
 	}
 	if closed {
 		for _, t := range txs { // ListPositionTx 按 id DESC，最后一条 SELL 即清仓动作
-			if t.TxType != "SELL" {
+			// reverted（已回退）的 SELL 不计：回退只是撤销记录，盈亏与清仓日都不能算它
+			// （007172 回退的「调仓计入」28.98 曾与有效清仓 29.46 叠加成 58.43，2026-11-17 用户报）。
+			if t.TxType != "SELL" || t.Reverted == 1 {
 				continue
 			}
 			realizedSum += t.RealizedPnl
@@ -2638,6 +2647,16 @@ func holdingPnlHistory(c *gin.Context) {
 				if d > closedDate {
 					closedDate = d
 				}
+			}
+		}
+	}
+	// 清仓日成交回款（非 reverted 的 SELL）：清仓日行的市值改用它 —— 按上一交易日净值清仓时
+	// （债基周一清仓用周五净值），清仓日收盘价已是别的净值，与持仓无关，不能按 close×份额展示。
+	var closeProceeds float64
+	if closed && closedDate != "" {
+		for _, t := range txs {
+			if t.TxType == "SELL" && t.Reverted != 1 && len(t.CreatedAt) >= 10 && t.CreatedAt[:10] == closedDate {
+				closeProceeds += t.Amount - t.Fee
 			}
 		}
 	}
@@ -2651,12 +2670,14 @@ func holdingPnlHistory(c *gin.Context) {
 		if qty <= 0 || cost <= 0 {
 			var sellQty, sellFee, realizedAll, lastPrice float64
 			for _, t := range txs {
-				if t.TxType == "SELL" {
-					sellQty += t.Quantity
-					sellFee += t.Fee
-					realizedAll += t.RealizedPnl
-					lastPrice = t.Price
+				// reverted 的 SELL 不参与推算（见上：回退交易不是真实成交）
+				if t.TxType != "SELL" || t.Reverted == 1 {
+					continue
 				}
+				sellQty += t.Quantity
+				sellFee += t.Fee
+				realizedAll += t.RealizedPnl
+				lastPrice = t.Price
 			}
 			if qty <= 0 && sellQty > 0 {
 				qty = sellQty
@@ -2831,6 +2852,8 @@ func holdingPnlHistory(c *gin.Context) {
 	}
 	n := 0 // 纳入曲线的点数：过滤（continue）不重置 range 索引，首条判定必须用独立计数
 	var prevTotal, prevMV float64
+	var lastClose float64
+	haveClose := false
 	for i, p := range series {
 		// 已清仓：曲线截止清仓日（含），之后的行情与持仓无关，不能再算成持仓盈亏
 		if closed && closedDate != "" && p.Date > closedDate {
@@ -2839,6 +2862,16 @@ func holdingPnlHistory(c *gin.Context) {
 		if startDate != "" && p.Date < startDate {
 			continue
 		}
+		// 周末冗余行过滤：快照任务周末照跑，会把昨收原样写进 price_daily（美股周日行），
+		// 每日明细里多出 day_pnl=0 的重复假行。周末且收盘价与上一保留行完全相同 → 跳过；
+		// 清仓日行永不跳（已实现盈亏要落在那一行），周六行是美股周五真实收盘，正常保留。
+		if wd, e := time.ParseInLocation("2006-01-02", p.Date, time.FixedZone("CST", 8*3600)); e == nil &&
+			(wd.Weekday() == time.Saturday || wd.Weekday() == time.Sunday) &&
+			!(closed && p.Date == closedDate) &&
+			haveClose && math.Abs(p.Close-lastClose) < 1e-9 {
+			continue
+		}
+		lastClose, haveClose = p.Close, true
 		if d, ok := divs[p.Date]; ok {
 			cumDiv += d
 		}
@@ -2863,13 +2896,25 @@ func holdingPnlHistory(c *gin.Context) {
 				dayPct = totalPct
 			}
 			prevAdj = adj
-			// 清仓日当天的累计盈亏用已实现口径（卖出价落袋），而不是收盘价浮盈，避免与交易记录对不上
-			if closedDate != "" && p.Date == closedDate && realizedSum != 0 {
-				totalPnl = realizedSum
-				if costAt*qty*fx > 0 {
-					totalPct = totalPnl / (costAt * qty * fx) * 100
+			// 清仓日：累计盈亏用已实现口径（卖出价落袋）；当日盈亏 = 累计口径的变化量而不是收盘价差，
+			// 市值改用清仓回款 —— 按上一交易日净值清仓时（债基周一清仓用周五净值），清仓日收盘价与
+			// 持仓无关，照算会产生「已按 13 号净值清仓、16 号还有一笔浮动盈亏」的脏数（2026-11-17）。
+			if closedDate != "" && p.Date == closedDate {
+				if realizedSum != 0 {
+					totalPnl = realizedSum
+					if costAt*qty*fx > 0 {
+						totalPct = totalPnl / (costAt * qty * fx) * 100
+					}
+				}
+				dayPnl = totalPnl - prevTotal
+				if prevMV > 0 {
+					dayPct = dayPnl / prevMV * 100
+				}
+				if closeProceeds > 0 {
+					mv = closeProceeds
 				}
 			}
+			prevTotal, prevMV = totalPnl, mv
 			rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv, Held: true})
 			continue
 		}
@@ -3044,9 +3089,9 @@ func holdingPnlHistory(c *gin.Context) {
 				}
 			}
 		}
-		// 清仓成交价（最后一次 SELL 的价格）
+		// 清仓成交价（最后一次 SELL 的价格，reverted 不算）
 		for _, t := range txs {
-			if t.TxType == "SELL" && len(t.CreatedAt) >= 10 && t.CreatedAt[:10] == closedDate {
+			if t.TxType == "SELL" && t.Reverted != 1 && len(t.CreatedAt) >= 10 && t.CreatedAt[:10] == closedDate {
 				info.SellPrice = t.Price
 			}
 		}

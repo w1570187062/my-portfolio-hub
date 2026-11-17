@@ -262,6 +262,38 @@ func computeReview(uid int64) reviewResp {
 			// 两条都必须在 buy_date 补一笔期初投入现金流，否则本金恒 0，
 			// 且现金流只剩 SELL/DIV 的全流入形态 —— XIRR 无解，本金与年化一起缺。
 			legacyNote := ""
+			// 本金口径修复：BUY 流水可能只覆盖账本启用后的补仓（早期建仓没写流水），
+			// invested 远小于真实全量成本 → 持有收益率被放大（百事可乐 66.2/135=+49% 的根因，
+			// 真实本金 1093.8 → +6.05%）。清仓前快照（last_quantity × last_cost_price）是全量成本，
+			// 大于流水合计时以快照为准，并把零散 BUY 流出替换成买入日的单笔期初投入，
+			// 避免与 SELL/DIV 现金流并存时双重计入。
+			if invested > 0 && h.LastQuantity > 0 && h.LastCostPrice > 0 {
+				if snap := h.LastQuantity * h.LastCostPrice; snap > invested+0.005 {
+					invested = snap
+					bd := strings.TrimSpace(h.BuyDate)
+					if bd == "" {
+						bd = first
+					}
+					if bd == "" {
+						bd = last
+					}
+					nb := make([]reviewCashflow, 0, len(cfs)+1)
+					if bd != "" {
+						nb = append(nb, reviewCashflow{date: bd, amt: -invested})
+						if first == "" || bd < first {
+							first = bd
+						}
+					}
+					for _, cf := range cfs {
+						if cf.amt < 0 {
+							continue // 原 BUY 流出已并入期初投入
+						}
+						nb = append(nb, cf)
+					}
+					cfs = nb
+					legacyNote = "买入流水不全，本金按平仓前成本快照补足"
+				}
+			}
 			if invested <= 0 {
 				switch {
 				case sellAmt > 0 && math.Abs(realized) > 0.005:
