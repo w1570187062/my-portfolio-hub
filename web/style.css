@@ -3525,12 +3525,12 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
    收缩成内容宽度 —— 原先靠 <table> 撑开，换成 div 时间轴后卡片只剩 860px，
    右侧留出一大片空白。这里显式取满卡片宽度。 */
 .flow-tl { width: 100%; padding: var(--sp-2) var(--sp-4) var(--sp-4); }
-/* 四栏：轨道 / 正文 / 金额 / 回退。回退栏固定 28px（.row-act 的 --h-2），
-   没有回退按钮的快照行也留同宽，保证各行金额右对齐在一条线上。 */
+/* 五栏：轨道 / 正文 / 时间 / 金额 / 操作。操作栏固定 62px（编辑 + 回退两枚 28px 按钮 + 6px 间距），
+   单按钮 / 无按钮的行也留同宽 —— 列宽必须逐行一致，否则各行金额右缘不在一条线上。 */
 .tl-row {
   position: relative;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto 28px;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto 62px;
   gap: var(--sp-2);
   align-items: start;
   padding: var(--sp-3) var(--sp-2) var(--sp-3) 0;
@@ -3567,8 +3567,8 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .tl-line1 .flow-tag { flex: 0 0 auto; }
 .tl-line1 .flow-tag.cat { margin-left: 0; }
 .tl-meta { display: flex; align-items: center; gap: var(--sp-1); margin-top: 3px; min-width: 0; font-size: var(--fs-xs); color: var(--text-faint); }
-.tl-when { flex: 0 0 auto; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.tl-sep { flex: 0 0 auto; width: 1px; height: 9px; background: var(--border); }
+/* 时间列已从 meta 行挪到金额左侧独立成列：顶部 3px 让小号时间与金额行盒光学居中对齐 */
+.tl-when { flex: 0 0 auto; padding-top: 3px; white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .tl-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-amt { font-size: var(--fs-lg); font-weight: 600; line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
 .tl-amt.up { color: var(--up); }
@@ -3589,6 +3589,9 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 /* ── 流水编辑弹框（2026-11-18）────────────────────────────────────────── */
 /* 数量/价格/费用三参数并排：flex 子项必须 min-width:0，否则长数字撑破卡片 */
 .fe-trade { display: flex; gap: var(--sp-2); }
+/* display:flex 会压过 [hidden] 的 UA 默认样式，须显式兜底：
+   仅投资买卖/定投流水（说明能解析出「数量/价/费」分段）才展示该行，其余类型靠 hidden 切换 */
+.fe-trade[hidden] { display: none; }
 .fe-trade label { flex: 1 1 0; min-width: 0; }
 /* 弹框 meta 行：类型徽标（.flow-tag）与账户·日期·币种文本并排 */
 #flowEditMeta .flow-tag { flex: 0 0 auto; }
@@ -6386,8 +6389,8 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .rg-net b.down { color: var(--down); }
 .rg-rows { background: rgba(255, 255, 255, .03); border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
 :root[data-theme="light"] .rg-rows { background: rgba(15, 23, 42, .028); }
-/* 组内单笔：小圆点 + 类型标签/说明 + 金额 */
-.rg-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: var(--sp-3); align-items: center; padding: var(--sp-3); }
+/* 组内单笔：小圆点 + 类型标签/说明 + 时间 + 金额（组头已有日期，时间只精确到时:分） */
+.rg-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto; gap: var(--sp-3); align-items: center; padding: var(--sp-3); }
 .rg-row + .rg-row { border-top: 1px solid var(--border); }
 .rg-row:hover { background: var(--bg-hover); }
 .rg-dot { width: 7px; height: 7px; border-radius: 50%; margin-left: 1px; }
@@ -6397,7 +6400,11 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .rg-main { min-width: 0; }
 .rg-main .flow-tag { padding: 3px 6px; }
 .recent-title { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+/* 标题（标的/账户名）与资产页流水时间轴同口径：名称在前、徽标跟随，徽标不参与收缩 */
+.recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+.recent-title .flow-tag { flex: 0 0 auto; }
 .recent-sub { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-hm { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .recent-amt { font-size: var(--fs-base); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
 .recent-amt.up { color: var(--up); }
 .recent-amt.down { color: var(--down); }
@@ -6652,7 +6659,7 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .recent-list { padding: var(--sp-3); }
   .recent-list::before { left: calc(var(--sp-3) + 13px); top: calc(var(--sp-3) + 6px); }
   .recent-group { padding-left: 32px; }
-  .rg-row { grid-template-columns: 14px minmax(0, 1fr) auto; gap: var(--sp-2); padding: 10px var(--sp-2); }
+  .rg-row { grid-template-columns: 14px minmax(0, 1fr) auto auto; gap: var(--sp-2); padding: 10px var(--sp-2); }
   .recent-amt { font-size: var(--fs-md); }
   .rg-net-prefix { display: none; }
   /* 子 tab 手机档（**这里只有这一处 .sub-tab 的手机覆盖**，别再在 640 大段里重复写 ——

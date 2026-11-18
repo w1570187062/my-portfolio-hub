@@ -458,6 +458,19 @@ const flowDateTitle = (f) => {
   const hm = /(\d{2}):(\d{2})/.exec(t);
   return hm ? full + ' ' + hm[1] + ':' + hm[2] : full;
 };
+// 流水的「时:分」（取 created_at 的 HH:mm；老数据/缺时间时返回空串，展示层自行省略）
+const flowHm = (f) => {
+  const m = /\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2})/.exec(String((f || {}).created_at || ''));
+  return m ? m[1] : '';
+};
+// 流水精确时间排序键：created_at 以日期开头（"YYYY-MM-DD HH:MM:SS"），与纯日期字符串
+// 可直接字典序比较；没有记录时间的行退回 date（视为当日 00:00，排同日最早）。
+const flowTsKey = (f) => {
+  const c = String((f || {}).created_at || '').trim();
+  return /^\d{4}-\d{2}-\d{2}/.test(c) ? c : String((f || {}).date || '');
+};
+// 流水按精确时间从新到旧（时间相同按 id 新者在前）。资产页流水与首页最新流水共用。
+const cmpFlowNewFirst = (a, b) => flowTsKey(b).localeCompare(flowTsKey(a)) || (Number(b.id) || 0) - (Number(a.id) || 0);
 // 输入框小数位限制：键入时直接截断到 max 位（不四舍五入），避免超长小数点。供 index.html 内联 oninput 调用。
 function clampDecimals(el, max) {
   max = max || 4;
@@ -4262,7 +4275,7 @@ async function renderHomeDashboard() {
             const d = await r.json();
             // 已有更新的刷新就丢弃本次结果（不打断后面的曲线渲染）
             if (myGen === homeRecentFlowsGen) {
-              const next = (d.flows || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
+              const next = (d.flows || []).slice().sort(cmpFlowNewFirst).slice(0, 8);
               // 只比渲染真正用到的字段，避免后端附加字段变化时误判成「数据变了」
               const sig = JSON.stringify(next.map((f) => [f.id, f.date, f.amount, f.direction, f.name, f.ref_name, f.note, f.currency, f.snapshot]));
               homeRecentFlowsData = next;
@@ -4344,13 +4357,20 @@ function renderRecentFlows() {
         const amtCls = isIn ? 'up' : 'down';
         // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
         const amt = amtNum === 0 ? moneyCurW(0, f.currency) : (isIn ? '+' : NEG) + moneyCurW(Math.abs(amtNum), f.currency);
-        const sub = [f.name, f.ref_name].filter(Boolean).join(' · ');
+        // 与资产页流水时间轴同口径：标题 = 关联标的/账户名，类型徽标紧跟其后；
+        // 第二行退为「账户 · 说明」（标题已含账户名时不再重复）。
+        const title = f.ref_name || f.name || flowTypePlain(f) || '—';
+        const acct = f.name && f.name !== title ? f.name : '';
+        const sub2 = [acct, String(f.note || '').trim()].filter(Boolean).join(' · ');
+        // 组头已有日期，这里只补「时:分」；缺记录时间的老数据不显示时间
+        const hm = flowHm(f);
         return `<div class="rg-row">
           <span class="rg-dot ${dotCls}"></span>
           <div class="rg-main">
-            <div class="recent-title">${cashFlowTypeTag(f)}${flowSnapshotTag(f)}</div>
-            <div class="recent-sub" title="${esc(sub || f.note || '')}">${esc(sub || f.note || '')}</div>
+            <div class="recent-title"><span class="recent-name" title="${esc(title)}">${esc(title)}</span>${cashFlowTypeTag(f)}${flowSnapshotTag(f)}</div>
+            <div class="recent-sub" title="${esc(sub2)}">${esc(sub2)}</div>
           </div>
+          ${hm ? `<span class="recent-hm">${hm}</span>` : ''}
           <span class="recent-amt ${amtCls}">${amt}</span>
         </div>`;
       }).join('')}</div>
@@ -8882,7 +8902,7 @@ async function ensureAssetFlows() {
   const r = await api('/api/asset/flows?start=' + q.start + '&end=' + q.end);
   if (!r.ok) return false;
   const d = await r.json();
-  assetFlowsCache = (d.flows || []).slice().sort((a, b) => a.date < b.date ? 1 : -1);
+  assetFlowsCache = (d.flows || []).slice().sort(cmpFlowNewFirst);
   assetFlowsKey = q.key;
   return true;
 }
@@ -8918,15 +8938,17 @@ function flowTlRow(f, latest) {
   const noEdit = FLOW_NO_EDIT.includes(f.type);
   const editBtn = noEdit ? '' : actBtn('edit', 'data-afedit="' + f.id + '"', '编辑该笔流水（按业务类型修改金额 / 数量 / 价格 / 费用）', { cls: 'tl-undo' });
   const undoBtn = f.snapshot ? '' : actBtn('undo', 'data-afrb="' + f.id + '"', '回退该笔资金变动', { cls: 'tl-undo' });
+  // 时间精确到分钟，放在金额前面（右对齐组：时间 → 金额）；缺记录时间的老数据只显日期
+  const hm = flowHm(f);
+  const whenTxt = fmtFlowDate(f.date) + (hm ? ' ' + hm : '');
   return '<div class="tl-row' + (latest ? ' latest' : '') + '">' +
     '<span class="tl-rail"><span class="tl-dot ' + dir + '"></span></span>' +
     '<div class="tl-body">' +
       '<div class="tl-line1"><span class="tl-title" title="' + esc(title) + '">' + esc(title) + '</span>' +
         finCatBadge(flowCatOf(f)) + flowSnapshotTag(f) + flowSourceTag(f.source) + '</div>' +
-      '<div class="tl-meta"><span class="tl-when" title="' + esc(flowDateTitle(f)) + '">' + esc(fmtFlowDate(f.date)) + '</span>' +
-        '<span class="tl-sep"></span>' +
-        '<span class="tl-note" title="' + esc(meta) + '">' + esc(meta) + '</span></div>' +
+      '<div class="tl-meta"><span class="tl-note" title="' + esc(meta) + '">' + esc(meta) + '</span></div>' +
     '</div>' +
+    '<span class="tl-when" title="' + esc(flowDateTitle(f)) + '">' + esc(whenTxt) + '</span>' +
     '<span class="tl-amt ' + cls + '">' + amtTxt + '</span>' +
     '<span class="tl-act">' + editBtn + undoBtn + '</span>' +
     '</div>';

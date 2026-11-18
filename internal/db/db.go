@@ -2284,7 +2284,8 @@ func ListCashFlows(cashID int64, limit int) ([]CashFlow, error) {
 type AggFlow struct {
 	ID        int64   `json:"id"`
 	Date      string  `json:"date"`
-	Kind      string  `json:"kind"`     // "cash" | "liability"
+	CreatedAt string  `json:"created_at"` // 记录时间（YYYY-MM-DD HH:MM:SS）：流水精确到分钟展示与排序的唯一时间源
+	Kind      string  `json:"kind"`       // "cash" | "liability"
 	Type      string  `json:"type"`     // 流水类型
 	Name      string  `json:"name"`     // 账户/负债名称
 	RefName   string  `json:"ref_name"` // 关联标的（持仓/理财）
@@ -2345,7 +2346,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 	              CASE WHEN COALESCE(f.source,'')<>'' THEN f.source
 	                   WHEN substr(f.type,1,4)='mcp_' THEN 'mcp'
 	                   ELSE '' END,
-	              COALESCE(f.snapshot,0)
+	              COALESCE(f.snapshot,0), f.created_at
 	       FROM cash_flow f LEFT JOIN cash_accounts c ON c.id=f.cash_id
 	       WHERE f.user_id=? AND f.date>=? AND f.date<=?`
 	rows, err := DB.Query(q1, userID, start, end)
@@ -2356,7 +2357,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		var f AggFlow
 		var amt float64
 		var snap int
-		if e := rows.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.RefName, &f.Note, &f.Name, &f.Currency, &f.Category, &f.Source, &snap); e != nil {
+		if e := rows.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.RefName, &f.Note, &f.Name, &f.Currency, &f.Category, &f.Source, &snap, &f.CreatedAt); e != nil {
 			rows.Close()
 			return nil, e
 		}
@@ -2368,7 +2369,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 	}
 	rows.Close()
 	// 负债流水：贷款/还款，关联 liabilities 取币种、名称与负债类型；分类由 type 推导（loan=融资借贷 / repay=负债偿还）
-	q2 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.note, COALESCE(l.name,''), COALESCE(l.currency,'cny'), 0, COALESCE(l.type,'')
+	q2 := `SELECT f.id, f.date, f.type, f.amount, f.balance, f.note, COALESCE(l.name,''), COALESCE(l.currency,'cny'), 0, COALESCE(l.type,''), f.created_at
 	       FROM liability_flows f LEFT JOIN liabilities l ON l.id=f.liability_id
 	       WHERE f.user_id=? AND f.date>=? AND f.date<=?`
 	rows2, err := DB.Query(q2, userID, start, end)
@@ -2380,7 +2381,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		var f AggFlow
 		var amt float64
 		var snap int
-		if e := rows2.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.Note, &f.Name, &f.Currency, &snap, &f.LiabType); e != nil {
+		if e := rows2.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.Note, &f.Name, &f.Currency, &snap, &f.LiabType, &f.CreatedAt); e != nil {
 			return nil, e
 		}
 		f.Kind = "liability"
@@ -2400,11 +2401,14 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		}
 		out = append(out, f)
 	}
-	// 按日期倒序，日期相同按 id 倒序
+	// 按日期倒序；同日内按记录时间（created_at）倒序，再按 id 兜底
 	out = DedupRepayFlows(out)
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Date != out[j].Date {
 			return out[i].Date > out[j].Date
+		}
+		if out[i].CreatedAt != out[j].CreatedAt {
+			return out[i].CreatedAt > out[j].CreatedAt
 		}
 		return out[i].ID > out[j].ID
 	})
