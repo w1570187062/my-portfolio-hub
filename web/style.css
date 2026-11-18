@@ -831,13 +831,24 @@ w {
   .holdings-table tbody > tr > td.ht-day,
   .holdings-table tbody > tr > td.ht-act { display: none; }
   .hn-acts { display: none; }
-  /* 元信息行改 flex：文字吃剩余宽度并省略，右侧三枚图标常驻 */
-  .hn-meta { display: flex; align-items: center; gap: var(--sp-2); overflow: visible; }
+  /* 元信息行改 flex：文字吃剩余宽度并省略，右侧图标常驻。
+     2026-11-18：允许换行。手机行内动作已增到 5 枚（交易 / 技术分析 / 历史盈亏 / 编辑 / 删除），
+     全塞一行要 196px，而名称格实测只有 249px（右侧盈亏列吃掉剩下的），元信息文字只剩 45px
+     —— 「008702 · 成本…」直接被截成 4 个字。改成可换行后文字独占第一行（拿满 249px），
+     图标整组落到第二行右对齐；行高只多出文字那一行（约 19px），因为图标本来就把这一行撑到 28px。 */
+  .hn-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); overflow: visible; }
+  /* basis 用 auto 而不是 100%：只有「文字 + 整组图标 > 名称格」时才换行（持仓 5 枚会换，
+     理财 3 枚仍在同一行），避免为了统一强行给每张表加一行高。 */
   .hn-meta-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .hn-acts-m { display: inline-flex; }
+  .hn-acts-m { display: inline-flex; margin-left: auto; }
   .holdings-table tr.h-grp { display: block; }
-  .holdings-table tr.h-grp td { display: block; }
-  .hg-in { gap: var(--sp-2); }
+  /* 组头（账户名）上下留白必须相等。此前是 td display:block + .hg-in 定高 36px，
+     而 td 内容盒实测 38px（行高取整多出 2px），36px 的内容贴着内容盒顶边摆，
+     于是账号名上偏 1px、下偏 3px —— 三张单表（持仓 / 理财 / 平仓）共用这个组头结构，
+     一起表现为「账户名上下间距不一致」。改 td 为 flex：.hg-in 成为唯一弹性项，
+     由 align-items:center 在这个（含取整的）内容盒里居中，上下留白自然相等。 */
+  .holdings-table tr.h-grp td { display: flex; align-items: center; }
+  .hg-in { flex: 1 1 auto; min-width: 0; gap: var(--sp-2); }
   .hg-stat-day { display: none; }   /* 组头的「今日」在手机上省掉，只留市值 / 总盈亏 */
   /* 理财组头的「累计收益」、平仓组头的「盈亏率」同理省掉：手机上组头只能留一个主数字，
      否则账户名会被挤成「平安…」，多币种分段值还会换行成两行。

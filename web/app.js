@@ -1828,10 +1828,15 @@ function renderHoldRow(h, pool, pdi, hideDay) {
       </div>
       <div class="hn-meta">
         <span class="hn-meta-t">${meta.join(' · ')}</span>
-        <!-- 手机端：表头与「操作」列都收起，改用元信息行右侧这三枚图标（.hn-acts-m 桌面隐藏）。
-             放在元信息行而不是名称行 —— 名称行让出 116px 后只剩 8 个字可读。 -->
+        <!-- 手机端：表头与「操作」列都收起，改用元信息行右侧这几枚图标（.hn-acts-m 桌面隐藏）。
+             放在元信息行而不是名称行 —— 名称行让出 116px 后只剩 8 个字可读。
+             2026-11-18：补回「技术分析」与「历史盈亏」。它们原本只在名称格的 .hn-acts /
+             操作列 .ht-acts 里，而那两组在 ≤640 都被 display:none，手机上等于没有任何入口
+             —— 两个弹框本身都支持窄屏，只是点不开。 -->
         <span class="hn-acts-m">
           ${actBtn('adjust', `data-adjust="${h.id}"`, '交易')}
+          ${supportsAnalysis(h) ? actBtn('analysis', 'data-ana="' + h.id + '"', '技术分析') : ''}
+          ${actBtn('hist', `data-hist="${h.id}"`, '历史盈亏')}
           ${actBtn('edit', `data-edit="${h.id}"`, '编辑持仓')}
           ${actBtn('del', `data-del="${h.id}"`, '删除持仓', { danger: true })}
         </span>
