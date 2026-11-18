@@ -65,6 +65,11 @@ func alertKindCN(kind string) string {
 		return "心理价"
 	case "fee_window":
 		return "费率窗口"
+	// 组合级盈亏（2026-11-18）：holding_id=0 的事件，逐只持仓的价格阈值之外的一层
+	case "portfolio_take_profit":
+		return "组合止盈"
+	case "portfolio_stop":
+		return "组合止损"
 	}
 	return "提醒"
 }
@@ -82,7 +87,9 @@ func todayBrief(c *gin.Context) {
 
 	// ---- 1) 止盈止损触达：未读提醒 ----
 	if as, err := db.ListAlerts(uid, 50, true); err == nil && len(as) > 0 {
-		g := todayGroup{Key: "alert", Label: "止盈止损", Count: len(as), BadgeCount: len(as), Items: make([]todayItem, 0, 4)}
+		// 这一组原先叫「止盈止损」，现在还包括组合级盈亏提醒（holding_id=0 的事件），
+		// 标签收成「提醒」—— 用「止盈止损」会让人以为组合那条是逐只持仓的触发。
+		g := todayGroup{Key: "alert", Label: "提醒", Count: len(as), BadgeCount: len(as), Items: make([]todayItem, 0, 4)}
 		for i, a := range as {
 			if i >= 4 {
 				break

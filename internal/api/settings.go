@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"portfolio/internal/db"
 
@@ -17,6 +18,9 @@ const (
 	settingFlowCategories  = "flow_categories"
 	// 再平衡目标权重与频率（2026-10-27 重新引入再平衡功能）
 	settingRebalanceTargets = "rebalance_targets"
+	// 组合级盈亏阈值（2026-11-18）：整块 JSON，结构见 PortfolioRiskPlan。
+	// 与 holdings.risk_plan 是两个层级，不要合并 —— 一个是逐只定价，一个是整体盈亏。
+	settingPortfolioRisk = "portfolio_risk"
 )
 
 // defaultAssetTypeLabels 返回内置默认资产类型标签（首次访问设置时落库）。
@@ -121,6 +125,7 @@ func settingsGet(c *gin.Context) {
 	case settingAssetTypeLabels:
 	case settingFlowCategories:
 	case settingRebalanceTargets:
+	case settingPortfolioRisk:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未知的设置类型"})
 		return
@@ -139,6 +144,11 @@ func settingsGet(c *gin.Context) {
 			}
 		case settingRebalanceTargets:
 			if b, e := json.Marshal(defaultRebalanceConfig()); e == nil {
+				seed = string(b)
+			}
+		case settingPortfolioRisk:
+			// 默认关闭：和逐只 risk_plan 同一个原则 —— 不擅自给存量账本挂风控线
+			if b, e := json.Marshal(defaultPortfolioRiskPlan()); e == nil {
 				seed = string(b)
 			}
 		default:
@@ -160,6 +170,7 @@ func settingsPut(c *gin.Context) {
 	case settingAssetTypeLabels:
 	case settingFlowCategories:
 	case settingRebalanceTargets:
+	case settingPortfolioRisk:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未知的设置类型"})
 		return
@@ -210,6 +221,25 @@ func settingsPut(c *gin.Context) {
 		if b2, e := json.Marshal(norm); e == nil {
 			s = string(b2)
 		}
+	} else if kind == settingPortfolioRisk {
+		// 结构校验：只允许 PortfolioRiskPlan 的字段，越界值归一后再落库
+		var plan PortfolioRiskPlan
+		if err := json.Unmarshal([]byte(s), &plan); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "组合盈亏阈值必须是 {enabled,tp_pct,sl_pct,tp_amt,sl_amt} 结构"})
+			return
+		}
+		norm, err := normalizePortfolioRiskPlan(plan)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		// 每次保存都清掉基线：新阈值下的第一轮扫描只落库不外推，
+		// 否则「把止损从 20% 收到 10%」这一下会立刻按当前浮亏推一条到手机。
+		norm.BaselineAt = ""
+		norm.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
+		if b2, e := json.Marshal(norm); e == nil {
+			s = string(b2)
+		}
 	} else {
 		// 结构校验：资产类型标签为字符串数组
 		var ls []string
@@ -233,6 +263,7 @@ func settingsDelete(c *gin.Context) {
 	case settingAssetTypeLabels:
 	case settingFlowCategories:
 	case settingRebalanceTargets:
+	case settingPortfolioRisk:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未知的设置类型"})
 		return

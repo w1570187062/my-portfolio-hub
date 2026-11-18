@@ -713,6 +713,14 @@ func ScanAlerts(uid int64, dryRun bool) ([]gin.H, error) {
 			}
 		}
 	}
+	// 组合级盈亏阈值（2026-11-18）：同一轮扫描里串一次，事件同表落库 ——
+	// 铃铛 / 今日待办 / 数据总览「需要留意」因此不用额外接线。
+	// 失败只记日志：逐只持仓那一轮已经写完，不能因为整体阈值算不出来就整轮报错。
+	if prow, e := ScanPortfolioAlerts(uid, dryRun); e != nil {
+		log.Printf("[alert] uid=%d 组合盈亏扫描失败: %v", uid, e)
+	} else {
+		out = append(out, prow...)
+	}
 	return out, nil
 }
 

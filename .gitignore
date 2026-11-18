@@ -77,6 +77,7 @@ shield-prototype/
 kpi-prototype/
 adjust-prototype/
 hero-prototype.html
+pnl-alert-prototype/
 
 # ── 本地验证用二进制（pf-smoke，跑全量构建前的冒烟库）────────
 /pf-smoke.exe

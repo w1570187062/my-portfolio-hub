@@ -85,8 +85,14 @@ type rbConfig struct {
 	Freq       string         `json:"freq"`        // monthly | quarterly | manual
 	DriftAlert float64        `json:"drift_alert"` // 偏离 / 提醒阈值（百分点）
 	// GoalPct 用户自设的年度收益目标（%）。nil = 不设，页面只看配置内生的预期收益。
-	GoalPct   *float64 `json:"goal_pct"`
-	UpdatedAt string   `json:"updated_at"`
+	GoalPct *float64 `json:"goal_pct"`
+	// PnlReviewPct 盈亏检视阈值（%）：某一类的浮盈 / 浮亏越过它就该看一眼，0 = 关闭。
+	// 2026-11-18 新增。严格区别于 DriftAlert：
+	//   DriftAlert 决定「要不要动、动多少」（结构偏离，金额由它算）；
+	//   PnlReviewPct 只决定「要不要提示检视」（赚多了 / 亏多了），绝不参与买卖金额 ——
+	//   否则等于用盈亏自创一套减仓算法，而卖多少本该只由目标权重说了算。
+	PnlReviewPct float64 `json:"pnl_review_pct"`
+	UpdatedAt    string  `json:"updated_at"`
 }
 
 // defaultRebalanceConfig 默认偏保守的 15/30/40/15：股票+基金=45 权益，理财 40 固收，现金 15 弹药。
@@ -175,6 +181,11 @@ func normalizeRebalanceConfig(in rbConfig) (rbConfig, error) {
 	if out.DriftAlert < 0.5 {
 		out.DriftAlert = rbDefaultDriftAlert
 	}
+	// 盈亏检视阈值：默认 0（关闭），与逐只 risk_plan 同一原则 —— 不擅自给存量账本挂新判据。
+	// 合法区间 [1,200]，超出按关闭处理；允许小数（如 12.5%）。
+	if in.PnlReviewPct >= 1 && in.PnlReviewPct <= 200 {
+		out.PnlReviewPct = math.Round(in.PnlReviewPct*100) / 100
+	}
 	// 年度收益目标：nil 或非正数视为不设；上限 50% 防手滑多打一个 0。
 	if in.GoalPct != nil {
 		g := *in.GoalPct
@@ -241,31 +252,41 @@ type rbBucket struct {
 	Amount      float64 `json:"amount"`       // 偏离金额（正=卖出，负=买入）
 	// Contrib 收益影响（元/年）= (实际权重 − 目标权重) × 总市值 × 该类预期年化。
 	// 四类相加恒等于组合的「超额收益金额」—— 因此能直接回答「这一类拖累了多少收益」。
-	Contrib float64        `json:"contrib"`
-	Action  string         `json:"action"`        // sell | buy | none
-	Count   int            `json:"count"`         // 包含几只/几笔
-	Items   []rbItem       `json:"items,omitempty"` // 类内单项明细，金额降序；AI 通道会裁掉（见 rebalanceForAI）
+	Contrib float64 `json:"contrib"`
+	// Cost / Pnl / PnlPct：该类现有资产的成本基数与浮动盈亏（折 CNY）。
+	// 现金没有成本概念，Cost = 0、PnlPct = 0；理财本金按 amount − 累计收益反推。
+	// 只做展示与「盈亏检视」判定，不参与 amount（卖多少永远由 drift 决定）。
+	Cost   float64 `json:"cost"`
+	Pnl    float64 `json:"pnl"`
+	PnlPct float64 `json:"pnl_pct"`
+	// Review 盈亏越过 PnlReviewPct 且偏离仍在容差内 → 值得检视但还没到调仓标准。
+	// action 非 none 时恒为 false：那类本来就已经在调仓清单里了，再标一次是重复提示。
+	Review bool     `json:"review"`
+	Action string   `json:"action"`          // sell | buy | none
+	Count  int      `json:"count"`           // 包含几只/几笔
+	Items  []rbItem `json:"items,omitempty"` // 类内单项明细，金额降序；AI 通道会裁掉（见 rebalanceForAI）
 }
 
 // rbSnapshot 一次计算的完整结果：四类明细 + 总市值 + 收益 / 风险聚合。
 // 收益三项（目标 / 实际 / 超额）都是「权重 × 各类预期年化」的加权结果，
 // 没有复利、税费、申赎费调整 —— 是配置层的期望值，不是对未来的预测。
 type rbSnapshot struct {
-	Total     float64
-	Buckets   []rbBucket
-	RetTarget float64 // 目标配置加权年化 %
-	RetActual float64 // 实际配置加权年化 %
-	VolTarget float64 // 目标配置加权波动 %（简单加权，忽略相关性）
-	VolActual float64 // 实际配置加权波动 %
-	ExcessPct float64 // 超额收益率（pp）= 实际 − 目标
-	TgtAmt    float64 // 目标配置预期年化收益（元/年）
-	CurAmt    float64 // 实际配置预期年化收益（元/年）
-	ExcessAmt float64 // 超额收益金额（元/年）
-	GoalPct   *float64
-	GoalAmt   *float64
-	GapAmt    *float64 // 收益目标 − 目标配置预期（正数=目标配置达不到你的目标）
-	Pending   []rbBucket
-	Need      float64 // 待调整金额：Σ|amount| / 2（买卖两侧等额，一半才是真正要动的钱）
+	Total       float64
+	Buckets     []rbBucket
+	RetTarget   float64 // 目标配置加权年化 %
+	RetActual   float64 // 实际配置加权年化 %
+	VolTarget   float64 // 目标配置加权波动 %（简单加权，忽略相关性）
+	VolActual   float64 // 实际配置加权波动 %
+	ExcessPct   float64 // 超额收益率（pp）= 实际 − 目标
+	TgtAmt      float64 // 目标配置预期年化收益（元/年）
+	CurAmt      float64 // 实际配置预期年化收益（元/年）
+	ExcessAmt   float64 // 超额收益金额（元/年）
+	GoalPct     *float64
+	GoalAmt     *float64
+	GapAmt      *float64 // 收益目标 − 目标配置预期（正数=目标配置达不到你的目标）
+	Pending     []rbBucket
+	Need        float64 // 待调整金额：Σ|amount| / 2（买卖两侧等额，一半才是真正要动的钱）
+	ReviewCount int     // 盈亏越过检视线、但偏离仍在容差内的类别数
 	// 日常开销账户（cash_accounts.excluded=1）不参与口径，这里只记录被剔除的规模，
 	// 供页面明示「现金为什么比账户页少」——不透明的话用户会以为算漏了。
 	CashExcludedN   int
@@ -282,6 +303,9 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 	cnyRate, hkdRate, _ := market.FetchFXRates()
 	mv := map[string]float64{}
 	cnt := map[string]int{}
+	// cost 只用于算各类的浮盈，不进入 mv / total —— 配置比例的分母永远是现值，
+	// 成本混进分母会让「现金占多少」变得不可比。
+	cost := map[string]float64{}
 	items := map[string][]rbItem{} // 类内单项明细：与 mv 完全同口径，只多留名字
 	var snapExclN int
 	var snapExclAmt float64
@@ -311,6 +335,10 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 		}
 		mv[key] += cmv
 		cnt[key]++
+		// 成本缺失（cost_price=0 的历史数据）时不累加：否则会算出「涨了 ∞%」的假检视信号
+		if h.Quantity > 0 && h.CostPrice > 0 {
+			cost[key] += fxToCNY(h.Quantity*h.CostPrice, h.Currency, cnyRate, hkdRate)
+		}
 		items[key] = append(items[key], rbItem{Account: srcName[h.SourceID], Name: h.Name, Amount: round2(cmv)})
 	}
 
@@ -327,6 +355,15 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 			ramt := fxToCNY(amt, w.Currency, cnyRate, hkdRate)
 			mv[rbClassWealth] += ramt
 			cnt[rbClassWealth]++
+			// 本金反推与端口盈亏同一口径：累计收益优先取手动编辑值，否则按每日快照累计。
+			// principal <= 0 说明收益已超过本金（脏数据或对冲持仓），不参与比例计算。
+			cum := round2(w.CumPnl)
+			if cum == 0 {
+				cum = round2(wealthCumPnl(w.ID))
+			}
+			if principal := amt - cum; principal > 0.005 {
+				cost[rbClassWealth] += fxToCNY(principal, w.Currency, cnyRate, hkdRate)
+			}
 			items[rbClassWealth] = append(items[rbClassWealth], rbItem{Account: srcName[w.SourceID], Name: w.Name, Amount: round2(ramt)})
 		}
 	}
@@ -399,6 +436,19 @@ func computeRebalance(uid int64, cfg rbConfig) rbSnapshot {
 			b.Action = "buy"
 		default:
 			b.Action = "none"
+		}
+		// 盈亏口径：成本为 0（纯现金 / 成本缺失）时只留 0，不猜
+		if cost[k] > 0.005 {
+			rawPnlPct := (mv[k] - cost[k]) / cost[k] * 100
+			b.Cost = round2(cost[k])
+			b.Pnl = round2(mv[k] - cost[k])
+			b.PnlPct = round2(rawPnlPct)
+			// 「盈亏维度」只触发检视，不改动作：action 已经是 sell/buy 的类别本来就在调仓清单里，
+			// 再标一次是同一件事说两遍；只有「结构没偏、但涨/亏得够多」才需要提醒。
+			if cfg.PnlReviewPct > 0 && b.Action == "none" && math.Abs(rawPnlPct) >= cfg.PnlReviewPct {
+				b.Review = true
+				snap.ReviewCount++
+			}
 		}
 		// 明细按金额降序，前端展开「资金去向」直接用；金额与 mv 同口径（已折 CNY）
 		if its := items[k]; len(its) > 0 {
@@ -537,6 +587,8 @@ func rebalancePayload(uid int64) map[string]interface{} {
 		// 已剔除的日常开销账户规模：页面必须显示，否则用户会以为现金算漏了
 		"cash_excluded_n":   snap.CashExcludedN,
 		"cash_excluded_amt": snap.CashExcludedAmt,
+		// 盈亏检视：结构没偏、但某类涨/亏越过阈值的类别数（金额仍由 drift 决定）
+		"review_count": snap.ReviewCount,
 	}
 	if l, ok, _ := db.LastRebalanceLog(uid); ok {
 		out := toRebalanceLogOut(*l)
@@ -590,6 +642,8 @@ func rebalanceForAI(uid int64) map[string]interface{} {
 				"key": b.Key, "label": b.Label, "market_value": b.MarketValue, "weight": b.Weight,
 				"target": b.Target, "drift": b.Drift, "amount": b.Amount, "contrib": b.Contrib,
 				"action": b.Action, "count": b.Count,
+				// 盈亏维度：AI 需要它才能回答「哪一类涨多了、要不要先减」
+				"cost": b.Cost, "pnl": b.Pnl, "pnl_pct": b.PnlPct, "review": b.Review,
 			})
 		}
 		full["buckets"] = trim

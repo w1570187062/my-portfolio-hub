@@ -250,6 +250,8 @@ func RegisterRoutes(r *gin.Engine) {
 		g.POST("/alerts/scan", alertsScan)
 		g.POST("/alerts/apply-all", alertsApplyAll)
 		g.POST("/risk/preview", riskPreview)
+		// 组合级盈亏阈值：只读预览（方案 + 实时盈亏 + 此刻会命中什么），设置页与联调共用
+		g.GET("/portfolio/risk", portfolioRiskStatus)
 		// 基金定投：计划（周期/金额/限购/暂停）+ 期次记录（逐期确认、可改可撤）
 		g.GET("/dca/plans", listDCAPlans)
 		g.POST("/dca/plans", createDCAPlan)

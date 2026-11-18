@@ -1246,6 +1246,30 @@ h2 > svg { color: var(--primary); }
 .ad-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
 .ad-grid:empty { display: none; }
 
+/* ===== 组合级盈亏提醒弹框（方案 A：打开即弹，2026-11-18）=====
+   版式沿用上面的提醒详情（复用 .ad-meta / .alert-tag），只补三块：
+   主数字（比例 + 金额）、阈值表、以及「今日不再提示」。
+   打扰策略在 JS（maybePromptPnl）：同一档位只弹一次，档位升级才再弹。 */
+.pnl-prompt-card,
+#pnlPromptModal .modal-card { width: 440px; }
+.pp-body { padding: 0 28px var(--sp-2); }
+.pp-figure { display: flex; align-items: baseline; gap: var(--sp-2); padding: var(--sp-2) 0 var(--sp-1); }
+/* 34px 大字只在这里出现：弹框的唯一视觉重心是「赚/亏了多少」，其余一律退后 */
+.pp-pct { font-size: 34px; font-weight: 700; letter-spacing: -.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.pp-amt { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.pp-meta { font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.pp-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px var(--sp-3); margin: var(--sp-3) 0 0; padding-top: var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-sm); }
+.pp-kv dt { color: var(--text-faint); }
+.pp-kv dd { margin: 0; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.pp-advice { margin-top: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--warning-soft); color: var(--warning); font-size: var(--fs-sm); line-height: 1.6; }
+/* 复选行：不吃 .modal-card label 的 12px 下边距（下面紧跟说明与按钮区），
+   也不让 UA 的 [hidden] 失效 —— 本行始终可见，没有隐藏态 */
+.modal-card label.pp-snooze { display: flex; align-items: center; gap: var(--sp-2); margin: 0; padding: 0 28px var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); }
+/* 必须带 .modal-card 前缀：`.modal-card input { width:100% }` 与本选择器同权重，
+   但它写在后面，单选钮会被拉成一条白条（实测截图里就是这样） */
+.modal-card label.pp-snooze input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; accent-color: var(--primary); }
+.modal-card > p.pp-foot { margin: 0; padding: 0 28px var(--sp-3); font-size: var(--fs-2xs); color: var(--text-faint); line-height: 1.6; }
+
 .alert-foot-btn {
   flex: 1 1 0;
   padding: var(--sp-2);
@@ -4239,6 +4263,9 @@ body[data-density="compact"] .holdings-table .hn-meta { margin-top: 0; }
 }
 .nt-alert-row:last-of-type { border-bottom: 0; }
 .nt-alert-name { font-size: var(--fs-sm); color: var(--text-secondary); }
+/* 组合级盈亏阈值的实时预览：两行（当前盈亏 / 距阈值多少），换行由 JS 用 \n 给出，
+   必须保留，否则会连成一长段读不出层次 */
+#prPreview { white-space: pre-line; }
 
 /* ---------- 导航区（.brand-nav 已移至 hero 卡片，本块保留给未来扩展） ---------- */
 
@@ -6643,24 +6670,54 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
   .bar-chart-xlabels span { padding: 6px 0; }
   /* 触屏没有 hover 语义（点一下直接选月），这行提示只会挤占小标题位置 */
   .bar-hint { display: none; }
-  /* 资产页流水时间轴：轨道 22→20、左右内边距收一档，金额降一档；
-     375px 上「标题 + 金额」并排还有 ~170px 给标题，长基金名才不至于只剩 3 个字。 */
+  /* 资产页流水时间轴（手机档）：桌面是 5 栏「轨道 / 正文 / 时间 / 金额 / 操作」，
+     一排根本放不下 —— 之前只把栏数改成 4 栏，第 5 个子项（操作）就掉到第二行、
+     压在轨道下方，第 4 栏还带着「28px 定宽」把金额裁成「−¥1.23」。
+     现在改成「2 行 3 栏」：第 1 行 标题 → 金额，第 2 行 时:分 → 编辑/回退，
+     轨道竖线贯穿两行。日期时间必须留着 —— 本列表没有分组头，它才是唯一的时间锚点。 */
   .flow-tl { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
-  .tl-row { grid-template-columns: 20px minmax(0, 1fr) auto 28px; padding: var(--sp-3) var(--sp-1) var(--sp-3) 0; }
-  .tl-row::before { left: 10px; }
-  .tl-amt { font-size: var(--fs-md); }
+  .tl-row {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "rail body amt"
+      "rail when act";
+    gap: var(--sp-1) var(--sp-2);
+    padding: var(--sp-2) var(--sp-1) var(--sp-2) 0;
+  }
+  .tl-rail { grid-area: rail; }
+  .tl-body { grid-area: body; }
+  /* 时间落到第二行左端、操作落到第二行右端：金额独占第一行右侧，不再被定宽栏裁剪 */
+  .tl-when { grid-area: when; align-self: center; padding-top: 0; }
+  .tl-amt { grid-area: amt; font-size: var(--fs-md); }
+  .tl-act { grid-area: act; align-self: center; }
+  /* 轨道列 22→18：竖线与首末行的线头端点同步（圆点圆心距行顶 = 8 + 5 + 5） */
+  .tl-row::before { left: 9px; }
+  .tl-row:first-child::before { top: 18px; }
+  .tl-row:last-child::before { bottom: calc(100% - 18px); }
   /* 窄屏把分类徽标收掉：390px 上它要吃 55px 宽度，长基金名就只剩 9 个字；
      收支语义由金额颜色 + 说明开头的动作词（「分红入账 …」）承担，信息不丢。 */
   .tl-line1 .flow-tag.cat { display: none; }
   /* 首页最新流水（方案 B）：手机端收紧分组缩进与行内边距，
-     时间轴节点与竖线同步左移，保持对齐。 */
+     时间轴节点与竖线同步左移，保持对齐。
+     行内改「标题 → 金额」/「说明 → 时:分」两行两列：时:分 从第一行右移到金额下方后，
+     标题多出约 38px（390px 上从 5 个字变回 9 个字），行高不变 —— 右列本来就只有金额。 */
   .recent-filter { padding: var(--sp-3); }
   .recent-count { display: none; }
   .recent-list { padding: var(--sp-3); }
   .recent-list::before { left: calc(var(--sp-3) + 13px); top: calc(var(--sp-3) + 6px); }
-  .recent-group { padding-left: 32px; }
-  .rg-row { grid-template-columns: 14px minmax(0, 1fr) auto auto; gap: var(--sp-2); padding: 10px var(--sp-2); }
-  .recent-amt { font-size: var(--fs-md); }
+  .recent-group { padding-left: 28px; }
+  .rg-row {
+    grid-template-columns: 12px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "dot main amt"
+      "dot main hm";
+    gap: 2px var(--sp-2);
+    padding: 10px var(--sp-2);
+  }
+  .rg-dot { grid-area: dot; }
+  .rg-main { grid-area: main; }
+  .recent-amt { grid-area: amt; font-size: var(--fs-md); }
+  .recent-hm { grid-area: hm; justify-self: end; }
   .rg-net-prefix { display: none; }
   /* 子 tab 手机档（**这里只有这一处 .sub-tab 的手机覆盖**，别再在 640 大段里重复写 ——
      后出现的同特异性规则会静默盖掉前者，2026-11-02 就因此把 tab 撑回 76px）。
@@ -7480,6 +7537,20 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .rb-alloc-bot b { color: var(--text-secondary); font-weight: 600; }
 .rb-alloc-bot .warn { color: var(--warning); }
 .rb-alloc-bot .down { color: var(--down); }
+/* 浮动盈亏：红涨绿跌与全站一致（这里的 .up 是「赚钱」，不是「危险」） */
+.rb-alloc-bot .up { color: var(--up); }
+/* 盈亏检视标记：结构没偏、但涨/亏越过检视线。用警示色文字而非按钮 —— 它只是提示，
+   真正的操作仍在下方「本次调仓清单」里（金额由偏离阈值决定）。 */
+.rb-review {
+  margin-left: var(--sp-1);
+  padding: 0 4px;
+  border-radius: var(--r-xs);
+  font-style: normal;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  color: var(--warning);
+  background: var(--warning-soft);
+}
 
 /* 资金去向：点击条右端箭头 chip 行内展开（grid 0fr→1fr，与站内折叠动画同构）。
    无悬停展开 —— 2026-11-17 定稿为纯点击，chip 是常驻状态指示器，整个条区域都是点击热区。 */

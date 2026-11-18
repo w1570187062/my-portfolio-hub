@@ -566,6 +566,11 @@ function showApp() {
   syncViewToggle();
   requestAnimationFrame(syncViewToggle);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncViewToggle);
+  // 组合级盈亏提醒（方案 A）：等首屏渲染落定再拉一次提醒并判断要不要弹。
+  // 铃铛自己的首次 loadAlerts 与认证/首屏存在时序竞争，这里补一次显式拉取，
+  // 否则「打开应用」这一刻可能还没有 alertCache，弹框只能等到 60s 后的轮询。
+  setTimeout(() => { loadAlerts(); }, 700);
+  setTimeout(maybePromptPnl, 1600);
 }
 
 function toast(msg, type = 'info') {
@@ -7759,7 +7764,8 @@ async function showDevicesView() {
 // 通知推送（高频常切）：推送频率 / 待还款提醒 / 钉钉 / 邮箱渠道
 async function showNotifyView() {
   $('#notifyView').hidden = false;
-  await loadNotifySettings();
+  // 两组配置各自独立取数：通知渠道在 /api/notify/settings，组合阈值在 /api/portfolio/risk
+  await Promise.all([loadNotifySettings(), loadPortfolioRisk()]);
   playRiseIn($('#notifyView'), '.settings-group', 60);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -11289,6 +11295,143 @@ async function loadNotifySettings() {
   } catch (e) { /* 忽略，使用默认值 */ }
   refreshChannelCollapse(); // 折叠态跟随服务端启用状态：未启用的渠道默认收起
 }
+
+// ===== 组合级盈亏阈值（2026-11-18）=====
+// 与上面那组「止盈止损提醒」不是同一份配置：那组决定「往哪推」，这组决定「到多少才推」，
+// 存的是 settings kind=portfolio_risk。预览统一走 /api/portfolio/risk ——
+// 盈亏聚合口径只保留后端一份，前端再算一遍迟早会和提醒正文里的数字对不上。
+const prNum = (el, min, max) => {
+  if (!el) return 0;
+  const v = parseFloat(el.value);
+  if (!isFinite(v)) return 0;
+  return Math.round(Math.max(min, Math.min(max, v)) * 100) / 100;
+};
+// 最近一次读到的组合盈亏：输入阈值时本地重算「还差多少」用它，不参与保存
+let prLastPnl = null;
+
+// 距阈值的距离：比「未到阈值」这种空话有用，能直接看出还差几个点
+function prDistanceText(p, pct, net) {
+  const out = [];
+  const tp = Number(p.tp_pct) || 0;
+  const sl = Number(p.sl_pct) || 0;
+  const tpAmt = Number(p.tp_amt) || 0;
+  const slAmt = Number(p.sl_amt) || 0;
+  if (tp > 0) out.push(pct < tp ? `距止盈线 +${tp}% 还差 ${(tp - pct).toFixed(2)}pp` : `已越过止盈线 +${tp}%`);
+  if (sl > 0) out.push(pct > -sl ? `距止损线 −${sl}% 还有 ${(pct + sl).toFixed(2)}pp` : `已越过止损线 −${sl}%`);
+  if (tpAmt > 0) out.push(net < tpAmt ? `距止盈金额还差 ${yuanOfW(tpAmt - net)}` : `已越过止盈金额 ${yuanOfW(tpAmt)}`);
+  if (slAmt > 0) out.push(-net < slAmt ? `距止损金额还有 ${yuanOfW(slAmt + net)}` : `已越过止损金额 ${yuanOfW(slAmt)}`);
+  return out.join(' · ');
+}
+
+function renderPortfolioRiskPreview(pnl, plan) {
+  const pv = document.getElementById('prPreview');
+  if (!pv) return;
+  if (!pnl) { pv.textContent = '当前组合盈亏读取失败，稍后再试。'; return; }
+  const pct = Number(pnl.pnl_pct) || 0;
+  const net = Number(pnl.pnl_cny) || 0;
+  const head = `当前组合：成本 ${yuanOfW(pnl.cost_cny)} · 市值 ${yuanOfW(pnl.mv_cny)} · 浮动盈亏 `
+    + `${(net < 0 ? '' : '+') + yuanOfW(net)}（${(pct >= 0 ? '+' : NEG) + Math.abs(pct).toFixed(2)}%）`;
+  const scope = [];
+  if (pnl.holdings || pnl.products) scope.push(`${pnl.holdings || 0} 只持仓 + ${pnl.products || 0} 个理财`);
+  if (pnl.skipped) scope.push(`${pnl.skipped} 项因缺成本价 / 无汇率源未计入`);
+  const unpriced = Array.isArray(pnl.currency_unpriced) ? pnl.currency_unpriced : [];
+  if (unpriced.length) scope.push(`未计价币种：${unpriced.join('、')}`);
+  const p = plan || {};
+  const lines = [head + (scope.length ? ' · ' + scope.join(' · ') : '')];
+  if (!p.enabled) {
+    lines.push('当前状态：未启用，不会产生组合级提醒。');
+  } else {
+    const dist = prDistanceText(p, pct, net);
+    lines.push(dist ? '当前状态：' + dist : '当前状态：阈值都留空了，保存前请至少填一项。');
+  }
+  pv.textContent = lines.join('\n');
+}
+
+async function loadPortfolioRisk() {
+  const err = document.getElementById('prErr');
+  if (err) err.textContent = '';
+  try {
+    const r = await api('/api/portfolio/risk');
+    if (!r.ok) throw new Error('读取失败');
+    const d = await r.json();
+    const p = d.plan || {};
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v > 0 ? v : ''; };
+    const en = document.getElementById('prEnabled');
+    if (en) en.checked = !!p.enabled;
+    set('prTpPct', Number(p.tp_pct) || 0);
+    set('prTpAmt', Number(p.tp_amt) || 0);
+    set('prSlPct', Number(p.sl_pct) || 0);
+    set('prSlAmt', Number(p.sl_amt) || 0);
+    const rp = document.getElementById('prRepeat');
+    if (rp) rp.value = p.repeat === 'repeat' ? 'repeat' : 'once';
+    prLastPnl = d.pnl || null;
+    renderPortfolioRiskPreview(prLastPnl, p);
+  } catch (e) {
+    renderPortfolioRiskPreview(null, null);
+  }
+}
+// 输入即刷新「还差多少」，不用先保存再看效果（本地算距离，不发请求）
+function refreshPortfolioRiskPreview() {
+  const plan = {
+    enabled: !!(document.getElementById('prEnabled') || {}).checked,
+    tp_pct: prNum(document.getElementById('prTpPct'), 0, 200),
+    tp_amt: prNum(document.getElementById('prTpAmt'), 0, 1e12),
+    sl_pct: prNum(document.getElementById('prSlPct'), 0, 100),
+    sl_amt: prNum(document.getElementById('prSlAmt'), 0, 1e12),
+  };
+  renderPortfolioRiskPreview(prLastPnl, plan);
+}
+(function bindPortfolioRiskPanel() {
+  const save = document.getElementById('prSaveBtn');
+  if (!save) return;
+  ['prEnabled', 'prTpPct', 'prTpAmt', 'prSlPct', 'prSlAmt'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => { if (prLastPnl) refreshPortfolioRiskPreview(); });
+    if (el && el.type === 'checkbox') el.addEventListener('change', () => { if (prLastPnl) refreshPortfolioRiskPreview(); });
+  });
+  save.onclick = async () => {
+    const err = document.getElementById('prErr');
+    if (err) err.textContent = '';
+    const payload = {
+      enabled: !!(document.getElementById('prEnabled') || {}).checked,
+      tp_pct: prNum(document.getElementById('prTpPct'), 0, 200),
+      tp_amt: prNum(document.getElementById('prTpAmt'), 0, 1e12),
+      sl_pct: prNum(document.getElementById('prSlPct'), 0, 100),
+      sl_amt: prNum(document.getElementById('prSlAmt'), 0, 1e12),
+      repeat: (document.getElementById('prRepeat') || {}).value === 'repeat' ? 'repeat' : 'once',
+      warn_ratio: 0.8,
+    };
+    // 后端也会拦这一条，前端先说清楚，省一次往返
+    if (payload.enabled && !payload.tp_pct && !payload.sl_pct && !payload.tp_amt && !payload.sl_amt) {
+      if (err) err.textContent = '启用组合提醒至少要填一项阈值（比例或金额）。';
+      return;
+    }
+    try {
+      const r = await api('/api/settings/portfolio_risk', { method: 'PUT', body: JSON.stringify({ payload: JSON.stringify(payload) }) });
+      if (!r.ok) {
+        let m = '保存失败';
+        try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {}
+        if (err) err.textContent = m;
+        return;
+      }
+      toast('组合盈亏阈值已保存', 'ok');
+      await loadPortfolioRisk();
+    } catch (e) {
+      if (err) err.textContent = '保存异常：' + e.message;
+    }
+  };
+  const scan = document.getElementById('prScanBtn');
+  if (scan) scan.onclick = async () => {
+    try {
+      const r = await api('/api/alerts/scan', { method: 'POST' });
+      if (!r.ok) { toast(humanizeErr(r, null, '检查失败'), 'err'); return; }
+      const d = await r.json();
+      const n = (d.items || []).filter((x) => x.inserted && x.scope === 'portfolio').length;
+      toast(n > 0 ? `组合级新增 ${n} 条提醒` : '已检查，组合级暂无新提醒', 'ok');
+      await loadAlerts();
+    } catch (e) { toast(humanizeErr(null, e, '检查失败')); }
+  };
+})();
 $('#notifySaveBtn').onclick = async () => {
   $('#notifyErr').textContent = '';
   const payload = {
@@ -12413,6 +12556,9 @@ function alertKindMeta(kind) {
     case 'trailing': return { cls: 'tp', text: '移动止盈' };
     case 'psych': return { cls: 'psych', text: '心理价位' };
     case 'fee_window': return { cls: 'fee', text: '费率' };
+    // 组合级盈亏（holding_id=0）：与逐只持仓的价格阈值同表不同层，标签要看得出是「整体」
+    case 'portfolio_take_profit': return { cls: 'tp', text: '组合止盈' };
+    case 'portfolio_stop': return { cls: 'sl', text: '组合止损' };
     default: return { cls: '', text: '提醒' };
   }
 }
@@ -12479,8 +12625,8 @@ function renderAlertList() {
     // 空态给一个「一键启用」入口：默认不启用是为了不擅自给存量持仓挂机械止损，
     // 但让用户逐个进弹框开关 20 只也不现实，所以留一个显式确认的批量入口。
     box.innerHTML = todo + (todo
-      ? '<div class="alert-empty alert-empty-lite">暂无止盈止损提醒</div>'
-      : '<div class="alert-empty">暂无提醒与待办<br>收支计划、定投、存款到期会自动出现在这里；<br>止盈止损需在持仓「高级选项 → 止盈止损」开启'
+      ? '<div class="alert-empty alert-empty-lite">暂无新提醒</div>'
+      : '<div class="alert-empty">暂无提醒与待办<br>收支计划、定投、存款到期会自动出现在这里；<br>逐只止盈止损在持仓「高级选项 → 止盈止损」开启，<br>整体盈亏提醒在「通知设置 → 组合级盈亏阈值」开启'
         + '<br><br><button class="btn primary btn-sm" type="button" data-act="apply-all">为全部持仓套用均衡方案</button></div>');
     return;
   }
@@ -12553,6 +12699,8 @@ async function loadAlerts() {
     renderAlertList();
   } catch (_) { /* 未登录/离线：保留旧数据，不打断主流程 */ }
   alertBusy = false;
+  // 每轮拿到提醒后判一次「该不该弹组合盈亏提示」：新跨档的事件会在这里被看到
+  maybePromptPnl();
 }
 // notify=true 仅用于「提醒已读」按钮：用户主动点击必须给反馈；
 // 打开详情 / 跳持仓时自动标已读属于顺带行为，弹 toast 反而打断操作。
@@ -12626,12 +12774,23 @@ function openAlertDetail(aid) {
     const num = (v) => Number(v) || 0;
     const px = (v) => (num(v) > 0 ? num(v).toFixed(4) : '');
     const cells = [];
-    if (num(a.price) > 0) cells.push(['现价', px(a.price), '']);
-    if (num(a.target) > 0) cells.push(['触发价位', px(a.target), '']);
-    if (num(a.cost) > 0) cells.push(['成本价', px(a.cost), '']);
-    if (num(a.cost) > 0) {
+    if (!a.holding_id) {
+      // 组合级事件（holding_id=0）没有「价格」语义：target 是百分比阈值、cost 是整个组合的成本（CNY）。
+      // 沿用持仓那三格会显示成「触发价位 0.5000 / 成本价 232850.2000」，比不显示更糟。
+      if (num(a.cost) > 0) cells.push(['组合成本', yuanOfW(num(a.cost)), '']);
+      const net = num(a.net_amount);
+      cells.push(['浮动盈亏', (net < 0 ? '' : '+') + yuanOfW(net), net >= 0 ? 'up' : 'down']);
       const p = num(a.pnl_pct);
       cells.push(['相对成本', (p >= 0 ? '+' : '') + p.toFixed(2) + '%', p >= 0 ? 'up' : 'down']);
+      if (num(a.target) > 0) cells.push(['设定阈值', num(a.target).toFixed(2) + '%', '']);
+    } else {
+      if (num(a.price) > 0) cells.push(['现价', px(a.price), '']);
+      if (num(a.target) > 0) cells.push(['触发价位', px(a.target), '']);
+      if (num(a.cost) > 0) cells.push(['成本价', px(a.cost), '']);
+      if (num(a.cost) > 0) {
+        const p = num(a.pnl_pct);
+        cells.push(['相对成本', (p >= 0 ? '+' : '') + p.toFixed(2) + '%', p >= 0 ? 'up' : 'down']);
+      }
     }
     // 只有场外基金才有赎回费。is_fund 由后端按持仓现算（不是事件里的冗余字段），
     // 光看 fee_pct>0 不够：历史事件存着旧值，股票也会中招。
@@ -12649,6 +12808,171 @@ function closeAlertDetail() {
   const modal = document.getElementById('alertDetailModal');
   if (modal) modal.hidden = true;
 }
+
+// ===== 组合级盈亏提醒弹框（方案 A：打开即弹，2026-11-18）=====
+// 数据与铃铛同源（alert_events 里 holding_id=0 的事件），这里不再算一遍盈亏 ——
+// 两套算法迟早会对不上，而「弹框说亏 8%、铃铛说亏 7%」是最伤信任的一种不一致。
+// 「弹过 / 今天不再提示」都存在 localStorage：这是「怎么打扰用户」的 UI 决策，
+// 不属于账本数据，为一条提示加数据库列不值得；换设备各弹一次也符合直觉。
+const PP_SEEN_KEY = 'pf_pnl_prompt_seen';       // 已弹过的提醒 id（只留最近 30 个）
+const PP_SNOOZE_KEY = 'pf_pnl_prompt_snooze';   // { day: 'YYYY-MM-DD', ids: [...] }
+// 建议文案按「方向 × 档位」分四句：预警档必须能说「先不动」，触线档才说「该决定了」，
+// 两档共用一句等于没有分档。
+const PP_ADVICE = {
+  portfolio_take_profit: {
+    2: '建议打开再平衡页，先看该类的目标权重再决定减多少 —— 提醒只负责叫人，不替你下单。',
+    1: '还在上升途中，可以先不动。若这类已经明显超配，再平衡页的偏离会先提醒你。',
+  },
+  portfolio_stop: {
+    2: '先分清是「整体系统性下跌」还是「某一类拖累」：前者看总仓位，后者看再平衡清单里的超配类别。',
+    1: '已到预警档。如果这笔亏损已经超出你原本设想的幅度，现在改阈值比越线后改更从容。',
+  },
+};
+let ppCurrentAlert = null;
+
+function ppReadJSON(key, fallback) {
+  try { const v = JSON.parse(localStorage.getItem(key) || 'null'); return v == null ? fallback : v; } catch (_) { return fallback; }
+}
+function ppTodayKey() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+// 只弹「最近 24 小时」产生的事件（2026-11-18 方案 A）。
+// 事件是累积的：once 模式下去重键不含日期，同一档位一条事件只插一次，只有标已读才从
+// 「未读」里消失；而弹框一次只弹一条。不设时间窗时，几天前那条「止盈触线」会跟今天新产生的
+// 「止损触线」轮流弹，看起来像「止盈止损同时触发」（其实两者判定互斥，永远不会同轮命中）。
+// 超窗期的不再弹框，但照样留在铃铛与总览里 —— 提醒不丢，只是不再主动打扰。
+const PP_FRESH_MS = 24 * 3600 * 1000;
+// 「YYYY-MM-DD HH:MM:SS」是本地时间（后端落库口径），补 T 后按本地解析
+function ppCreatedMs(a) {
+  const t = Date.parse(String(a.created_at || '').replace(' ', 'T'));
+  return Number.isNaN(t) ? NaN : t;
+}
+// 挑一条「值得打扰」的：未读 + 组合级 + 没弹过 + 今天没有被明确抑制 + 24h 内产生。
+// 一次只弹一条（触线优先，其次更新的）：把两档叠成两屏弹框，第二天用户就会关掉整个功能。
+function ppCandidate() {
+  const seen = ppReadJSON(PP_SEEN_KEY, []);
+  const sn = ppReadJSON(PP_SNOOZE_KEY, {});
+  const snoozed = sn && sn.day === ppTodayKey() ? (sn.ids || []) : [];
+  const freshAfter = Date.now() - PP_FRESH_MS;
+  const list = (alertCache || []).filter((a) => {
+    if (String(a.kind || '').indexOf('portfolio_') !== 0) return false;
+    if (a.read_at || seen.indexOf(a.id) >= 0 || snoozed.indexOf(a.id) >= 0) return false;
+    const t = ppCreatedMs(a);
+    // 时间缺失 / 解析失败一律放行：宁可多弹一次，也不要因为字段异常让整个提醒静默失效
+    return Number.isNaN(t) ? true : t >= freshAfter;
+  });
+  if (!list.length) return null;
+  list.sort((a, b) => (Number(b.level) || 0) - (Number(a.level) || 0)
+    || String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  return list[0];
+}
+function openPnlPrompt(a) {
+  const modal = document.getElementById('pnlPromptModal');
+  if (!modal) return;
+  ppCurrentAlert = a;
+  const m = alertKindMeta(a.kind);
+  const tag = document.getElementById('ppTag');
+  if (tag) { tag.className = 'alert-tag' + (m.cls ? ' ' + m.cls : ''); tag.textContent = m.text; }
+  const level = Number(a.level) || 1;
+  const lv = document.getElementById('ppLevel');
+  if (lv) lv.textContent = level >= 2 ? '触线' : '预警 80%';
+  const title = document.getElementById('ppTitle');
+  if (title) title.textContent = a.title || '组合盈亏提醒';
+  const pct = Number(a.pnl_pct) || 0;
+  const net = Number(a.net_amount) || 0;
+  const cost = Number(a.cost) || 0;
+  const pctEl = document.getElementById('ppPct');
+  if (pctEl) {
+    pctEl.textContent = (pct > 0 ? '+' : pct < 0 ? NEG : '') + Math.abs(pct).toFixed(2) + '%';
+    pctEl.className = 'pp-pct ' + (pct >= 0 ? 'up' : 'down');
+  }
+  const amtEl = document.getElementById('ppAmt');
+  if (amtEl) {
+    amtEl.textContent = (net < 0 ? '' : '+') + yuanOfW(net);
+    amtEl.className = 'pp-amt ' + (net >= 0 ? 'up' : 'down');
+  }
+  const meta = document.getElementById('ppMeta');
+  if (meta) meta.textContent = '组合成本 ' + yuanOfW(cost) + ' · 浮动盈亏 ' + (net < 0 ? '' : '+') + yuanOfW(net) + ' · 折 CNY';
+  const kv = document.getElementById('ppKv');
+  if (kv) {
+    const line = Number(a.target) || 0;
+    const rows = [];
+    // 阈值正负由方向决定：止损存的是绝对值，展示时要还原成负号，否则「止损 +0.5%」会被读成止盈
+    if (line > 0) rows.push(['设定阈值', (a.kind === 'portfolio_stop' ? NEG : '+') + Math.abs(line).toFixed(2) + '%']);
+    rows.push(['当前状态', level >= 2 ? '已越过阈值' : '接近阈值（阈值 80% 处预警）']);
+    rows.push(['口径', '股票 + 基金 + 理财；不含已平仓、现金与存款']);
+    kv.innerHTML = rows.map((r) => '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>').join('');
+  }
+  const adv = document.getElementById('ppAdvice');
+  if (adv) adv.textContent = (PP_ADVICE[a.kind] || {})[level >= 2 ? 2 : 1] || '';
+  const sk = document.getElementById('ppSnooze');
+  if (sk) sk.checked = false;
+  modal.hidden = false;
+}
+function closePnlPrompt() {
+  const modal = document.getElementById('pnlPromptModal');
+  const sk = document.getElementById('ppSnooze');
+  if (modal) modal.hidden = true;
+  const a = ppCurrentAlert;
+  ppCurrentAlert = null;
+  if (!a) return;
+  // 弹过就记下：同一档位不再打扰。档位升级会是一条新事件（新 id），所以「跨档仍提醒」是自然结果。
+  const seen = ppReadJSON(PP_SEEN_KEY, []);
+  if (seen.indexOf(a.id) < 0) {
+    seen.push(a.id);
+    localStorage.setItem(PP_SEEN_KEY, JSON.stringify(seen.slice(-30)));
+  }
+  if (sk && sk.checked) {
+    const day = ppTodayKey();
+    const sn = ppReadJSON(PP_SNOOZE_KEY, {});
+    const ids = sn && sn.day === day ? (sn.ids || []) : [];
+    if (ids.indexOf(a.id) < 0) ids.push(a.id);
+    localStorage.setItem(PP_SNOOZE_KEY, JSON.stringify({ day: day, ids: ids.slice(-30) }));
+  }
+}
+// 打开应用（以及每次轮询拿到新提醒）时判一次：有该弹的就弹，没有就什么都不做。
+function maybePromptPnl() {
+  const modal = document.getElementById('pnlPromptModal');
+  if (!modal || !modal.hidden || document.hidden) return;
+  // 兜底记账：上一条已经弹过、但弹框是被「不经过 closePnlPrompt 的路径」关掉的
+  // （右上角 ✕、ESC、或任何未来的关闭入口），这里补记 seen 并清 ppCurrentAlert，
+  // 否则下面 ppCandidate 会把同一条又挑出来，表现为「关掉后过一会儿又弹一个」。
+  if (ppCurrentAlert) closePnlPrompt();
+  const app = document.getElementById('app');
+  if (!app || app.hidden) return;                 // 认证闸门 / 首屏未就绪时不打扰
+  const gate = document.getElementById('authGate');
+  if (gate && !gate.hidden) return;
+  // 不叠加：编辑表单 / 确认框 / 提醒详情 / AI 面板开着时，等下一轮
+  if (document.querySelector('.modal:not([hidden]), #aiChatPanel:not([hidden])')) return;
+  const a = ppCandidate();
+  if (a) openPnlPrompt(a);
+}
+// 「关掉就不再弹」要求所有关闭路径都记账，但只有底部按钮和点遮罩天然经过 closePnlPrompt：
+//   · 右上角 ✕ 是 injectModalClose() 全站注入的，点击走 document 上的通用委托（只置 hidden）；
+//   · ESC 的全局处理在文件前段，先 openModals.forEach(m => m.hidden = true) 再 return。
+// 因此这里在**捕获阶段**先把这两条拦下来记账：click 捕获先于通用委托，keydown 捕获先于
+// 全局 ESC。别再改成 MutationObserver 监听 hidden —— 回调里再写 hidden 会在实机上活锁卡死。
+(function wirePnlPrompt() {
+  const later = document.getElementById('ppLater');
+  const go = document.getElementById('ppGo');
+  const modal = document.getElementById('pnlPromptModal');
+  if (later) later.onclick = closePnlPrompt;
+  if (go) go.onclick = () => { closePnlPrompt(); navigate('rebalance'); };
+  if (modal) {
+    modal.addEventListener('click', (e) => { if (e.target === modal) closePnlPrompt(); });
+    modal.addEventListener('click', (e) => {
+      if (e.target.closest('.card-close')) closePnlPrompt();
+    }, true);
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !ppCurrentAlert) return;
+    closePnlPrompt();
+    // 拦住同一事件的后续处理：否则全局 ESC 发现「没有开着的弹框」会接着执行「回首页」，
+    // 在投资页关掉提示就等于被弹去首页。
+    e.stopPropagation();
+  }, true);
+})();
 // 点提醒 → 标记已读 + 跳到投资页对应持仓（不自动滚动定位：持仓行按分组重排，跳错更糟）
 function openAlertTarget(hid) {
   closeAlertPop();
@@ -16999,7 +17323,8 @@ function closePIN(val) {
     box.innerHTML = kpi(true, 'kpi-ico-fund', ICO.wallet, '组合总市值', Y(total),
         '股票 + 基金 + 理财 + 现金 · 全部折 CNY · 分母：四类现值合计', '')
       + kpi(false, md ? 'kpi-ico-alert' : 'kpi-ico-pct', md ? ICO.warn : ICO.cash, '最大偏离', mdVal,
-        mdLabel + ' · 提醒阈值 ' + (tol == null ? DASH : '±' + tol + 'pp'), md ? 'warn' : 'flat')
+        mdLabel + ' · 提醒阈值 ' + (tol == null ? DASH : '±' + tol + 'pp')
+        + (N(snap.review_count) > 0 ? ' · ' + snap.review_count + ' 类盈亏超检视线' : ''), md ? 'warn' : 'flat')
       + kpi(false, 'kpi-ico-cash', ICO.cash, '需调配金额', Y(snap.need_cny),
         (pending == null ? DASH : pending + ' 项待确认') + ' · 卖出所得自动配平买入', '');
   }
@@ -17015,6 +17340,19 @@ function closePIN(val) {
       const act = d > 0 ? '卖出' : '买入';
       out.push('<div class="ov-alert-item"><b>' + label + (d > 0 ? '超配' : '低配') + '</b><span>实际 '
         + PCT(b.weight) + ' / 目标 ' + PCT(b.target) + '，建议' + act + ' ' + Y(Math.abs(N(b.amount) || 0)) + '</span></div>');
+    });
+    // 盈亏维度（2026-11-18）：结构没偏、但某一类涨 / 亏越过检视阈值的，单独摆一条。
+    // 不进调仓清单 —— 动不动、动多少仍由偏离阈值决定，这里只是把「赚太多 / 亏太多」摆到眼前，
+    // 否则用户只看到「四类均在容差内」，永远不知道某类已经浮盈 40%。
+    const pl = cfg ? N(cfg.pnl_review_pct) : null;
+    A(snap.buckets).forEach((b) => {
+      if (!b.review) return;
+      const p = N(b.pnl_pct);
+      const label = RB_KEY[b.key] || S(b.label || b.key);
+      const dv = p == null ? DASH : (p > 0 ? '+' : NEG) + Math.abs(p).toFixed(1) + '%';
+      out.push('<div class="ov-alert-item"><b>' + label + (N(p) > 0 ? '浮盈较大' : '浮亏较大') + '</b><span>'
+        + dv + '（成本 ' + Y(b.cost) + '）· 越过检视线 ' + (pl == null ? DASH : pl + '%')
+        + '，偏离仍在容差内，建议先确认是否需要提前减配</span></div>');
     });
     if (snap.overdue) {
       const days = N(snap.days_since);
@@ -17107,6 +17445,12 @@ function closePIN(val) {
       const amt = N(b.amount);
       const act = amt == null ? DASH : amt > 0 ? '应卖出 ' + Y(amt) : amt < 0 ? '应买入 ' + Y(-amt) : '无需调整';
       const actCls = amt == null ? '' : amt > 0 ? 'warn' : amt < 0 ? 'down' : '';
+      // 该类浮动盈亏：给「为什么值得看一眼」一个具体数字；现金无成本，不显示
+      const pv = N(b.pnl_pct);
+      const pnlInline = pv == null || Math.abs(pv) < 0.05 ? ''
+        : ' · <b class="' + (pv > 0 ? 'up' : 'down') + '">' + (pv > 0 ? '浮盈 +' : '浮亏 ' + NEG)
+          + Math.abs(pv).toFixed(1) + '%</b>';
+      const reviewChip = b.review ? '<i class="rb-review" title="盈亏越过检视阈值，结构仍在容差内">检视</i>' : '';
       const value = viewMode === 'amount'
         ? '<b>' + Y(b.market_value) + '</b>'
         : '<b>' + PCT(b.weight) + '</b>';
@@ -17122,12 +17466,12 @@ function closePIN(val) {
         : bullet;
       return '<div class="rb-alloc-row" data-rb-i="' + i + '">'
         + '<div class="rb-alloc-top">'
-        + '<span class="rb-alloc-name"><i class="rb-alloc-dot" style="--rb-c: rgb(' + (RB_COLOR[b.key] || '148, 163, 184') + ')"></i>' + S(RB_KEY[b.key] || b.label || b.key) + '</span>'
+        + '<span class="rb-alloc-name"><i class="rb-alloc-dot" style="--rb-c: rgb(' + (RB_COLOR[b.key] || '148, 163, 184') + ')"></i>' + S(RB_KEY[b.key] || b.label || b.key) + reviewChip + '</span>'
         + '<span class="rb-alloc-num">实际 ' + value + ' · ' + sub + '</span>'
         + '<span class="rb-alloc-drift ' + tone + '">' + PP(drift) + '</span>'
         + '</div>'
         + bulletHtml
-        + '<div class="rb-alloc-bot"><span>' + (b.count == null ? DASH : b.count + ' 只/笔') + '</span><span class="' + actCls + '">' + S(act) + '</span></div>'
+        + '<div class="rb-alloc-bot"><span>' + (b.count == null ? DASH : b.count + ' 只/笔') + pnlInline + '</span><span class="' + actCls + '">' + S(act) + '</span></div>'
         + rbDetailHTML(b)
         + '</div>';
     };
@@ -17178,6 +17522,8 @@ function closePIN(val) {
     const freq = $('#rbFreq'); if (freq) freq.value = cfg.freq || 'monthly';
     const drift = $('#rbDrift'); if (drift) drift.value = cfg.drift_alert == null ? '' : cfg.drift_alert;
     const goal = $('#rbGoal'); if (goal) goal.value = cfg.goal_pct == null ? '' : cfg.goal_pct;
+    // 盈亏检视阈值：0 / 缺省 = 关闭，输入框留空（不留一个「0」误导成已设定）
+    const pnl = $('#rbPnl'); if (pnl) pnl.value = N(cfg.pnl_review_pct) > 0 ? cfg.pnl_review_pct : '';
     updateSum();
   }
   function updateSum() {
@@ -17301,6 +17647,7 @@ function closePIN(val) {
       const freq = $('#rbFreq'); if (freq) freq.value = 'monthly';
       const drift = $('#rbDrift'); if (drift) drift.value = '1';
       const goal = $('#rbGoal'); if (goal) goal.value = '';
+      const pnl = $('#rbPnl'); if (pnl) pnl.value = '';
       updateSum();
       toast('已填入默认值，点保存后生效', 'ok');
     };
@@ -17313,13 +17660,16 @@ function closePIN(val) {
         const el = sliders && sliders.querySelector('input[type=range][data-key="' + key + '"]');
         return { key: key, pct: Number(el ? el.value : 0), exp: N(src.exp) || 0, vol: N(src.vol) || 0 };
       });
-      const freqEl = $('#rbFreq'), driftEl = $('#rbDrift'), goalEl = $('#rbGoal');
+      const freqEl = $('#rbFreq'), driftEl = $('#rbDrift'), goalEl = $('#rbGoal'), pnlEl = $('#rbPnl');
       const goalRaw = goalEl && String(goalEl.value || '').trim();
+      const pnlRaw = pnlEl && String(pnlEl.value || '').trim();
       const next = {
         targets: targets,
         freq: freqEl ? freqEl.value : 'monthly',
         drift_alert: driftEl ? (N(driftEl.value) == null ? 1 : N(driftEl.value)) : 1,
         goal_pct: goalRaw ? N(goalRaw) : null,
+        // 0 = 关闭；后端只接受 [1,200]，越界会被归一成关闭而不是报错
+        pnl_review_pct: pnlRaw ? (N(pnlRaw) || 0) : 0,
       };
       try {
         const r = await api('/api/settings/rebalance_targets', {

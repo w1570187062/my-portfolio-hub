@@ -340,6 +340,9 @@
               </label>
               <label class="rb-field"><span>偏离阈值 (pp)</span><input id="rbDrift" type="number" min="0.5" max="50" step="0.5"></label>
               <label class="rb-field"><span>年度收益目标 %（可选）</span><input id="rbGoal" type="number" step="0.5" placeholder="不设"></label>
+              <!-- 盈亏检视阈值（2026-11-18）：只决定「要不要提示看一眼」，不参与买卖金额 ——
+                   卖多少永远由上面的偏离阈值算，避免用盈亏自创一套减仓规则 -->
+              <label class="rb-field"><span>盈亏检视阈值 %（可选·不参与调仓金额）</span><input id="rbPnl" type="number" min="1" max="200" step="1" placeholder="不设"></label>
             </div>
             <button class="btn primary rb-save" type="button" id="rbSaveBtn">保存配置</button>
           </article>
@@ -745,6 +748,43 @@
               <label class="switch"><input type="checkbox" id="alEmail"><span class="switch-knob"></span></label>
             </div>
             <p class="tool-hint">止盈止损不走上方的推送频率策略：即使净值设为「仅收盘后」，触发信号也会单独发出。同一天同一档位只提醒一次。</p>
+          </div>
+        </section>
+
+        <!-- ③ 组合级盈亏阈值（2026-11-18）：与上面那组「逐只持仓」的止盈止损是两个层级 ——
+             上面管「哪只票到价了」（价格阈值，由技术面定价），这里管「整个组合赚到/亏到多少」
+             （比例 + 金额）。两者互不影响，可以只开一个。
+             存的是 settings kind=portfolio_risk，不在 /api/notify/settings 里，
+             所以有独立的「保存阈值」按钮，不与上方「保存配置」合并。 -->
+        <section class="settings-group" id="portfolioRiskGroup">
+          <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>组合级盈亏阈值</span></h3>
+          <p class="settings-group-desc">整个组合（股票 + 基金 + 理财）赚到 / 亏到这条线时提醒。阈值到 80% 先发一条预警，越过再发一条触线提醒；逐只持仓的止盈止损照旧生效。</p>
+          <div class="settings-group-body">
+            <div class="switch-row"><span>启用组合级提醒</span>
+              <label class="switch"><input type="checkbox" id="prEnabled"><span class="switch-knob"></span></label>
+            </div>
+            <!-- 比例与金额都留空 = 该项不启用；只填一个就只看那一个口径，填两个则任一越过即触发 -->
+            <div class="cf-row2">
+              <label>止盈比例 %<input id="prTpPct" type="number" min="0.1" max="200" step="0.5" placeholder="如 20，留空不设"></label>
+              <label>止盈金额 ¥<input id="prTpAmt" type="number" min="0" step="1000" placeholder="如 50000，留空不设"></label>
+            </div>
+            <div class="cf-row2">
+              <label>止损比例 %<input id="prSlPct" type="number" min="0.1" max="100" step="0.5" placeholder="如 10，留空不设"></label>
+              <label>止损金额 ¥<input id="prSlAmt" type="number" min="0" step="1000" placeholder="如 30000，留空不设"></label>
+            </div>
+            <label>提醒频率
+              <select id="prRepeat">
+                <option value="once">每档只提醒一次</option>
+                <option value="repeat">每档每天提醒一次（触线后仍有净变化时）</option>
+              </select>
+            </label>
+            <!-- 实时预览：口径与后端 /api/portfolio/risk 完全同源，前端不自己重算一遍盈亏 -->
+            <p class="tool-hint" id="prPreview">正在读取当前组合盈亏…</p>
+            <div id="prErr" class="err"></div>
+            <div class="modal-actions">
+              <button class="btn primary" type="button" id="prSaveBtn">保存阈值</button>
+              <button class="btn" type="button" id="prScanBtn" title="按当前行情立刻跑一轮检查，命中才写提醒">立即检查</button>
+            </div>
           </div>
         </section>
     </div>
@@ -1999,6 +2039,30 @@
       <div class="modal-actions">
         <button class="btn" type="button" id="alertDetailClose">关闭</button>
         <button class="btn primary" type="button" id="alertDetailGo">查看持仓</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 组合级盈亏提醒（方案 A：打开即弹，2026-11-18）=====
+       与铃铛同一份数据（alert_events 里 holding_id=0 的事件），不额外算一遍盈亏。
+       打扰规则：同一档位只弹一次；档位升级（预警 → 触线）或新出现一类才再弹；
+       勾「今日不再提示」只抑制当天重复弹，跨档仍会提示。
+       注意：弹框展示 ≠ 用户已读，所以这里不写 read_at —— 铃铛里的未读态必须留着。 -->
+  <div id="pnlPromptModal" class="modal" hidden>
+    <div class="modal-card pnl-prompt-card" role="dialog" aria-modal="true" aria-labelledby="ppTitle">
+      <h2 id="ppTitle">组合盈亏提醒</h2>
+      <div class="m-body pp-body">
+        <div class="ad-meta"><span class="alert-tag" id="ppTag"></span><span id="ppLevel"></span></div>
+        <div class="pp-figure"><span class="pp-pct" id="ppPct">—</span><span class="pp-amt" id="ppAmt"></span></div>
+        <div class="pp-meta" id="ppMeta"></div>
+        <dl class="pp-kv" id="ppKv"></dl>
+        <div class="pp-advice" id="ppAdvice"></div>
+      </div>
+      <label class="pp-snooze"><input type="checkbox" id="ppSnooze">今日不再提示（跨档仍会提醒）</label>
+      <p class="pp-foot">同一份数据也会出现在右上角铃铛与总览「需要留意」，不会重复推送。</p>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="ppLater">知道了</button>
+        <button class="btn primary" type="button" id="ppGo">去再平衡页 →</button>
       </div>
     </div>
   </div>
