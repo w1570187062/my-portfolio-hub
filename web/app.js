@@ -1084,7 +1084,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
     const realized = Number(h.realized_pnl) || 0;
     const days = (h.closed_date && h.buy_date) ? daysBetween(h.buy_date, h.closed_date) : (h.holding_days || 0);
     const pct = principal > 0 ? realized / principal * 100 : null;
-    rows.push({ ctType: isFund(h) ? 'fund' : 'stock', sys: true, sysKind: 'hold', id: h.id, name: h.name, code: h.symbol || '', source: (h.source_name || '').trim() || '未指定', amount: realized, currency: normCurJS(h.currency), principal, pct, days, op: (h.closed ? actBtn('undo', `data-reopen-hold="${h.id}"`, '撤销清仓（重开持仓）') : '<span class="u-muted">—</span>') });
+    rows.push({ ctType: isFund(h) ? 'fund' : 'stock', sys: true, sysKind: 'hold', id: h.id, name: h.name, code: h.symbol || '', source: (h.source_name || '').trim() || '未指定', amount: realized, currency: normCurJS(h.currency), principal, pct, days, op: (h.closed ? actBtn('undo', `data-reopen-hold="${h.id}"`, '撤销清仓（重开持仓）') + actBtn('del', `data-del-hold="${h.id}"`, '删除这条平仓记录（不还原持仓与资金）', { danger: true }) : '<span class="u-muted">—</span>') });
   });
   mHold.forEach((m) => {
     const amt = Number(m.amount) || 0;
@@ -1097,7 +1097,7 @@ function renderClosed(box, closedHoldings, closedWealth) {
     const cumPnl = Number(w.cum_pnl) || 0;
     const days = w.holding_days || 0;
     const pct = w.cum_return_rate != null ? w.cum_return_rate : null;
-    rows.push({ ctType: 'wealth', sys: true, sysKind: 'wealth', id: w.id, name: w.name, code: w.code || '', source: (w.source_name || '').trim() || '未指定', amount: cumPnl, currency: normCurJS(w.currency), principal: null, pct, days, op: actBtn('undo', `data-reopen-wealth="${w.id}"`, '重开理财') });
+    rows.push({ ctType: 'wealth', sys: true, sysKind: 'wealth', id: w.id, name: w.name, code: w.code || '', source: (w.source_name || '').trim() || '未指定', amount: cumPnl, currency: normCurJS(w.currency), principal: null, pct, days, op: actBtn('undo', `data-reopen-wealth="${w.id}"`, '重开理财') + actBtn('del', `data-del-wealth="${w.id}"`, '删除这条平仓记录（不还原理财与资金）', { danger: true }) });
   });
   mWealth.forEach((m) => {
     const amt = Number(m.amount) || 0;
@@ -1215,6 +1215,31 @@ function bindClosedActions(box) {
           toast('已删除', 'ok');
         },
       });
+    };
+  });
+  // 系统平仓记录（已清仓持仓 / 已清合理财）的「删除」：只删记录本身，不走回退 ——
+  // 不恢复份额/录入、不动现金余额（买卖时的资金联动早已结清）。删除不可逆，先确认后执行。
+  const delClosedRow = (title, msg, url) => openConfirm({
+    title,
+    msg, okText: '删除', danger: true,
+    onOk: async () => {
+      const r = await api(url, { method: 'DELETE' });
+      if (!r.ok) { let e2 = '删除失败'; try { const d = await r.json(); if (d && d.error) e2 = d.error; } catch (_) {} toast(e2, 'err'); return; }
+      await refreshClosedData();
+      toast('已删除', 'ok');
+    },
+  });
+  box.querySelectorAll('[data-del-hold]').forEach((b) => {
+    b.onclick = () => {
+      const id = Number(b.dataset.delHold);
+      const h = allHoldings.find((x) => x.id === id);
+      delClosedRow('删除平仓记录', '永久删除「' + (h ? h.name : '#' + id) + '」这条已清仓持仓（含其加减仓明细）；现金余额与已落袋盈亏统计不变，也不会恢复持仓。', '/api/holdings/' + id);
+    };
+  });
+  box.querySelectorAll('[data-del-wealth]').forEach((b) => {
+    b.onclick = () => {
+      const id = Number(b.dataset.delWealth);
+      delClosedRow('删除平仓记录', '永久删除这条已清仓理财（含其每日净值/收益录入）；现金余额不变，也不会恢复理财。', '/api/asset/wealth/' + id);
     };
   });
 }
