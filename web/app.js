@@ -4384,7 +4384,9 @@ function renderRecentFlows() {
         const amt = amtNum === 0 ? moneyCurW(0, f.currency) : (isIn ? '+' : NEG) + moneyCurW(Math.abs(amtNum), f.currency);
         // 与资产页流水时间轴同口径：标题 = 关联标的 / 账户（来源）名，类型徽标紧跟其后；
         // 子账户名退到第二行且不带账户名前缀（第二行 = 子账户名 · 说明）。
-        const title = f.ref_name || f.source_name || f.name || flowTypePlain(f) || '—';
+        // 手动调整等流水的 ref_name 与子账户名相同，不当标的处理，标题退到账户（来源）名
+        const ref = f.ref_name && f.ref_name !== f.name ? f.ref_name : '';
+        const title = ref || f.source_name || f.name || flowTypePlain(f) || '—';
         const acct = f.name && f.name !== title ? f.name : '';
         // 第二行 = 子账户名 · 说明；说明为空时给「余额 ¥N」（变动后余额）
         const note = String(f.note || '').trim();
@@ -8958,7 +8960,9 @@ function flowTlRow(f, latest) {
   const dir = amt > 0 ? 'in' : (amt < 0 ? 'out' : 'neutral');
   // 标题 = 关联标的 / 账户（来源）名 + 徽标；第二行 = 子账户名 · 说明，
   // 说明为空时给「余额 ¥N」（该笔变动后的账户余额），不再回退类型词（避免与徽标重复）。
-  const title = f.ref_name || f.source_name || f.name || flowTypePlain(f) || '—';
+  // 手动调整等流水的 ref_name 会被写成子账户名本身（与 name 相同），不当标的处理，标题用账户名。
+  const ref = f.ref_name && f.ref_name !== f.name ? f.ref_name : '';
+  const title = ref || f.source_name || f.name || flowTypePlain(f) || '—';
   const acct = f.name && f.name !== title ? f.name : '';
   const note = String(f.note || '').trim();
   const meta = [acct, note || (f.balance ? '余额 ' + moneyCurW(f.balance, f.currency) : '')].filter(Boolean).join(' · ');
