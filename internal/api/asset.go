@@ -697,7 +697,7 @@ func listSources(c *gin.Context) {
 }
 
 // sourceFundsCNY 统计该来源下的关联资金净值（CNY）：
-// 持仓市值 + 理财最新快照金额 + 现金余额 − 该来源下负债，USD/HKD 按当前汇率折算。
+// 持仓市值 + 理财最新快照金额 + 现金余额 + 存期中定期存款 − 该来源下负债，USD/HKD 按当前汇率折算。
 // 负债作为资金扣减（负债挂在来源下即属该账户的资金占用），消费为流水不计入。
 func sourceFundsCNY(uid, sourceID int64) float64 {
 	cnyRate, hkdRate, _ := market.GetFXRates()
@@ -705,6 +705,16 @@ func sourceFundsCNY(uid, sourceID int64) float64 {
 		return fxToCNY(v, cur, cnyRate, hkdRate)
 	}
 	var total float64
+	// 现金先取一次：定期存款归属哪个来源，要查它扣款时关联的活期子账户
+	cashByID := map[int64]db.Cash{}
+	if cs, e := db.ListCash(uid); e == nil {
+		for _, c := range cs {
+			cashByID[c.ID] = c
+			if c.SourceID == sourceID {
+				total += conv(c.Currency, c.Amount)
+			}
+		}
+	}
 	// 持仓（市值 = 数量 × 现价）
 	if hs, e := db.List(uid); e == nil {
 		for _, h := range hs {
@@ -723,12 +733,29 @@ func sourceFundsCNY(uid, sourceID int64) float64 {
 			}
 		}
 	}
-	// 现金
-	if cs, e := db.ListCash(uid); e == nil {
-		for _, c := range cs {
-			if c.SourceID == sourceID {
-				total += conv(c.Currency, c.Amount)
+	// 定期存款（存期中，2026-11-18 补）：钱在新增存款时已从子账户扣走（deposit_out 流水），
+	// 本体停在 deposits 表。此前这里只算 cash_accounts，存期内的钱等于凭空消失 ——
+	// 账户余额少一笔，地域分组头合计跟着少；只有存款、活期清零的账户还会被判成「零余额」收起。
+	// 归属口径与 overview 的净资产一致：跟着扣款时关联的活期子账户走（来源/币种都取它），
+	// 子账户已删则回落到存款自带的 source_id。settled 本金已入账，不重复计。
+	if deps, e := db.ListDeposits(uid); e == nil {
+		for _, d := range deps {
+			if d.Status != "active" || d.Amount == 0 {
+				continue
 			}
+			base := cashByID[d.CashAccountID]
+			sid := base.SourceID
+			if sid == 0 {
+				sid = d.SourceID
+			}
+			if sid != sourceID {
+				continue
+			}
+			cur := d.Currency
+			if cur == "" {
+				cur = base.Currency
+			}
+			total += conv(cur, d.Amount)
 		}
 	}
 	// 负债：挂在来源下的欠款即该账户的资金占用，作为关联资金扣减（负债为「负资产」），按币种折算 CNY
