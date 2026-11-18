@@ -129,6 +129,16 @@ document.addEventListener('DOMContentLoaded', () => {
 // 设置 / AI 配置 / 设备 / 通知只在右上角个人菜单里有入口，不占主导航。
 const VIEWS = ['home', 'invest', 'asset', 'finance', 'overview', 'rebalance', 'settings', 'ai', 'devices', 'notify'];
 
+// 常驻视图的 DOM id（唯一口径）。hideAllViews / 弹框找背景页 / ESC 返回主页三处都读它：
+// 之前三处各自手写一份，rebalanceView 只加进了其中一处，于是在再平衡页打开盈亏日历，
+// 「有没有可见视图」被判成 false，弹框把还没渲染的首页当背景顶了出来（空数据 hero）。
+const ALL_VIEW_IDS = ['homeView', 'holdingsView', 'assetView', 'financeView', 'overviewView', 'rebalanceView', 'settingsView', 'aiView', 'devicesView', 'notifyView'];
+
+// 当前是否有任一常驻视图可见
+function anyViewVisible() {
+  return ALL_VIEW_IDS.some((id) => { const el = document.getElementById(id); return !!el && !el.hidden; });
+}
+
 // 数据总览（#/overview）视图态：声明在 VIEWS 附近，避免顶层 applyRoute() 间接访问触发 TDZ。
 // 「按主题 / 按来源 / 仅异常」只是看同一批数据的哪一面，属视图偏好，存 localStorage；
 // 业务数据一律不缓存 —— 每次进入重新拉，切账本不会串到上一个账本的数字。
@@ -162,9 +172,9 @@ function setActiveNav(view) {
     b.classList.toggle('active', b.dataset.view === view);
   });
 }
-// 隐藏全部常驻视图（列表必须与 VIEWS 一一对应，漏一个就会两页叠着显示）
+// 隐藏全部常驻视图（列表见 ALL_VIEW_IDS，漏一个就会两页叠着显示）
 function hideAllViews() {
-  ['homeView', 'holdingsView', 'assetView', 'financeView', 'overviewView', 'rebalanceView', 'settingsView', 'aiView', 'devicesView', 'notifyView'].forEach((id) => {
+  ALL_VIEW_IDS.forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
@@ -4147,9 +4157,9 @@ async function openPnlModal() {
   // 这两个恰好都 hidden，于是 showHoldingsView() 把整张投资页叠到当前页底部；关掉弹框后
   // 也不会收起（hidden 状态没人复位），一直挂到下次切路由 —— 就是「首页底部多出持仓页」。
   // 弹框本身是 fixed 遮罩，正常页面完全不需要切视图；真空态只把首页显示出来作背景，不改路由。
-  const anyViewVisible = ['homeView', 'holdingsView', 'assetView', 'financeView', 'overviewView', 'settingsView', 'aiView', 'devicesView', 'notifyView']
-    .some((id) => { const el = document.getElementById(id); return !!el && !el.hidden; });
-  if (!anyViewVisible) {
+  // 2026-11-18：改读 ALL_VIEW_IDS。此前这里手写的列表少了 rebalanceView，在 #/rebalance
+  // 打开日历会被判成「无可见视图」，把还没渲染的首页顶出来（空数据 hero 叠在再平衡页下面）。
+  if (!anyViewVisible()) {
     const home = document.getElementById('homeView');
     if (home) home.hidden = false;
   }
@@ -5901,9 +5911,8 @@ document.addEventListener('keydown', (e) => {
     hideTrendTip();   // 关闭任意弹框时收起可能残留的悬停浮框（如持仓盈亏曲线的 pinned tooltip）
     return;
   }
-  const inSubView = !$('#homeView').hidden || !$('#holdingsView').hidden || !$('#assetView').hidden || !$('#financeView').hidden
-    || !$('#overviewView').hidden || !$('#settingsView').hidden || !$('#aiView').hidden || !$('#devicesView').hidden || !$('#notifyView').hidden;
-  if (inSubView) {
+  // 同一份 ALL_VIEW_IDS，避免再漏（此前这里少 rebalanceView，再平衡页按 ESC 不返回首页）
+  if (anyViewVisible()) {
     navigate('home');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
