@@ -4382,11 +4382,13 @@ function renderRecentFlows() {
         const amtCls = isIn ? 'up' : 'down';
         // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
         const amt = amtNum === 0 ? moneyCurW(0, f.currency) : (isIn ? '+' : NEG) + moneyCurW(Math.abs(amtNum), f.currency);
-        // 与资产页流水时间轴同口径：标题 = 关联标的/账户名，类型徽标紧跟其后；
-        // 第二行退为「账户 · 说明」（标题已含账户名时不再重复）。
-        const title = f.ref_name || f.name || flowTypePlain(f) || '—';
+        // 与资产页流水时间轴同口径：标题 = 关联标的 / 账户（来源）名，类型徽标紧跟其后；
+        // 子账户名退到第二行且不带账户名前缀（第二行 = 子账户名 · 说明）。
+        const title = f.ref_name || f.source_name || f.name || flowTypePlain(f) || '—';
         const acct = f.name && f.name !== title ? f.name : '';
-        const sub2 = [acct, String(f.note || '').trim()].filter(Boolean).join(' · ');
+        // 第二行 = 子账户名 · 说明；说明为空时给「余额 ¥N」（变动后余额）
+        const note = String(f.note || '').trim();
+        const sub2 = [acct, note || (f.balance ? '余额 ' + moneyCurW(f.balance, f.currency) : '')].filter(Boolean).join(' · ');
         // 组头已有日期，这里只补「时:分」；缺记录时间的老数据不显示时间
         const hm = flowHm(f);
         return `<div class="rg-row">
@@ -8954,10 +8956,12 @@ function flowTlRow(f, latest) {
   const amt = Number(f.amount) || 0;
   const cls = clsPnl(amt);
   const dir = amt > 0 ? 'in' : (amt < 0 ? 'out' : 'neutral');
-  const title = f.ref_name || f.name || flowTypePlain(f) || '—';
+  // 标题 = 关联标的 / 账户（来源）名 + 徽标；第二行 = 子账户名 · 说明，
+  // 说明为空时给「余额 ¥N」（该笔变动后的账户余额），不再回退类型词（避免与徽标重复）。
+  const title = f.ref_name || f.source_name || f.name || flowTypePlain(f) || '—';
   const acct = f.name && f.name !== title ? f.name : '';
-  const note = String(f.note || '').trim() || flowTypePlain(f);
-  const meta = [acct, note].filter(Boolean).join(' · ');
+  const note = String(f.note || '').trim();
+  const meta = [acct, note || (f.balance ? '余额 ' + moneyCurW(f.balance, f.currency) : '')].filter(Boolean).join(' · ');
   // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
   const amtTxt = amt === 0 ? moneyCurW(0, f.currency) : (amt > 0 ? '+' : NEG) + moneyCurW(Math.abs(amt), f.currency);
   const noEdit = FLOW_NO_EDIT.includes(f.type);
