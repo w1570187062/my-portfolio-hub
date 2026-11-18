@@ -8915,6 +8915,8 @@ function flowTlRow(f, latest) {
   const meta = [acct, note].filter(Boolean).join(' · ');
   // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
   const amtTxt = amt === 0 ? moneyCurW(0, f.currency) : (amt > 0 ? '+' : NEG) + moneyCurW(Math.abs(amt), f.currency);
+  const noEdit = FLOW_NO_EDIT.includes(f.type);
+  const editBtn = noEdit ? '' : actBtn('edit', 'data-afedit="' + f.id + '"', '编辑该笔流水（按业务类型修改金额 / 数量 / 价格 / 费用）', { cls: 'tl-undo' });
   const undoBtn = f.snapshot ? '' : actBtn('undo', 'data-afrb="' + f.id + '"', '回退该笔资金变动', { cls: 'tl-undo' });
   return '<div class="tl-row' + (latest ? ' latest' : '') + '">' +
     '<span class="tl-rail"><span class="tl-dot ' + dir + '"></span></span>' +
@@ -8926,7 +8928,7 @@ function flowTlRow(f, latest) {
         '<span class="tl-note" title="' + esc(meta) + '">' + esc(meta) + '</span></div>' +
     '</div>' +
     '<span class="tl-amt ' + cls + '">' + amtTxt + '</span>' +
-    '<span class="tl-act">' + undoBtn + '</span>' +
+    '<span class="tl-act">' + editBtn + undoBtn + '</span>' +
     '</div>';
 }
 
@@ -8974,6 +8976,11 @@ function paintFlows(body) {
   }
 
   body.querySelectorAll('[data-afrb]').forEach((b) => { b.onclick = () => rollbackAssetFlow(Number(b.dataset.afrb), body); });
+  body.querySelectorAll('[data-afedit]').forEach((b) => {
+    const id = Number(b.dataset.afedit);
+    const f = list.find((x) => x.id === id);
+    if (f) b.onclick = () => openFlowEdit(f, body);
+  });
   const filterBtnEl = body.querySelector('#flowTypeFilterBtn');
   if (filterBtnEl) filterBtnEl.onclick = () => openFlowFilterModal(body);
   const rng = body.querySelector('#flowRange');
@@ -9097,6 +9104,141 @@ async function rollbackAssetFlow(id, body) {
       } catch (e) { toast(humanizeErr(null, e, '回退失败')); }
     }
   });
+}
+
+// ── 流水编辑（2026-11-18）────────────────────────────────────────────────
+// 资产页「流水」行的「编辑」按钮：复用后端 PUT /api/asset/flows/:kind/:id（该接口
+// 会同步现金账户/负债余额）。按业务类型区分可编辑参数：
+//   - 现金通用流水：金额（正=入账/负=出账）+ 说明；
+//   - 投资买卖 / 定投流水（说明含「数量(份额)｜价｜费」分段）：额外展示数量 / 价格 / 费用
+//     三个参数框，改动后按 BUY=−(数量×价+费)、SELL=数量×价−费 重算金额，并原位回写
+//     说明分段（「第N期」、标的名称、尾部自由备注等其余分段原样保留）；
+//   - 负债流水：类型（借入/还款）+ 金额（恒正）+ 说明。
+// 冲正类流水（rollback/transfer_rollback/repay_rollback/cf_reverse/wealth_reverse）
+// 不提供编辑入口；后端对冲正记录与已回退流水也有同款拒绝护栏。
+const FLOW_TRADE_BUY = ['adjust_buy', 'dca_buy', 'mcp_buy'];
+const FLOW_TRADE_SELL = ['adjust_sell', 'mcp_sell'];
+const FLOW_NO_EDIT = ['rollback', 'transfer_rollback', 'repay_rollback', 'cf_reverse', 'wealth_reverse'];
+
+// 解析说明里的「数量/份额」「价」「费」分段（加仓/减仓与定投两种格式都覆盖）。
+// 返回 { qi, qk, pi, fi, qty, price, fee, suffix }；缺任一分段则返回 null（退化为只改金额）。
+function flowTradeParse(note) {
+  const segs = String(note || '').split('｜');
+  const segVal = (s, k) => {
+    const m = new RegExp('^' + k + '\\s*(.+)$').exec(String(s || '').trim());
+    return m ? m[1].trim() : null;
+  };
+  let qi = -1, qk = '', pi = -1, fi = -1, qty = null, price = null, fee = null;
+  segs.forEach((s, i) => {
+    if (qi < 0) {
+      const q1 = segVal(s, '数量');
+      const q2 = segVal(s, '份额');
+      if (q1 !== null || q2 !== null) { qi = i; qk = q1 !== null ? '数量' : '份额'; qty = q1 !== null ? q1 : q2; }
+    }
+    if (pi < 0) { const v = segVal(s, '价'); if (v !== null) { pi = i; price = v; } }
+    if (fi < 0) { const v = segVal(s, '费'); if (v !== null) { fi = i; fee = v; } }
+  });
+  if (qi < 0 || pi < 0 || fi < 0) return null;
+  // 尾部自由备注（如「一键清仓」）= 「费」分段之后的剩余内容
+  return { qi, qk, pi, fi, qty, price, fee, suffix: segs.slice(fi + 1).join('｜') };
+}
+
+// 原位回写数量/价/费三个分段，其余分段（含头部「定投扣款 百事可乐 PEP」等）原样保留
+function flowTradeRebuild(note, pr, qty, price, fee) {
+  const segs = String(note || '').split('｜');
+  segs[pr.qi] = pr.qk + ' ' + qty;
+  segs[pr.pi] = '价 ' + price;
+  segs[pr.fi] = '费 ' + fee;
+  return segs.slice(0, pr.fi + 1).join('｜') + (String(pr.suffix || '').trim() ? '｜' + pr.suffix.trim() : '');
+}
+
+function openFlowEdit(f, body) {
+  const modal = $('#flowEditModal');
+  if (!modal) return;
+  const isLiab = f.kind === 'liability';
+  const isBuy = FLOW_TRADE_BUY.includes(f.type);
+  const isSell = FLOW_TRADE_SELL.includes(f.type);
+  // 仅投资买卖/定投流水且说明能解析出「数量/价/费」分段时才展示参数框
+  const pr = (!isLiab && (isBuy || isSell)) ? flowTradeParse(f.note) : null;
+
+  const title = f.ref_name || f.name || flowTypePlain(f) || ('流水 #' + f.id);
+  $('#flowEditTitle').textContent = '编辑流水 · ' + title;
+  const meta = flowTypeTagRaw(f)
+    + '<span class="fe-meta-txt">' + esc([f.name, f.date, String(f.currency || '').toUpperCase()].filter(Boolean).join(' · ')) + '</span>';
+  $('#flowEditMeta').innerHTML = meta;
+
+  const typeRow = $('#fe_type_row');
+  typeRow.hidden = !isLiab;
+  if (isLiab) $('#fe_type').value = f.type === 'loan' ? 'loan' : 'repay';
+
+  const tradeRow = $('#fe_trade_row');
+  tradeRow.hidden = !pr;
+  if (pr) {
+    $('#fe_qty').value = pr.qty;
+    $('#fe_price').value = pr.price;
+    $('#fe_fee').value = pr.fee;
+  }
+  // 交易流水的说明只放开尾部自由备注段；其它流水编辑整条说明
+  const noteEl = $('#fe_note');
+  noteEl.value = pr ? String(pr.suffix || '') : String(f.note || '');
+
+  const amtEl = $('#fe_amount');
+  amtEl.value = isLiab ? Math.abs(Number(f.amount) || 0) : (Number(f.amount) || 0);
+
+  const err = $('#flowEditErr');
+  err.textContent = '';
+  modal.hidden = false;
+  modal.onclick = (e) => { if (e.target === modal) modal.hidden = true; };
+  $('#feCancel').onclick = () => { modal.hidden = true; };
+
+  // 数量/价格/费用任一改动 → 按买卖方向重算金额（BUY=−(数量×价+费)，SELL=数量×价−费）
+  const recomputeAmt = () => {
+    if (!pr) return;
+    const q = Number($('#fe_qty').value), p = Number($('#fe_price').value), fee = Number($('#fe_fee').value);
+    if ([q, p, fee].some((x) => Number.isNaN(x))) return;
+    const raw = isSell ? (q * p - fee) : -(q * p + fee);
+    amtEl.value = (Math.round(raw * 100) / 100).toFixed(2);
+  };
+  ['fe_qty', 'fe_price', 'fe_fee'].forEach((id) => { $('#' + id).oninput = recomputeAmt; });
+
+  $('#flowEditForm').onsubmit = async (e) => {
+    e.preventDefault();
+    err.textContent = '';
+    const note = String(noteEl.value || '').trim();
+    let payload;
+    if (isLiab) {
+      const a = Math.abs(Number(amtEl.value) || 0);
+      if (!(a > 0)) { err.textContent = '请输入大于 0 的金额'; return; }
+      payload = { type: $('#fe_type').value, amount: a, note };
+    } else if (pr) {
+      const q = Number($('#fe_qty').value), p = Number($('#fe_price').value), fee = Number($('#fe_fee').value);
+      if (!(q > 0)) { err.textContent = '数量必须大于 0'; return; }
+      if (Number.isNaN(p) || p < 0) { err.textContent = '价格不能为负'; return; }
+      if (Number.isNaN(fee) || fee < 0) { err.textContent = '费用不能为负'; return; }
+      const fmt = (x) => String(Math.round(x * 1e6) / 1e6);
+      const newNote = flowTradeRebuild(f.note, pr, fmt(q), fmt(p), fmt(fee));
+      const a = Number(amtEl.value);
+      if (Number.isNaN(a) || Math.abs(a) < 0.005) { err.textContent = '金额不能为 0'; return; }
+      payload = { amount: Math.round(a * 100) / 100, note: newNote };
+    } else {
+      const a = Number(amtEl.value);
+      if (Number.isNaN(a) || Math.abs(a) < 0.005) { err.textContent = '金额不能为 0'; return; }
+      payload = { amount: Math.round(a * 100) / 100, note };
+    }
+    const kind = isLiab ? 'liability' : 'cash';
+    try {
+      const r = await api('/api/asset/flows/' + kind + '/' + f.id, { method: 'PUT', body: JSON.stringify(payload) });
+      if (!r.ok) { let m = '保存失败'; try { const d = await r.json(); if (d && d.error) m = d.error; } catch (_) {} err.textContent = m; return; }
+      modal.hidden = true;
+      toast('已保存流水修改，账户余额已同步', 'ok');
+      // 作废按账本缓存：流水面板（assetFlowsCache）、首页最新流水（homeRecentFlows*），
+      // 再整页重拉资产数据 → 列表、KPI 统计、首页流水一起刷新。
+      assetFlowsCache = []; assetFlowsKey = '';
+      homeRecentFlowsData = []; homeRecentFlowsSig = ''; homeRecentFlowsGen++;
+      { const rf = $('#homeRecentFlows'); if (rf) rf.innerHTML = ''; }
+      await loadAsset();
+    } catch (e2) { err.textContent = humanizeErr(null, e2, '保存失败'); }
+  };
 }
 
 // 资产子 tab 切换（原型下划线样式，无滑动白块）
@@ -10123,6 +10265,13 @@ function flowTypeTagRaw(f) {
     case 'deposit_interest': return '<span class="flow-tag in">存款利息</span>';
     // 流水表「回退」按钮产生的反向流水（见 internal/api/flows.go rollbackFlow）
     case 'rollback': return '<span class="flow-tag manual">回退冲正</span>';
+    // 持仓编辑联动流水（见 internal/api/handler.go updateHolding）：改持仓成本时追补/调减资金
+    case 'holding_edit_add': return '<span class="flow-tag out">编辑追补资金</span>';
+    case 'holding_edit_reduce': return '<span class="flow-tag in">编辑调减资金</span>';
+    // 交易回退（撤销加仓/减仓/分红）的资金冲正流水（见 internal/db RevertHoldingTx）
+    case 'revert': return '<span class="flow-tag manual">交易回退</span>';
+    // 历史遗留类型：现只写 deposit_interest，存量库仍可能有 interest
+    case 'interest': return '<span class="flow-tag in">利息入账</span>';
     // MCP 服务写入的流水（见 internal/mcp/tools.go，type 前缀 mcp_，并带 source=mcp 标签）
     case 'mcp_buy': return '<span class="flow-tag out">加仓付款</span>';
     case 'mcp_sell': return '<span class="flow-tag in">减仓回款</span>';

@@ -1772,6 +1772,38 @@
     </div>
   </div>
 
+  <!-- 流水编辑（2026-11-18）：按业务类型编辑参数 —— 通用流水改金额/说明；
+       投资买卖/定投流水解析说明里的「数量(份额)｜价｜费」分段，改后重算金额并回写说明；
+       负债流水可改类型/金额/说明。保存后后端同步账户余额，前端作废缓存整页重拉。 -->
+  <div id="flowEditModal" class="modal" hidden>
+    <div class="modal-card" style="width:460px; max-width:94vw;">
+      <h2 class="m-head" id="flowEditTitle">编辑流水</h2>
+      <form id="flowEditForm">
+        <div class="m-body">
+          <p class="tool-hint" id="flowEditMeta"></p>
+          <label id="fe_type_row" hidden>类型
+            <select id="fe_type">
+              <option value="loan">借入（负债增加）</option>
+              <option value="repay">还款（负债减少）</option>
+            </select>
+          </label>
+          <div class="fe-trade" id="fe_trade_row" hidden>
+            <label>数量 <input id="fe_qty" type="number" step="any" min="0"></label>
+            <label>价格 <input id="fe_price" type="number" step="any" min="0"></label>
+            <label>费用 <input id="fe_fee" type="number" step="any" min="0"></label>
+          </div>
+          <label>金额（正=入账 / 负=出账）<input id="fe_amount" type="number" step="any"></label>
+          <label id="fe_note_row">说明 <input id="fe_note" type="text"></label>
+          <div id="flowEditErr" class="err"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="feCancel">取消</button>
+          <button class="btn primary" type="submit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 批量录入流水：截图识别出多条明细时用（每行可勾选 / 改分类 / 改金额 / 改说明） -->
   <div id="flowBatchModal" class="modal" hidden>
     <div class="modal-card fb-card">

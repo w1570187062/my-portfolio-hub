@@ -55,6 +55,17 @@ func updateFlow(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "流水不存在"})
 			return
 		}
+		// 冲正记录（回退/转账回滚/还款回滚）不可编辑：金额必须与被冲正流水严格互为相反数，
+		// 改动会让「原流水 + 冲正」的余额口径对不上账。
+		if old.Type == "rollback" || old.Type == "transfer_rollback" || old.Type == "repay_rollback" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "冲正记录不可编辑，如需调整请编辑原流水"})
+			return
+		}
+		// 已被回退的流水同样不可编辑：回退流水按「原金额的反向」入账，改原金额后两边会对不上。
+		if done, _ := db.HasCashRollback(uid, old.ID); done {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该流水已回退，不可再编辑；如需调整请先撤销相关操作后重新记账"})
+			return
+		}
 		if b.CashID <= 0 {
 			b.CashID = old.CashID
 		}

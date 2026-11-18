@@ -2812,6 +2812,11 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .atbl td.op .row-act svg { width: 14px; height: 14px; }
 .atbl td.op .row-act:hover { color: var(--text); background: var(--bg-hover); }
 .atbl tr.row:hover td.op .row-act { color: var(--text-muted); }
+/* 危险操作（子账户删除等）在账户主表内同样保持警示红：上面三条灰/提亮规则特异性
+   更高，会把全局 .row-act.danger 的红色盖掉（删除图标一直显示灰色），逐条提权夺回 */
+.atbl td.op .row-act.danger { color: var(--danger); }
+.atbl td.op .row-act.danger:hover { color: var(--danger); background: var(--danger-soft); }
+.atbl tr.row:hover td.op .row-act.danger { color: var(--danger); }
 /* 子账户行：缩进 + 浅底，与账户行形成从属关系；负债金额为负并显示红字 */
 .atbl tr.srow td { padding: 6px 12px; border-bottom: 1px solid var(--row-divider); background: rgba(var(--tint), .028); }
 .atbl tr.shead td { padding: 8px 12px 4px; background: rgba(var(--tint), .028); }
@@ -3570,6 +3575,8 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 .tl-amt.down { color: var(--down); }
 .tl-act { display: flex; justify-content: flex-end; }
 .tl-act .tl-undo { margin: 0; }
+/* 编辑 + 回退两枚按钮并排：留出呼吸间距（共用 .tl-undo 的悬停显隐） */
+.tl-act .tl-undo + .tl-undo { margin-left: 6px; }
 /* 回退按钮默认只在行悬停时露出，避免 60 行流水每行挂一个图标变成噪声；
    触屏没有 hover 语义（@media (hover: hover) 不命中）→ 常显，功能不丢。 */
 @media (hover: hover) {
@@ -3578,6 +3585,14 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
   .tl-undo:focus-visible { opacity: 1; }
 }
 .flow-tl .tl-empty { padding: var(--sp-6) 0; text-align: center; color: var(--text-faint); font-size: var(--fs-sm); }
+
+/* ── 流水编辑弹框（2026-11-18）────────────────────────────────────────── */
+/* 数量/价格/费用三参数并排：flex 子项必须 min-width:0，否则长数字撑破卡片 */
+.fe-trade { display: flex; gap: var(--sp-2); }
+.fe-trade label { flex: 1 1 0; min-width: 0; }
+/* 弹框 meta 行：类型徽标（.flow-tag）与账户·日期·币种文本并排 */
+#flowEditMeta .flow-tag { flex: 0 0 auto; }
+.fe-meta-txt { margin-left: 6px; }
 /* 工具条左侧成组：区间下拉 + 类型筛选（列表已无表头，漏斗从 th 挪到这儿） */
 /* margin-left:auto 把区间 + 筛选钉在最右（2026-11-13 续）：工具条左栏加了收入/支出 stat，
    用 auto 外边距保证「近N天 + 筛选」始终靠右，即使左栏 stat 为空也不会漂到中间。 */
