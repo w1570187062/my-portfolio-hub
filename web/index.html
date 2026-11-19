@@ -465,11 +465,10 @@
   </div>
   </div>
 
-  <!-- ===== 财务（2026-10-26 卡片改造）：KPI 标题行（含年份切换）/ 4 KPI 卡 / 年度收支热力图 / 月度分类详情 ===== -->
+  <!-- ===== 财务（2026-11-19 重构）：标题行 + 结论行 + 3 KPI / 现金流趋势 / 分类榜 + 结构演化 ===== -->
   <div id="financeView" hidden>
-    <!-- 卡片区（标题行 + 4 KPI 卡打成一段，避免 flex 容器 gap 再叠加一次行距） -->
     <div class="kpi-section">
-      <!-- 标题行：左眉标 + 右年份切换（年度作用于整页：KPI / 热力图 / 月度明细，故与卡片同区而非塞进热力图卡） -->
+      <!-- 标题行：左眉标 + 右年份切换（年度作用于整页：KPI / 趋势 / 分类榜，故与卡片同区） -->
       <div class="kpi-head">
         <span class="kpi-head-label">年度收支 · 总览</span>
         <div class="year-switcher">
@@ -479,51 +478,89 @@
         </div>
       </div>
 
+      <!-- 结论行：与「数据总览 / 再平衡」的 .ov-sub 同一处位置、同一套排版（标题行下的副标，
+           不再是独立彩色条）。标题行已有 12px 下边距，这里只补下方间距即可 -->
+      <p class="fin-lead" id="finLead"></p>
+
       <!-- 3 个 KPI 小卡片（年度总收入 / 总支出 / 净结余·储蓄率），由 renderFinKpis 输出统一 .kpi-card。
            2026-11-09：储蓄率原本独立成第 4 张卡，它是「净结余 ÷ 收入」的派生值，
            与净结余卡同权重并排会让两个数看起来是同级指标 —— 现并入净结余卡副标。 -->
       <div class="kpi-row cols-3" id="finKpiGrid"></div>
     </div>
 
-    <!-- 年度收支分析卡：内部上下排列（上=月度收支柱 / 下=子项金额热力图），下半部分=当月分类明细 -->
-    <section class="card fin-heatmap-card" id="finHeatmap" hidden>
-      <div class="heatmap-layout">
-        <div class="heatmap-left">
-          <div class="heatmap-subtitle">
-            <span class="heatmap-sub-title">月度收支合计<span class="bar-hint">悬停看明细</span></span>
-            <span class="heatmap-sub-legend">
-              <span><span class="dot dot-inc"></span>收入</span>
-              <span><span class="dot dot-exp"></span>支出</span>
-            </span>
-          </div>
-          <div class="bar-chart-wrap">
-            <div class="bar-chart-inner">
-              <svg id="yearBarChart" class="bar-chart-svg" viewBox="0 0 360 200"></svg>
-              <!-- 悬停浮层：柱顶不再常显 12 个合计数字，读数改由整列高亮 + 浮层承担 -->
-              <div class="bar-tip" id="yearBarTip" role="tooltip"></div>
-              <div class="bar-chart-xlabels" id="yearBarLabels"></div>
-            </div>
-          </div>
+    <!-- 现金流趋势：收入向上 / 支出向下共用零线，虚线=当月净结余，蓝线=累计结余（右轴）。
+         旧「收入+支出堆叠柱」柱高 = 收入+支出，不含财务含义，且读数必须悬停 —— 整块下线。 -->
+    <section class="card fin-trend-card" id="finTrendCard" hidden>
+      <div class="fin-card-head">
+        <div class="fin-card-head-main">
+          <h2 class="fin-card-title">月度现金流</h2>
+          <p class="fin-card-sub">收入向上、支出向下，同一零线；虚线为当月净结余，实线为累计结余（右轴）</p>
         </div>
-        <div class="heatmap-right">
-          <div class="heatmap-right-header">
-            <span class="heatmap-sub-title"><span id="hmCurMonth">—</span> 收支子项构成</span>
-            <div class="heatmap-legend-mini">
-              <span><span class="dot dot-inc"></span>收入</span>
-              <span><span class="dot dot-exp"></span>支出</span>
-            </div>
-          </div>
-          <div class="hm-chips" id="hmChips"></div>
-          <!-- 方案 6：该月无数据时会自动落到最近有记录的月份，这里说明「为什么不是你选的那个月」 -->
-          <div class="hm-auto-hint" id="hmAutoHint" hidden></div>
-          <div class="hm-treemap-scroll"><div class="hm-treemap" id="catTreemap"></div></div>
-          <div class="hm-scale-note">面积 ≈ 金额 · 占比过小的方块已放大到最小可见尺寸，悬停看真实占比</div>
+        <div class="fin-legend">
+          <span><i class="fin-sw fin-sw-inc"></i>收入</span>
+          <span><i class="fin-sw fin-sw-exp"></i>支出</span>
+          <span><i class="fin-sw fin-sw-net"></i>净结余</span>
+          <span><i class="fin-sw fin-sw-cum"></i>累计结余</span>
         </div>
       </div>
-      <!-- 2026-11-03 下线「收支分类明细」：上半部分的热力图已经把「分类 → 逐笔金额」
-           完整画出来了，下半部分再把同一批流水按分类列一遍纯属重复（实测占整页 65% 高度），
-           逐笔明细统一去资产页「流水」看。 -->
+      <div class="fin-chips" id="finChips"></div>
+      <!-- 该月无记录时自动落到最近有数据的月份，这里说明「为什么不是你选的那个月」 -->
+      <div class="fin-auto-hint" id="finAutoHint" hidden></div>
+      <div class="fin-chart fin-trend-chart"><svg id="finTrendSvg" role="img" aria-label="月度现金流趋势"></svg></div>
+      <div class="fin-readout" id="finReadout" aria-live="polite"></div>
     </section>
+
+    <div class="fin-grid-2" id="finGrid2" hidden>
+      <!-- 分类构成：长度编码金额，名称/金额/占比/环比/sparkline 一行读完；
+           旧 treemap 的第二层（逐笔流水）与资产页「流水」重复，改为点行下钻 -->
+      <section class="card fin-rank-card">
+        <div class="fin-card-head">
+          <div class="fin-card-head-main">
+            <h2 class="fin-card-title">分类构成</h2>
+            <p class="fin-card-sub" id="finRankSub">—</p>
+          </div>
+          <div class="fin-rank-ctl">
+            <div class="fin-seg" id="finDirSeg">
+              <button type="button" data-dir="expense" aria-pressed="true">支出</button>
+              <button type="button" data-dir="income" aria-pressed="false">收入</button>
+            </div>
+            <select class="fin-select" id="finRankSort" aria-label="排序方式">
+              <option value="amount">按金额</option>
+              <option value="delta">按环比</option>
+            </select>
+          </div>
+        </div>
+        <div class="fin-rank-head" aria-hidden="true">
+          <span></span><span>分类</span><span></span>
+          <span class="t-r">金额</span><span class="t-r">占比 / 环比</span><span></span>
+        </div>
+        <div class="fin-rank-list" id="finRankList"></div>
+        <p class="fin-card-foot">点任意一行看该分类当月逐笔；占比按同方向合计归一。</p>
+      </section>
+
+      <!-- 支出结构演化：每月一列 100% 堆叠，看结构漂移（treemap 做不到跨月比较） -->
+      <section class="card fin-mix-card">
+        <div class="fin-card-head">
+          <div class="fin-card-head-main">
+            <h2 class="fin-card-title">支出结构演化</h2>
+            <p class="fin-card-sub">每月支出按分类占比（100%），看结构漂移</p>
+          </div>
+        </div>
+        <div class="fin-chart fin-mix-chart"><svg id="finMixSvg" role="img" aria-label="支出结构演化"></svg></div>
+        <div class="fin-mix-legend" id="finMixLegend"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 分类下钻：逐笔明细与资产页「流水」同源，这里只做入口，不重复造流水页 -->
+  <div id="finDrillModal" class="modal" hidden>
+    <div class="modal-card fin-drill-card" role="dialog" aria-modal="true" aria-labelledby="finDrillTitle">
+      <h2 id="finDrillTitle">—</h2>
+      <button class="card-close" type="button" id="finDrillClose" title="关闭" aria-label="关闭">✕</button>
+      <p class="fin-drill-sum" id="finDrillSum"></p>
+      <div class="m-body fin-drill-list" id="finDrillList"></div>
+      <p class="fin-drill-foot">逐笔明细与资产页「流水」同源；外币按当前汇率折算为 CNY。</p>
+    </div>
   </div>
 
   <div id="assetView" hidden>

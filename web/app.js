@@ -4488,11 +4488,14 @@ function fetchFinanceData(year) {
 // 供「汇率刷新」「同一年度二次进入」这类不该重置交互状态的场合使用。
 function paintFinance({ keepMonth = false } = {}) {
   const d = finSummaryData;
-  const heatmap = document.getElementById('finHeatmap');
+  const trendCard = document.getElementById('finTrendCard');
+  const grid2 = document.getElementById('finGrid2');
   if (!d || finDataYear !== finYear) return;
   finPaintedFx = usdRate + ':' + hkdRate;
   finMonthsData = d.months || [];
   renderFinKpis(d);
+  // 结论行与「数据总览 / 再平衡」的副标同位置：标题行下、KPI 卡之上
+  renderFinLead(d);
   // 年份边界禁用 prev/next（后端仅接受 2000–2999）
   const y = Number(finYear);
   const prev = document.getElementById('finYearPrev');
@@ -4523,11 +4526,15 @@ function paintFinance({ keepMonth = false } = {}) {
       finMonthAutoFrom = 0;
     }
   }
+  // 保留月份（二次进入 / 汇率刷新）时没有「自动跳月」这回事，清掉上一个年度留下的提示
+  if (keepMonth && finMonthsData.length) finMonthAutoFrom = 0;
   finHmMonth = Math.min(Math.max(finHmMonth, 0), Math.max(0, finMonthsData.length - 1));
-  if (heatmap) { heatmap.hidden = false; renderFinHeatmap(); }
-  // 区块层错落上浮：KPI 卡片 → 热力图卡 → 分类明细卡依次入场。
+  if (trendCard) trendCard.hidden = false;
+  if (grid2) grid2.hidden = false;
+  if (trendCard) renderFinAnalysis();
+  // 区块层错落上浮：结论行 + KPI 卡片 → 趋势卡 → 分类榜 / 结构演化依次入场。
   // 放在数据就绪之后 —— 骨架占位期间先播的是骨架屏动画。
-  playRiseIn($('#financeView'), '.kpi-section, .fin-heatmap-card', 60);
+  playRiseIn($('#financeView'), '.kpi-section, .fin-trend-card, .fin-grid-2', 60);
 }
 
 // /api/home 回来后：汇率（usdRate/hkdRate）是财务页唯一依赖它的数据（flowToCny 折 CNY）。
@@ -4545,14 +4552,16 @@ function refreshFinanceRates() {
 async function renderFinanceView() {
   const kpiGrid = document.getElementById('finKpiGrid');
   const yearLabel = document.getElementById('finYearLabel');
-  const heatmap = document.getElementById('finHeatmap');
+  const trendCard = document.getElementById('finTrendCard');
+  const grid2 = document.getElementById('finGrid2');
   if (yearLabel) yearLabel.textContent = finYear;
   const year = finYear;
   // 该年度已有渲染结果时不清屏：清屏再画会让同一页闪两下（返回本页、汇率刷新都会走到这里）
   const hasCache = !!finSummaryData && finDataYear === year;
   if (!hasCache) {
     if (kpiGrid) kpiGrid.innerHTML = '';
-    if (heatmap) heatmap.hidden = true;
+    if (trendCard) trendCard.hidden = true;
+    if (grid2) grid2.hidden = true;
   }
   try {
     const d = await fetchFinanceData(year);
@@ -4616,213 +4625,541 @@ function changeFinYear(delta) {
   renderFinanceView();
 }
 
-// ===== 财务页 · 年度收支分析卡（左月度柱 / 右子项热力图） =====
-function renderFinHeatmap() {
-  renderYearBarChart();
-  renderHmChips();
-  renderCatTreemap();
-}
+// ===== 财务页 · 年度收支分析（2026-11-19 重构，原型 docs/finance-v2-prototype） =====
+// 旧实现「收入+支出堆叠柱 + 双层 treemap」整块下线，两个硬伤：
+//   · 堆叠柱的柱高 = 收入 + 支出，不指向任何财务指标（赤字月的柱子反而更高），读数还必须悬停；
+//   · treemap 的第二层是逐笔流水，与资产页「流水」重复；面积又被「最小可见尺寸 / 小项等分」改写，
+//     图注写着「面积 ≈ 金额」，实际有三处偏离。
+// 新实现三块各回答一个问题：哪月盈余（趋势）、钱花在哪（分类榜）、结构怎么变（占比演化）。
+// 三个约束贯穿始终：① 不悬停也能读出结论；② 面积/长度不被算法改写；③ 逐年/逐月切换不重发请求。
 
-// 左：12 月合并堆叠柱（收入绿在底 + 支出红在顶，总长=收入+支出）
-// 柱段路径：roundTop/roundBot 分别控制上/下端是否倒圆角。
-// 收入/支出两段堆叠，只有整根柱子的外端（顶/底）留圆角，两段连接处切平。
-function barSegPath(x, y, w, h, r, roundTop, roundBot) {
-  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
-  const rt = roundTop ? rr : 0, rb = roundBot ? rr : 0;
-  return `M${x + rt} ${y}H${x + w - rt}` + (rt ? `A${rr} ${rr} 0 0 1 ${x + w} ${y + rt}` : '') +
-    `V${y + h - rb}` + (rb ? `A${rr} ${rr} 0 0 1 ${x + w - rb} ${y + h}` : '') +
-    `H${x + rb}` + (rb ? `A${rr} ${rr} 0 0 1 ${x} ${y + h - rb}` : '') +
-    `V${y + rt}` + (rt ? `A${rr} ${rr} 0 0 1 ${x + rt} ${y}` : '') + 'Z';
-}
+let finDir = 'expense';   // 分类榜方向：expense / income
+let finSort = 'amount';   // 分类榜排序：amount / delta
+let finHoverIdx = null;   // 趋势图悬停列（只改读数与引导带，不动选中态）
+let finChartRO = null;    // 两张图的尺寸监听（合并一个，尺寸不变不重绘）
+let finTrendPadL = 0;     // 趋势图当前几何（悬停带定位用，重绘时刷新）
+let finTrendSlot = 0;
 
-// 金额格式化（CNY）：>=1万 用「万」缩写，否则整数。用于 y 轴刻度与每柱合计标签。
-function barMoneyShort(v) {
-  if (v <= 0) return '0';
-  if (v >= 10000) {
-    const w = v / 10000;
-    return (w % 1 === 0 ? w.toFixed(0) : w.toFixed(1).replace(/\.0$/, '')) + '万';
-  }
-  return String(Math.round(v));
-}
-// 面积型小方块（收支热力图 / 拼块）里的金额标签：只回答「大约多少」，取整 + 万位压缩。
-// 这是全站唯一不按 2 位小数展示的金额位置 —— 方块宽度常在 50–90px，多出「.00」三个字符
-// 就会被裁掉或挤掉分类名；精确到分的数字在下方「收支分类明细」与逐笔流水里给全。
-const moneyLabelShort = (v, cur) => {
-  const n = Number(v) || 0, a = Math.abs(n);
-  return curSymbolJS(cur || 'cny') + (a >= 1e4 ? (n / 1e4).toFixed(2) + '万' : Math.round(n).toLocaleString('zh-CN'));
-};
-// 「漂亮」刻度步长：取最近的 1/2/2.5/5/10 × 10^n，让 y 轴网格线落在整数位。
-function niceStep(raw) {
-  if (raw <= 0) return 1;
-  const exp = Math.floor(Math.log10(raw));
-  const base = Math.pow(10, exp);
-  const f = raw / base;
-  let nf;
-  if (f <= 1) nf = 1; else if (f <= 2) nf = 2; else if (f <= 2.5) nf = 2.5; else if (f <= 5) nf = 5; else nf = 10;
-  return nf * base;
-}
-// 柱图悬停态：_barGeo 存下本次几何（指针换算要用），_barHover 记当前高亮列。
-// 悬停只切 class / 挪浮层位置，绝不重绘 SVG —— 12 根柱子 + 网格每次重绘会闪。
-let _barGeo = null;   // { padLeft, slot, w, topY[] }
-let _barHover = -1;
+const FIN_PALETTE_N = 8;
+// 序号 → 样式类。颜色本体写在 style.css 的 .fin-cat-N（--c: rgb(var(--fin-cN))），
+// JS 只给序号、不拼颜色字符串：既避免两处色值不同步，也让色板 token 在样式里有静态引用。
+const FIN_CAT_CLS = ['fin-cat-x', 'fin-cat-1', 'fin-cat-2', 'fin-cat-3', 'fin-cat-4', 'fin-cat-5', 'fin-cat-6', 'fin-cat-7', 'fin-cat-8'];
+function finCatCls(n) { return FIN_CAT_CLS[n] || 'fin-cat-x'; }
 
-// 悬浮读数浮层：柱顶不再常显 12 个合计（数字盖过柱形、小金额还贴着 0 线飘），
-// 改由「整列淡底 + 引导虚线 + 2×2 读数」承担；选中月只在柱顶留一个小圆点定位。
-function showBarTip(i) {
-  const svg = document.getElementById('yearBarChart');
-  const tip = document.getElementById('yearBarTip');
-  const m = finMonthsData[i];
-  if (!svg || !tip || !m || !_barGeo) return;
-  if (_barHover !== i) {
-    _barHover = i;
-    svg.querySelectorAll('.bar-col').forEach((g) => g.classList.toggle('is-hover', Number(g.dataset.mi) === i));
-    const inc = Number(m.income) || 0, exp = Number(m.expense) || 0, net = inc - exp;
-    tip.innerHTML = `<div class="bar-tip-month">${i + 1} 月</div>
-      <div class="bar-tip-grid">
-        <span class="bar-tip-cell bar-tip-inc"><span>收入</span><b>${moneyCurW(inc, 'cny')}</b></span>
-        <span class="bar-tip-cell bar-tip-exp"><span>支出</span><b>${moneyCurW(exp, 'cny')}</b></span>
-        <span class="bar-tip-cell"><span>合计</span><b>${moneyCurW(inc + exp, 'cny')}</b></span>
-        <span class="bar-tip-cell"><span>结余</span><b>${(net < 0 ? NEG : '+') + moneyCurW(Math.abs(net), 'cny')}</b></span>
-      </div>`;
-  }
-  const stem = document.getElementById('barStem');
-  const cx = _barGeo.padLeft + _barGeo.slot * i + _barGeo.slot / 2;
-  if (stem) {
-    stem.setAttribute('x1', cx.toFixed(1));
-    stem.setAttribute('x2', cx.toFixed(1));
-    stem.setAttribute('y2', (_barGeo.topY[i] || 0).toFixed(1));
-    stem.classList.remove('is-off');
-  }
-  // 浮层贴在本列右侧（右侧放不下就翻到左侧），左右都不压住正在看的那根柱子
-  const box = svg.getBoundingClientRect();
-  const x = (cx / _barGeo.w) * box.width;
-  tip.classList.add('is-on');
-  const tw = tip.offsetWidth;
-  let left = x + 12;
-  if (left + tw > box.width - 2) left = x - tw - 12;
-  tip.style.left = Math.max(2, left) + 'px';
-  tip.style.top = '2px';
-}
-
-function hideBarTip() {
-  const tip = document.getElementById('yearBarTip');
-  const stem = document.getElementById('barStem');
-  if (_barHover >= 0) {
-    const svg = document.getElementById('yearBarChart');
-    if (svg) svg.querySelectorAll('.bar-col.is-hover').forEach((g) => g.classList.remove('is-hover'));
-    _barHover = -1;
-  }
-  if (tip) tip.classList.remove('is-on');
-  if (stem) stem.classList.add('is-off');
-}
-
-// 指针事件绑在 svg 自身上（不是每根柱子）：柱图每次都整体重绘，
-// 逐柱绑监听会随 innerHTML 一起被丢掉；委托在 svg 上则一次绑定长期有效。
-function bindBarChartHover(svg) {
-  if (svg.dataset.barHover === '1') return;
-  svg.dataset.barHover = '1';
-  svg.addEventListener('pointerover', (e) => {
-    const col = e.target.closest ? e.target.closest('.bar-col') : null;
-    // 触屏没有 hover 语义：按下只会走 click 选月，不弹浮层（否则浮层会赖着不走）
-    if (!col || e.pointerType === 'touch') { hideBarTip(); return; }
-    showBarTip(Number(col.dataset.mi));
+// 分类色：按「该方向年度金额排名」发序号，保证同一张图里不会两个分类撞色；
+// 榜单与结构演化共用同一套映射，跨图对照同一分类时颜色一致。
+function finCatColorMap(type) {
+  const totals = Object.create(null);
+  (finMonthsData || []).forEach((m) => {
+    (m.items || []).forEach((it) => {
+      if (it.type !== type) return;
+      totals[it.category] = (totals[it.category] || 0) + Math.abs(Number(it.amount) || 0);
+    });
   });
-  svg.addEventListener('pointerleave', () => hideBarTip());
-}
-
-function renderYearBarChart() {
-  const svg = document.getElementById('yearBarChart');
-  const labels = document.getElementById('yearBarLabels');
-  if (!svg || !labels) return;
-  // 视口留出左侧 PAD_LEFT 给 y 轴刻度；与 CSS aspect-ratio(360/200=9/5) 保持一致。
-  const W = 360, H = 200, PAD_TOP = 16, PAD_BOT = 6, PAD_LEFT = 36, PAD_RIGHT = 8, R = 2;
-  const plotW = W - PAD_LEFT - PAD_RIGHT;
-  const plotH = H - PAD_TOP - PAD_BOT;
-  const baseY = PAD_TOP + plotH;
-  const months = finMonthsData;
-  hideBarTip();
-  if (!months.length) { svg.innerHTML = ''; labels.innerHTML = ''; _barGeo = null; return; }
-  const totals = months.map((m) => (m.income || 0) + (m.expense || 0));
-  const maxVal = Math.max(1, ...totals);
-  // y 轴：步长取「漂亮」值，顶线 = step × 等分数（略高于最大值、不裁顶）。
-  // 等分数不写死 4：最大值刚过一档时（4.1 万 ÷ 4 → 步长 2 万 → 顶线 8 万），
-  // 柱子只剩一半高、顶部大片空白。多试 5/6 等分取顶线最低的一套，柱形通常能长到 80%+。
-  let divs = 4;
-  let step = niceStep(maxVal / divs);
-  for (const d of [5, 6]) {
-    const s = niceStep(maxVal / d);
-    if (s * d < step * divs) { step = s; divs = d; }
-  }
-  const top = step * divs;
-  const slot = plotW / Math.max(1, months.length);
-  const bw = slot * 0.62;
-  const topY = [];
-  const paths = [];
-  // 网格线 + y 轴刻度标签（自下而上 0, step, 2step …）
-  for (let k = 0; k <= divs; k++) {
-    const y = baseY - plotH * k / divs;
-    paths.push(`<line class="bar-grid" x1="${PAD_LEFT}" y1="${y.toFixed(1)}" x2="${W - PAD_RIGHT}" y2="${y.toFixed(1)}"/>`);
-    paths.push(`<text class="bar-tick" x="${PAD_LEFT - 5}" y="${(y + 2.6).toFixed(1)}">${barMoneyShort(step * k)}</text>`);
-  }
-  // y 轴竖线
-  paths.push(`<line class="bar-axis" x1="${PAD_LEFT}" y1="${PAD_TOP}" x2="${PAD_LEFT}" y2="${baseY}"/>`);
-  months.forEach((m, i) => {
-    const cx = PAD_LEFT + slot * i + slot / 2;
-    const total = (m.income || 0) + (m.expense || 0);
-    const totalH = total / top * plotH;
-    const incH = total <= 0 ? 0 : totalH * ((m.income || 0) / total);
-    const expH = totalH - incH;
-    const x = cx - bw / 2;
-    const yExp = baseY - totalH;          // 支出段在上
-    const yInc = yExp + expH;             // 收入段在下贴基线
-    topY[i] = yExp;
-    // 整列命中区：淡底铺满整个绘图高度（等宽 slot 而不留缝），
-    // 指针扫过列就触发读数，不必精确压在细柱子上；也是 click 选月的落点。
-    paths.push(`<g class="bar-col" data-mi="${i}">`);
-    paths.push(`<rect class="bar-band" x="${(PAD_LEFT + slot * i).toFixed(1)}" y="${PAD_TOP}" width="${slot.toFixed(1)}" height="${plotH}" rx="${R}"/>`);
-    if (expH > 0.5) paths.push(`<path class="bar-exp" opacity="0.9" d="${barSegPath(x, yExp, bw, expH, R, true, incH <= 0.5)}"/>`);
-    if (incH > 0.5) paths.push(`<path class="bar-inc" opacity="0.9" d="${barSegPath(x, yInc, bw, incH, R, expH <= 0.5, true)}"/>`);
-    // 选中月只在柱顶留一个小圆点：标位置而不读数，12 个数字不再抢视线。
-    if (i === finHmMonth && total > 0.5) {
-      paths.push(`<circle class="bar-sel-dot" cx="${cx.toFixed(1)}" cy="${(yExp - 5).toFixed(1)}" r="2.2"/>`);
-    }
-    paths.push('</g>');
+  const ranked = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+  const map = Object.create(null);
+  ranked.forEach((k, i) => {
+    map[k] = Math.min(FIN_PALETTE_N, i + 1);
   });
-  // 引导虚线：悬停时从浮层垂到柱顶，把「这组数字属于哪根柱子」钉死
-  svg.innerHTML = paths.join('') + `<line class="bar-stem is-off" id="barStem" x1="0" y1="${PAD_TOP}" x2="0" y2="${PAD_TOP}"/>`;
-  _barGeo = { padLeft: PAD_LEFT, slot, w: W, topY };
-  bindBarChartHover(svg);
-  labels.innerHTML = months.map((_, i) => `<span data-mi="${i}" class="${i === finHmMonth ? 'active' : ''}">${i + 1}</span>`).join('');
+  return map;
 }
 
-// 空状态文案（方案 6 / 10）：区分「这个月没记录」和「整年都没记录」。
-// 后者不能只说「当月暂无」，否则用户会一直按月翻找。
+function finMonthHasData(m) {
+  if (!m) return false;
+  if ((m.items || []).length) return true;
+  return Math.abs(Number(m.income) || 0) + Math.abs(Number(m.expense) || 0) > 0.005;
+}
+function finNetOf(m) {
+  return (Number(m && m.income) || 0) - (Number(m && m.expense) || 0);
+}
+// 带下标的「有数据月份」：一律用下标 +1 当月份，不依赖后端 month 字段（空月也占位）
+function finActiveEntries() {
+  return (finMonthsData || [])
+    .map((m, i) => ({ i, m }))
+    .filter((e) => finMonthHasData(e.m));
+}
+function finLastActiveIdx() {
+  const entries = finActiveEntries();
+  return entries.length ? entries[entries.length - 1].i : -1;
+}
+// 空态文案（沿用方案 6/10 的区分）：整年没记录时不能只说「当月暂无」，否则用户会按月翻
 function finEmptyText() {
-  const any = (finMonthsData || []).some((m) => (m && ((m.items || []).length > 0
-    || Math.abs(Number(m.income) || 0) + Math.abs(Number(m.expense) || 0) > 0)));
-  if (any) return '该月暂无收支记录，点上方月份可切换';
+  if (finActiveEntries().length) return '该月暂无收支记录，点上方月份可切换';
   return `${finYear} 年还没有收支记录，先到资产页「流水」记一笔`;
 }
+// 带符号的金额（万位缩写）：0 不配 +，负债/赤字用真正的减号
+function finSignedW(v) {
+  const n = Number(v) || 0;
+  return (n > 0 ? '+' : (n < 0 ? NEG : '')) + moneyCurW(Math.abs(n), 'cny');
+}
+// 轴刻度取整：在 3/4/5 等分里找最小的、能容纳 max 的「整」上界
+function finAxisTop(max) {
+  const nice = (v) => {
+    if (!(v > 0)) return 1;
+    const e = Math.floor(Math.log10(v));
+    const b = Math.pow(10, e);
+    const f = v / b;
+    const n = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+    return n * b;
+  };
+  let best = Infinity;
+  [3, 4, 5].forEach((d) => {
+    const s = nice(max / d);
+    const t = s * d;
+    if (t >= max * 0.995 && t < best) best = t;
+  });
+  return best === Infinity ? nice(max) : best;
+}
+// 轴标签用：一万以上压成「万」，保留 1 位小数（1.5万），十万以上不留小数（15万）
+function finShortMoney(v) {
+  const a = Math.abs(v);
+  if (a >= 1e8) return (a / 1e8).toFixed(2).replace(/\.?0+$/, '') + '亿';
+  if (a >= 1e4) {
+    let s = (a / 1e4).toFixed(a >= 1e5 ? 0 : 1);
+    if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
+    return s + '万';
+  }
+  return String(Math.round(a));
+}
 
-// 右：月份 chips（选中月决定 treemap 内容）
-function renderHmChips() {
-  const wrap = document.getElementById('hmChips');
+// ---------- 结论行（与数据总览 / 再平衡的 .ov-sub 同一处位置、同一套排版） ----------
+function renderFinLead(d) {
+  const el = document.getElementById('finLead');
+  if (!el) return;
+  const entries = finActiveEntries();
+  if (!entries.length) {
+    el.innerHTML = `${esc(finYear)} 年还没有收支记录，先到资产页「流水」记一笔。`;
+    return;
+  }
+  const yr = (d && d.year) || {};
+  const inc = Number(yr.income) || 0;
+  const exp = Number(yr.expense) || 0;
+  const net = Number(yr.net) || 0;
+  const rate = Math.round((Number(d && d.save_rate) || 0) * 100);
+  const last = entries[entries.length - 1];
+  const best = entries.reduce((a, b) => (finNetOf(b.m) > finNetOf(a.m) ? b : a));
+  const worst = entries.reduce((a, b) => (finNetOf(b.m) < finNetOf(a.m) ? b : a));
+  const deficits = entries.filter((e) => finNetOf(e.m) < -0.005);
+  const deficitAmt = deficits.reduce((a, e) => a + finNetOf(e.m), 0);
+
+  const seg1 = `截至 <b>${last.i + 1} 月</b>，累计收入 <b>${moneyCurW(inc, 'cny')}</b>、支出 <b>${moneyCurW(exp, 'cny')}</b>，`
+    + `结余 <b class="${net < 0 ? 'is-neg' : ''}">${finSignedW(net)}</b>`
+    + (inc > 0.005 ? `（储蓄率 ${rate}%）` : '') + '。';
+  const seg2 = deficits.length
+    ? `${deficits.map((e) => e.i + 1).join('、')} 月出现赤字，合计 <b class="is-neg">${NEG}${moneyCurW(Math.abs(deficitAmt), 'cny')}</b>；`
+    : '没有赤字月；';
+  const seg3 = `<b>${best.i + 1} 月</b>最佳（<b class="is-pos">+${moneyCurW(finNetOf(best.m), 'cny')}</b>），`
+    + `<b>${worst.i + 1} 月</b>最差（<b class="${finNetOf(worst.m) < 0 ? 'is-neg' : ''}">${finSignedW(finNetOf(worst.m))}</b>）。`;
+  el.innerHTML = seg1 + seg2 + seg3;
+}
+
+// ---------- 趋势卡顶部：结论胶囊（不点不悬停也能拿到全年结论） ----------
+function renderFinChips() {
+  const wrap = document.getElementById('finChips');
   if (!wrap) return;
-  wrap.innerHTML = finMonthsData.map((m, i) =>
-    `<button class="hm-chip${i === finHmMonth ? ' active' : ''}" data-mi="${i}" type="button">${i + 1}月</button>`).join('');
-  // 方案 6：把「为什么不是你选的月份」写明白，否则用户会以为筛选器坏了
-  const hint = document.getElementById('hmAutoHint');
-  if (hint) {
-    if (finMonthAutoFrom) {
-      hint.hidden = false;
-      hint.textContent = `${finMonthAutoFrom} 月暂无记录，已为你切到 ${finHmMonth + 1} 月`;
+  const entries = finActiveEntries();
+  if (!entries.length) { wrap.innerHTML = ''; return; }
+  const avg = entries.reduce((a, e) => a + finNetOf(e.m), 0) / entries.length;
+  const best = entries.reduce((a, b) => (finNetOf(b.m) > finNetOf(a.m) ? b : a));
+  const worst = entries.reduce((a, b) => (finNetOf(b.m) < finNetOf(a.m) ? b : a));
+  const deficits = entries.filter((e) => finNetOf(e.m) < -0.005).length;
+  wrap.innerHTML = [
+    `<span class="fin-chip">月均结余 <b>${finSignedW(avg)}</b></span>`,
+    `<span class="fin-chip">赤字 <b>${deficits}</b> 个月</span>`,
+    `<span class="fin-chip">最佳 <b>${best.i + 1} 月 ${finSignedW(finNetOf(best.m))}</b></span>`,
+    `<span class="fin-chip">最差 <b>${worst.i + 1} 月 ${finSignedW(finNetOf(worst.m))}</b></span>`,
+  ].join('');
+}
+
+// ---------- 趋势图：收入向上 / 支出向下共用零线 + 净结余虚线 + 累计结余实线（右轴） ----------
+// 用真实像素绘制（不做 viewBox 缩放）：文字固定 10px，容器变窄时只重排、不把字压小。
+// 同一零线是对旧堆叠柱的正面修正：柱端差 = 当月结余，赤字一眼可见。
+function renderFinTrend() {
+  const svg = document.getElementById('finTrendSvg');
+  if (!svg) return;
+  const host = svg.parentElement;
+  const W = Math.max(260, Math.round(host.clientWidth));
+  const H = Math.max(180, Math.round(host.clientHeight));
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+
+  const months = finMonthsData || [];
+  const entries = finActiveEntries();
+  if (!months.length || !entries.length) {
+    finTrendPadL = 0;
+    finTrendSlot = 0;
+    svg.innerHTML = `<text class="fin-empty-txt" x="${(W / 2).toFixed(1)}" y="${(H / 2).toFixed(1)}">${esc(finEmptyText())}</text>`;
+    return;
+  }
+
+  const narrow = W < 520;
+  const padL = narrow ? 34 : 46;
+  const padR = narrow ? 40 : 52;
+  const padT = 18;
+  const padB = 22;
+  const plotW = Math.max(60, W - padL - padR);
+  const plotH = Math.max(60, H - padT - padB);
+  const baseY = padT + plotH;
+  const midY = padT + plotH / 2;
+  const half = plotH / 2;
+  const slot = plotW / 12;
+
+  const maxV = Math.max(1, ...months.map((m) => Math.max(Number(m.income) || 0, Number(m.expense) || 0)));
+  const top = finAxisTop(maxV);
+  const barW = Math.max(6, Math.min(22, slot * 0.3));
+  const barGap = Math.max(4, Math.min(10, slot * 0.1));
+
+  let run = 0;
+  const cumByIndex = months.map((m) => {
+    if (finMonthHasData(m)) run += finNetOf(m);
+    return run;
+  });
+  // 累计结余可能中途为负（先亏后赚的年景）：右轴按 [min, max] 映射，0 不一定在底部，
+  // 直接从 0 向上映射会让负值画到绘图区外面。
+  const cumMin = Math.min(0, ...cumByIndex);
+  const cumMax = Math.max(0, ...cumByIndex);
+  const cumSpan = Math.max(1, cumMax - cumMin);
+
+  const P = [];
+  // 选中月底色在最下层，网格线压在上面（旧图是柱顶常显数字，这里反过来：底色只做定位）
+  P.push(`<rect class="fin-band-sel" x="${(padL + slot * finHmMonth).toFixed(1)}" y="${padT}" width="${slot.toFixed(1)}" height="${plotH}" rx="5"/>`);
+  P.push(`<rect id="finHoverBand" class="fin-band-hover" x="0" y="${padT}" width="${slot.toFixed(1)}" height="${plotH}" rx="5" opacity="0"/>`);
+
+  [1, 0.5, 0, -0.5, -1].forEach((t) => {
+    const gy = midY - t * half;
+    P.push(`<line class="${t === 0 ? 'fin-grid-zero' : 'fin-grid'}" x1="${padL}" y1="${gy.toFixed(1)}" x2="${(padL + plotW).toFixed(1)}" y2="${gy.toFixed(1)}"/>`);
+    P.push(`<text class="fin-tick" x="${padL - 6}" y="${(gy + 3.4).toFixed(1)}">${t === 0 ? '0' : (t < 0 ? NEG : '') + finShortMoney(Math.abs(t * top))}</text>`);
+  });
+
+  // 柱：收入在零线上、支出在零线下的同一列位置并排，中间留缝，读起来是两组数而不是一根总柱
+  months.forEach((m, i) => {
+    const cx = padL + slot * i + slot / 2;
+    const active = i === finHmMonth;
+    if (finMonthHasData(m)) {
+      const inc = Number(m.income) || 0;
+      const exp = Number(m.expense) || 0;
+      const ih = (inc / top) * half;
+      const eh = (exp / top) * half;
+      if (ih > 0.8) {
+        P.push(`<rect class="bar-inc-fill" x="${(cx - barGap / 2 - barW).toFixed(1)}" y="${(midY - ih).toFixed(1)}" width="${barW.toFixed(1)}" height="${ih.toFixed(1)}" rx="2" opacity="${active ? 0.95 : 0.8}"><title>${i + 1} 月收入 ${moneyCurW(inc, 'cny')}</title></rect>`);
+      }
+      if (eh > 0.8) {
+        P.push(`<rect class="bar-exp-fill" x="${(cx + barGap / 2).toFixed(1)}" y="${midY.toFixed(1)}" width="${barW.toFixed(1)}" height="${eh.toFixed(1)}" rx="2" opacity="${active ? 0.95 : 0.8}"><title>${i + 1} 月支出 ${moneyCurW(exp, 'cny')}</title></rect>`);
+      }
     } else {
-      hint.hidden = true;
-      hint.textContent = '';
+      P.push(`<text class="fin-month-label is-empty" x="${cx.toFixed(1)}" y="${(baseY + 14).toFixed(1)}">${i + 1}</text>`);
     }
+    if (finMonthHasData(m)) {
+      P.push(`<text class="fin-month-label${active ? ' is-active' : ''}" x="${cx.toFixed(1)}" y="${(baseY + 14).toFixed(1)}">${i + 1}</text>`);
+    }
+  });
+
+  // 净结余：虚线 + 小圆点（月度口径，与左侧同一根轴）
+  const netPts = entries.map((e) => [
+    padL + slot * e.i + slot / 2,
+    midY - (finNetOf(e.m) / top) * half,
+  ]);
+  P.push(`<polyline class="fin-net-line" points="${netPts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}"/>`);
+  netPts.forEach((p) => {
+    P.push(`<circle class="fin-net-dot" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="1.9"/>`);
+  });
+
+  // 累计结余：实线 + 终点读数（右轴，不参与左右柱的比较）
+  const cumPts = entries.map((e) => [
+    padL + slot * e.i + slot / 2,
+    baseY - ((cumByIndex[e.i] - cumMin) / cumSpan) * plotH,
+  ]);
+  P.push(`<polyline class="fin-cum-line" points="${cumPts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}"/>`);
+
+  for (let k = 1; k <= 3; k++) {
+    const gy = baseY - (plotH * k) / 3;
+    const cv = cumMin + (cumSpan * k) / 3;
+    P.push(`<text class="fin-tick fin-tick-axis" x="${(W - padR + 6).toFixed(1)}" y="${(gy + 3.4).toFixed(1)}" text-anchor="start">${cv < 0 ? NEG : ''}${finShortMoney(Math.abs(cv))}</text>`);
+  }
+  P.push(`<line class="fin-axis" x1="${(W - padR).toFixed(1)}" y1="${padT}" x2="${(W - padR).toFixed(1)}" y2="${baseY}"/>`);
+
+  const lastPt = cumPts[cumPts.length - 1];
+  if (lastPt) {
+    const flip = lastPt[0] > W - 96;
+    P.push(`<circle class="fin-cum-dot" cx="${lastPt[0].toFixed(1)}" cy="${lastPt[1].toFixed(1)}" r="3.2" stroke="var(--bg-card)" stroke-width="2"/>`);
+    P.push(`<text class="fin-cum-label" x="${(lastPt[0] + (flip ? -8 : 8)).toFixed(1)}" y="${(lastPt[1] - 8).toFixed(1)}" text-anchor="${flip ? 'end' : 'start'}">${finSignedW(run)}</text>`);
+  }
+
+  // 命中区放在最上层：整列可点（不必精确压在细柱上），也是悬停读数的落点
+  months.forEach((m, i) => {
+    P.push(`<rect class="fin-hit" data-mi="${i}" x="${(padL + slot * i).toFixed(1)}" y="${padT}" width="${slot.toFixed(1)}" height="${plotH}" rx="4"/>`);
+  });
+
+  svg.innerHTML = P.join('');
+  finTrendPadL = padL;
+  finTrendSlot = slot;
+}
+
+// 悬停带：只挪位置，不重绘（12 根柱 + 折线每次重绘会闪）
+function paintFinHover(i) {
+  const band = document.getElementById('finHoverBand');
+  if (!band) return;
+  if (i === null || !finTrendSlot) { band.setAttribute('opacity', '0'); return; }
+  band.setAttribute('x', (finTrendPadL + finTrendSlot * i).toFixed(1));
+  band.setAttribute('opacity', '1');
+}
+
+// 图下常显读数条：触屏没有 hover 语义，这四个数必须不靠指针也能读到
+function renderFinReadout(i) {
+  const el = document.getElementById('finReadout');
+  if (!el) return;
+  const months = finMonthsData || [];
+  const idx = i == null ? finHmMonth : i;
+  const m = months[idx];
+  if (!finMonthHasData(m)) {
+    el.innerHTML = `<div><div class="fin-readout-l">${idx + 1} 月</div><div class="fin-readout-v">—</div></div>`
+      + `<div><div class="fin-readout-l">收入</div><div class="fin-readout-v">—</div></div>`
+      + `<div><div class="fin-readout-l">支出</div><div class="fin-readout-v">—</div></div>`
+      + `<div><div class="fin-readout-l">净结余</div><div class="fin-readout-v">—</div></div>`
+      + `<div><div class="fin-readout-l">累计结余</div><div class="fin-readout-v">—</div></div>`;
+    return;
+  }
+  const inc = Number(m.income) || 0;
+  const exp = Number(m.expense) || 0;
+  const net = inc - exp;
+  const cum = months.slice(0, idx + 1).reduce((a, x) => a + (finMonthHasData(x) ? finNetOf(x) : 0), 0);
+  el.innerHTML = `
+    <div><div class="fin-readout-l">${idx === finHmMonth ? '已选月份' : '查看中'}</div><div class="fin-readout-v">${idx + 1} 月</div></div>
+    <div><div class="fin-readout-l">收入</div><div class="fin-readout-v is-inc">${moneyCur(inc, 'cny')}</div></div>
+    <div><div class="fin-readout-l">支出</div><div class="fin-readout-v is-exp">${moneyCur(exp, 'cny')}</div></div>
+    <div><div class="fin-readout-l">净结余</div><div class="fin-readout-v${net < 0 ? ' is-neg' : ''}">${finSignedW(net)}</div></div>
+    <div><div class="fin-readout-l">累计结余</div><div class="fin-readout-v is-cum">${finSignedW(cum)}</div></div>`;
+}
+
+// ---------- 分类构成榜：长度编码金额 + 占比 + 环比 + 12 月 sparkline ----------
+function finItemAmt(m, cat, type) {
+  const it = (m && m.items || []).find((x) => x.category === cat && x.type === type);
+  return it ? Math.abs(Number(it.amount) || 0) : 0;
+}
+// sparkline 只画到最后一个有数据的月份：把「还没到的月份」画成 0 会显示成断崖式崩盘
+function finCatSeries(cats, type) {
+  const upTo = finLastActiveIdx();
+  const months = (finMonthsData || []).slice(0, upTo + 1);
+  return months.map((m) => cats.reduce((a, cat) => a + finItemAmt(m, cat, type), 0));
+}
+// 颜色不从这里传：--c 由所在行的 .fin-cat-N 提供，SVG 子元素继承自定义属性即可。
+function finSparkSvg(vals) {
+  const w = 62;
+  const h = 18;
+  const pad = 2;
+  const list = vals.length ? vals : [0];
+  const max = Math.max(1, ...list);
+  const step = list.length > 1 ? (w - pad * 2) / (list.length - 1) : 0;
+  const pts = list.map((v, i) => [pad + step * i, h - pad - (v / max) * (h - pad * 2)]);
+  const lastPt = pts[pts.length - 1];
+  return `<svg class="fin-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">`
+    + `<polyline points="${pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}"/>`
+    + `<circle cx="${lastPt[0].toFixed(1)}" cy="${lastPt[1].toFixed(1)}" r="1.8"/></svg>`;
+}
+
+function renderFinRank() {
+  const list = document.getElementById('finRankList');
+  if (!list) return;
+  const months = finMonthsData || [];
+  const m = months[finHmMonth];
+  const sub = document.getElementById('finRankSub');
+  if (sub) {
+    sub.textContent = finMonthHasData(m)
+      ? `${finYear} 年 ${finHmMonth + 1} 月 · ${finDir === 'expense' ? '支出' : '收入'}构成`
+      : `${finYear} 年 ${finHmMonth + 1} 月`;
+  }
+  if (!finMonthHasData(m)) {
+    list.innerHTML = `<p class="fin-empty">${esc(finEmptyText())}</p>`;
+    return;
+  }
+  const prev = finHmMonth > 0 ? months[finHmMonth - 1] : null;
+  const rows = (m.items || [])
+    .filter((it) => it.type === finDir && Math.abs(Number(it.amount) || 0) > 0.005)
+    .map((it) => {
+      const amt = Math.abs(Number(it.amount) || 0);
+      const prevAmt = prev && finMonthHasData(prev) ? finItemAmt(prev, it.category, it.type) : 0;
+      return { cat: it.category, amt, prevAmt, delta: prevAmt > 0 ? (amt - prevAmt) / prevAmt : null };
+    });
+  if (!rows.length) {
+    list.innerHTML = `<p class="fin-empty">该月没有${finDir === 'expense' ? '支出' : '收入'}记录</p>`;
+    return;
+  }
+  const total = rows.reduce((a, r) => a + r.amt, 0) || 1;
+  // 「按环比」按变化幅度排序：把异常放在最前面，比按金额排更接近「哪一类出问题了」
+  rows.sort(finSort === 'delta'
+    ? (a, b) => (b.delta === null ? 9 : Math.abs(b.delta)) - (a.delta === null ? 9 : Math.abs(a.delta))
+    : (a, b) => b.amt - a.amt);
+
+  const head = rows.slice(0, 8);
+  const rest = rows.slice(8);
+  if (rest.length) {
+    head.push({
+      cat: '__other__',
+      amt: rest.reduce((a, r) => a + r.amt, 0),
+      prevAmt: rest.reduce((a, r) => a + r.prevAmt, 0),
+      delta: null,
+      merged: rest.map((r) => r.cat),
+    });
+  }
+
+  const colors = finCatColorMap(finDir);
+  const maxAmt = Math.max(1, ...head.map((r) => r.amt));
+  list.innerHTML = head.map((r) => {
+    const isOther = r.cat === '__other__';
+    const label = isOther ? '其他小项' : finCatLabel(r.cat);
+    // 色号挂在行上，色块 / 长度条 / sparkline 都继承同一个 --c
+    const cls = isOther ? 'fin-cat-x' : finCatCls(colors[r.cat]);
+    let deltaTxt = '—';
+    let deltaCls = '';
+    if (isOther) {
+      deltaTxt = rest.length ? `${rest.length} 项` : '—';
+    } else if (r.delta === null) {
+      deltaTxt = r.amt > 0 ? '新增' : '—';
+      deltaCls = ' is-up';
+    } else if (Math.abs(r.delta) < 0.005) {
+      deltaTxt = '持平';
+    } else {
+      deltaTxt = (r.delta > 0 ? '↑' : '↓') + Math.abs(r.delta * 100).toFixed(0) + '%';
+      deltaCls = r.delta > 0 ? ' is-up' : ' is-down';
+    }
+    const series = finCatSeries(r.merged || [r.cat], finDir);
+    return `<div class="fin-rank-row ${cls}" role="button" tabindex="0" data-cat="${esc(r.cat)}" data-merged="${esc((r.merged || []).join(','))}">`
+      + `<span class="fin-rank-swatch"></span>`
+      + `<span class="fin-rank-name" title="${esc(label)}">${esc(label)}</span>`
+      + `<span class="fin-rank-bar"><i style="--w:${(r.amt / maxAmt * 100).toFixed(1)}%"></i></span>`
+      + `<span class="fin-rank-amt">${moneyCur(r.amt, 'cny')}</span>`
+      + `<span class="fin-rank-meta"><span class="fin-rank-share">${(r.amt / total * 100).toFixed(1)}%</span>`
+      + `<span class="fin-delta${deltaCls}">${deltaTxt}</span></span>`
+      + `<span class="fin-spark-wrap">${finSparkSvg(series)}</span>`
+      + `</div>`;
+  }).join('');
+}
+
+// ---------- 支出结构演化：12 列 100% 堆叠（treemap 做不到跨月比较，这个能） ----------
+function renderFinMix() {
+  const svg = document.getElementById('finMixSvg');
+  const legend = document.getElementById('finMixLegend');
+  if (!svg) return;
+  const host = svg.parentElement;
+  const W = Math.max(200, Math.round(host.clientWidth));
+  const H = Math.max(120, Math.round(host.clientHeight));
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+
+  const months = finMonthsData || [];
+  const entries = finActiveEntries();
+  if (!months.length || !entries.length) {
+    svg.innerHTML = `<text class="fin-empty-txt" x="${(W / 2).toFixed(1)}" y="${(H / 2).toFixed(1)}">${esc(finEmptyText())}</text>`;
+    if (legend) legend.innerHTML = '';
+    return;
+  }
+
+  const totals = Object.create(null);
+  entries.forEach((e) => (e.m.items || []).forEach((it) => {
+    if (it.type !== 'expense') return;
+    totals[it.category] = (totals[it.category] || 0) + Math.abs(Number(it.amount) || 0);
+  }));
+  const ranked = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+  const top = ranked.slice(0, 6);
+  const restCats = ranked.slice(6);
+  const colorMap = finCatColorMap('expense');
+  const groups = top.map((k) => ({ key: k, label: finCatLabel(k), cls: finCatCls(colorMap[k]), total: totals[k] }));
+  if (restCats.length) {
+    groups.push({
+      key: '__other__', label: '其他小项', cls: 'fin-cat-x',
+      total: restCats.reduce((a, k) => a + totals[k], 0),
+    });
+  }
+  if (!groups.length) {
+    svg.innerHTML = `<text class="fin-empty-txt" x="${(W / 2).toFixed(1)}" y="${(H / 2).toFixed(1)}">${esc('该年没有支出记录')}</text>`;
+    if (legend) legend.innerHTML = '';
+    return;
+  }
+
+  const padT = 4;
+  const padB = 20;
+  const plotH = Math.max(40, H - padT - padB);
+  const baseY = padT + plotH;
+  const slot = W / 12;
+  const colW = Math.max(6, Math.min(28, slot * 0.62));
+  const labelEvery = slot < 26 ? 2 : 1;
+
+  const P = [];
+  months.forEach((m, i) => {
+    const cx = slot * i + slot / 2;
+    const x = cx - colW / 2;
+    if (!finMonthHasData(m)) {
+      P.push(`<rect class="mix-col-empty" x="${x.toFixed(1)}" y="${padT}" width="${colW.toFixed(1)}" height="${plotH}" rx="3"/>`);
+      if (i % labelEvery === 0) {
+        P.push(`<text class="fin-month-label is-empty" x="${cx.toFixed(1)}" y="${(baseY + 14).toFixed(1)}">${i + 1}</text>`);
+      }
+      return;
+    }
+    const total = Number(m.expense) || 1;
+    let cy = baseY;
+    groups.forEach((g) => {
+      const val = g.key === '__other__'
+        ? restCats.reduce((a, k) => a + finItemAmt(m, k, 'expense'), 0)
+        : finItemAmt(m, g.key, 'expense');
+      if (!val) return;
+      const h = (val / total) * plotH;
+      cy -= h;
+      // 柱子绘图区只有 ~150px，占比 0.3%–2% 的分类只有 0.5–3px。原先统一扣 0.8px 段间缝、
+      // 再把低于 0.6px 的整段丢掉，结果图例有色、柱上却没画出来。细段不扣缝，并保底 2px：
+      // 1.2px 在 DPR 1 上只剩一条混白的淡线，扫一眼仍看不出，2px 才有稳定的实色像素。
+      const hh = Math.max(2, h > 3 ? h - 0.8 : h);
+      const rx = hh < 3 ? 0 : 1.5;   // 圆角半径大于高度会把细段削没
+      P.push(`<rect class="mix-seg ${g.cls}${i === finHmMonth ? ' is-active' : ''}" x="${x.toFixed(1)}" y="${cy.toFixed(1)}" width="${colW.toFixed(1)}" height="${hh.toFixed(1)}" rx="${rx}"><title>${i + 1} 月 · ${esc(g.label)} ${moneyCurW(val, 'cny')}（${(val / total * 100).toFixed(1)}%）</title></rect>`);
+    });
+    if (i === finHmMonth) {
+      P.push(`<rect class="mix-col-frame" x="${(x - 2).toFixed(1)}" y="${padT}" width="${(colW + 4).toFixed(1)}" height="${plotH}" rx="4"/>`);
+    }
+    if (i % labelEvery === 0 || i === finHmMonth) {
+      P.push(`<text class="fin-month-label${i === finHmMonth ? ' is-active' : ''}" x="${cx.toFixed(1)}" y="${(baseY + 14).toFixed(1)}">${i + 1}</text>`);
+    }
+    // 点击整列切月（列宽只有 6–28px，命中区补到槽宽）
+    P.push(`<rect class="fin-hit" data-mi="${i}" x="${(slot * i).toFixed(1)}" y="${padT}" width="${slot.toFixed(1)}" height="${plotH}" rx="3"/>`);
+  });
+
+  svg.innerHTML = P.join('');
+  const yearTotal = groups.reduce((a, g) => a + g.total, 0) || 1;
+  if (legend) {
+    legend.innerHTML = groups.map((g) =>
+      `<span><i class="fin-mix-dot ${g.cls}"></i>${esc(g.label)} <b>${(g.total / yearTotal * 100).toFixed(1)}%</b></span>`
+    ).join('');
   }
 }
 
+// ---------- 选月：趋势图 / 结构图 / 分类榜三处共用同一个状态 ----------
+function syncFinAutoHint() {
+  const hint = document.getElementById('finAutoHint');
+  if (!hint) return;
+  if (finMonthAutoFrom) {
+    hint.hidden = false;
+    hint.textContent = `${finMonthAutoFrom} 月暂无记录，已为你切到 ${finHmMonth + 1} 月`;
+  } else {
+    hint.hidden = true;
+    hint.textContent = '';
+  }
+}
+function selectFinMonth(i) {
+  const months = finMonthsData || [];
+  if (!(i >= 0 && i < months.length)) return;
+  if (!finMonthHasData(months[i])) return;   // 空月份不抢选中态，避免整页变空态
+  if (i === finHmMonth) return;
+  finHmMonth = i;
+  finMonthAutoFrom = 0;
+  finHoverIdx = null;
+  renderFinTrend();
+  renderFinRank();
+  renderFinMix();
+  renderFinReadout(i);
+  syncFinAutoHint();
+}
+
+// ---------- 逐笔流水（下钻用）：口径与 summary 完全一致 ----------
 // 逐笔流水折 CNY（与首页/资产页口径一致：USD/HKD 用 /api/home 下发的汇率）
 function flowToCny(f) {
   const v = Math.abs(Number(f.amount) || 0);
@@ -4833,8 +5170,7 @@ function flowToCny(f) {
 }
 // 方向敏感金额：正=进账、负=出账。不能只看 amount 的符号 —— 负债流水 amount 恒为正（repay 也是），
 // 而 rollback/冲正这类回退流水的 amount 是正数但语义是「抵消支出」。后端统一按 direction 判方向
-// （见 financeSummary 的 signed 归一），前端细项必须同一口径，否则回退行会被当成一笔正常支出，
-// 把分类内部的方块面积吹大（实测某月「其他支出」分类流水合计比净额多 19%）。
+// （见 financeSummary 的 signed 归一），下钻列表必须同一口径，否则回退行会被当成一笔正常支出。
 function flowSignedCny(f) {
   const v = flowToCny(f);
   const d = f && f.direction;
@@ -4842,12 +5178,11 @@ function flowSignedCny(f) {
   if (d === 'in') return v;
   return (Number(f && f.amount) || 0) < 0 ? -v : v;
 }
-// 热力图只画「真实产生资金收支」的流水。以下类型是账面腾挪或冲销，不构成收入/支出，一律不进方块：
-//   rollback / cf_reverse / wealth_reverse —— 回退与冲正（原始交易仍按发生日计入，不重复画一次反向）
+// 只列「真实产生资金收支」的流水，与分类金额同源：
+//   rollback / cf_reverse / wealth_reverse —— 回退与冲正（原始交易已按发生日计入）
 //   transfer_in / transfer_out            —— 内部转账（钱只是换了个账户）
-//   adjust_buy / adjust_sell              —— 持仓买卖（买卖本金不是收支；卖出后的落袋收益另走 gain 分类）
-//   wealth_* / deposit_* / dca_*          —— 理财申赎、存款存取、定投扣款（同一笔钱换个形态，盈亏不落账）
-// 计入的：手动调整（真实余额变动）、工资、分红、利息、消费支出、负债偿还等。
+//   adjust_buy / adjust_sell              —— 持仓买卖（买卖本金不是收支；落袋收益另走 gain）
+//   wealth_* / deposit_* / dca_*          —— 理财申赎、存款存取、定投扣款（同一笔钱换形态）
 const HM_SKIP_TYPES = new Set([
   'rollback', 'cf_reverse', 'wealth_reverse',
   'transfer_in', 'transfer_out',
@@ -4864,375 +5199,150 @@ function hmFlowCounts(f) {
   return true;
 }
 
-// treemap 容器尺寸观察者：窗口缩放 / 布局变动后重画，避免几何过期把右侧、底部裁掉。
-// 内容全是绝对定位，不会反噬容器尺寸，无重入循环；元素是静态节点，全局只建一个。
-let _treemapRO = null;
-let _tmLastBox = '';   // 上次实际绘制的画布尺寸（WxH），用来吃掉 RO 自己的回声
-function ensureTreemapRO(wrap) {
-  if (_treemapRO || !wrap || typeof ResizeObserver === 'undefined') return;
-  // 每次绘制都会先改 --tmh（高度随当月数据量变），RO 会因此回调一次；此时尺寸与刚画完的
-  // 完全一致，重画纯属重复（整块 DOM 重建 → 观感上就是「刷新了一下」）。按尺寸去重。
-  _treemapRO = new ResizeObserver((entries) => {
-    const r = entries && entries[0] && entries[0].contentRect;
-    const key = r ? Math.round(r.width) + 'x' + Math.round(r.height) : '';
-    if (key && key === _tmLastBox) return;
-    renderCatTreemap();
+function openFinDrill(cat, mergedCsv) {
+  const modal = document.getElementById('finDrillModal');
+  if (!modal) return;
+  const m = (finMonthsData || [])[finHmMonth];
+  if (!m) return;
+  const cats = mergedCsv ? String(mergedCsv).split(',').filter(Boolean) : [cat];
+  const isOther = cat === '__other__';
+  const label = isOther ? '其他小项' : finCatLabel(cat);
+  const ym = m.ym || (finYear + '-' + String(finHmMonth + 1).padStart(2, '0'));
+  const flows = (finFlowsCache || []).filter((f) => {
+    if (String(f.date || '').slice(0, 7) !== ym) return false;
+    if (cats.indexOf(flowCatOf(f)) < 0) return false;
+    if (!hmFlowCounts(f)) return false;
+    const s = flowSignedCny(f);
+    return finDir === 'income' ? s > 0 : s < 0;
+  }).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  const total = flows.reduce((a, f) => a + Math.abs(flowSignedCny(f)), 0);
+
+  document.getElementById('finDrillTitle').textContent = `${label} · ${finHmMonth + 1} 月`;
+  document.getElementById('finDrillSum').textContent = flows.length
+    ? `${flows.length} 笔 · 合计 ${moneyCur(total, 'cny')}`
+    : '该分类本月没有逐笔现金流';
+  document.getElementById('finDrillList').innerHTML = flows.length
+    ? flows.map((f) => {
+      const amt = Math.abs(flowSignedCny(f));
+      return `<div class="fin-drill-row">
+        <div class="fin-drill-main">
+          <div class="fin-drill-title">${isOther ? esc(finCatLabel(flowCatOf(f))) + ' · ' : ''}${esc(flowTitleOf(f, '流水'))}</div>
+          <div class="fin-drill-date">${esc(String(f.date || '').slice(0, 10))}</div>
+        </div>
+        <div class="fin-drill-amt ${finDir === 'income' ? 'is-inc' : 'is-exp'}">${moneyCur(amt, 'cny')}</div>
+      </div>`;
+    }).join('')
+    : `<p class="fin-empty">该分类本月没有逐笔现金流。落袋收益 / 理财派息等非现金项已计入分类合计，逐笔请到资产页「流水」查看。</p>`;
+  modal.hidden = false;
+}
+
+// ---------- 渲染入口 + 尺寸自适应 ----------
+// 两张图都用真实像素坐标，容器一变就必须重画；合并成一个 RO，回调里只重画图表本身
+// （分类榜是纯 DOM，不需要重绘）。RO 每帧最多触发一次，避免拖拽窗口时连续重排。
+function ensureFinChartRO() {
+  if (finChartRO || typeof ResizeObserver === 'undefined') return;
+  const a = document.getElementById('finTrendSvg');
+  const b = document.getElementById('finMixSvg');
+  if (!a || !b) return;
+  let raf = 0;
+  finChartRO = new ResizeObserver(() => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      renderFinTrend();
+      renderFinMix();
+      renderFinReadout(finHoverIdx == null ? finHmMonth : finHoverIdx);
+    });
   });
-  _treemapRO.observe(wrap);
+  finChartRO.observe(a.parentElement);
+  finChartRO.observe(b.parentElement);
 }
 
-// 右：二级子项金额热力图。一级方块=分类（面积=分类金额，+资金淡红底 / −资金淡绿底），
-// 二级方块=该分类下逐笔流水细项（面积=细项金额，实色填充）。squarified treemap 两层嵌套。
-// 画布高度按当月数据量动态调整：分类/细项越多越高，空月回落，避免「数据少时空一屏、数据多时挤成一团」。
-function treemapHeight(nCats, nSubs, narrow) {
-  // 窄屏（竖排后收入/支出上下堆叠）宽度只有 300～430，高度刻意压得比桌面低，避免方块被拉成细长条；
-  // 2026-11-17 上限 360 → 420：拆成两个阵营后要额外容纳 2 条阵营表头 + 间隙，360 时支出段只剩 ~130 高。
-  const minH = narrow ? 200 : 300, maxH = narrow ? 420 : 540;
-  const perCat = narrow ? 88 : 108;                                    // 每类至少容纳表头 + 一行细项
-  const extra = Math.min(140, Math.max(0, nSubs - nCats) * 8);         // 细项比分类多时适度加高
-  return Math.round(Math.max(minH, Math.min(maxH, nCats * perCat + extra)));
+function renderFinAnalysis() {
+  ensureFinChartRO();
+  finHoverIdx = null;
+  renderFinChips();
+  renderFinTrend();
+  renderFinReadout(finHmMonth);
+  renderFinRank();
+  renderFinMix();
+  syncFinAutoHint();
 }
-function renderCatTreemap() {
-  const wrap = document.getElementById('catTreemap');
-  if (!wrap) return;
-  ensureTreemapRO(wrap);   // 任何路径下都挂上尺寸观察，容器就绪/变化即重画
-  const m = finMonthsData[finHmMonth];
-  const cur = document.getElementById('hmCurMonth');
-  if (cur) cur.textContent = (finHmMonth + 1) + '月';
-  // 窄屏判据与 .heatmap-layout 竖排断点（880px）一致：竖排时 treemap 独占一行，高度区间收紧
-  const narrow = window.innerWidth <= 880;
-  if (!m || !m.items || !m.items.length) {
-    wrap.style.setProperty('--tmh', (narrow ? 180 : 220) + 'px');
-    wrap.innerHTML = '<div class="hm-box empty">' + esc(finEmptyText()) + '</div>';
-    _tmLastBox = wrap.clientWidth + 'x' + wrap.clientHeight;   // 空态也算已画，免得 RO 回声再写一遍
-    return;
-  }
-  const monthYm = m.ym;
-  // 每个分类聚合当月逐笔流水（折 CNY）作为二级细项
-  const cats = m.items.map((it) => {
-    const flows = (finFlowsCache || []).filter((f) =>
-      (f.date || '').slice(0, 7) === monthYm && flowCatOf(f) === it.category && hmFlowCounts(f));
-    // 细项金额取「按本分类方向取舍」的定向金额：支出分类里只有真正出账的流水成块。
-    const subs = flows.map((f) => {
-      const s = flowSignedCny(f);
-      return { amt: it.type === 'income' ? s : -s, title: flowTitleOf(f, finCatLabel(it.category)) };
-    }).filter((s) => s.amt > 0);
-    // 阵营（收入/支出）只认 type，不认金额符号：某月「负债偿还」汇总为负（还款冲正多于还款）时，
-    // 按符号判会把它画成收入色 + 号，等于把支出记成收入。
-    return { amt: Math.abs(it.amount) || 0, raw: it.amount || 0, category: it.category, type: it.type, subs };
-  // 净额为负的分类不画：它必然由冲正/回退造成（真实收付不会被冲成负数），画出来只会是一个
-  // 既没有细项、颜色又和标题相反的怪条。阵营合计仍取 KPI 口径，缺的这块由阵营内归一化吸收。
-  }).filter((c) => c.amt > 0 && c.raw > 0);
-  if (!cats.length) {
-    wrap.style.setProperty('--tmh', (narrow ? 180 : 220) + 'px');
-    wrap.innerHTML = '<div class="hm-box empty">' + esc(finEmptyText()) + '</div>';
-    _tmLastBox = wrap.clientWidth + 'x' + wrap.clientHeight;
-    return;
-  }
-  // 高度随当月数据量动态调整（会触发 ResizeObserver 重画，值不变时不会循环）
-  const nSubs = cats.reduce((a, c) => a + c.subs.length, 0);
-  wrap.style.setProperty('--tmh', treemapHeight(cats.length, nSubs, narrow) + 'px');
-  const draw = () => {
-    const W = wrap.clientWidth, H = wrap.clientHeight;
-    // 尺寸未就绪（如视图刚切走/仍隐藏）：直接返回，ResizeObserver 会在容器有尺寸后重画
-    if (W <= 0 || H <= 0) return;
-    _tmLastBox = W + 'x' + H;
-    // ── 一级：先分「收入 / 支出」两个阵营，阵营面积严格 ∝ 该阵营合计 ──
-    // 混排（所有分类一起 squarify）会把「收入 : 支出」的整体比例藏进一堆方块里，且分母被迫
-    // 退化成 Σ|分类金额|（负数分类会同时吹大两侧），与上方 KPI、柱图浮层的两个数对不上。
-    // 阵营合计用后端给的 income/expense（净额口径，与 KPI 同源），阵营内部再按 |分类金额| 铺。
-    const incCats = cats.filter((c) => c.type === 'income');
-    const expCats = cats.filter((c) => c.type === 'expense');
-    const sumAmt = (arr) => arr.reduce((a, c) => a + c.amt, 0);
-    let incTotal = Math.max(0, Number(m.income) || 0);
-    let expTotal = Math.max(0, Number(m.expense) || 0);
-    // 极端兜底：两侧净额都为 0（全被冲正抹平）时退回分类绝对值和，至少还能看出结构
-    if (incTotal + expTotal <= 0) { incTotal = sumAmt(incCats); expTotal = sumAmt(expCats); }
-    const zones = [];
-    if (incTotal > 0) zones.push({ key: 'inc', label: '收入', total: incTotal, cats: incCats });
-    if (expTotal > 0) zones.push({ key: 'exp', label: '支出', total: expTotal, cats: expCats });
-    const zSum = zones.reduce((a, z) => a + z.total, 0) || 1;
-    // 宽箱左右分（收入恒在左）、窄箱上下分（收入恒在上）：位置固定，切换月份不会左右对调。
-    // 判据是「小阵营切出来还剩多宽」而不是 W>=H —— 手机竖排后画布约 300–420 宽，按宽高比
-    // 判会切成左右两栏，支出栏只剩 ~150 宽且常常被横向滚动藏在屏幕外，等于看不见支出。
-    const minFrac = zones.length > 1 ? Math.min(...zones.map((z) => z.total / zSum)) : 1;
-    const sideBySide = W * minFrac >= 160 && H * minFrac >= 90;
-    const ZGAP = 6;         // 阵营间隙
-    const ZH = 18;          // 阵营表头高度，与 .hm-zone-head 的 CSS 固定 height 一致
-    const nz = zones.length;
-    const gapTotal = ZGAP * Math.max(0, nz - 1);
-    // 表头是固定开销，必须先从可分配尺寸里扣掉再按金额比例分，否则矮的那一段被表头吃掉更大占比，
-    // 又回到「面积不成比例」（上下堆叠时最明显：18px 对 285px 是 6%，对 185px 就成了 10%）。
-    const availW = Math.max(0, W - gapTotal);
-    const availH = Math.max(0, H - gapTotal - ZH * nz);
-    // 阵营长度同样走保底：收入:支出 = 99:1 的月份，支出那条只剩 3–5px，等于「支出消失了」。
-    // 不足下限的按下限给（左右分 90px 才放得下表头；上下分 56px = 表头 + 一条细带），余下按比例压缩；
-    // 被放大时表头 title 标出真实占比，不让读者把放大后的面积误读成占比。
-    const zLens = waterFill(zones.map((z) => z.total), sideBySide ? availW : availH,
-      sideBySide ? 90 : 56, 0.32);
-    const placed = [];      // 按 DOM 顺序记录「元素 ↔ 分类」，供二级细项回填
-    const out = [];
-    let pos = 0;
-    zones.forEach((z, zi) => {
-      const last = zi === nz - 1;
-      const frac = z.total / zSum;
-      const want = sideBySide ? availW * frac : availH * frac + ZH;
-      const got = sideBySide ? zLens[zi] : zLens[zi] + ZH;
-      let zx = 0, zy = 0, zw = W, zh = H;
-      if (nz > 1) {
-        if (sideBySide) {
-          zw = last ? W - pos : got;
-          zx = pos; pos += zw + ZGAP;
-        } else {
-          zh = last ? H - pos : got;
-          zy = pos; pos += zh + ZGAP;
-        }
-      }
-      zw = Math.max(0, zw); zh = Math.max(0, zh);
-      const zoneLifted = Math.abs(got - want) > 1.5;
-      const showHead = zw >= 84 && zh >= ZH + 24;   // 太窄/太矮的阵营不放表头，把高度全让给方块
-      const bodyH = Math.max(0, zh - (showHead ? ZH : 0));
-      // 分类层保底：最小短边 34px（桌面）/ 30px（窄屏）。低于这个尺寸的色块既看不出颜色，
-      // 也放不下一个字；分不到的小分类会落到同阵营底部的「小项带」里（见 layoutTreemap）。
-      const catAmtSum = z.cats.reduce((a, c) => a + c.amt, 0) || 1;
-      const rects = bodyH > 6 ? layoutTreemap(z.cats, zw, bodyH, narrow ? 30 : 34, 4) : [];
-      const isInc = z.key === 'inc';
-      const zoneNote = zoneLifted ? `（占比 ${(frac * 100).toFixed(1)}%，面积已放大以便阅读）` : '';
-      out.push(`<div class="hm-zone ${z.key}" title="${esc(z.label + ' ' + (isInc ? '+' : '−') + moneyLabelShort(z.total, 'cny') + zoneNote)}" ` +
-        `style="--l:${zx.toFixed(1)}px;--t:${zy.toFixed(1)}px;--w:${zw.toFixed(1)}px;--h:${zh.toFixed(1)}px;">` +
-        (showHead ? `<div class="hm-zone-head"><span>${z.label}</span><b>${(isInc ? '+' : '−') + moneyLabelShort(z.total, 'cny')}</b></div>` : '') +
-        `<div class="hm-zone-body">` +
-        rects.map((r) => {
-          const c = r.i;
-          placed.push(c);
-          const label = finCatLabel(c.category);
-          const amtStr = (isInc ? '+' : '−') + moneyLabelShort(c.amt, 'cny');
-          // 被搬进「小项带」的块：面积不再等比于金额，hover 时说明真实占比，避免误读
-          const liftedCat = !!r.band;
-          const catNote = liftedCat ? `（占比 ${(c.amt / catAmtSum * 100).toFixed(1)}%，已放大显示）` : '';
-          // 窄块（手机竖排后分类多）放不下「名称 + 金额」：先砍金额（进 title），再砍名称，避免文字互相挤压/溢出
-          const showCatAmt = r.w >= 92 && r.h >= 16;
-          const showCatName = r.w >= 38 && r.h >= 16;
-          // 高度不足 16px 的条文字必然被裁成半行，干脆只留色带，信息走 title
-          const head = r.h >= 16
-            ? `<div class="hm-cat-head">${showCatName ? `<span class="hm-cat-name">${esc(label)}</span>` : ''}` +
-              `${showCatAmt ? `<span class="hm-cat-amt">${esc(amtStr)}</span>` : ''}</div>`
-            : '';
-          return `<div class="hm-cat ${isInc ? 'inc' : 'exp'}${c.subs.length ? '' : ' no-subs'}" ` +
-            `title="${esc(label + ' ' + amtStr + catNote)}" ` +
-            `style="--l:${r.x.toFixed(1)}px;--t:${r.y.toFixed(1)}px;--w:${r.w.toFixed(1)}px;--h:${r.h.toFixed(1)}px;">` +
-            head + `<div class="hm-subs"></div></div>`;
-        }).join('') + `</div></div>`);
+
+// 事件绑定：只在静态节点上挂一次，列表内部用事件委托
+(function bindFinAnalysis() {
+  const trendSvg = document.getElementById('finTrendSvg');
+  const mixSvg = document.getElementById('finMixSvg');
+  const rankList = document.getElementById('finRankList');
+  const dirSeg = document.getElementById('finDirSeg');
+  const sortSel = document.getElementById('finRankSort');
+  const drill = document.getElementById('finDrillModal');
+  if (!trendSvg || !rankList || !dirSeg || !sortSel) return;
+
+  const hitOf = (e) => (e.target && e.target.closest ? e.target.closest('.fin-hit') : null);
+
+  trendSvg.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return;   // 触屏走点选，不模拟 hover
+    const hit = hitOf(e);
+    if (!hit) return;
+    const i = Number(hit.dataset.mi);
+    if (i === finHoverIdx) return;
+    finHoverIdx = i;
+    paintFinHover(i);
+    renderFinReadout(i);
+  });
+  trendSvg.addEventListener('pointerleave', () => {
+    if (finHoverIdx === null) return;
+    finHoverIdx = null;
+    paintFinHover(null);
+    renderFinReadout(finHmMonth);
+  });
+  trendSvg.addEventListener('click', (e) => {
+    const hit = hitOf(e);
+    if (!hit) return;
+    selectFinMonth(Number(hit.dataset.mi));
+  });
+  if (mixSvg) {
+    mixSvg.addEventListener('click', (e) => {
+      const hit = hitOf(e);
+      if (!hit) return;
+      selectFinMonth(Number(hit.dataset.mi));
     });
-    wrap.innerHTML = out.join('');
-    // 二级：逐块测量 .hm-subs 实际尺寸后再切细项（表头高度由 flex 自然决定，不硬编码）
-    wrap.querySelectorAll('.hm-cat').forEach((el, i) => {
-      const c = placed[i];
-      const box = el.querySelector('.hm-subs');
-      if (!c || !box || !c.subs.length) return;
-      const iw = box.clientWidth, ih = box.clientHeight;
-      if (iw < 12 || ih < 12) return;
-      const isInc = c.type === 'income';
-      const GAP = 3;   // 细项方块间距（太小的方块不留，避免挤出负尺寸）
-      // 细项面积按 k 缩放到一级分类总额：两者口径本来就不等 —— 分类总额含无流水的进项
-      // （落袋收益金额、理财派息），又有回退流水在总额里被冲掉，所以 Σ|逐笔| ≠ 分类金额。
-      // 不缩放的话「分类面积=分类金额」这条契约在二级就断了：明细块之和会大于/小于外框。
-      // 缩放只作用于面积，块里显示的数字仍是逐笔真实金额（title 也一致）。
-      const subSum = c.subs.reduce((a, s) => a + s.amt, 0);
-      const k = subSum > 0 ? c.amt / subSum : 1;
-      const items = c.subs.map((s) => ({ amt: s.amt * k, real: s.amt, title: s.title }));
-      // 细项层同样的两段式：短边不足 22px 的细项落到分类块底部的小项带里。
-      const sr = layoutTreemap(items, iw, ih, narrow ? 19 : 22, 2);
-      // 透明度随面积（金额）映射：组内最大 → 最实，最小 → 最透；sqrt 压缩让小方块也有可辨色阶。
-      // 下限抬到 .45：原来是 .3，深色底上小方块会淡到和分类底色（.14 透明度）分不开，
-      // 视觉面积比实际面积小一截 —— 这正是「收支面积不成比例」的观感来源之一。
-      const maxAmt = items.reduce((a, s) => Math.max(a, s.amt), 0);
-      box.innerHTML = sr.map((s) => {
-        const g = (s.w > GAP + 6 && s.h > GAP + 6) ? GAP : 0;
-        // 只显示金额，名称/描述过长一律收进 title 悬停，避免方块内文字堆积
-        // 阈值按「−¥2,352」这类最长串的实测宽度取；小项带的格子矮一档，单独放宽，
-        // 否则带子里所有块都落到阈值下、看起来像一排空占位。
-        const showAmt = s.w >= (s.band ? 44 : 58) && s.h >= (s.band ? 14 : 19) && Math.abs(s.i.real) >= 0.01;
-        // 不足 1 元的流水（余额同步产生的几分钱手动调整）四舍五入会显示成「¥0」，改用两位小数
-        const tinyAmt = Math.abs(s.i.real) < 1;
-        const amtStr = (isInc ? '+' : '−') + (tinyAmt
-          ? '¥' + Math.abs(s.i.real).toFixed(2)
-          : moneyLabelShort(s.i.real, 'cny'));
-        const lifted = !!s.band;
-        const op = maxAmt > 0 ? 0.45 + 0.5 * Math.sqrt(s.i.amt / maxAmt) : 0.6;
-        const inner = showAmt ? `<span class="hm-box-amt">${esc(amtStr)}</span>` : '';
-        return `<div class="hm-sub ${isInc ? 'inc' : 'exp'}" title="${esc(s.i.title + ' ' + amtStr + (lifted ? '（面积已放大）' : ''))}" ` +
-          `style="--l:${(s.x + g / 2).toFixed(1)}px;--t:${(s.y + g / 2).toFixed(1)}px;--w:${Math.max(1, s.w - g).toFixed(1)}px;--h:${Math.max(1, s.h - g).toFixed(1)}px;--op:${op.toFixed(2)};">${inner}</div>`;
-      }).join('');
+  }
+
+  rankList.addEventListener('click', (e) => {
+    const row = e.target.closest('.fin-rank-row');
+    if (!row) return;
+    openFinDrill(row.dataset.cat, row.dataset.merged);
+  });
+  rankList.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.fin-rank-row');
+    if (!row) return;
+    e.preventDefault();
+    openFinDrill(row.dataset.cat, row.dataset.merged);
+  });
+
+  dirSeg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-dir]');
+    if (!btn || btn.dataset.dir === finDir) return;
+    finDir = btn.dataset.dir;
+    [...dirSeg.children].forEach((x) => x.setAttribute('aria-pressed', String(x === btn)));
+    renderFinRank();
+  });
+  sortSel.addEventListener('change', () => {
+    finSort = sortSel.value === 'delta' ? 'delta' : 'amount';
+    renderFinRank();
+  });
+
+  if (drill) {
+    const close = document.getElementById('finDrillClose');
+    if (close) close.addEventListener('click', () => { drill.hidden = true; });
+    drill.addEventListener('click', (e) => {
+      if (e.target === drill) drill.hidden = true;
     });
-  };
-  draw();
-}
-
-// 选月（柱状图 / x 轴 / chips 共用）：热力图与下半部分分类明细同步跟随
-function selectHmMonth(idx) {
-  if (idx < 0 || idx >= finMonthsData.length) return;
-  finHmMonth = idx;
-  finMonthAutoFrom = 0;   // 用户手动选月 → 「已为你切到」的提示随即失效
-  const chips = document.getElementById('hmChips');
-  if (chips) renderHmChips();   // 重绘 chips：顺带把自动跳月提示收起来（点击走 document 委托，重建无副作用）
-  const labels = document.getElementById('yearBarLabels');
-  if (labels) labels.querySelectorAll('span').forEach((s, i) => s.classList.toggle('active', i === idx));
-  renderYearBarChart();   // 重绘柱状图
-  renderCatTreemap();
-}
-
-// ── 面积保底：max-min 公平分配（water-filling）──
-// 面积严格 ∝ 金额时，占比 0.2% 的分类折算下来只有 30–60px²（≈7×8），深色底上等于没画。
-// 做法：先把「分不到 floor」的块抬到 floor，抬升消耗的面积从剩下的块按权重扣回来。
-// 性质：① Σ输出 恒等于 total（不会在最后一列留缝）；② 大块之间仍严格等比、顺序不变；
-// ③ floor 自带预算上限 maxShare，块数一多时自动收窄，避免所有块被抬成一样大（那就不是热力图了）。
-// 这是 treemap 库的通用处理方式：ECharts 的 visibleMin 是直接隐藏小节点、d3-hierarchy 的
-// treemap 不提供保底，所以这里自己算，不引第三方包。
-function waterFill(weights, total, floor, maxShare) {
-  const n = weights.length;
-  const out = new Array(n).fill(0);
-  if (!(total > 0) || !n) return out;
-  const ws = weights.map((v) => Math.max(0, Number(v) || 0));
-  const sum = ws.reduce((a, b) => a + b, 0);
-  if (!(sum > 0)) return ws.map(() => total / n);
-  // floor 预算：保底总面积不超过 total 的 maxShare（默认 40%）
-  const f = Math.min(Math.max(0, floor), total * (maxShare > 0 ? maxShare : 0.4) / n);
-  if (!(f > 0)) { ws.forEach((w, i) => { out[i] = total * w / sum; }); return out; }
-  const order = ws.map((w, i) => ({ i, w })).sort((a, b) => a.w - b.w);
-  let free = total, rest = sum, k = 0;
-  for (; k < n; k++) {
-    const share = rest > 0 ? free * order[k].w / rest : free;
-    if (share < f - 0.01) { out[order[k].i] = f; free -= f; rest -= order[k].w; } else break;
   }
-  const tail = n - k;
-  if (tail > 0) {
-    for (let j = k; j < n; j++) out[order[j].i] = rest > 0 ? free * order[j].w / rest : free / tail;
-  }
-  // 浮点误差补到最大块，保证 Σ == total
-  let acc = 0;
-  for (let i = 0; i < n; i++) acc += out[i];
-  const diff = total - acc;
-  if (Math.abs(diff) > 1e-6) out[order[n - 1].i] += diff;
-  return out;
-}
-
-// ── 布局：面积 ∝ 金额 + 小项保底 ──
-// 只给面积设下限不够用：实测残条里的小块会得到 15×75 —— 面积达标，形状依然看不见
-// （squarify 对多个等面积小块的天然解就是这种薄片）。所以改成两段式：
-//   ① 按金额正常 squarify；
-//   ② 把短边 < S 的项挑出来，在底部拉一条固定高度的带子（行内等分、每块至少 S×S），
-//      主区域变矮后重排；重排又可能出现新的细条，所以整个「检测→搬移」循环收敛为止。
-// 带内是等分不是等比，所以带内每块 hover 会标出真实占比（r.band = true）。
-// 两处兜底：容器自己摊不开（细项多而块小）不搬；带子吃掉一半高度就不再搬。
-function layoutTreemap(items, w, h, S, gap) {
-  const out = [];
-  if (!items.length || w <= 2 || h <= 2) return out;
-  const amtSum = items.reduce((a, it) => a + Math.max(0, it.amt), 0);
-  if (!(amtSum > 0)) return out;
-  const all = items.map((it) => ({ it }));
-  const minSide = S * 0.95;
-  const cellMinW = Math.max(40, Math.round(S * 1.5));
-  // 极扁 / 极窄的区域（只够放一行或一列，比如收入是支出 100 倍的那个月，支出阵营被压到 56px 高）：
-  // squarify 会把末尾几个切成一两像素的竖条，直接按金额分宽度，并给宽度也设下限。
-  if (h <= S * 1.8 || w <= S * 1.8) {
-    const flat = h <= S * 1.8;
-    const lens = waterFill(items.map((it) => it.amt), flat ? w : h, S, 0.5);
-    const order = items.map((it, i) => ({ it, len: lens[i] })).sort((a, b) => b.len - a.len);
-    let c = 0;
-    order.forEach((o) => {
-      out.push(flat ? { i: o.it, x: c, y: 0, w: o.len, h } : { i: o.it, x: 0, y: c, w, h: o.len });
-      c += o.len;
-    });
-    return out;
-  }
-  const bandH = (n) => {
-    const cols = Math.max(1, Math.min(n, Math.floor(w / cellMinW)));
-    const rows = Math.ceil(n / cols);
-    let cellH = S;
-    const budget = h * 0.55;
-    if (rows * cellH > budget) cellH = Math.max(14, Math.floor(budget / rows));
-    return Math.min(h * 0.62, rows * cellH);
-  };
-  let pool = all.slice(), band = [];
-  for (let pass = 0; pass < 8 && pool.length; pass++) {
-    const bh = band.length ? bandH(band.length) : 0;
-    const hRegion = Math.max(0, h - bh - (band.length ? (gap || 0) : 0));
-    if (hRegion < 8) { band = []; break; }        // 带子把主区域吃光了，退回纯等比
-    const rects = squarifyTreemap(pool.map((p) => p.it), 0, 0, w, hRegion);
-    const bad = rects.filter((r) => Math.min(r.w, r.h) < minSide)
-      .sort((a, b) => a.w * a.h - b.w * b.h);
-    if (!bad.length) break;
-    if (band.length && bh >= h * 0.58) break;     // 带子已到上限，再搬只会把主区域压得更惨
-    // 可负担性：带子至少要给每块摊到 2.2×S²，否则硬搬不如等比（小容器里细项多时如此）
-    if (w * h < (band.length + bad.length) * S * S * 2.2) break;
-    // 至少留一块给 squarify，别把整个盒子都搬进带子
-    const moved = bad.slice(0, Math.min(bad.length, Math.max(1, pool.length - 1))).map((r) => r.i);
-    band = band.concat(moved);
-    pool = pool.filter((p) => !moved.includes(p.it));
-  }
-  if (!band.length || !pool.length) return squarifyTreemap(items, 0, 0, w, h);
-  band.sort((a, b) => (b.amt || 0) - (a.amt || 0));
-  const n = band.length;
-  const bh = bandH(n);
-  const cols = Math.max(1, Math.min(n, Math.floor(w / cellMinW)));
-  const rows = Math.ceil(n / cols);
-  const cellH = Math.max(1, bh / rows);
-  let k = 0;
-  const y0 = h - bh;
-  for (let r = 0; r < rows; r++) {
-    const cnt = Math.min(cols, n - k);
-    if (cnt <= 0) break;
-    const cw = w / cnt;      // 行内等分填满，末行不满也不会留空洞
-    for (let c = 0; c < cnt; c++, k++) {
-      out.push({ i: band[k], x: c * cw, y: y0 + r * cellH, w: cw, h: cellH, band: true });
-    }
-  }
-  const hRegion = Math.max(0, h - bh - (gap || 0));
-  if (pool.length && hRegion > 4) {
-    squarifyTreemap(pool.map((p) => p.it), 0, 0, w, hRegion).forEach((r) => out.push(r));
-  }
-  return out;
-}
-
-// squarified treemap：输入 [{amt,...}]，在 (x,y,w,h) 内按面积布局，返回 {i,x,y,w,h}
-// areas 可选：外部已算好的面积（含保底），传了就不再按 amt 等比换算。
-function squarifyTreemap(items, x, y, w, h, areas) {
-  const total = areas ? areas.reduce((s, a) => s + a, 0) : items.reduce((s, i) => s + i.amt, 0);
-  const out = [];
-  if (total <= 0 || w <= 0 || h <= 0) return out;
-  const scaled = items.map((i, idx) => ({ i, area: areas ? areas[idx] : (i.amt / total) * (w * h) })).sort((a, b) => b.area - a.area);
-  let rx = x, ry = y, rw = w, rh = h, idx = 0;
-  const worst = (row, len) => {
-    const s = row.reduce((a, b) => a + b.area, 0);
-    if (s <= 0) return Infinity;
-    const mx = Math.max(...row.map((r) => r.area));
-    const mn = Math.min(...row.map((r) => r.area));
-    return Math.max((len * len * mx) / (s * s), (s * s) / (len * len * mn));
-  };
-  while (idx < scaled.length) {
-    const horizontal = rw >= rh;     // 沿较长边铺排，条带厚度为较短边
-    const len = horizontal ? rw : rh;
-    let row = [scaled[idx]]; idx++;
-    while (idx < scaled.length) {
-      const cand = row.concat([scaled[idx]]);
-      if (worst(cand, len) <= worst(row, len)) { row = cand; idx++; } else break;
-    }
-    const s = row.reduce((a, b) => a + b.area, 0);
-    if (horizontal) {
-      const th = s / rw;
-      let cx = rx;
-      for (const r of row) { const ww = r.area / th; out.push({ i: r.i, x: cx, y: ry, w: ww, h: th }); cx += ww; }
-      ry += th; rh -= th;
-    } else {
-      const tw = s / rh;
-      let cy = ry;
-      for (const r of row) { const hh = r.area / tw; out.push({ i: r.i, x: rx, y: cy, w: tw, h: hh }); cy += hh; }
-      rx += tw; rw -= tw;
-    }
-  }
-  return out;
-}
+})();
 
 // 流水明细标题 = ref_name · note · name 三段拼接。
 // 收尾两段同名时要去重：「手动调整」这类自指流水会拼成
@@ -5246,7 +5356,7 @@ function flowTitleOf(f, fallback) {
 // ===== 财务页 · 当月收支分类明细（2026-11-03 下线） =====
 // 上半部分的热力图已经把「分类 → 逐笔金额」完整画出来了（.hm-cat / .hm-sub），
 // 再把同一批流水按分类列一遍纯属重复（实测占整页 65% 高度，且逐笔明细没有回退能力）。
-// 逐笔明细统一在资产页「流水」时间轴看。finFlowsCache 仍被 renderCatTreemap 使用，不能删。
+// 逐笔明细统一在资产页「流水」时间轴看。finFlowsCache 仍被分类下钻（openFinDrill）使用，不能删。
 
 // 取该 plan 在某月是否已完成：完成记录按归属月存，
 // 循环计划 = 当前查看月，一次性计划 = one_time_date 所在月（跨月时要先 ensurePlanDoneYm）
@@ -5787,17 +5897,11 @@ document.addEventListener('focusout', (e) => {
   if (inp) cfCommitInline(inp);
 });
 
-// 财务页收支分析卡交互（document 级委托，重渲染后依旧生效）
+// 财务页年份切换（document 级委托，重渲染后依旧生效）。
+// 选月 / 分类榜 / 下钻都绑在 financeView 内的静态节点上（见 bindFinAnalysis），不在这里。
 document.addEventListener('click', (e) => {
   const t = e.target;
   if (!t.closest) return;
-  // 月度柱（整列命中区）/ x 轴标签 / 月份 chip → 选月（热力图与分类明细同步）
-  const bar = t.closest('#yearBarChart .bar-col');
-  if (bar) { selectHmMonth(Number(bar.dataset.mi)); return; }
-  const xl = t.closest('#yearBarLabels span');
-  if (xl) { selectHmMonth(Number(xl.dataset.mi)); return; }
-  const hmChip = t.closest('#hmChips .hm-chip');
-  if (hmChip) { selectHmMonth(Number(hmChip.dataset.mi)); return; }
   // 顶部年份切换器：‹ / ›
   const yPrev = t.closest('#finYearPrev');
   if (yPrev) { changeFinYear(-1); return; }
