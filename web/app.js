@@ -14084,9 +14084,10 @@ async function loadLiabilitiesForCf() {
 }
 
 function buildLiabilityPicker() {
-  const liabs = (cashflowLiabilities || []).filter((l) => (l.amount || 0) > 0); // 仅显示仍有欠款的负债
+  // 列出全部负债（不过滤余额）：信用卡常先建卡记 0 再逐笔记消费欠款，
+  // 还款计划也要能提前关联到 0 余额的卡；隐藏会让它「在资产页可见、收支页找不到」。
   const bySrc = {};
-  liabs.forEach((l) => { (bySrc[l.source_id] = bySrc[l.source_id] || []).push(l); });
+  (cashflowLiabilities || []).forEach((l) => { (bySrc[l.source_id] = bySrc[l.source_id] || []).push(l); });
   const sources = (assetSources || []).filter((s) => bySrc[s.id] && bySrc[s.id].length);
   // 显式「产生新负债」入口：一次性支出要记购物赊账（不扣现金）才选它；
   // 不选则按还款/账户扣款记账。
