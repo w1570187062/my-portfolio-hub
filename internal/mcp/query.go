@@ -3,9 +3,11 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"portfolio/internal/db"
+	"portfolio/internal/market"
 )
 
 // registerQueryTools 注册只读查询类工具：账户/现金子账户、持仓、理财。
@@ -74,6 +76,21 @@ func (s *Server) registerQueryTools() {
 			},
 		},
 		Handler: listWealth,
+	})
+
+	s.tools = append(s.tools, &Tool{
+		Name: "list_closed_records",
+		Description: "列出当前账本全部已平仓记录（与页面「平仓」tab 同源同口径），三类合并：系统已清仓持仓（落袋=Σ减仓已实现盈亏）、已清仓理财（累计收益，手动值优先否则按每日快照累计）、手动补录平仓。" +
+			"每条含 kind(stock/fund/wealth)、名称、代码、币种、落袋金额 amount（正=赚负=亏）、本金 principal（null=算不出）、持有期收益率% return_rate（null=算不出）、持有天数、清仓日期、来源；并给出折人民币落袋合计与分类小计。" +
+			"分析历史落袋收益/胜率/复盘用本工具；在持仓仓用 list_holdings。",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"username":  map[string]interface{}{"type": "string", "description": "归属账本名：省略则使用默认（首个）账本。"},
+				"user_id":   map[string]interface{}{"type": "integer", "description": "归属账本 id：与 username 二选一；省略则使用默认账本。"},
+			},
+		},
+		Handler: listClosedRecords,
 	})
 
 	s.tools = append(s.tools, &Tool{
@@ -403,6 +420,182 @@ func listWealth(args map[string]interface{}) (string, error) {
 	}
 	return marshalResult(map[string]interface{}{
 		"count": len(out), "amount_by_currency": total, "wealth": out,
+	})
+}
+
+// listClosedRecords 已平仓全量视图（与页面「平仓」tab 同源同口径）：
+// ① 系统已清仓持仓（quantity<=0，落袋 = Σ position_tx.realized_pnl，分母 db.CostBasisOf）；
+// ② 已清仓理财（archived，累计收益手动值优先、快照累计兜底，本金反推 db.WealthPrincipalAtLastHold）；
+// ③ 手动补录平仓（manual_closed_records，系统外发生的平仓不入账）。
+// 合计折人民币（market.FetchFXRates），与页面落袋合计同一套汇率口径。
+func listClosedRecords(args map[string]interface{}) (string, error) {
+	uid, err := resolveUserID(args)
+	if err != nil {
+		return "", err
+	}
+	cnyRate, hkdRate, _ := market.FetchFXRates()
+	toCny := func(v float64, cur string) float64 {
+		switch strings.ToLower(strings.TrimSpace(cur)) {
+		case "usd":
+			return v * cnyRate
+		case "hkd":
+			return v * hkdRate
+		}
+		return v
+	}
+	type row struct {
+		Kind        string   `json:"kind"`         // stock | fund | wealth
+		Source      string   `json:"source"`
+		Name        string   `json:"name"`
+		Code        string   `json:"code"`
+		Currency    string   `json:"currency"`
+		Amount      float64  `json:"amount"`       // 落袋盈亏（原币种，正=赚负=亏）
+		Principal   *float64 `json:"principal"`    // 本金（null=算不出/未填，不参与收益率）
+		ReturnRate  *float64 `json:"return_rate"`  // 持有期收益率 %（null=算不出）
+		HoldingDays int      `json:"holding_days"`
+		RealizedAt  string   `json:"realized_at"`  // 清仓日期 YYYY-MM-DD
+	}
+	out := []row{}
+	addRow := func(r row) {
+		if r.Currency == "" {
+			r.Currency = "cny"
+		}
+		out = append(out, r)
+	}
+	names := sourceNames(uid)
+
+	// ① 系统已清仓持仓
+	hs, e := db.List(uid)
+	if e != nil {
+		return "", fmt.Errorf("列举持仓失败: %w", e)
+	}
+	ids := make([]int64, 0, len(hs))
+	for _, h := range hs {
+		ids = append(ids, h.ID)
+	}
+	realizedMap, _ := db.BatchSumRealizedPnl(ids)
+	investMap, _ := db.BatchInvestedCost(ids)
+	closeDateMap, _ := db.BatchLastSellDate(ids)
+	for _, h := range hs {
+		if h.Quantity > 0 {
+			continue
+		}
+		realized := round2(realizedMap[h.ID])
+		basis := db.CostBasisOf(h, investMap[h.ID])
+		r := row{
+			Kind: "stock", Source: names[h.SourceID], Name: h.Name, Code: h.Symbol,
+			Currency: h.Currency, Amount: realized, RealizedAt: closeDateMap[h.ID],
+		}
+		if strings.EqualFold(h.Category, "fund") || strings.TrimSpace(h.LinkedSymbol) != "" {
+			r.Kind = "fund"
+		}
+		if d := closeDateMap[h.ID]; d != "" && h.BuyDate != "" {
+			r.HoldingDays = db.DaysBetweenDates(h.BuyDate, d)
+		}
+		if r.HoldingDays == 0 {
+			r.HoldingDays = db.CalcHoldingDays(h.BuyDate)
+		}
+		if basis > 1e-9 {
+			p := round2(basis)
+			r.Principal = &p
+			pct := round2(realized / basis * 100)
+			r.ReturnRate = &pct
+		}
+		addRow(r)
+	}
+
+	// ② 已清仓理财
+	ws, e := db.ListWealth(uid)
+	if e != nil {
+		return "", fmt.Errorf("列举理财失败: %w", e)
+	}
+	for _, w := range ws {
+		if !w.Archived || (w.UserID != 0 && w.UserID != uid) {
+			continue
+		}
+		cum := w.CumPnl
+		if cum == 0 {
+			cum = db.WealthCumPnl(w.ID)
+		}
+		r := row{Kind: "wealth", Source: names[w.SourceID], Name: w.Name, Code: w.Code, Currency: w.Currency, Amount: round2(cum)}
+		snaps, _ := db.ListWealthSnapshots(w.ID)
+		if len(snaps) > 0 {
+			// 本金口径与总览一致：当前金额>0 用 金额−累计收益；已清仓金额为 0 时反推
+			principal := math.NaN()
+			if _, amt, ok, _ := db.GetWealthLatest(w.ID); ok && amt > 0.005 {
+				principal = amt - cum
+			}
+			if math.IsNaN(principal) || principal <= 0.005 {
+				principal = db.WealthPrincipalAtLastHold(snaps)
+			}
+			if !math.IsNaN(principal) && principal > 0.005 {
+				p := round2(principal)
+				r.Principal = &p
+				pct := round2(cum / principal * 100)
+				r.ReturnRate = &pct
+			}
+			firstDate, _, _ := db.GetWealthFirst(w.ID)
+			r.HoldingDays = db.DaysBetweenDates(firstDate, snaps[len(snaps)-1].Date)
+			r.RealizedAt = snaps[len(snaps)-1].Date
+		}
+		addRow(r)
+	}
+
+	// ③ 手动补录平仓
+	ms, e := db.ListManualClosed(uid)
+	if e != nil {
+		return "", fmt.Errorf("列举手动平仓失败: %w", e)
+	}
+	for _, m := range ms {
+		r := row{
+			Kind: m.Kind, Source: m.Source, Name: m.Name, Code: m.Code,
+			Currency: m.Currency, Amount: round2(m.Amount),
+			HoldingDays: m.HoldingDays, RealizedAt: m.RealizedAt,
+		}
+		if m.Principal != nil {
+			p := round2(*m.Principal)
+			r.Principal = &p
+		}
+		if m.ReturnRate != nil {
+			pct := round2(*m.ReturnRate)
+			r.ReturnRate = &pct
+		} else if r.Principal != nil && *r.Principal > 1e-9 {
+			pct := round2(m.Amount / *r.Principal * 100)
+			r.ReturnRate = &pct
+		}
+		addRow(r)
+	}
+
+	// 汇总：折人民币落袋合计 + 分类小计（胜率口径：金额>0 计盈、<0 计亏、0 不进分母）
+	totalCny := 0.0
+	byKind := map[string]float64{}
+	winN, lossN := 0, 0
+	for _, r := range out {
+		c := toCny(r.Amount, r.Currency)
+		totalCny += c
+		byKind[r.Kind] = round2(byKind[r.Kind] + c)
+		if r.Amount > 1e-9 {
+			winN++
+		} else if r.Amount < -1e-9 {
+			lossN++
+		}
+	}
+	summary := map[string]interface{}{}
+	for k, v := range byKind {
+		summary[k+"_cny"] = round2(v)
+	}
+	winRate := interface{}(nil)
+	if winN+lossN > 0 {
+		winRate = math.Round(float64(winN) / float64(winN+lossN) * 100)
+	}
+	return marshalResult(map[string]interface{}{
+		"count":              len(out),
+		"realized_total_cny": round2(totalCny),
+		"by_kind_cny":        summary,
+		"win_n":              winN,
+		"loss_n":             lossN,
+		"win_rate_pct":       winRate,
+		"closed_records":     out,
 	})
 }
 

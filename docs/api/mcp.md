@@ -102,8 +102,10 @@ Authorization: Bearer <token>
 | `list_amount_modifiable` | 读 | 列出所有「金额可被 MCP 修改」的实体（持仓/子账户/理财），含各自支持的 `action` 与当前金额 |
 | `list_accounts` | 读 | 列出账户来源（平台/银行/券商），默认内联其下现金子账户 |
 | `list_cash_accounts` | 读 | 列出所有现金子账户（扁平列表），含余额与所属来源 |
-| `list_holdings` | 读 | 列出持仓，含份额/成本/现价/市值/盈亏 |
-| `list_wealth` | 读 | 列出理财产品，含最新持仓金额快照 |
+| `list_holdings` | 读 | 列出持仓，含份额/成本/现价/市值/盈亏；已清仓行（`include_closed=true`）带落袋盈亏口径 |
+| `list_wealth` | 读 | 列出理财产品，含最新持仓金额快照与累计收益（快照累计兜底） |
+| `list_closed_records` | 读 | 列出全部已平仓记录（系统清仓持仓 + 已清理财 + 手动补录），带落袋金额/收益率/胜率汇总 |
+| `get_rebalance` | 读 | 资产再平衡状态（四大类占比/偏离/应买卖金额/年化/超额收益，与页面「再平衡」同口径） |
 
 所有工具统一返回文本块（`content[0].type = "text"`，内容为缩进 JSON）；出错时返回 `isError: true` 且文本为错误信息。
 
@@ -210,6 +212,8 @@ Authorization: Bearer <token>
 返回：`count`、`market_value_by_currency`、`pnl_by_currency`、`holdings[]`。
 单条持仓含：`quantity`、`cost_price`、`current_price`、`market_value`、`pnl`、`pnl_pct`（百分比）、`asset_type`、`buy_date`、`note` 等。
 
+> **已清仓行**（`quantity <= 0`，需 `include_closed=true`）：浮动口径恒为 0，因此 `pnl` / `pnl_pct` 自动改带**落袋口径**（`pnl` = Σ减仓已实现盈亏，`pnl_pct` = 落袋 ÷ 本金），并额外返回 `closed`（恒 true）、`realized_pnl`（落袋金额）、`invested_cost`（本金分母；为 0 表示算不出，`pnl_pct` 亦为 0）。`pnl_by_currency` 合计中在持行为浮动口径、已清仓行为落袋口径。
+
 ### 6.5 list_wealth（理财）
 
 参数：
@@ -222,7 +226,59 @@ Authorization: Bearer <token>
 返回：`count`、`amount_by_currency`、`wealth[]`。
 单条含：`code`、`currency`、`source`、`latest_amount`（最新快照金额）、`latest_date`（快照日期）、`cum_pnl`（累计收益）、`note`。
 
-### 6.6 list_amount_modifiable（可改金额的实体）
+> **累计收益兜底**：手动编辑值（非 0）优先；为 0 时按每日快照自动累计。已清仓理财库内 `cum_pnl` 常为 0，该兜底保证 AI 读到的值与页面表格一致。
+
+### 6.6 list_closed_records（已平仓记录）
+
+列出当前账本**全部已平仓记录**，与页面「平仓」tab 同源同口径，三类合并返回；分析历史落袋收益 / 胜率 / 复盘用本工具，在持部分用 `list_holdings`。
+
+参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `username` / `user_id` | string / int | 归属账本 |
+
+返回：
+
+| 字段 | 说明 |
+| --- | --- |
+| `count` | 记录总条数 |
+| `realized_total_cny` | 落袋合计（折人民币） |
+| `by_kind_cny` | 分类小计：`stock_cny` / `fund_cny` / `wealth_cny` |
+| `win_n` / `loss_n` / `win_rate_pct` | 盈/亏笔数与胜率（0 盈亏不进分母，无输赢样本时 `win_rate_pct` 为 `null`） |
+| `closed_records[]` | 逐条记录 |
+
+`closed_records[]` 单条含：
+
+| 字段 | 说明 |
+| --- | --- |
+| `kind` | `stock` / `fund` / `wealth` |
+| `source` | 来源/账户名（手动补录为纯文本） |
+| `name` / `code` | 名称 / 代码 |
+| `currency` | 金额币种 |
+| `amount` | 落袋盈亏（原币种，正=赚、负=亏） |
+| `principal` | 本金（`null` = 算不出/未填） |
+| `return_rate` | 持有期收益率 %（`null` = 算不出） |
+| `holding_days` | 持有天数 |
+| `realized_at` | 清仓日期 YYYY-MM-DD |
+
+三类来源与口径：
+
+1. **系统已清仓持仓**（份额 0）：`amount` = Σ减仓已实现盈亏（`position_tx.realized_pnl`），本金按「清仓前快照份额×成本 vs BUY 合计取大」反推，与 `/api/home` 已平仓视图一致；
+2. **已清仓理财**（archived）：`amount` = 累计收益（手动值优先，否则每日快照累计），本金按「最后持有节点反推」；
+3. **手动补录平仓**（系统外发生的平仓，不入账）：金额/本金/收益率取补录时填写值，未填收益率时按 盈亏÷本金 推算。
+
+调用示例：
+
+```json
+{
+  "jsonrpc": "2.0", "id": 4,
+  "method": "tools/call",
+  "params": { "name": "list_closed_records", "arguments": {} }
+}
+```
+
+### 6.7 list_amount_modifiable（可改金额的实体）
 
 列出当前账本所有**金额可被 MCP 修改**的实体，即持仓（holding）、现金子账户（cash）、理财（wealth）三类；供 AI 先定位可改金额的目标，再选 `record_transaction` 的 `action`。
 
@@ -238,6 +294,18 @@ Authorization: Bearer <token>
 返回：`count`、`amount_modifiable[]`。单条含 `type`、`id`、`name`、`note`、`currency`、`current_amount`（当前金额：持仓=份额×现价、现金=余额、理财=最新快照金额）、`supported_actions`。
 
 `supported_actions` 取值：holding=`buy`/`sell`/`dividend`；cash=`deposit`/`withdraw`；wealth=`subscribe`/`redeem`。
+
+### 6.8 get_rebalance（资产再平衡状态）
+
+查询当前账本的再平衡快照，口径与页面「再平衡」完全一致（股票/基金/理财/现金四大类）。
+
+参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `username` / `user_id` | string / int | 归属账本 |
+
+返回：总市值，四类的市值 / 实际占比 / 目标占比 / 偏离(pp) / 应买应卖金额 / 收益影响，组合目标年化与实际年化、超额收益率与超额收益金额、波动率、待调整金额、距上次再平衡天数与是否超期，以及被剔除的日常开销子账户规模。金额单位为人民币元，占比与偏离为百分比。用于回答「现在偏离多少 / 该买还是该卖 / 各买多少 / 现金是不是太多 / 组合预期收益多少 / 要不要调仓」。
 
 ---
 

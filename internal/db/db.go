@@ -654,6 +654,43 @@ func WealthCumPnl(wealthID int64) float64 {
 	return round2(cum)
 }
 
+// WealthPrincipalAtLastHold 从快照历史反推理财本金基准：
+// 取「最后一个金额 > 0 的快照」，用「该点金额 − 截至该点的累计收益」得到本金。
+// 不能直接用「期初金额 + 全部净存入」——清仓那一笔 cashflow 是「本金 + 收益」的整额赎回，
+// 加进去会把本金算穿（变成负数或只剩收益部分），导致盈亏率/年化出现 0 或荒谬值。
+// 放 db 层供 api 总览与 mcp list_closed_records（AI 读取）共用一份实现。
+func WealthPrincipalAtLastHold(snaps []WealthSnapshot) float64 {
+	idx := -1
+	for i, s := range snaps {
+		if s.Amount > 0.005 {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return math.NaN()
+	}
+	var cum float64
+	for i := 1; i <= idx; i++ {
+		cum += snaps[i].Amount - snaps[i-1].Amount - snaps[i].Cashflow + snaps[i].Dividend
+	}
+	return snaps[idx].Amount - cum
+}
+
+// DaysBetweenDates 返回两个 YYYY-MM-DD 日期之间的天数（end − start）。
+// 日期非法或 end 早于 start 时返回 0，供持有天数/年化计算时安全除零。
+func DaysBetweenDates(start, end string) int {
+	s, e1 := time.Parse("2006-01-02", start)
+	e, e2 := time.Parse("2006-01-02", end)
+	if e1 != nil || e2 != nil {
+		return 0
+	}
+	d := int(e.Sub(s).Hours() / 24)
+	if d < 0 {
+		return 0
+	}
+	return d
+}
+
 // RealizedPnl is one recorded realized gain/loss from a 减仓 (SELL) on a given day.
 // It is stored separately from pnl_daily so the daily snapshot (which recomputes
 // price-based P&L) can merge it idempotently without being overwritten.
