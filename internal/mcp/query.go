@@ -46,7 +46,7 @@ func (s *Server) registerQueryTools() {
 	s.tools = append(s.tools, &Tool{
 		Name: "list_holdings",
 		Description: "列出当前账本的持仓：id、名称、代码、类别、市场、币种、所属来源、份额、成本价、现价、市值、浮动盈亏及盈亏百分比、资产类型、买入日期、备注。" +
-			"默认过滤已清仓（份额为 0）的持仓，可设 include_closed=true 一并返回；可用 source_id / symbol / category 过滤，并给出各币种市值与盈亏合计。",
+			"默认过滤已清仓（份额为 0）的持仓，可设 include_closed=true 一并返回；已清仓行的 pnl/pnl_pct 为落袋口径（Σ减仓已实现盈亏 及 落袋÷本金，另带 realized_pnl/invested_cost 原始字段）；可用 source_id / symbol / category 过滤，并给出各币种市值与盈亏合计（在持为浮动口径、已清仓为落袋口径）。",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -275,6 +275,11 @@ func listHoldings(args map[string]interface{}) (string, error) {
 		MarketValue  float64 `json:"market_value"`
 		Pnl          float64 `json:"pnl"`
 		PnlPct       float64 `json:"pnl_pct"`
+		// 已清仓行（quantity<=0）：Pnl/PnlPct 携带的是落袋口径（Σ position_tx.realized_pnl
+		// 与 落袋÷本金）。浮动口径对清仓行恒为 0，直接算会把已实现的盈亏读丢。
+		Closed       bool    `json:"closed"`
+		RealizedPnl  float64 `json:"realized_pnl"`
+		InvestedCost float64 `json:"invested_cost"` // 盈亏率分母（db.CostBasisOf 口径，0=算不出）
 		AssetType    string  `json:"asset_type"`
 		BuyDate      string  `json:"buy_date"`
 		Note         string  `json:"note"`
@@ -282,6 +287,13 @@ func listHoldings(args map[string]interface{}) (string, error) {
 	out := []row{}
 	marketByCur := map[string]float64{}
 	pnlByCur := map[string]float64{}
+	// 落袋口径一次批量取齐（与 /api/home 的 computeHoldings 同款聚合）
+	ids := make([]int64, 0, len(hs))
+	for _, h := range hs {
+		ids = append(ids, h.ID)
+	}
+	realizedMap, _ := db.BatchSumRealizedPnl(ids)
+	investMap, _ := db.BatchInvestedCost(ids)
 	for _, h := range hs {
 		if h.Quantity <= 0 && !includeClosed {
 			continue
@@ -302,12 +314,24 @@ func listHoldings(args map[string]interface{}) (string, error) {
 		if cost > 1e-9 {
 			pct = round2(pnl / cost * 100)
 		}
+		closed := h.Quantity <= 0
+		realized := round2(realizedMap[h.ID])
+		basis := db.CostBasisOf(h, investMap[h.ID])
+		if closed {
+			// 已清仓：浮动口径恒为 0，改带落袋盈亏与落袋收益率（分母无本金时 pct=0，
+			// AI 侧以 invested_cost 判断可不可比）
+			pnl = realized
+			if basis > 1e-9 {
+				pct = round2(realized / basis * 100)
+			}
+		}
 		out = append(out, row{
 			ID: h.ID, Name: h.Name, Symbol: h.Symbol, Category: h.Category,
 			Market: h.Market, Currency: h.Currency, SourceID: h.SourceID,
 			Source: names[h.SourceID], Quantity: h.Quantity,
 			CostPrice: h.CostPrice, CurrentPrice: h.CurrentPrice,
 			MarketValue: mv, Pnl: pnl, PnlPct: pct,
+			Closed: closed, RealizedPnl: realized, InvestedCost: round2(basis),
 			AssetType: h.AssetType, BuyDate: h.BuyDate,
 			Note: strings.TrimSpace(h.Note),
 		})
@@ -362,10 +386,17 @@ func listWealth(args map[string]interface{}) (string, error) {
 		if d, v, ok, e := db.GetWealthLatest(w.ID); e == nil && ok {
 			date, amt = d, round2(v)
 		}
+		// 累计收益兜底与 /api/asset/overview 同口径：手动编辑值（CumPnl 非 0）优先，
+		// 否则按每日快照累计。已清仓理财库内 cum_pnl 常为 0，不兜底会被 AI 读成 0，
+		// 与前端表格（有兜底）对不上。
+		cum := w.CumPnl
+		if cum == 0 {
+			cum = db.WealthCumPnl(w.ID)
+		}
 		out = append(out, row{
 			ID: w.ID, Name: w.Name, Code: w.Code, Currency: w.Currency,
 			SourceID: w.SourceID, Source: names[w.SourceID],
-			LatestAmount: amt, LatestDate: date, CumPnl: round2(w.CumPnl),
+			LatestAmount: amt, LatestDate: date, CumPnl: round2(cum),
 			Note: strings.TrimSpace(w.Note),
 		})
 		total[w.Currency] = round2(total[w.Currency] + amt)

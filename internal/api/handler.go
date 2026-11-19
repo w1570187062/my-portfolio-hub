@@ -164,25 +164,10 @@ func enrich(h db.Holding, userID int64) HoldingView {
 		PnlDate: pnlDateOf(time.Now())}
 }
 
-// costBasisOf 返回「已平仓」盈亏率的分母（累计本金）。
-// 分子 realized_pnl 按「清仓前全量份额 × 加权成本」计算，分母必须同口径（全量本金）：
-// BUY 流水可能只覆盖账本启用后的补仓（早期建仓没写流水），此时 BUY 合计远小于真实本金，
-// 盈亏率被放大 —— 百事可乐 66.2/134.99=+49.04% 的根因（真实本金 1093.8，应为 +6.05%）。
-// 因此清仓前快照 last_quantity × last_cost_price（AdjustHolding 清仓时写入的全量成本）
-// 大于流水合计时以快照为准；两者都无则返回 0，前端按「—」展示（不做除零）。
+// costBasisOf 已下沉到 db 层（db.CostBasisOf，含口径说明）；这里保留包装，
+// api 各调用点与 MCP list_holdings 走同一份实现。
 func costBasisOf(h db.Holding, invested float64) float64 {
-	if h.LastQuantity > 0 && h.LastCostPrice > 0 {
-		if snap := h.LastQuantity * h.LastCostPrice; snap > invested {
-			return round2(snap)
-		}
-	}
-	if invested > 0.005 {
-		return round2(invested)
-	}
-	if h.LastQuantity > 0 && h.LastCostPrice > 0 {
-		return round2(h.LastQuantity * h.LastCostPrice)
-	}
-	return 0
+	return db.CostBasisOf(h, invested)
 }
 
 func RegisterRoutes(r *gin.Engine) {

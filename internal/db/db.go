@@ -605,6 +605,55 @@ func BatchInvestedCost(holdingIDs []int64) (map[int64]float64, error) {
 	return out, rows.Err()
 }
 
+// round2 金额保留两位（展示/落库统一口径）。
+func round2(v float64) float64 {
+	return math.Round(v*100) / 100
+}
+
+// CostBasisOf 返回「已平仓」盈亏率的分母（累计本金）。
+// 分子 realized_pnl 按「清仓前全量份额 × 加权成本」计算，分母必须同口径（全量本金）：
+// BUY 流水可能只覆盖账本启用后的补仓（早期建仓没写流水），此时 BUY 合计远小于真实本金，
+// 盈亏率被放大 —— 百事可乐 66.2/134.99=+49.04% 的根因（真实本金 1093.8，应为 +6.05%）。
+// 因此清仓前快照 last_quantity × last_cost_price（AdjustHolding 清仓时写入的全量成本）
+// 大于流水合计时以快照为准；两者都无则返回 0，调用方按「—」展示（不做除零）。
+// 放在 db 层供 api（/api/home 持仓视图）与 mcp（list_holdings 的 AI 读取口径）共用一份实现。
+func CostBasisOf(h Holding, invested float64) float64 {
+	if h.LastQuantity > 0 && h.LastCostPrice > 0 {
+		if snap := h.LastQuantity * h.LastCostPrice; snap > invested {
+			return round2(snap)
+		}
+	}
+	if invested > 0.005 {
+		return round2(invested)
+	}
+	if h.LastQuantity > 0 && h.LastCostPrice > 0 {
+		return round2(h.LastQuantity * h.LastCostPrice)
+	}
+	return 0
+}
+
+// WealthCumPnl 理财累计收益 = 全部快照逐日盈亏之和（手动编辑值 CumPnl 非 0 时的兜底口径）。
+// 与 assetWealthHistory 的累计逻辑一致；放 db 层供 api 总览与 mcp list_wealth（AI 读取）
+// 共用，避免两份实现口径漂移 —— MCP 侧漏兜底时，库内 cum_pnl=0 的已清仓理财会被
+// AI 读成「累计收益 0」（UI 总览有兜底所以表格正常，AI 答案却对不上表格）。
+func WealthCumPnl(wealthID int64) float64 {
+	snaps, err := ListWealthSnapshots(wealthID)
+	if err != nil || len(snaps) == 0 {
+		return 0
+	}
+	var prevAmt float64
+	hasPrev := false
+	var cum float64
+	for _, s := range snaps {
+		if hasPrev {
+			cum += s.Amount - prevAmt - s.Cashflow + s.Dividend
+		}
+		prevAmt = s.Amount
+		hasPrev = true
+	}
+	return round2(cum)
+}
+
 // RealizedPnl is one recorded realized gain/loss from a 减仓 (SELL) on a given day.
 // It is stored separately from pnl_daily so the daily snapshot (which recomputes
 // price-based P&L) can merge it idempotently without being overwritten.

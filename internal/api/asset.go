@@ -613,25 +613,10 @@ func computeWealthPnl(wealthID int64, date string) float64 {
 	return round2(amt - prevAmt - cash + div)
 }
 
-// wealthCumPnl returns the cumulative P&L of a wealth product = sum of all daily
-// P&Ls across recorded snapshots. Mirrors the cumulative logic in assetWealthHistory
-// so the card-list figure stays consistent with the per-day history chart.
+// wealthCumPnl 已下沉到 db 层（db.WealthCumPnl，含口径说明）；保留包装，
+// api 各调用点与 mcp list_wealth 走同一份兜底实现。
 func wealthCumPnl(wealthID int64) float64 {
-	snaps, err := db.ListWealthSnapshots(wealthID)
-	if err != nil || len(snaps) == 0 {
-		return 0
-	}
-	var prevAmt float64
-	hasPrev := false
-	var cum float64
-	for _, s := range snaps {
-		if hasPrev {
-			cum += s.Amount - prevAmt - s.Cashflow + s.Dividend
-		}
-		prevAmt = s.Amount
-		hasPrev = true
-	}
-	return round2(cum)
+	return db.WealthCumPnl(wealthID)
 }
 
 // wealthPrincipalAtLastHold 从快照历史反推理财本金基准：

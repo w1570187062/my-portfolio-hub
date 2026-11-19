@@ -1797,10 +1797,23 @@ function renderHoldRow(h, pool, pdi, hideDay) {
   const isFail = !!failedSymbols[h.symbol];
   const mvCny = toRmb(h, h.market_value);
   const dayCny = toRmb(h, h.day_pnl);
-  const pnlCny = toRmb(h, h.pnl);
-  // 已清仓：份额为 0（卖出后 holdings 保留记录）。行整体置灰，
-  // 与理财表格的 wealth-archived 视觉口径一致；操作列仍可点（编辑/历史/删除）。
+  // 已清仓行：浮动盈亏口径恒为 0（份额 0），盈亏格改带落袋数据（realized_pnl / 本金
+  // invested_cost 由 /api/home 随持仓返回，与「平仓」tab 同源），方便直接读表分析。
   const closed = (h.quantity || 0) <= 0;
+  // 已清仓行整行置灰（holding-archived），与理财表格的 wealth-archived 视觉口径一致；
+  // 操作列仍可点（编辑/历史/删除）。
+  const realizedRaw = Number(h.realized_pnl) || 0;
+  const principalRaw = Number(h.invested_cost) || 0;
+  const showRealized = closed && !amtIsZero(realizedRaw);
+  const pnlVal = showRealized ? realizedRaw : h.pnl;
+  const pnlPctVal = showRealized
+    ? (principalRaw > 0 ? realizedRaw / principalRaw * 100 : null)
+    : h.pnl_pct;
+  const pnlClsVal = clsPnlFlat(pnlVal);
+  const pnlCnyVal = toRmb(h, pnlVal);
+  const pnlTitle = showRealized
+    ? 'title="落袋盈亏（清仓已实现，浮动口径对已清仓恒为 0）/ 收益率 = 落袋 ÷ 本金"'
+    : 'title="持有期总盈亏（上）/ 收益率（下）"';
   // 仓位：同(来源,币种)资金池占比
   const posPct = pool > 0 ? (Number(h.market_value) || 0) / pool * 100 : 0;
   // 今日涨跌幅：现价 vs 昨收（行情口径，红涨绿跌）。prev_close 取不到行情时显示 —。
@@ -1850,9 +1863,9 @@ function renderHoldRow(h, pool, pdi, hideDay) {
     <td class="num ht-mv"${mvOrigTitle(h)}>¥${fmtWan(mvCny)}</td>
     <td class="num share ht-share${(pool > 0 && !closed) ? '' : ' is-empty'}"${(pool > 0 && !closed) ? ` style="--p:${posPct.toFixed(1)}%;--pn:${(posPct / 100).toFixed(4)}"` : ''} title="占该账户同币种资金池比例${closed ? '；已清仓（份额为 0）不占资金池' : (pool > 0 ? ' ' + posPct.toFixed(2) + '%' : '；该账户无匹配现金子账户，无法算占比')}">${(pool > 0 && !closed) ? posPct.toFixed(2) + '%' : '—'}</td>
     ${hideDay ? '' : `<td class="num ht-day" title="${pdi.note ? esc(pdi.note) : '今日盈亏'}${h.market === '美股' && pdi.isToday ? '（美股按美东交易日归属：今天的收盘要等北京时间明天凌晨，落账后会出现在对应日期那一格，所以今天这一格暂时是 0）' : ''}${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）">${dayIdle ? ZERO_DASH : `<div class="${clsPnlFlat(h.day_pnl)}"${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</div><div class="hp-sub ${clsPnlFlat(h.day_pnl_pct)}">${h.day_pnl_pct ? pct(h.day_pnl_pct) : ''}</div>`}</td>`}
-    <td class="num ht-pnl">
-      <div class="${clsPnlFlat(h.pnl)}"${wanTitle(pnlCny, '¥')}>${signedMoneyW(pnlCny, 'cny')}</div>
-      ${h.pnl_pct ? `<div class="hp-sub ${clsPnlFlat(h.pnl)}">${pct(h.pnl_pct)}</div>` : ''}
+    <td class="num ht-pnl" ${pnlTitle}>
+      <div class="${pnlClsVal}"${wanTitle(pnlCnyVal, '¥')}>${signedMoneyW(pnlCnyVal, 'cny')}</div>
+      ${pnlPctVal ? `<div class="hp-sub ${pnlClsVal}">${pct(pnlPctVal)}</div>` : ''}
     </td>
     <td class="row-act-cell ht-act"><span class="ht-acts">
       ${actBtn('edit', `data-edit="${h.id}"`, '编辑持仓')}
