@@ -1281,6 +1281,18 @@ h2 > svg { color: var(--primary); }
 .modal-card label.pp-snooze input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; accent-color: var(--primary); }
 .modal-card > p.pp-foot { margin: 0; padding: 0 28px var(--sp-3); font-size: var(--fs-2xs); color: var(--text-faint); line-height: 1.6; }
 
+/* ===== 需要留意弹框（2026-11-19）=====
+   壳子直接复用上面的 .pnl-prompt-card（同宽 440 / 同一套 header 与 actions），
+   这里只补正文的多条待办列表：一行一条，行首标签加粗、行尾「去处理」贴右。
+   刻意不带底色与左侧色条 —— 旧版常驻提醒条就是死在「彩色长条比内容抢眼」上。 */
+.np-list { list-style: none; margin: var(--sp-3) 0 0; padding: 0; }
+.np-row { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; border-top: 1px solid var(--border); }
+.np-row:first-child { border-top: 0; padding-top: 0; }
+.np-text { min-width: 0; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-muted); }
+.np-text b { color: var(--text); font-weight: 600; margin-right: var(--sp-2); }
+.np-go { margin-left: auto; flex: 0 0 auto; padding: 0; border: 0; background: none; font: inherit; font-size: var(--fs-xs); color: var(--primary); cursor: pointer; white-space: nowrap; }
+.np-go:hover { text-decoration: underline; }
+
 .alert-foot-btn {
   flex: 1 1 0;
   padding: var(--sp-2);
@@ -7443,17 +7455,9 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .ov-spark.down polyline { stroke: var(--down); }
 .ov-spark.flat polyline { stroke: var(--text-faint); }
 
-/* 异常收口：正常卡保持中性，只有真实待办/缺失汇率源才进这条 */
-.ov-alert-strip { background: var(--bg-card); border: 1px solid rgba(var(--warning-rgb), .35); border-left: 3px solid var(--warning); border-radius: var(--r); padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4); }
-.ov-alert-head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: 600; }
-.ov-alert-count { font-size: var(--fs-2xs); padding: 0 var(--sp-2); border-radius: 999px; background: var(--primary-soft); color: var(--primary); }
-.ov-fold { margin-left: auto; font-size: var(--fs-xs); color: var(--text-muted); background: none; border: 0; cursor: pointer; font-family: inherit; }
-/* 收起/展开靠 hidden 属性：作者样式的 display:flex 会盖过 UA 的 [hidden]{display:none}，
-   必须写成 :not([hidden])，否则点「收起」列表纹丝不动（2026-11-13 实测修复）。 */
-.ov-alert-list:not([hidden]) { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
-.ov-alert-item { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--bg-soft); font-size: var(--fs-xs); color: var(--text-muted); min-width: 0; }
-.ov-alert-item b { color: var(--text); font-weight: 600; flex: 0 0 auto; }
-.ov-alert-item button { font-size: var(--fs-xs); color: var(--primary); background: none; border: 0; cursor: pointer; white-space: nowrap; font-family: inherit; flex: 0 0 auto; }
+/* 提醒不再有页面内的容器（2026-11-19）：数据总览 / 再平衡的待办改为进入时弹
+   #noticePromptModal（壳子复用 .pnl-prompt-card，列表样式见文件前段 .np-*）。
+   这里不要复活 .ov-alert-strip / .ov-alert-item 那套色条 + 卡片。 */
 
 .ov-tools { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); flex-wrap: wrap; }
 .ov-viewseg, .ov-seg { display: flex; gap: 2px; padding: 2px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--r-sm); }
@@ -7505,8 +7509,8 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .ov-go { margin-top: var(--sp-2); padding: 0; font-size: var(--fs-xs); color: var(--primary); background: none; border: 0; cursor: pointer; font-family: inherit; }
 .ov-note.expanded .ov-detail { grid-template-rows: 1fr; }
 .ov-note.expanded .ov-cardfoot { border-top-style: solid; }
-.ov-back:focus-visible, .ov-fold:focus-visible, .ov-more:focus-visible, .ov-go:focus-visible,
-.ov-viewseg button:focus-visible, .ov-seg button:focus-visible, .ov-alert-item button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ov-back:focus-visible, .ov-more:focus-visible, .ov-go:focus-visible,
+.ov-viewseg button:focus-visible, .ov-seg button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 /* 窄卡收起图形与副标：容器查询规则必须带 .ov-note 前缀提权，否则被后面的 display:flex 盖掉 */
 @container (max-width: 300px) {
   .ov-note .ov-spark, .ov-note .ov-rsub, .ov-note .ov-bullet, .ov-note .ov-bullet-note { display: none; }
@@ -7530,7 +7534,7 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 
 /* ===== 再平衡 #/rebalance（2026-11-16，方案 A 落地）=====
    只复用数据总览的控件与视觉语言（.ov-page/.ov-back/.ov-title/.ov-sub/.kpi-card/
-   .ov-alert-strip/.ov-viewseg/.ov-bullet/.ov-scope），布局是再平衡专属：
+   .ov-viewseg/.ov-bullet/.ov-scope），布局是再平衡专属：
    左栏「目标 vs 实际」+「调仓清单」，右栏「目标配置」+「节奏」。
    色纪律：超配 warn（黄）、低配 down（绿）、数据缺失「—」；内联只允许 --x: v。 */
 .rb-page { max-width: 1400px; }

@@ -268,16 +268,11 @@
       <button class="ov-back" type="button" id="ovBack"><span aria-hidden="true">‹</span> 返回首页</button>
       <h1 class="ov-title">数据总览</h1>
       <p class="ov-sub">按主题聚合当前账本的资产与收支，口径与分母写在每张卡的副标里</p>
-      <!-- 顶部 3 卡与持仓页同一套 .kpi-card（含右上角 .kpi-icon 角标），
-           .ov-kpi-row 只负责与下方提醒条的间距；列数/断点走全站 .kpi-row.cols-3。 -->
+      <!-- 「需要留意」不再常驻页面（2026-11-19）：进入本页时若有待办，改用
+           #noticePromptModal 弹框提示一次，见 app.js 的 showNoticePrompt。
+           这里只留 3 张 KPI 卡：与持仓页同一套 .kpi-card（含右上角 .kpi-icon 角标），
+           .ov-kpi-row 只负责页面级下间距；列数/断点走全站 .kpi-row.cols-3。 -->
       <div class="kpi-row cols-3 ov-kpi-row" id="ovKpis"></div>
-      <section class="ov-alert-strip" id="ovAlertStrip" hidden>
-        <div class="ov-alert-head">
-          <span>需要留意</span><span class="ov-alert-count" id="ovAlertCount"></span>
-          <button class="ov-fold" type="button" id="ovFold" aria-expanded="true">收起</button>
-        </div>
-        <div class="ov-alert-list" id="ovAlertList"></div>
-      </section>
       <div class="ov-tools">
         <div class="ov-viewseg" id="ovViewSeg">
           <button type="button" data-view="topic" aria-pressed="true">按主题</button>
@@ -291,7 +286,7 @@
   </div>
 
   <!-- 再平衡（2026-11-16）：由首页「快捷功能」进入，不占主导航。
-       只复用数据总览的控件与视觉语言（KPI 卡 / 异常条 / bullet / 分段），
+       只复用数据总览的控件与视觉语言（KPI 卡 / 待办弹框 / bullet / 分段），
        内容是再平衡专属：目标 vs 实际 + 调仓清单 + 目标配置 + 节奏。
        所有读数来自 GET /api/rebalance 与 GET /api/settings/rebalance_targets，
        接口缺失或字段为空一律渲染「—」，不填充演示数值。 -->
@@ -300,11 +295,8 @@
       <button class="ov-back" type="button" id="rbBack"><span aria-hidden="true">‹</span> 返回首页</button>
       <h1 class="ov-title">再平衡</h1>
       <p class="ov-sub">按四类现值计算目标偏差，卖出所得自动配平买入 · 分母：四类市值合计</p>
+      <!-- 待办不常驻：进入本页时若有，走 #noticePromptModal 弹框（与数据总览同一套） -->
       <div class="kpi-row cols-3 ov-kpi-row" id="rbKpis"></div>
-      <section class="ov-alert-strip" id="rbAlertStrip" hidden>
-        <div class="ov-alert-head"><span>需要留意</span><span class="ov-alert-count" id="rbAlertCount"></span></div>
-        <div class="ov-alert-list" id="rbAlertList"></div>
-      </section>
       <div class="ov-tools">
         <div class="ov-viewseg" id="rbViewSeg">
           <button type="button" data-view="weight" aria-pressed="true">按权重</button>
@@ -2100,6 +2092,25 @@
       <div class="modal-actions">
         <button class="btn" type="button" id="ppLater">知道了</button>
         <button class="btn primary" type="button" id="ppGo">去再平衡页 →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 需要留意（2026-11-19）=====
+       数据总览 / 再平衡进入时，若该页有待办就往这里灌一条列表并弹出；页面上原来的
+       常驻提醒条已删除（彩色色条 + 黄描边比内容还抢眼，用户要求改为弹框）。
+       版式沿用上面的组合级盈亏提醒（.pnl-prompt-card / .ad-meta / .pp-kv），
+       只把正文换成多条待办；不去重、不加「今日不再提示」—— 每次进入有则弹。 -->
+  <div id="noticePromptModal" class="modal" hidden>
+    <div class="modal-card pnl-prompt-card" role="dialog" aria-modal="true" aria-labelledby="npTitle">
+      <h2 id="npTitle">需要留意</h2>
+      <div class="m-body pp-body">
+        <div class="ad-meta"><span class="alert-tag psych" id="npTag"></span><span id="npCount"></span></div>
+        <ul class="np-list" id="npList"></ul>
+      </div>
+      <!-- data-no-cancel：只有一枚「知道了」，别让全局的 ensureModalCancel 再补一枚重复的「取消」 -->
+      <div class="modal-actions" data-no-cancel="1">
+        <button class="btn primary" type="button" id="npOk">知道了</button>
       </div>
     </div>
   </div>

@@ -13091,6 +13091,54 @@ function maybePromptPnl() {
     e.stopPropagation();
   }, true);
 })();
+
+// ===== 「需要留意」弹框（2026-11-19）=====
+// 数据总览 / 再平衡进入时，如果该页有待办就往这里灌一条列表并弹出；页面上原来的常驻
+// 提醒条（.ov-alert-strip）已删除 —— 彩色长条 + 黄描边比内容本身还抢眼。
+// 壳子复用组合级盈亏提醒（#pnlPromptModal 的 .pnl-prompt-card），只把正文换成多条待办。
+// 打扰策略与 pp 不同：不去重、不加「今日不再提示」，每次进入有则弹。
+let npItems = [];
+function showNoticePrompt(items, scope) {
+  const modal = document.getElementById('noticePromptModal');
+  if (!modal || !items || !items.length) return;
+  // 不叠加：进入页面时可能还开着别的弹框（首页的组合盈亏提醒、编辑表单等），
+  // 这里不抢焦点 —— 本次不弹、数据照常渲染，用户再进一次仍会提示。
+  if (document.querySelector('.modal:not([hidden]), #aiChatPanel:not([hidden])')) return;
+  npItems = items;
+  const tag = document.getElementById('npTag');
+  if (tag) tag.textContent = scope || '待办';
+  const cnt = document.getElementById('npCount');
+  if (cnt) cnt.textContent = items.length + ' 类';
+  const list = document.getElementById('npList');
+  if (list) {
+    list.innerHTML = items.map((a, i) => '<li class="np-row"><div class="np-text"><b>' + esc(a.label)
+      + '</b><span>' + esc(a.text) + '</span></div>'
+      + (a.onGo ? '<button class="np-go" type="button" data-np="' + i + '">去处理</button>' : '')
+      + '</li>').join('');
+  }
+  modal.hidden = false;
+}
+function closeNoticePrompt() {
+  const modal = document.getElementById('noticePromptModal');
+  if (modal) modal.hidden = true;
+  npItems = [];
+}
+(function wireNoticePrompt() {
+  const modal = document.getElementById('noticePromptModal');
+  const ok = document.getElementById('npOk');
+  if (ok) ok.onclick = closeNoticePrompt;
+  if (!modal) return;
+  // 右上角 ✕ 由 injectModalClose 全站注入，点击只置 hidden；这里补一次清理
+  modal.addEventListener('click', (e) => { if (e.target.closest('.card-close')) closeNoticePrompt(); }, true);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) { closeNoticePrompt(); return; }
+    const b = e.target.closest('.np-go');
+    if (!b) return;
+    const a = npItems[Number(b.dataset.np)];
+    closeNoticePrompt();
+    if (a && typeof a.onGo === 'function') a.onGo();
+  });
+})();
 // 点提醒 → 标记已读 + 跳到投资页对应持仓（不自动滚动定位：持仓行按分组重排，跳错更糟）
 function openAlertTarget(hid) {
   closeAlertPop();
@@ -17228,16 +17276,10 @@ function closePIN(val) {
         brief.total == null ? DASH : CNT(brief.total, ' 项'),
         '止盈止损 / 定投 / 待还款 / 存款到期 · 数据日期 ' + (brief.date || DASH), 'flat');
   }
-  function renderAlerts(alerts) {
-    ovState.alerts = alerts;
-    const strip = $('#ovAlertStrip');
-    if (!strip) return;
-    strip.hidden = !alerts.length;
-    const cntEl = $('#ovAlertCount'), list = $('#ovAlertList');
-    // 与顶部 KPI 的「条数」区分：这里数的是待办类别，每项自己带真实条数
-    if (cntEl) cntEl.textContent = alerts.length + ' 类';
-    if (list) list.innerHTML = alerts.map((a, i) => '<div class="ov-alert-item"><b>' + S(a.label) + '</b><span>' + S(a.text)
-      + '</span><button type="button" data-ai="' + i + '">去处理</button></div>').join('');
+  // 待办不再渲染到页面（2026-11-19）：只把 alertsOf 的类别转成弹框条目，
+  // text 自带真实条数，「去处理」走与旧提醒条相同的 handleAlert 跳转。
+  function alertPrompts(alerts) {
+    return alerts.map((a) => ({ label: a.label, text: a.text, onGo: () => handleAlert(a.key) }));
   }
   function renderScope(D) {
     const el = $('#ovScope');
@@ -17302,10 +17344,11 @@ function closePIN(val) {
     ovState.data = D;
     ovState.cards = buildCards(D);
     renderKpis(D);
-    renderAlerts(alertsOf(D));
     renderScope(D);
     renderGrid();
-    playRiseIn($('#overviewView'), '.kpi-card, .ov-alert-strip, .ov-grid', 60, true);
+    // 进入即提示：有待办就弹 #noticePromptModal，没有则什么都不发生
+    showNoticePrompt(alertPrompts(alertsOf(D)), '数据概览');
+    playRiseIn($('#overviewView'), '.kpi-card, .ov-grid', 60, true);
   };
 
   function wire() {
@@ -17350,22 +17393,6 @@ function closePIN(val) {
       const g = e.target.closest('.ov-go[data-go]');
       if (g) go(g.dataset.go);
     });
-    const list = $('#ovAlertList');
-    if (list) list.addEventListener('click', (e) => {
-      const b = e.target.closest('button[data-ai]');
-      if (!b) return;
-      const a = (ovState.alerts || [])[Number(b.dataset.ai)];
-      if (a) handleAlert(a.key);
-    });
-    const fold = $('#ovFold');
-    if (fold) fold.addEventListener('click', () => {
-      const l = $('#ovAlertList');
-      if (!l) return;
-      const open = !l.hidden;
-      l.hidden = open;
-      fold.setAttribute('aria-expanded', String(!open));
-      fold.textContent = open ? '展开' : '收起';
-    });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
   else wire();
@@ -17373,7 +17400,7 @@ function closePIN(val) {
 
 // ============================================================
 // 再平衡 #/rebalance（2026-11-16）：方案 A 落地。
-// 只复用数据总览的控件与视觉语言（KPI 卡 / 异常条 / bullet / 分段），
+// 只复用数据总览的控件与视觉语言（KPI 卡 / 待办弹框 / bullet / 分段），
 // 布局是再平衡专属：左「目标 vs 实际 + 调仓清单」右「目标配置 + 节奏」。
 // 数据铁律：只用 GET /api/rebalance 与 GET /api/settings/rebalance_targets 的真实字段；
 //   缺失 / 失败一律「—」，不估算、不填演示值；金额原始单位是元，展示层转「万」。
@@ -17447,17 +17474,18 @@ function closePIN(val) {
         (pending == null ? DASH : pending + ' 项待确认') + ' · 卖出所得自动配平买入', '');
   }
 
-  function renderAlerts() {
-    const strip = $('#rbAlertStrip');
-    if (!strip) return;
+  // 待办不再渲染到页面（2026-11-19）：只组装数据，进入本页时交给 showNoticePrompt 弹框。
+  function rbAlerts() {
     const out = [];
     A(snap.buckets).forEach((b) => {
       const d = N(b.drift);
       if (d == null || b.action === 'none') return;
-      const label = RB_KEY[b.key] || S(b.label || b.key);
+      const label = RB_KEY[b.key] || b.label || b.key;
       const act = d > 0 ? '卖出' : '买入';
-      out.push('<div class="ov-alert-item"><b>' + label + (d > 0 ? '超配' : '低配') + '</b><span>实际 '
-        + PCT(b.weight) + ' / 目标 ' + PCT(b.target) + '，建议' + act + ' ' + Y(Math.abs(N(b.amount) || 0)) + '</span></div>');
+      out.push({
+        label: label + (d > 0 ? '超配' : '低配'),
+        text: '实际 ' + PCT(b.weight) + ' / 目标 ' + PCT(b.target) + '，建议' + act + ' ' + Y(Math.abs(N(b.amount) || 0)),
+      });
     });
     // 盈亏维度（2026-11-18）：结构没偏、但某一类涨 / 亏越过检视阈值的，单独摆一条。
     // 不进调仓清单 —— 动不动、动多少仍由偏离阈值决定，这里只是把「赚太多 / 亏太多」摆到眼前，
@@ -17466,21 +17494,23 @@ function closePIN(val) {
     A(snap.buckets).forEach((b) => {
       if (!b.review) return;
       const p = N(b.pnl_pct);
-      const label = RB_KEY[b.key] || S(b.label || b.key);
+      const label = RB_KEY[b.key] || b.label || b.key;
       const dv = p == null ? DASH : (p > 0 ? '+' : NEG) + Math.abs(p).toFixed(1) + '%';
-      out.push('<div class="ov-alert-item"><b>' + label + (N(p) > 0 ? '浮盈较大' : '浮亏较大') + '</b><span>'
-        + dv + '（成本 ' + Y(b.cost) + '）· 越过检视线 ' + (pl == null ? DASH : pl + '%')
-        + '，偏离仍在容差内，建议先确认是否需要提前减配</span></div>');
+      out.push({
+        label: label + (N(p) > 0 ? '浮盈较大' : '浮亏较大'),
+        text: dv + '（成本 ' + Y(b.cost) + '）· 越过检视线 ' + (pl == null ? DASH : pl + '%')
+          + '，偏离仍在容差内，建议先确认是否需要提前减配',
+      });
     });
     if (snap.overdue) {
       const days = N(snap.days_since);
-      out.push('<div class="ov-alert-item"><b>再平衡已逾期</b><span>'
-        + (days == null || days < 0 ? '尚无记录，建议做一次检视' : '距上次 ' + days + ' 天，'
-          + (FREQ_NAME[cfg && cfg.freq] || S(cfg && cfg.freq || SNAP_FREQ())) + ' 应检视') + '</span></div>');
+      out.push({
+        label: '再平衡已逾期',
+        text: days == null || days < 0 ? '尚无记录，建议做一次检视' : '距上次 ' + days + ' 天，'
+          + (FREQ_NAME[cfg && cfg.freq] || cfg && cfg.freq || SNAP_FREQ()) + ' 应检视',
+      });
     }
-    strip.hidden = !out.length;
-    const cnt = $('#rbAlertCount'); if (cnt) cnt.textContent = out.length + ' 条';
-    const list = $('#rbAlertList'); if (list) list.innerHTML = out.join('');
+    return out;
   }
   function SNAP_FREQ() { return snap && snap.config ? snap.config.freq : null; }
 
@@ -17673,8 +17703,10 @@ function closePIN(val) {
       : '当前在检视周期内';
   }
 
+  // 注意：弹框不在这里触发 —— renderAll 也会被 reload()（记录再平衡后原地刷新）调用，
+  // 放在这里会导致「刚记录完又弹一次」。只在 showRebalanceView 的进入路径上弹。
   function renderAll() {
-    renderKpis(); renderAlerts(); renderAlloc(); renderActions(); renderConfig(); renderRhythm();
+    renderKpis(); renderAlloc(); renderActions(); renderConfig(); renderRhythm();
   }
 
   // 路由入口：每次进入重新拉数，用 gen 丢弃在途结果（切账本不会串数据）
@@ -17690,7 +17722,9 @@ function closePIN(val) {
     cfg = D.cfg;
     checked = {};
     renderAll();
-    playRiseIn(el, '.kpi-card, .ov-alert-strip, .rb-card', 60, true);
+    // 进入即提示：有待办就弹 #noticePromptModal（与数据总览同一套），没有则不弹
+    showNoticePrompt(rbAlerts(), '再平衡');
+    playRiseIn(el, '.kpi-card, .rb-card', 60, true);
   };
 
   async function reload() {
