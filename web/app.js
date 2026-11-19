@@ -14043,9 +14043,10 @@ function syncCfForm() {
   const liabSel = document.getElementById('cf_liability_id').value;
   const liabMode = isExp ? (liabSel === 'incur' ? 'incur' : 'repay') : '';
   document.getElementById('cf_liability_mode').value = liabMode;
-  // 子账户字段按方向/方式改名：支出=还款账户，产生新负债=负债归属账户，入账=入账账户
+  // 子账户字段按方向/方式改名：支出+还已有负债=还款账户（完成时扣款），
+  // 支出+产生新负债=欠款记入账户（不扣现金，只决定新欠款挂哪个账户），收入=入账账户
   const cap = document.getElementById('cfCashCap');
-  if (cap) cap.textContent = isExp ? (liabMode === 'incur' ? '负债归属账户' : '还款账户') : '入账账户';
+  if (cap) cap.textContent = isExp ? (liabMode === 'incur' ? '欠款记入账户' : '还款账户') : '入账账户';
   // 分类胶囊：方向决定候选集；当前选择不合法时回落该方向第一项
   renderCfCatPills(document.getElementById('cf_category').value);
 }
