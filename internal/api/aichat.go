@@ -590,10 +590,16 @@ func injectPortfolioContext(msgs []map[string]interface{}, uid int64) []map[stri
 }
 
 // titleFromMessage 用首条消息生成会话标题（截断 + 去换行）。
+// 必须按字符（rune）截断：中文占 3 字节，若用 truncate 那种 s[:24] 的字节切片，
+// 24 字节边界常落在汉字中间，切出半个 UTF-8 序列，入库后前端显示成菱形问号（U+FFFD）。
 func titleFromMessage(msg string) string {
 	s := strings.TrimSpace(strings.ReplaceAll(msg, "\n", " "))
 	if s == "" {
 		return "新对话"
 	}
-	return truncate(s, 24)
+	rs := []rune(s)
+	if len(rs) <= 24 {
+		return s
+	}
+	return string(rs[:24]) + "..."
 }
