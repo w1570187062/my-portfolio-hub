@@ -9526,7 +9526,7 @@ function renderSources(body) {
       })
       .filter((g) => g.items.length);
     html += `<table class="atbl"><colgroup><col><col class="c-ty"><col class="c-cur"><col class="c-bal"><col class="c-share"><col class="c-cnt"><col class="c-op"></colgroup>`;
-    html += `<thead><tr><th>账户</th><th>类型</th><th>币种</th><th class="num">余额 (CNY)</th><th class="num">占比</th><th class="num">子账户</th><th></th></tr></thead><tbody>`;
+    html += `<thead><tr><th>账户</th><th>类型</th><th>币种</th><th class="num">余额 (CNY)</th><th class="num">占比</th><th class="num">子账户</th><th>操作</th></tr></thead><tbody>`;
     for (const g of groups) {
       const gsum = g.items.reduce((a, s) => a + (Number(s.funds_cny) || 0), 0);
       const m = REGION_META[g.r] || { zh: g.r.toUpperCase(), en: '', code: g.r.toUpperCase() };
