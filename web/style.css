@@ -535,8 +535,10 @@
 .row-act.danger { color: var(--danger); }
 .row-act.danger:hover { background: var(--danger-soft); color: var(--danger); }
 /* 删除类按钮降权（2026-11-19）：与编辑同排时默认红图标太抢眼、易误点。
-   平时淡化为普通灰、hover 才回警示红；危险语义仍由 danger + 二次确认兜底。 */
-.row-act.danger.act-quiet { color: var(--text-faint); opacity: .7; }
+   平时淡化为普通灰、hover 才回警示红；危险语义仍由 danger + 二次确认兜底。
+   注意：这里不能再设 opacity，否则会压过下方 `tbody tr .row-act { opacity: 0 }`
+   导致删除按钮在桌面端常显（2026-11-20 修复）。账户表 .atbl 是常显设计，另在 2875 行单独降权。 */
+.row-act.danger.act-quiet { color: var(--text-faint); }
 .row-act.danger.act-quiet:hover,
 .atbl tr.row:hover td.op .row-act.danger.act-quiet { color: var(--danger); opacity: 1; background: var(--danger-soft); }
 /* 计数徽标：如子账户数量。计数不进按钮文字，避免列宽随数据变化 */
@@ -5569,13 +5571,13 @@ textarea::placeholder {
 .bsync-desc { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.7; margin: 0 0 12px; }
 .bsync-desc b { color: var(--text); font-weight: 600; }
 .bsync-list { max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 2px 12px 4px; margin-bottom: 12px; }
-.bsync-grp { font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); letter-spacing: .5px; padding: 12px 0 4px; border-bottom: 1px dashed var(--border); }
-.bsync-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+.bsync-grp { font-size: var(--fs-lg); font-weight: 600; color: var(--text); letter-spacing: .5px; padding: 12px 0 4px; border-bottom: 1px dashed var(--border); }
+.bsync-row { display: flex; align-items: center; gap: 12px; padding: var(--sp-3) 0; border-bottom: 1px dashed var(--border); }
 .bsync-row:last-child { border-bottom: none; }
 /* .modal-card input 的 width:100% 特异性更高会压掉 .bsync-input，必须挂 .modal-card 前缀反压 */
 .modal-card input.bsync-input { width: 192px; flex: 0 0 192px; min-width: 0; margin-top: 0; text-align: right; font-variant-numeric: tabular-nums; }
-.bsync-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.bsync-name { font-size: var(--fs-md); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bsync-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bsync-name { font-size: var(--fs-sm); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bsync-sub { font-size: var(--fs-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bsync-bal { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bsync-bal.down { color: var(--down); }
@@ -7680,63 +7682,3 @@ button.save-dirty::after {
   box-shadow: 0 0 0 2px rgba(0,0,0,.15);
 }
 
-/* ── 锁仓遮蔽（2026-11-20）──────────────────────────────────────────────
-   纯视觉：只把这些元素的数字换成圆点，不改底层数据、不禁用操作。 */
-.lock-mask {
-  display: inline-block; letter-spacing: .12em; color: var(--text-faint);
-  font-variant-numeric: tabular-nums; user-select: none; cursor: help;
-}
-/* 持仓行锁定态：整行轻微降饱和，锁图标常亮（不随 hover 才出现） */
-tbody tr.row-locked .row-act.lock-on { opacity: 1; color: var(--warning, #e0a92e); }
-.row-act.lock-on { opacity: 1; }
-.row-act.lock-off { opacity: .55; }
-/* 工具条锁仓按钮 + 计数角标 */
-#invLockBtn.is-on { color: var(--warning, #e0a92e); }
-.lock-cnt {
-  position: absolute; top: -3px; right: -3px; min-width: 14px; height: 14px;
-  padding: 0 3px; border-radius: 999px; background: var(--warning, #e0a92e);
-  color: #fff; font-size: var(--fs-2xs); line-height: 14px; text-align: center; font-weight: 700;
-}
-#invLockBtn { position: relative; }
-
-/* 首页权益曲线蒙层：盖住曲线但保留 hover 交互（浮框数值另在 JS 里遮） */
-.spark-lock-cover {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: color-mix(in srgb, var(--bg-card-solid, var(--bg-card, #fff)) 62%, transparent);
-  backdrop-filter: blur(2.5px); -webkit-backdrop-filter: blur(2.5px);
-  pointer-events: none; z-index: 2;
-}
-.spark-lock-badge {
-  display: inline-flex; align-items: center; gap: var(--sp-1);
-  padding: 3px var(--sp-2); border-radius: 999px; font-size: var(--fs-xs); font-weight: 600;
-  color: var(--warning, #e0a92e); background: var(--bg-card-solid, var(--bg-card, #fff));
-  border: 1px solid color-mix(in srgb, var(--warning, #e0a92e) 40%, transparent);
-  box-shadow: 0 1px 5px rgba(0,0,0,.08);
-}
-.spark-lock-badge svg { width: 13px; height: 13px; }
-/* 蒙层容器需要定位上下文 */
-.nw-spark:has(.spark-lock-cover) { position: relative; }
-
-/* 盈亏日历遮罩格：数字用圆点但保留色块方向 */
-.cal-val-locked { letter-spacing: .1em; color: var(--text-faint); }
-
-/* 批量锁仓管理面板 */
-.lock-mgr-card { width: 460px; max-width: 94vw; padding: 0 28px var(--sp-6); }
-.lock-mgr-hint { color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.5; margin: var(--sp-1) 0 var(--sp-4); }
-.lock-mgr-actions { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
-.lock-mgr-actions .btn { padding: 5px var(--sp-3); font-size: var(--fs-sm); }
-.lock-mgr-count { margin-left: auto; color: var(--text-faint); font-size: var(--fs-sm); }
-.lock-mgr-list { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
-.lock-mgr-row {
-  display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); cursor: pointer;
-  border-bottom: 1px solid var(--border); transition: background .15s;
-}
-.lock-mgr-row:last-child { border-bottom: 0; }
-.lock-mgr-row:hover { background: var(--bg-hover); }
-.lock-mgr-row.is-on { background: color-mix(in srgb, var(--warning, #e0a92e) 8%, transparent); }
-.lock-mgr-row input { flex: 0 0 auto; accent-color: var(--warning, #e0a92e); width: 15px; height: 15px; cursor: pointer; }
-.lock-mgr-row .lm-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); }
-.lock-mgr-row .lm-closed { color: var(--text-faint); font-size: var(--fs-xs); font-style: normal; }
-.lock-mgr-row .lm-sym { flex: 0 0 auto; color: var(--text-faint); font-size: var(--fs-xs); }
-.lock-mgr-row .lm-state { flex: 0 0 34px; text-align: right; font-size: var(--fs-xs); color: var(--text-muted); }
-.lock-mgr-row.is-on .lm-state { color: var(--warning, #e0a92e); font-weight: 600; }

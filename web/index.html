@@ -969,22 +969,6 @@
   </div>
   </div>
 
-  <!-- 批量管理锁仓（2026-11-20）：持仓工具条 #invLockBtn 打开。
-       只隐藏盈亏数字，不改数据、不冻结交易；状态存 settings/locked_holdings。 -->
-  <div id="lockMgrModal" class="modal" hidden>
-    <div class="modal-card lock-mgr-card" role="dialog" aria-modal="true" aria-labelledby="lockMgrTitle">
-      <h2 id="lockMgrTitle">批量管理锁仓</h2>
-      <button class="card-close" type="button" id="lockMgrClose" title="关闭" aria-label="关闭">✕</button>
-      <p class="lock-mgr-hint">锁仓只隐藏盈亏数字，记录与交易照常进行，可随时解除。带 <b>锁</b> 的持仓在持仓表、盈亏日历、首页权益曲线与推送里都不显示盈亏。</p>
-      <div class="lock-mgr-actions">
-        <button type="button" class="btn" id="lockAllBtn">全部锁定</button>
-        <button type="button" class="btn" id="unlockAllBtn">全部解除</button>
-        <span class="lock-mgr-count" id="lockMgrCount"></span>
-      </div>
-      <div class="lock-mgr-list" id="lockMgrList"></div>
-    </div>
-  </div>
-
   <!-- ===== AI 助手：聊天面板（入口是顶栏 #aiChatTopBtn；不在 #app 内，避免未登录/boot 前被隐藏） ===== -->
   <div id="aiChatPanel" class="ai-chat-panel" role="dialog" aria-label="AI 助手" hidden>
     <div class="acp-head">
@@ -1353,8 +1337,8 @@
           <select id="dcaHolding"></select>
         </label>
         <div id="dcaNewBox" class="dca-new-box" hidden>
-          <label>搜索基金（代码 / 名称）
-            <input id="dcaNewSearch" type="text" placeholder="如 易方达蓝筹 或 005827" autocomplete="off" />
+          <label>搜索股票 / 基金（代码 / 名称）
+            <input id="dcaNewSearch" type="text" placeholder="如 贵州茅台 或 005827" autocomplete="off" />
           </label>
           <div id="dcaSuggest" class="f-suggest" hidden></div>
           <input id="dcaNewName" type="hidden" />
