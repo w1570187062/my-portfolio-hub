@@ -14859,6 +14859,7 @@ function aiChatRenderMsgs() {
       + '<li data-q="帮我总结一下当前持仓">帮我总结一下当前持仓</li>'
       + '<li data-q="我的持仓里技术面最强和最弱的分别是哪只">技术面最强 / 最弱是哪只</li>'
       + '<li data-q="看看我的现金账户余额分布">看看现金账户余额分布</li>'
+      + '<li data-q="我持仓里今天跌最多的那只，最近有什么消息">跌最多那只最近有什么消息</li>'
       // 动作型胶囊：不发消息，直接打开截图识别工作区（data-ocr 由 click 委托分流）
       + '<li class="acp-suggest-act" data-ocr="1">'
       + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>'
@@ -14874,7 +14875,8 @@ function aiChatRenderMsgs() {
       return '<div class="ai-msg user">' + timeHtml + '<div class="ai-bubble">' + esc(m.content) + '</div><div class="ai-avatar user-avatar">我</div></div>';
     }
     if (m.role === 'assistant') {
-      return '<div class="ai-msg ai">' + timeHtml + '<div class="ai-avatar">AI</div><div class="ai-bubble md">' + renderMarkdown(m.content) + '</div></div>';
+      const webNote = m.web ? '<div class="ai-web-note">已联网检索 · 来源见回答内链接</div>' : '';
+      return '<div class="ai-msg ai">' + timeHtml + '<div class="ai-avatar">AI</div><div class="ai-bubble md">' + renderMarkdown(m.content) + '</div>' + webNote + '</div>';
     }
     if (m.role === 'pending') {
       return '<div class="ai-msg ai"><div class="ai-avatar">AI</div><div class="ai-bubble acp-typing">'
@@ -14931,7 +14933,13 @@ async function aiChatSend() {
       aiChatRenderMsgs();
       return;
     }
-    aiChatState.msgs.push({ role: 'assistant', content: d.content || '', created_at: new Date() });
+    aiChatState.msgs.push({
+      role: 'assistant',
+      content: d.content || '',
+      created_at: new Date(),
+      // 后端 tools 里出现 web_search / web_fetch 即本轮联网过
+      web: (d.tools || []).some((t) => t === 'web_search' || t === 'web_fetch'),
+    });
     aiChatRenderMsgs();
     if (!aiChatState.curId && d.chat_id) aiChatState.curId = Number(d.chat_id);
     if (d.title) {

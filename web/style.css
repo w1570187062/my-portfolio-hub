@@ -5117,6 +5117,15 @@ textarea::placeholder {
 }
 .ai-msg.user .ai-time { text-align: right; }
 .ai-msg.ai .ai-time { text-align: left; }
+/* 联网检索标记（2026-11-20）：气泡下方一行弱化说明，左缩进对齐气泡（头像 28px + gap）。
+   只在 assistant 消息本轮真的调过 web_search / web_fetch 时输出，见 aiChatSend。 */
+.ai-msg.ai .ai-web-note {
+  flex: 0 0 auto;
+  margin-left: calc(28px + var(--sp-2));
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  line-height: 1.4;
+}
 .ai-msg .ai-bubble {
   max-width: 82%;
   padding: var(--sp-3) var(--sp-4);

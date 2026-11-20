@@ -30,7 +30,9 @@ import (
 // 若模型或网关不支持 tools，自动降级为「注入持仓上下文的纯对话」，保证功能可用。
 
 const (
-	aiChatMaxRounds = 4 // 工具调用最大轮次（防止模型死循环）
+	// 工具调用最大轮次：联网场景常见「搜索 → 抓正文 → 作答」三步，
+	// 4 轮在网络抖动需要重搜时会顶到上限，留 6 轮余量（仍是防死循环的硬闸）。
+	aiChatMaxRounds = 6
 	aiChatTimeout   = 180 * time.Second
 )
 
@@ -42,9 +44,12 @@ const aiChatSystemPrompt = `你是「持仓侠」内置的 AI 投资助手，服
 3. 持仓技术分析（analyze_holding）：MA/MACD/RSI/KDJ/BOLL + 看涨概率，可据此给买卖判断。
 4. 持仓总结（portfolio_summary）：总市值、总盈亏、结构分布、今日表现。
 5. 资产再平衡（get_rebalance）：股票/基金/理财/现金四大类的目标占比、实际占比、偏离、应买应卖金额、组合预期年化与超额收益。回答「该不该调仓、该买多少、现金是不是太多」前必须先调它，不要自己拿持仓金额估算。
+6. 联网检索（web_search / web_fetch）：回答涉及「最近 / 今天 / 最新 / 新闻 / 公告 / 财报 / 政策 / 为什么涨跌」或任何账本以外的公开事实时，先搜索再回答；用户给出链接想让你看内容时用 web_fetch。搜索结果里的日期即发布日，务必据此判断时效。
 
 铁律：
 - 涉及数字的一律以工具返回的真实数据为准，禁止凭印象编造价格、份额、盈亏。
+- 引用外部信息必须给 Markdown 链接 [标题](URL) 和日期；搜不到、抓不到就直说「没查到 / 打不开」，绝不虚构新闻、公告、财报数字。
+- 外部信息与账本数据冲突时以账本为准（账本是真实成交，外部是公开信息），差异可以点出来。
 - 执行写操作（record_transaction）前，若目标不唯一或关键参数缺失，先向用户确认。
 - 给买卖判断时必须说明依据的指标，并提示「仅供参考，不构成投资建议」。
 - 用中文回答，条理清晰，能分点就分点，不要长篇铺垫。`
@@ -225,7 +230,7 @@ func aiChatPost(c *gin.Context) {
 		log.Printf("[aichat] append user msg failed: %v", err)
 	}
 
-	tools := aiChatTools()
+	tools := aiChatTools(aiWebEnabled(base))
 	used := []string{}
 	content, degraded, err := runChatLoop(base, b.APIKey, model, msgs, tools, uid, &used)
 	if err != nil {
@@ -250,6 +255,8 @@ func aiChatPost(c *gin.Context) {
 // 若服务端不支持 tools（400 且响应提及 tools/function），自动去掉 tools 并注入持仓上下文重试。
 func runChatLoop(baseURL, apiKey, model string, msgs []map[string]interface{}, tools []map[string]interface{}, uid int64, used *[]string) (string, bool, error) {
 	degraded := false
+	// 原始提问喂给搜索接口的 ori_question，帮助搜索引擎理解意图（只取最后一条用户消息）
+	question := lastUserContent(msgs)
 	for round := 0; round < aiChatMaxRounds; round++ {
 		raw, status, err := postChat(baseURL, apiKey, model, msgs, tools)
 		if err != nil {
@@ -287,7 +294,7 @@ func runChatLoop(baseURL, apiKey, model string, msgs []map[string]interface{}, t
 		}
 		msgs = append(msgs, assistantMsg)
 		for _, tc := range choice.ToolCalls {
-			result := execChatTool(tc.Function.Name, tc.Function.Arguments, uid)
+			result := execChatTool(tc.Function.Name, tc.Function.Arguments, uid, baseURL, apiKey, question)
 			*used = append(*used, tc.Function.Name)
 			msgs = append(msgs, map[string]interface{}{
 				"role":         "tool",
@@ -300,9 +307,24 @@ func runChatLoop(baseURL, apiKey, model string, msgs []map[string]interface{}, t
 	return "工具调用轮次已达上限，请换个更明确的问法重试。", degraded, nil
 }
 
+// lastUserContent 取最后一条 user 消息的文本（搜索接口的 ori_question 用）。
+func lastUserContent(msgs []map[string]interface{}) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if r, _ := msgs[i]["role"].(string); r == "user" {
+			if c, ok := msgs[i]["content"].(string); ok {
+				return strings.TrimSpace(c)
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
 // ---- 工具定义与执行 ----
 
-func aiChatTools() []map[string]interface{} {
+// aiChatTools 组装 chat/completions 的 tools 数组。
+// web=true 时追加联网检索工具（仅官方 DeepSeek 端点，见 aiWebEnabled）。
+func aiChatTools(web bool) []map[string]interface{} {
 	defs := mcp.ChatToolDefs()
 	defs = append(defs,
 		map[string]interface{}{
@@ -333,10 +355,13 @@ func aiChatTools() []map[string]interface{} {
 			},
 		},
 	)
+	if web {
+		defs = append(defs, aiWebToolDefs()...)
+	}
 	return defs
 }
 
-func execChatTool(name, argsJSON string, uid int64) string {
+func execChatTool(name, argsJSON string, uid int64, baseURL, apiKey, question string) string {
 	args := map[string]interface{}{}
 	if strings.TrimSpace(argsJSON) != "" {
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -349,6 +374,16 @@ func execChatTool(name, argsJSON string, uid int64) string {
 		args["user_id"] = uid
 	}
 	switch name {
+	case "web_search":
+		if !aiWebEnabled(baseURL) {
+			return "当前模型地址不支持联网检索，请直接说明无法联网。"
+		}
+		return chatToolWebSearch(baseURL, apiKey, question, args)
+	case "web_fetch":
+		if !aiWebEnabled(baseURL) {
+			return "当前模型地址不支持联网检索，请直接说明无法联网。"
+		}
+		return chatToolWebFetch(baseURL, apiKey, args)
 	case "analyze_holding":
 		return chatToolAnalyzeHolding(uid, args)
 	case "portfolio_summary":
