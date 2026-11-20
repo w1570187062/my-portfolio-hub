@@ -94,7 +94,7 @@
     <a class="app-brand" href="#/home" aria-label="持仓侠 · 返回首页">
       <svg class="app-brand-logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3370ff"/></linearGradient><mask id="mklg"><rect x="0" y="0" width="32" height="32" fill="#fff"/><path d="M11.00 20.20L14.20 15.60L17.30 17.90L20.42 12.65" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M21.40 11.00L21.46 15.11L17.76 12.91Z" fill="#000" stroke="#000" stroke-width="0.65" stroke-linejoin="round"/></mask></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg2)"/><path d="M16 5.4 C19.2 7.1 21.8 7.8 24 8.1 L24 15.5 C24 21 20.4 24.8 16 27 C11.6 24.8 8 21 8 15.5 L8 8.1 C10.2 7.8 12.8 7.1 16 5.4 Z" fill="#fff" mask="url(#mklg)"/></svg>
       <span class="app-brand-text">
-        <span class="app-brand-name">持仓侠<em>Portfolio Tracker</em></span>
+        <span class="app-brand-name">持仓侠</span>
       </span>
     </a>
     <nav id="mainNav" class="main-nav">
@@ -170,6 +170,15 @@
           <div class="acct-sep"></div>
           <!-- 2026-10-29：绑定设备 / 通知推送从设置页抽出为独立页，入口放这里 ——
                换设备、邀请家人、切钉钉推送都是常切项，不该埋在设置页第 5 屏 -->
+          <!-- 2026-11-19：数据总览 / 再平衡补入口 —— 此前只在首页快捷功能区，个人菜单找不到 -->
+          <button class="acct-item" type="button" data-act="overview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.3"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.3"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.3"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.3"/></svg>
+            <span>数据总览</span>
+          </button>
+          <button class="acct-item" type="button" data-act="rebalance">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><rect x="2.5" y="5" width="5" height="4" rx="1"/><rect x="16.5" y="15" width="5" height="4" rx="1"/></svg>
+            <span>再平衡</span>
+          </button>
           <button class="acct-item" type="button" data-act="ai">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.6L18.4 9.4l-4.6 1.8L12 15.8l-1.8-4.6L5.6 9.4l4.6-1.8L12 3Z"/><path d="M18.5 14.5l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"/></svg>
             <span>AI 设置</span>
@@ -495,7 +504,6 @@
           <span><i class="fin-sw fin-sw-cum"></i>累计结余</span>
         </div>
       </div>
-      <div class="fin-chips" id="finChips"></div>
       <!-- 该月无记录时自动落到最近有数据的月份，这里说明「为什么不是你选的那个月」 -->
       <div class="fin-auto-hint" id="finAutoHint" hidden></div>
       <div class="fin-chart fin-trend-chart"><svg id="finTrendSvg" role="img" aria-label="月度现金流趋势"></svg></div>
@@ -582,7 +590,7 @@
       <!-- ⑥ 收支分类（常驻展开）：自定义分类与内置分类合并进「记收入/记支出」与「收支计划」选择器 -->
       <section class="settings-group">
         <h3 class="settings-group-title"><span class="grp-title-main"><svg class="grp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="10" rx="2"/><path d="M4 11h16"/><circle cx="16" cy="14.5" r="1.2"/></svg>收支分类</span></h3>
-        <p class="settings-group-desc">自定义收支分类。内置已含：收入（工资薪金/经营收入/投资分红/投资利息/落袋收益/其他收入）、支出（日常消费/居住支出/资本开支/负债偿还/税费/保险保障/教育医疗/投资费用/其他支出）；投资活动与内部划转为中性类不计收支。</p>
+        <p class="settings-group-desc">可自定义收支分类；投资活动、内部划转不计收支。</p>
         <div class="settings-group-body">
           <div id="finCatList" class="fincat-list"></div>
           <div class="fincat-add">
@@ -959,6 +967,22 @@
       </div>
     </div>
   </div>
+  </div>
+
+  <!-- 批量管理锁仓（2026-11-20）：持仓工具条 #invLockBtn 打开。
+       只隐藏盈亏数字，不改数据、不冻结交易；状态存 settings/locked_holdings。 -->
+  <div id="lockMgrModal" class="modal" hidden>
+    <div class="modal-card lock-mgr-card" role="dialog" aria-modal="true" aria-labelledby="lockMgrTitle">
+      <h2 id="lockMgrTitle">批量管理锁仓</h2>
+      <button class="card-close" type="button" id="lockMgrClose" title="关闭" aria-label="关闭">✕</button>
+      <p class="lock-mgr-hint">锁仓只隐藏盈亏数字，记录与交易照常进行，可随时解除。带 <b>锁</b> 的持仓在持仓表、盈亏日历、首页权益曲线与推送里都不显示盈亏。</p>
+      <div class="lock-mgr-actions">
+        <button type="button" class="btn" id="lockAllBtn">全部锁定</button>
+        <button type="button" class="btn" id="unlockAllBtn">全部解除</button>
+        <span class="lock-mgr-count" id="lockMgrCount"></span>
+      </div>
+      <div class="lock-mgr-list" id="lockMgrList"></div>
+    </div>
   </div>
 
   <!-- ===== AI 助手：聊天面板（入口是顶栏 #aiChatTopBtn；不在 #app 内，避免未登录/boot 前被隐藏） ===== -->

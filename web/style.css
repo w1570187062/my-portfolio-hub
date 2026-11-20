@@ -534,6 +534,11 @@
 /* 危险操作默认就应是警示色，不能只在悬停时才变红 */
 .row-act.danger { color: var(--danger); }
 .row-act.danger:hover { background: var(--danger-soft); color: var(--danger); }
+/* 删除类按钮降权（2026-11-19）：与编辑同排时默认红图标太抢眼、易误点。
+   平时淡化为普通灰、hover 才回警示红；危险语义仍由 danger + 二次确认兜底。 */
+.row-act.danger.act-quiet { color: var(--text-faint); opacity: .7; }
+.row-act.danger.act-quiet:hover,
+.atbl tr.row:hover td.op .row-act.danger.act-quiet { color: var(--danger); opacity: 1; background: var(--danger-soft); }
 /* 计数徽标：如子账户数量。计数不进按钮文字，避免列宽随数据变化 */
 .row-act .act-cnt {
   position: absolute; top: -3px; right: -4px;
@@ -1604,11 +1609,9 @@ header {
   font-size: var(--fs-base); font-weight: 700; line-height: 1.2;
   color: var(--text); white-space: nowrap;
 }
-.app-brand-name em { font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--text-muted); }
 /* 桌面档才给 header 段落间距：≤880 时品牌 + 5 个 pill + 操作组已吃满整行，
    gap 会把导航挤溢出（实测 641px 加 16px gap 后溢出 17px）。 */
 @media (min-width: 1341px) { header { gap: var(--sp-4); } }
-@media (max-width: 1340px) { .app-brand-name em { display: none; } }
 @media (max-width: 640px) {
   .app-brand { gap: var(--sp-2); }
   .app-brand-logo { width: 28px; height: 28px; }
@@ -2811,7 +2814,6 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .atbl .gh { display: flex; align-items: baseline; gap: 8px; }
 .atbl .gdot { width: 3px; height: 12px; border-radius: 2px; background: var(--rgc, rgb(var(--tint))); flex: 0 0 auto; align-self: center; }
 .atbl .gn { font-size: var(--fs-sm); font-weight: 650; letter-spacing: .4px; color: var(--text); }
-.atbl .ge { font-size: 10.5px; color: var(--text-faint); letter-spacing: .2px; }
 .atbl .gc { font-size: 10.5px; color: var(--text-faint); font-family: var(--font-mono); }
 .atbl .gsum { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 640; font-variant-numeric: tabular-nums; }
 /* 账户行 */
@@ -2869,6 +2871,10 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
 .atbl td.op .row-act.danger { color: var(--danger); }
 .atbl td.op .row-act.danger:hover { color: var(--danger); background: var(--danger-soft); }
 .atbl tr.row:hover td.op .row-act.danger { color: var(--danger); }
+/* act-quiet 在账户表内同样降权：需盖过上面三条更高特异性的提权规则 */
+.atbl td.op .row-act.danger.act-quiet { color: var(--text-faint); opacity: .7; }
+.atbl td.op .row-act.danger.act-quiet:hover,
+.atbl tr.row:hover td.op .row-act.danger.act-quiet { color: var(--danger); opacity: 1; background: var(--danger-soft); }
 /* 子账户行：缩进 + 浅底，与账户行形成从属关系；负债金额为负并显示红字 */
 .atbl tr.srow td { padding: 6px 12px; border-bottom: 1px solid var(--row-divider); background: rgba(var(--tint), .028); }
 .atbl tr.shead td { padding: 8px 12px 4px; background: rgba(var(--tint), .028); }
@@ -4735,6 +4741,12 @@ textarea::placeholder {
   min-width: 0;
   white-space: nowrap;
 }
+/* display:inline-flex 会盖掉 [hidden] 的 display:none（未启用待还款时隐藏整句） */
+.cf-remind-time[hidden] { display: none; }
+/* CSS 层兜底（2026-11-19）：JS 设 hidden 有时序问题（loadNotifySettings 早于控件就位时
+   选择器匹配不到，导致未启用却仍显示残缺的「在 : 推送」）。用 :has() 直接按开关状态隐藏，
+   不依赖 JS 时序；Edge/Chrome 157 均支持 :has()。 */
+.cf-remind-row:has(#cfReminderEnabled:not(:checked)) .cf-remind-time { display: none; }
 /* 时/分输入框不参与收缩：窄屏下 .cf-remind-time 是 nowrap flex，
    input 被 flex 压到 27px 后数字直接被裁掉（实测 390px 视口）。 */
 /* width 必须写死且用 ID 提权：`.settings-page .settings-group-body input{width:100%}`(0,2,1)
@@ -4846,6 +4858,12 @@ textarea::placeholder {
 .chart-line-glow { stroke: var(--cum-line); stroke-opacity: .22; stroke-width: 4.5; }
 .chart-line { stroke: var(--cum-line); stroke-width: 1.8; }
 .chart-dot { fill: var(--cum-line); stroke: var(--bg-card-solid); stroke-width: 1.6; }
+/* 已清仓：清仓日后盈亏锁定段走虚线、末点空心；后续净值另走右轴灰虚线（行情参照，不计盈亏） */
+.chart-line-locked { stroke: var(--cum-line); stroke-opacity: .55; stroke-width: 1.6; stroke-dasharray: 5 4; }
+.chart-dot-locked { fill: var(--bg-card-solid); stroke: var(--cum-line); stroke-width: 1.8; }
+.chart-price-line { stroke: var(--text-muted); stroke-opacity: .75; stroke-width: 1.2; stroke-dasharray: 2 3; }
+.chart-line-key-locked { background: none; border-top: 2px dashed var(--cum-line); height: 0; border-radius: 0; }
+.chart-price-key { display: inline-block; width: 16px; height: 0; border-top: 2px dashed var(--text-muted); margin-right: var(--sp-1); vertical-align: middle; }
 .chart-guide { stroke: var(--text-muted); stroke-opacity: .5; stroke-width: 1; stroke-dasharray: 3 3; }
 .chart-hline { stroke: var(--row-divider); stroke-width: 1; }
 .chart-zero { stroke: var(--border-strong); stroke-width: 1; }
@@ -6523,9 +6541,6 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .fin-sw-net { width: 14px; height: 0; border-top: 2px dashed var(--text-muted); }
 .fin-sw-cum { width: 14px; height: 2px; border-radius: 2px; background: var(--cum-line); }
 
-.fin-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
-.fin-chip { padding: 2px var(--sp-3); border-radius: 999px; border: 1px solid var(--border); background: var(--bg-soft); font-size: var(--fs-xs); color: var(--text-muted); }
-.fin-chip b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .fin-auto-hint { font-size: var(--fs-xs); color: var(--text-muted); margin-top: calc(-1 * var(--sp-1)); }
 .fin-auto-hint[hidden] { display: none; }
 
@@ -7502,13 +7517,11 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .ov-bar { position: absolute; left: 0; right: 0; bottom: 2px; height: 3px; background: var(--bg-soft); border-radius: 999px; overflow: hidden; }
 .ov-bar::before { content: ''; display: block; width: var(--w); height: 100%; background: var(--primary); border-radius: 999px; }
 .ov-bar.warn::before { background: var(--warning); }
-.ov-cardfoot { font-size: var(--fs-2xs); color: var(--text-faint); border-top: 1px dashed var(--border); padding-top: var(--sp-1); }
 .ov-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s; }
 .ov-detail > div { overflow: hidden; min-height: 0; }
 .ov-detail p { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.6; margin: 0; }
 .ov-go { margin-top: var(--sp-2); padding: 0; font-size: var(--fs-xs); color: var(--primary); background: none; border: 0; cursor: pointer; font-family: inherit; }
 .ov-note.expanded .ov-detail { grid-template-rows: 1fr; }
-.ov-note.expanded .ov-cardfoot { border-top-style: solid; }
 .ov-back:focus-visible, .ov-more:focus-visible, .ov-go:focus-visible,
 .ov-viewseg button:focus-visible, .ov-seg button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 /* 窄卡收起图形与副标：容器查询规则必须带 .ov-note 前缀提权，否则被后面的 display:flex 盖掉 */
@@ -7657,3 +7670,73 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 @media (max-width: 640px) {
   .rb-card-head { flex-wrap: wrap; }
 }
+
+/* 未保存标记（2026-11-19）：通知页两个独立保存点，改动后按钮尾部亮一个圆点，
+   提示「本组有未保存更改」，保存成功后移除。纯装饰伪元素，不改按钮文字结构。 */
+button.save-dirty { position: relative; }
+button.save-dirty::after {
+  content: ''; position: absolute; top: 4px; right: 4px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--warning, #e0a92e);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.15);
+}
+
+/* ── 锁仓遮蔽（2026-11-20）──────────────────────────────────────────────
+   纯视觉：只把这些元素的数字换成圆点，不改底层数据、不禁用操作。 */
+.lock-mask {
+  display: inline-block; letter-spacing: .12em; color: var(--text-faint);
+  font-variant-numeric: tabular-nums; user-select: none; cursor: help;
+}
+/* 持仓行锁定态：整行轻微降饱和，锁图标常亮（不随 hover 才出现） */
+tbody tr.row-locked .row-act.lock-on { opacity: 1; color: var(--warning, #e0a92e); }
+.row-act.lock-on { opacity: 1; }
+.row-act.lock-off { opacity: .55; }
+/* 工具条锁仓按钮 + 计数角标 */
+#invLockBtn.is-on { color: var(--warning, #e0a92e); }
+.lock-cnt {
+  position: absolute; top: -3px; right: -3px; min-width: 14px; height: 14px;
+  padding: 0 3px; border-radius: 999px; background: var(--warning, #e0a92e);
+  color: #fff; font-size: var(--fs-2xs); line-height: 14px; text-align: center; font-weight: 700;
+}
+#invLockBtn { position: relative; }
+
+/* 首页权益曲线蒙层：盖住曲线但保留 hover 交互（浮框数值另在 JS 里遮） */
+.spark-lock-cover {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg-card-solid, var(--bg-card, #fff)) 62%, transparent);
+  backdrop-filter: blur(2.5px); -webkit-backdrop-filter: blur(2.5px);
+  pointer-events: none; z-index: 2;
+}
+.spark-lock-badge {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 3px var(--sp-2); border-radius: 999px; font-size: var(--fs-xs); font-weight: 600;
+  color: var(--warning, #e0a92e); background: var(--bg-card-solid, var(--bg-card, #fff));
+  border: 1px solid color-mix(in srgb, var(--warning, #e0a92e) 40%, transparent);
+  box-shadow: 0 1px 5px rgba(0,0,0,.08);
+}
+.spark-lock-badge svg { width: 13px; height: 13px; }
+/* 蒙层容器需要定位上下文 */
+.nw-spark:has(.spark-lock-cover) { position: relative; }
+
+/* 盈亏日历遮罩格：数字用圆点但保留色块方向 */
+.cal-val-locked { letter-spacing: .1em; color: var(--text-faint); }
+
+/* 批量锁仓管理面板 */
+.lock-mgr-card { width: 460px; max-width: 94vw; padding: 0 28px var(--sp-6); }
+.lock-mgr-hint { color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.5; margin: var(--sp-1) 0 var(--sp-4); }
+.lock-mgr-actions { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.lock-mgr-actions .btn { padding: 5px var(--sp-3); font-size: var(--fs-sm); }
+.lock-mgr-count { margin-left: auto; color: var(--text-faint); font-size: var(--fs-sm); }
+.lock-mgr-list { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.lock-mgr-row {
+  display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); cursor: pointer;
+  border-bottom: 1px solid var(--border); transition: background .15s;
+}
+.lock-mgr-row:last-child { border-bottom: 0; }
+.lock-mgr-row:hover { background: var(--bg-hover); }
+.lock-mgr-row.is-on { background: color-mix(in srgb, var(--warning, #e0a92e) 8%, transparent); }
+.lock-mgr-row input { flex: 0 0 auto; accent-color: var(--warning, #e0a92e); width: 15px; height: 15px; cursor: pointer; }
+.lock-mgr-row .lm-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); }
+.lock-mgr-row .lm-closed { color: var(--text-faint); font-size: var(--fs-xs); font-style: normal; }
+.lock-mgr-row .lm-sym { flex: 0 0 auto; color: var(--text-faint); font-size: var(--fs-xs); }
+.lock-mgr-row .lm-state { flex: 0 0 34px; text-align: right; font-size: var(--fs-xs); color: var(--text-muted); }
+.lock-mgr-row.is-on .lm-state { color: var(--warning, #e0a92e); font-weight: 600; }

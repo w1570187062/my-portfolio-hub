@@ -427,6 +427,20 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, stri
 			hmap[h.Symbol] = h
 		}
 	}
+	// 锁仓遮蔽（2026-11-20）：被锁持仓的盈亏数值不出现在每日推送里。
+	// payload 存的是持仓 id，明细是按 symbol 拆的，先换成 symbol 集合。
+	lockedSyms := map[string]bool{}
+	if payload, ok, err := db.GetSetting(settingLockedHoldings, uid); err == nil && ok {
+		var ids []int64
+		if json.Unmarshal([]byte(payload), &ids) == nil {
+			for _, h := range hmap {
+				for _, id := range ids {
+					if h.ID == id { lockedSyms[h.Symbol] = true; break }
+				}
+			}
+		}
+	}
+	const mask = "••••"
 
 	// 按范围挑行：美股读归属日那一格，日期也用它（推的是「11-02 美股收盘」而不是今天）。
 	row := pnlRowForScope(uid, scope, hmap)
@@ -464,7 +478,12 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, stri
 					hasData = true
 				}
 			}
-			sb.WriteString(fmt.Sprintf("- **今日总盈亏（%s）**：¥%s\n", label, moneyFmt(sCNY)))
+			// 今日总盈亏里若含被锁标的，汇总值同样会泄露 → 有任何锁仓就把总额也遮住
+			totalTxt := "¥" + moneyFmt(sCNY)
+			if len(lockedSyms) > 0 {
+				totalTxt = mask
+			}
+			sb.WriteString(fmt.Sprintf("- **今日总盈亏（%s）**：%s\n", label, totalTxt))
 			if len(scoped) > 0 {
 				sb.WriteString(fmt.Sprintf("\n**%s 今日盈亏（按原币种）**：\n", label))
 				n := 0
@@ -492,8 +511,13 @@ func buildNetValueNotifyText(uid int64, triggeredBy, scope string) (string, stri
 					if s.ChangePct >= 0.005 || s.ChangePct <= -0.005 {
 						chgStr = moneyFmtPrec(s.ChangePct, 2) + "%"
 					}
-					sb.WriteString(fmt.Sprintf("- %s %s：现价%s 涨跌%s 今日%s%s\n",
-						s.Symbol, s.Name, priceStr, chgStr, curSymbol(s.Currency), moneyFmtPrec(amt, dec)))
+					amtStr := curSymbol(s.Currency) + moneyFmtPrec(amt, dec)
+					if lockedSyms[s.Symbol] {
+						// 被锁持仓：只留标的名字与「已锁」，价格/涨跌/盈亏一律不出现
+						priceStr, chgStr, amtStr = mask, mask, mask
+					}
+					sb.WriteString(fmt.Sprintf("- %s %s：现价%s 涨跌%s 今日%s\n",
+						s.Symbol, s.Name, priceStr, chgStr, amtStr))
 					n++
 				}
 			} else {

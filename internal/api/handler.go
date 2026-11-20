@@ -2695,6 +2695,7 @@ func holdingPnlHistory(c *gin.Context) {
 		TotalPnlPct float64 `json:"total_pnl_pct"`
 		MarketValue float64 `json:"market_value"`
 		Held        bool    `json:"held"`             // false = 该日尚未建仓（份额为 0），盈亏不计算、前端显示「—」
+		Locked      bool    `json:"locked,omitempty"` // true = 清仓之后：真实盈亏已锁定，close/涨跌幅仅为后续行情参考
 		Anchor      bool    `json:"anchor,omitempty"` // true = 合成建仓点（成本是按当前持仓反推的估算值，当日盈亏无意义）
 		Est         bool    `json:"est,omitempty"`    // true = 建仓段（早于首笔交易）：份额/成本都是反推估算，前端标注「推算」
 		Qty         float64 `json:"qty,omitempty"`    // 仅 anchor 行：推算的建仓份额
@@ -2840,13 +2841,18 @@ func holdingPnlHistory(c *gin.Context) {
 	n := 0 // 纳入曲线的点数：过滤（continue）不重置 range 索引，首条判定必须用独立计数
 	var prevTotal, prevMV float64
 	var lastClose float64
+	// 锁定值先按已实现盈亏兜底：清仓日未必有行情点（本库 QQQ 10-06 清仓、10-08 才有快照），
+	// 循环里不经过清仓日分支时，后续行仍要显示正确的落袋收益，不能掉成 0。
+	var lockPnl, lockPct float64
+	if closed && cost > 0 && qty > 0 {
+		lockPnl = realizedSum
+		lockPct = round2(realizedSum / (cost * qty * fx) * 100)
+	}
 	haveClose := false
 	todayBJ := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
 	for i, p := range series {
-		// 已清仓：曲线截止清仓日（含），之后的行情与持仓无关，不能再算成持仓盈亏
-		if closed && closedDate != "" && p.Date > closedDate {
-			break
-		}
+		// 已清仓：曲线继续画到最新行情日，但清仓日之后盈亏锁定为落袋值，
+		// close/涨跌幅只作后续行情参考（不再算成持仓盈亏）。
 		if startDate != "" && p.Date < startDate {
 			continue
 		}
@@ -2868,6 +2874,20 @@ func holdingPnlHistory(c *gin.Context) {
 		adj := p.Close + cumDiv
 		// 已清仓持仓：qty/cost 就是清仓前快照，全程沿用；成本基准加回「当时尚未发生的每股分红」
 		if closed {
+			if closedDate != "" && p.Date > closedDate {
+				// 清仓之后：没有持仓，真实盈亏已锁定。保留后续净值与涨跌幅供复盘对比，
+				// 但当日盈亏不再产生，累计盈亏固定为清仓日落袋值 —— 防止把后续涨跌
+				// 误读成这笔持仓还在浮动（2026-11-17 曾因这类误算把曲线截在清仓日）。
+				var navPct float64
+				if prevAdj > 0 {
+					navPct = (adj - prevAdj) / prevAdj * 100
+				}
+				prevAdj = adj
+				n++
+				rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnlPct: navPct,
+					TotalPnl: lockPnl, TotalPnlPct: lockPct, Held: true, Locked: true})
+				continue
+			}
 			mv := p.Close * qty * fx
 			costAt := cost + (cumDivTotal - cumDiv)
 			totalPnl := (p.Close - costAt) * qty * fx
@@ -2903,6 +2923,7 @@ func holdingPnlHistory(c *gin.Context) {
 				if closeProceeds > 0 {
 					mv = closeProceeds
 				}
+				lockPnl, lockPct = totalPnl, totalPct // 锁定值从此刻起不再随行情变化
 			}
 			prevTotal, prevMV = totalPnl, mv
 			rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv, Held: true})

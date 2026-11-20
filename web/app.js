@@ -546,6 +546,51 @@ let homeRateHoverData = null;    // 权益曲线 hover 弹框所需序列（由 
 let bellBriefData = null;        // 铃铛「今日待办」数据：{ groups, total } 来自 /api/today/brief
 let finFlowsCache = [];          // 财务页收支汇总明细缓存（全年流水，供分类折叠下钻）
 
+// ── 锁仓（2026-11-20）────────────────────────────────────────────────────
+// 纯视觉遮蔽：只挡屏幕上的盈亏数字，不改 holdings、不冻结交易、不拦任何写接口。
+// 状态存 settings/locked_holdings（持仓 id 数组，账本级隔离），首屏渲染前从服务端拉，
+// 不写 localStorage —— 避免本地绕过，也天然跟随账本切换。
+let lockedIds = new Set();       // 被锁持仓 id 集合
+const LOCK_MASK_HTML = '<span class="lock-mask" title="该持仓已锁仓，盈亏已隐藏">••••</span>';
+const LOCK_MASK_TXT = '••••';
+const isLocked = (id) => lockedIds.has(Number(id));
+const anyLocked = () => lockedIds.size > 0;
+
+async function loadLockedHoldings() {
+  try {
+    const r = await api('/api/settings/locked_holdings');
+    if (!r.ok) { lockedIds = new Set(); return; }
+    const d = await r.json();
+    let ids = [];
+    try { ids = JSON.parse(d.payload || '[]'); } catch (_) {}
+    lockedIds = new Set((Array.isArray(ids) ? ids : []).map(Number));
+  } catch (_) { lockedIds = new Set(); }
+}
+
+// 切换单只锁仓：乐观更新 + 失败回滚。
+async function toggleHoldLock(id, force) {
+  const n = Number(id);
+  const was = lockedIds.has(n);
+  const want = (force === undefined) ? !was : !!force;
+  if (want) lockedIds.add(n); else lockedIds.delete(n);
+  renderFiltered();
+  const ok = await saveLockedHoldings();
+  if (!ok) {
+    if (was) lockedIds.add(n); else lockedIds.delete(n);
+    renderFiltered();
+    toast('保存锁仓状态失败', 'err');
+  } else {
+    toast(want ? '已锁定该持仓盈亏' : '已解除锁定', 'ok');
+  }
+}
+
+async function saveLockedHoldings() {
+  const r = await api('/api/settings/locked_holdings', {
+    method: 'PUT', body: JSON.stringify({ payload: JSON.stringify([...lockedIds]) }),
+  });
+  return r.ok;
+}
+
 async function boot() {
   initFXModal();
   // 认证先行：无有效会话 → 认领/配对闸门（成功后由 onAuthed → enterApp 进入应用）
@@ -562,6 +607,8 @@ async function enterApp(st) {
   authState = st || authState;
   authReady = true;
   try { await initUser(); } catch (e) { console.warn('[user] initUser 失败:', e); }
+  // 锁仓状态必须在首屏渲染前就绪，否则真实盈亏会先闪一下再被遮住。
+  await loadLockedHoldings();
   showApp();
   applyRoute();
 }
@@ -1289,11 +1336,16 @@ function renderInvestToolbar() {
   const closedBtn = homeSection === 'closed'
     ? '<button type="button" class="btn icon-btn" id="invClosedBtn" title="补录平仓（批量登记系统外的平仓）" aria-label="补录平仓">' + actIcon('plus') + '</button>'
     : '';
+  // 锁仓管理（2026-11-20）：仅持仓 tab，打开批量勾选面板。
+  const lockBtn = homeSection === 'holdings'
+    ? '<button type="button" class="btn icon-btn' + (anyLocked() ? ' is-on' : '') + '" id="invLockBtn" title="批量管理锁仓（隐藏选中持仓的盈亏）" aria-label="批量管理锁仓">'
+      + actIcon('checks') + (anyLocked() ? '<span class="lock-cnt">' + lockedIds.size + '</span>' : '') + '</button>'
+    : '';
   bar.innerHTML =
       '<div class="density-toggle" role="group" aria-label="行密度">' +
         '<button type="button" class="dt-btn' + (dens === 'compact' ? ' active' : '') + '" data-density="compact">紧凑</button>' +
         '<button type="button" class="dt-btn' + (dens === 'standard' ? ' active' : '') + '" data-density="standard">标准</button>' +
-      '</div>' + dcaBtn + closedBtn + refresh;
+      '</div>' + dcaBtn + closedBtn + lockBtn + refresh;
   // v3.4 行密度切换：记忆到 localStorage，仅切 body[data-density]，CSS 实时生效（无需重渲染）
   bar.querySelectorAll('.dt-btn').forEach((b) => {
     b.onclick = () => {
@@ -1311,6 +1363,8 @@ function renderInvestToolbar() {
   if (dcaB) dcaB.onclick = () => openDCAPlans();
   const cbB = bar.querySelector('#invClosedBtn');
   if (cbB) cbB.onclick = () => openBatchClosedModal();
+  const lockB = bar.querySelector('#invLockBtn');
+  if (lockB) lockB.onclick = () => openLockManager();
   // 工具条左端的 stat（本月盈亏下沉后的落点）与右侧控件同一行渲染
   renderInvestStats();
 }
@@ -1332,9 +1386,8 @@ function renderInvestStats() {
       el.innerHTML = '<span class="tools-stat" title="' + esc(s.idleText) + '">本月 <b>—</b></span>';
       return;
     }
-    el.innerHTML = '<span class="tools-stat">本月 <b class="' + s.cls + '">' + signedMoneyW(s.pnl, 'cny') + '</b></span>'
-      + '<span class="tools-stat">本月收益率 <b class="' + s.cls + '" title="分母 = 期初持仓市值">'
-      + pct(s.pct) + '</b></span>';
+    el.innerHTML = '<span class="tools-stat">本月 ' + (anyLocked() ? '<b>' + LOCK_MASK_TXT + '</b>' : '<b class="' + s.cls + '">' + signedMoneyW(s.pnl, 'cny') + '</b>') + '</span>'
+      + '<span class="tools-stat">本月收益率 ' + (anyLocked() ? '<b>' + LOCK_MASK_TXT + '</b>' : '<b class="' + s.cls + '" title="分母 = 期初持仓市值">' + pct(s.pct) + '</b>') + '</span>';
     return;
   }
 
@@ -1345,20 +1398,86 @@ function renderInvestStats() {
       day += wCny(p, Number(p.today_pnl) || 0);
       cum += wCny(p, Number(p.cum_pnl) || 0);
     }
-    el.innerHTML = '<span class="tools-stat">今日收益 <b class="' + clsPnlFlat(day) + '">' + signedCur(day, 'cny') + '</b></span>'
-      + '<span class="tools-stat">累计收益 <b class="' + clsPnlFlat(cum) + '">' + signedMoneyW(cum, 'cny') + '</b></span>';
+    el.innerHTML = '<span class="tools-stat">今日收益 ' + (anyLocked() ? '<b>' + LOCK_MASK_TXT + '</b>' : '<b class="' + clsPnlFlat(day) + '">' + signedCur(day, 'cny') + '</b>') + '</span>'
+      + '<span class="tools-stat">累计收益 ' + (anyLocked() ? '<b>' + LOCK_MASK_TXT + '</b>' : '<b class="' + clsPnlFlat(cum) + '">' + signedMoneyW(cum, 'cny') + '</b>') + '</span>';
     return;
   }
 
   if (homeSection === 'closed') {
     const st = closedToolStats();
-    el.innerHTML = '<span class="tools-stat">落袋合计 <b class="' + clsPnlFlat(st.total) + '">' + signedMoneyW(st.total, 'cny') + '</b></span>'
+    el.innerHTML = '<span class="tools-stat">落袋合计 ' + (anyLocked() ? '<b>' + LOCK_MASK_TXT + '</b>' : '<b class="' + clsPnlFlat(st.total) + '">' + signedMoneyW(st.total, 'cny') + '</b>') + '</span>'
       + '<span class="tools-stat">胜率 <b>' + (st.winRate == null ? '—' : st.winRate + '%') + '</b></span>';
     return;
   }
 
   // deposits 等无左栏 stat 的视图：整行由 renderInvestToolbar 收起，这里兜底隐藏
   el.hidden = true;
+}
+
+// ── 批量锁仓管理面板（2026-11-20）───────────────────────────────────────
+// 一次勾选多只持仓加锁/解锁；只改遮蔽状态，不碰任何交易数据。
+function openLockManager() {
+  const modal = document.getElementById('lockMgrModal');
+  if (!modal) return;
+  if (!window.__lockMgrWired) {
+    window.__lockMgrWired = true;
+    document.getElementById('lockMgrClose').onclick = () => { modal.hidden = true; };
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+    document.getElementById('lockAllBtn').onclick = async () => {
+      (allHoldings || []).forEach((h) => lockedIds.add(Number(h.id)));
+      await saveLockedHoldings(); refreshLockViews(); renderLockMgrList(); toast('已锁定全部持仓', 'ok');
+    };
+    document.getElementById('unlockAllBtn').onclick = async () => {
+      lockedIds.clear();
+      await saveLockedHoldings(); refreshLockViews(); renderLockMgrList(); toast('已解除全部锁仓', 'ok');
+    };
+  }
+  renderLockMgrList();
+  modal.hidden = false;
+}
+
+function renderLockMgrList() {
+  const list = document.getElementById('lockMgrList');
+  const cnt = document.getElementById('lockMgrCount');
+  if (!list) return;
+  const hs = (allHoldings || []).slice().sort((a, b) => {
+    const la = isLocked(a.id) ? 1 : 0, lb = isLocked(b.id) ? 1 : 0;
+    return lb - la; // 已锁的排前面，方便批量解除
+  });
+  if (cnt) cnt.textContent = anyLocked() ? ('已锁 ' + lockedIds.size + ' 只') : '未锁定任何持仓';
+  if (!hs.length) { list.innerHTML = '<p class="u-muted u-py-3">暂无持仓</p>'; return; }
+  list.innerHTML = hs.map((h) => {
+    const on = isLocked(h.id);
+    const closed = (Number(h.quantity) || 0) <= 0;
+    return '<label class="lock-mgr-row' + (on ? ' is-on' : '') + '">'
+      + '<input type="checkbox" data-lockpick="' + h.id + '"' + (on ? ' checked' : '') + '>'
+      + '<span class="lm-name">' + esc(h.name || h.symbol || '') + (closed ? ' <em class="lm-closed">已清仓</em>' : '') + '</span>'
+      + '<span class="lm-sym">' + esc(h.symbol || '') + '</span>'
+      + '<span class="lm-state">' + (on ? '已锁' : '显示') + '</span>'
+      + '</label>';
+  }).join('');
+  list.querySelectorAll('[data-lockpick]').forEach((cb) => {
+    cb.onchange = async () => {
+      const id = Number(cb.dataset.lockpick);
+      if (cb.checked) lockedIds.add(id); else lockedIds.delete(id);
+      await saveLockedHoldings();
+      refreshLockViews();
+      renderLockMgrList(); // 重排（已锁的置顶）并刷新计数
+    };
+  });
+}
+
+// 锁状态变化后，把受影响的视图统一重绘（不重新拉首页聚合数据）。
+function refreshLockViews() {
+  try { renderFiltered(); } catch (_) {}
+  try { renderHomeDashboard(); } catch (_) {}
+  try { renderRateSpark(30, homeNetVal); } catch (_) {}
+  const cm = document.getElementById('calModal');
+  if (cm && !cm.hidden && calSelDate) { try { openCalDay(calSelDate); } catch (_) {} }
+  const hm = document.getElementById('histModal');
+  if (hm && !hm.hidden && histPnlData) { try { renderHistSeg(); } catch (_) {} }
+  const bar = document.getElementById('investTools');
+  if (bar && !bar.hidden) { try { renderInvestToolbar(); } catch (_) {} }
 }
 
 // 平仓工具条左栏口径（落袋合计 / 胜率），从模块级数据独立计算，不依赖 renderClosed 的调用时机。
@@ -1640,9 +1759,10 @@ function renderHoldingsBySource(hs) {
   for (const h of shown) {
     const sid = h.source_id || 0;
     const sname = h.source_name || (sid === 0 ? '未分组' : '账户' + sid);
-    if (!groups.has(sid)) groups.set(sid, { sid, name: sname, items: [], mv: 0, cost: 0, dayPnl: 0, pnl: 0 });
+    if (!groups.has(sid)) groups.set(sid, { sid, name: sname, items: [], mv: 0, cost: 0, dayPnl: 0, pnl: 0, hasLocked: false });
     const g = groups.get(sid);
     g.items.push(h);
+    if (isLocked(h.id)) g.hasLocked = true;
     // 组头小计只算在持：展开已清仓时组头数字不能跳（清仓行市值/成本本就是 0），
     // 今日盈亏按全量算（已清仓标的当日已无行情，day_pnl 恒为 0，不影响口径）。
     if (!isClosed(h)) {
@@ -1727,8 +1847,9 @@ function renderHoldingsBySource(hs) {
       + `<span class="hg-r">`
       + `<span class="hg-stat hg-stat-mv" title="该账户持仓折合人民币市值"><i>市值</i><b${wanTitle(g.mv, '¥')}>¥${fmtWan(g.mv)}</b></span>`
       // 今日列整列不渲染时，组头也不再单挂一个「今日 —」——那是同一件事说第三遍
-      + (dayIdleAll ? '' : `<span class="hg-stat hg-stat-day" title="${pdi.note ? esc(pdi.note) : '该账户今日盈亏合计'}"><i>${pdi.label}</i><b class="${gDayIdle ? '' : clsPnlFlat(g.dayPnl)}">${gDayIdle ? '—' : signedMoneyW(g.dayPnl, 'cny')}</b></span>`)
-      + `<span class="hg-stat" title="该账户累计盈亏合计"><i>总盈亏</i><b class="${clsPnlFlat(g.pnl)}"${wanTitle(g.pnl, '¥')}>${signedMoneyW(g.pnl, 'cny')}</b></span>`
+      // 锁仓：组内只要有一只被锁，组头的盈亏合计就会泄露它 → 整组合计遮住
+      + (dayIdleAll ? '' : `<span class="hg-stat hg-stat-day" title="${g.hasLocked ? '该账户含已锁仓持仓，今日合计已隐藏' : (pdi.note ? esc(pdi.note) : '该账户今日盈亏合计')}"><i>${pdi.label}</i>${g.hasLocked ? '<b>' + LOCK_MASK_TXT + '</b>' : `<b class="${gDayIdle ? '' : clsPnlFlat(g.dayPnl)}">${gDayIdle ? '—' : signedMoneyW(g.dayPnl, 'cny')}</b>`}</span>`)
+      + `<span class="hg-stat" title="${g.hasLocked ? '该账户含已锁仓持仓，累计合计已隐藏' : '该账户累计盈亏合计'}"><i>总盈亏</i>${g.hasLocked ? '<b>' + LOCK_MASK_TXT + '</b>' : `<b class="${clsPnlFlat(g.pnl)}"${wanTitle(g.pnl, '¥')}>${signedMoneyW(g.pnl, 'cny')}</b>`}</span>`
       + `</span></div></td></tr>`
       + g.items.map((h) => renderHoldRow(h, poolOf(h), pdi, dayIdleAll)).join('')
       + '</tbody>';
@@ -1758,6 +1879,7 @@ function renderHoldingsBySource(hs) {
   box.querySelectorAll('[data-hist]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openHoldingHistory(b.dataset.hist); });
   box.querySelectorAll('[data-fail]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toast(failedSymbols[b.dataset.fail] || '刷新失败', 'err'); });
   box.querySelectorAll('[data-ana]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openAnalysis(b.dataset.ana); });
+  box.querySelectorAll('[data-lock]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toggleHoldLock(b.dataset.lock); });
 }
 
 // 通用点击复制委托：容器内所有 [data-copy] 元素点击即复制其 data-copy 文本；
@@ -1816,10 +1938,23 @@ function renderHoldRow(h, pool, pdi, hideDay) {
     : 'title="持有期总盈亏（上）/ 收益率（下）"';
   // 仓位：同(来源,币种)资金池占比
   const posPct = pool > 0 ? (Number(h.market_value) || 0) / pool * 100 : 0;
+  // title 补分母明细（2026-11-19）：「100%」曾让人以为占总持仓，实际是
+  // 本笔市值 ÷（该账户同币种持仓合计 + 现金余额）。把分子分母都写出来。
+  const shareTitle = '本笔 ' + moneyCur(Number(h.market_value) || 0, h.currency)
+    + ' ÷ 该账户同币种资金池 ' + moneyCur(pool, h.currency)
+    + (closed ? '；已清仓（份额为 0）不占资金池'
+      : (pool > 0 ? ' = ' + posPct.toFixed(2) + '%（不是占总持仓）'
+        : '；该账户无匹配现金子账户，无法算占比'));
   // 今日涨跌幅：现价 vs 昨收（行情口径，红涨绿跌）。prev_close 取不到行情时显示 —。
   const chgPct = (h.prev_close > 0 && h.current_price > 0)
     ? (h.current_price - h.prev_close) / h.prev_close * 100 : null;
-  const rowCls = [isFail ? 'row-failed' : '', closed ? 'holding-archived' : ''].filter(Boolean).join(' ');
+  // 锁仓（2026-11-20）：只遮该行的盈亏数字，成本价/份额/现价/市值照常显示（记录数据照旧）。
+  const rowLocked = isLocked(h.id);
+  const L = (v) => rowLocked ? LOCK_MASK_HTML : v;
+  const lockBtn = actBtn(rowLocked ? 'check' : 'undo',
+    `data-lock="${h.id}"`, rowLocked ? '解除锁定（显示该持仓盈亏）' : '锁定该持仓盈亏',
+    { cls: rowLocked ? 'lock-on' : 'lock-off' });
+  const rowCls = [isFail ? 'row-failed' : '', closed ? 'holding-archived' : '', rowLocked ? 'row-locked' : ''].filter(Boolean).join(' ');
   // 今日盈亏：开盘前恒为 0（还没开始，不是没赚没亏），真 0 也不该占一格颜色 → 都降级成「—」
   const dayIdle = pdi.preOpen || amtIsZero(dayCny);
   // 不再挂「已清仓」文字徽标（视觉噪音），改为整行置灰 + 名称 title 里说明清仓状态
@@ -1837,6 +1972,7 @@ function renderHoldRow(h, pool, pdi, hideDay) {
         <span class="hn-acts">
           ${actBtn('adjust', `data-adjust="${h.id}"`, '交易')}
           ${supportsAnalysis(h) ? actBtn('analysis', 'data-ana="' + h.id + '"', '技术分析') : ''}
+          ${lockBtn}
         </span>
       </div>
       <div class="hn-meta">
@@ -1852,25 +1988,27 @@ function renderHoldRow(h, pool, pdi, hideDay) {
           ${actBtn('hist', `data-hist="${h.id}"`, '历史盈亏')}
           ${actBtn('edit', `data-edit="${h.id}"`, '编辑持仓')}
           ${actBtn('del', `data-del="${h.id}"`, '删除持仓', { danger: true })}
+          ${lockBtn}
         </span>
       </div>
     </td>
-    <td class="num ht-trend h-trend">${sparkCell(h.symbol, h.pnl)}</td>
+    <td class="num ht-trend h-trend">${L(sparkCell(h.symbol, h.pnl))}</td>
     <td class="num ht-price">
       <div class="hp-main">${fmtPrice(h.current_price, isFund(h) ? 'fund' : 'stock')}</div>
       <div class="hp-sub ${chgPct != null ? clsPnlFlat(chgPct) : ''}" title="${pdi.isToday ? '今日涨跌幅' : '最近一个收盘交易日的涨跌幅（可能比今日盈亏新一个美股交易日——美股在北京时间凌晨收盘，跨过了日界）'}：现价 vs 昨收${isFund(h) ? '，基金为昨日净值' : ''}">${chgPct != null ? pct(chgPct) : '—'}</div>
     </td>
     <td class="num ht-mv"${mvOrigTitle(h)}>¥${fmtWan(mvCny)}</td>
-    <td class="num share ht-share${(pool > 0 && !closed) ? '' : ' is-empty'}"${(pool > 0 && !closed) ? ` style="--p:${posPct.toFixed(1)}%;--pn:${(posPct / 100).toFixed(4)}"` : ''} title="占该账户同币种资金池比例${closed ? '；已清仓（份额为 0）不占资金池' : (pool > 0 ? ' ' + posPct.toFixed(2) + '%' : '；该账户无匹配现金子账户，无法算占比')}">${(pool > 0 && !closed) ? posPct.toFixed(2) + '%' : '—'}</td>
-    ${hideDay ? '' : `<td class="num ht-day" title="${pdi.note ? esc(pdi.note) : '今日盈亏'}${h.market === '美股' && pdi.isToday ? '（美股按美东交易日归属：今天的收盘要等北京时间明天凌晨，落账后会出现在对应日期那一格，所以今天这一格暂时是 0）' : ''}${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）">${dayIdle ? ZERO_DASH : `<div class="${clsPnlFlat(h.day_pnl)}"${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</div><div class="hp-sub ${clsPnlFlat(h.day_pnl_pct)}">${h.day_pnl_pct ? pct(h.day_pnl_pct) : ''}</div>`}</td>`}
-    <td class="num ht-pnl" ${pnlTitle}>
-      <div class="${pnlClsVal}"${wanTitle(pnlCnyVal, '¥')}>${signedMoneyW(pnlCnyVal, 'cny')}</div>
-      ${pnlPctVal ? `<div class="hp-sub ${pnlClsVal}">${pct(pnlPctVal)}</div>` : ''}
+    <td class="num share ht-share${(pool > 0 && !closed) ? '' : ' is-empty'}"${(pool > 0 && !closed) ? ` style="--p:${posPct.toFixed(1)}%;--pn:${(posPct / 100).toFixed(4)}"` : ''} title="${shareTitle}">${(pool > 0 && !closed) ? posPct.toFixed(2) + '%' : '—'}</td>
+    ${hideDay ? '' : `<td class="num ht-day" title="${rowLocked ? '该持仓已锁仓，今日盈亏已隐藏' : (pdi.note ? esc(pdi.note) : '今日盈亏') + (h.market === '美股' && pdi.isToday ? '（美股按美东交易日归属：今天的收盘要等北京时间明天凌晨，落账后会出现在对应日期那一格，所以今天这一格暂时是 0）' : '') + (h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : '') + '（首日按买入成本计）'}">${rowLocked ? LOCK_MASK_HTML : (dayIdle ? ZERO_DASH : `<div class="${clsPnlFlat(h.day_pnl)}"${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</div><div class="hp-sub ${clsPnlFlat(h.day_pnl_pct)}">${h.day_pnl_pct ? pct(h.day_pnl_pct) : ''}</div>`)}</td>`}
+    <td class="num ht-pnl" ${rowLocked ? 'title="该持仓已锁仓，累计盈亏已隐藏"' : pnlTitle}>
+      ${rowLocked ? LOCK_MASK_HTML : `<div class="${pnlClsVal}"${wanTitle(pnlCnyVal, '¥')}>${signedMoneyW(pnlCnyVal, 'cny')}</div>
+      ${pnlPctVal ? `<div class="hp-sub ${pnlClsVal}">${pct(pnlPctVal)}</div>` : ''}`}
     </td>
     <td class="row-act-cell ht-act"><span class="ht-acts">
       ${actBtn('edit', `data-edit="${h.id}"`, '编辑持仓')}
       ${actBtn('hist', `data-hist="${h.id}"`, '历史盈亏')}
       ${actBtn('del', `data-del="${h.id}"`, '删除持仓', { danger: true })}
+      ${lockBtn}
     </span></td>
   </tr>`;
 }
@@ -2355,12 +2493,19 @@ async function renderRateSpark(rangeDays, netVal) {
         w: svgW, h: svgH, stroke: strokeColor, fill: strokeColor, axis, zero: true, smooth: true,
         axes: true, gutLeft: 36, gutBottom: 14, yTicks, xLabels,
       });
+      // 锁仓：曲线本身保留（不重画、不泄露逐日数值），叠一层磨砂蒙层 + 锁标记。
+      if (anyLocked()) {
+        const cover = document.createElement('div');
+        cover.className = 'spark-lock-cover';
+        cover.innerHTML = '<span class="spark-lock-badge">' + actIcon('check') + ' 盈亏已锁</span>';
+        heroBox.appendChild(cover);
+      }
 
       // 趋势文案：区间累计盈亏折算为收益率（基准 = 起始权益本金）。
       // 与主序列口径解耦 —— 切到「日均/单日」时这里仍是区间累计收益率，卡片头部语义不变。
       if (heroTrend) {
         const pctV = rangePnl / base * 100;
-        heroTrend.textContent = (pctV > 0 ? '+' : '') + pctV.toFixed(2) + '%';
+        heroTrend.textContent = anyLocked() ? LOCK_MASK_TXT : ((pctV > 0 ? '+' : '') + pctV.toFixed(2) + '%');
         heroTrend.className = `hero-mini-trend ${trendCls}`;
       }
 
@@ -2417,13 +2562,15 @@ function bindHomeRateHover() {
     // 只有「持仓成本」还留在这里：曲线画的是盈亏金额，市值 = 成本 + 本期累计盈亏已经不是一个
     // 能直接读的数（本期累计从区间首日归零），再列「持仓市值」会让人拿三个数互相对账对不上。
     const cost = st.contrib[i];
+    // 锁仓：日期保留，盈亏类数字一律遮罩（成本是记录数据，照常显示）
+    const rtVal = (cls, html) => anyLocked() ? '<b class="lock-mask">' + LOCK_MASK_TXT + '</b>' : '<b class="' + cls + '">' + html + '</b>';
     tip.innerHTML =
-      '<div class="rt-date">' + dateStr + '</div>' +
+      '<div class="rt-date">' + dateStr + (anyLocked() ? ' <span class="t-est">已锁仓</span>' : '') + '</div>' +
       (cost == null ? '' : '<div class="rt-row"><span>持仓成本</span><b>¥' + fmt(cost) + '</b></div>') +
-      '<div class="rt-row"><span>单日盈亏</span><b class="' + dCls + '">' + dSign + '¥' + fmt(Math.abs(dayAmt)) + '</b></div>' +
-      avgRow +
-      '<div class="rt-row"><span>累计盈亏</span><b class="' + cls + '">' + sign + '¥' + fmt(Math.abs(pnl)) + '</b></div>' +
-      '<div class="rt-row"><span>盈亏率</span><b class="' + cls + '">' + sign + Math.abs(rate).toFixed(2) + '%</b></div>';
+      '<div class="rt-row"><span>单日盈亏</span>' + rtVal(dCls, dSign + '¥' + fmt(Math.abs(dayAmt))) + '</div>' +
+      (anyLocked() ? '' : avgRow) +
+      '<div class="rt-row"><span>累计盈亏</span>' + rtVal(cls, sign + '¥' + fmt(Math.abs(pnl))) + '</div>' +
+      '<div class="rt-row"><span>盈亏率</span>' + rtVal(cls, sign + Math.abs(rate).toFixed(2) + '%') + '</div>';
     // 纵向参考线
     guide.style.left = x + 'px';
     guide.hidden = false;
@@ -2733,6 +2880,14 @@ async function openModal(h) {
     : (cashAccountsCache || [])[0];
   holdSetSelection(presetAcc);
   $('#f_quantity').value = h ? round4(h.quantity) : '';
+  // 份额即时校验（2026-11-19）：清空后立即提示，避免必填项要提交才发现。
+  // 只在错误提示正显示「请填写份额」时才清除，不覆盖其它字段的错误信息。
+  (function bindQtyCheck() {
+    const q = $('#f_quantity'), err = $('#formErr');
+    if (!q || !err) return;
+    q.oninput = () => { if (err.textContent === '请填写份额' && parseFloat(q.value) > 0) err.textContent = ''; };
+    q.onblur = () => { if (!(parseFloat(q.value) > 0)) err.textContent = '请填写份额'; };
+  })();
   const eCat = (h && isFund(h)) ? 'fund' : 'stock';
   $('#f_cost_price').value = h ? roundByCat(h.cost_price, eCat) : '';
   $('#f_note').value = h ? (h.note || '') : '';
@@ -3460,6 +3615,8 @@ $('#form').onsubmit = async (e) => {
   if (!finalSymbol && orig && finalName === orig.name) finalSymbol = orig.symbol || '';
   if (!finalName) { $('#formErr').textContent = '请填写名称或代码'; return; }
   if (!selMkt && selCat !== 'fund') { $('#formErr').textContent = '请选择市场'; return; }
+  // 份额必填（2026-11-19）：此前空份额 parseFloat→NaN→round4 归零，静默存成 0 份。
+  if (!(parseFloat($('#f_quantity').value) > 0)) { $('#formErr').textContent = '请填写份额'; $('#f_quantity').focus(); return; }
   $('#f_name').value = finalName;
   $('#f_symbol').value = finalSymbol;
   const payload = {
@@ -4138,6 +4295,16 @@ function dayBadge(di) {
   if (!di.isToday) return '<i class="mkt-badge is-closed" title="今日休市，该数值为最近一次收盘">休市</i>';
   return '';
 }
+// 当日总变动文案（首页 NET WORTH 与数据总览 KPI 共用，2026-11-19）：
+// 两处口径完全相同（持仓今日盈亏 + 理财今日收益，分母净资产）。此前首页零值写「暂无变动」，
+// 数据总览写「¥0.00」—— 同一指标两种表达，并排看像两份数据对不上。统一为：非零带符号金额，
+// 零值按交易日状态给「暂无变动 / 待开盘 / 休市」文案，都不给 0 值任何视觉重量。
+function dailyChangeText(dayPnl, dateStr) {
+  const n = Number(dayPnl);
+  if (n && Number.isFinite(n) && n !== 0) return (n > 0 ? '+' : '') + yuanOfW(n);
+  const di = pnlDayInfo(dateStr);
+  return di.preOpen ? '待开盘 · 09:30 更新' : (di.isToday ? '暂无变动' : '休市 · 无新数据');
+}
 // 统一日期输入框：允许 - / . 分隔，归一成后端要求的 YYYY-MM-DD；空值不变
 function normDateInput(el) {
   if (!el) return '';
@@ -4239,11 +4406,13 @@ async function renderHomeDashboard() {
     // （持仓今日盈亏 + 理财今日收益，分母 = 净资产）；投资页是持仓视角，叫「持仓今日盈亏」；
     // 理财页叫「理财今日收益」。三处同名不同源是最容易读成数据错的坑。
     const dayLabel = hdi.isToday ? '今日总变动' : hdi.md + ' 总变动';
-    if (dayPnl) segs.push(`<span class="hc-item"><span class="hc-label"${hdi.note ? ` title="${esc(hdi.note)}"` : ''}>${dayLabel}</span><span class="hc-val ${clsPnl(dayPnl)}">${dayPnl > 0 ? '+' : ''}${yuanOfW(dayPnl)}${dayBadge(hdi)}</span></span>`);
+    // 锁仓：净资产 / 市值照常显示，盈亏类（今日变动 / 本月持仓）遮罩。
+    if (dayPnl) segs.push(`<span class="hc-item"><span class="hc-label"${hdi.note ? ` title="${esc(hdi.note)}"` : ''}>${dayLabel}</span>${anyLocked() ? '<span class="hc-val">' + LOCK_MASK_TXT + '</span>' : `<span class="hc-val ${clsPnl(dayPnl)}">${dailyChangeText(dayPnl, ov.pnl_date || pnlDateStr)}${dayBadge(hdi)}</span>`}</span>`);
     // 两项都是 0 → 什么都不显示会像「没加载出来」。给一条无数字的状态项，
     // 解释「不是没数据，是还没开盘 / 休市」，同时不给 0 值任何视觉重量。
-    else segs.push(`<span class="hc-item is-idle" title="${esc(hdi.note || '今日总变动为 0')}"><span class="hc-label">今日总变动</span><span class="hc-val">${hdi.preOpen ? '待开盘 · 09:30 更新' : (hdi.isToday ? '暂无变动' : '休市 · 无新数据')}</span></span>`);
-    if (monthPnl) segs.push(`<span class="hc-item"><span class="hc-label" title="仅持仓（不含理财），与投资页「本月盈亏」同源">本月持仓</span><span class="hc-val ${clsPnl(monthPnl)}">${monthPnl > 0 ? '+' : ''}${yuanOfW(monthPnl)}</span></span>`);
+    // 文案走 dailyChangeText，与数据总览 KPI 卡共用同一套零值表达。
+    else segs.push(`<span class="hc-item is-idle" title="${esc(hdi.note || '今日总变动为 0')}"><span class="hc-label">今日总变动</span><span class="hc-val">${anyLocked() ? LOCK_MASK_TXT : dailyChangeText(0, ov.pnl_date || pnlDateStr)}</span></span>`);
+    if (monthPnl) segs.push(`<span class="hc-item"><span class="hc-label" title="仅持仓（不含理财），与投资页「本月盈亏」同源">本月持仓</span>${anyLocked() ? '<span class="hc-val">' + LOCK_MASK_TXT + '</span>' : `<span class="hc-val ${clsPnl(monthPnl)}">${monthPnl > 0 ? '+' : ''}${yuanOfW(monthPnl)}</span>`}</span>`);
     ch.innerHTML = segs.join('');
   }
 
@@ -4422,7 +4591,7 @@ function renderRecentFlows() {
         const title = ref || f.source_name || f.name || flowTypePlain(f) || '—';
         const acct = f.name && f.name !== title ? f.name : '';
         // 第二行 = 子账户名 · 说明；说明为空时给「余额 ¥N」（变动后余额）
-        const note = String(f.note || '').trim();
+        const note = tidyLongDecimals(String(f.note || '').trim());
         const sub2 = [acct, note || (f.balance ? '余额 ' + moneyCurW(f.balance, f.currency) : '')].filter(Boolean).join(' · ');
         // 组头已有日期，这里只补「时:分」；缺记录时间的老数据不显示时间
         const hm = flowHm(f);
@@ -4612,13 +4781,13 @@ function renderFinKpis(d) {
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></div>
       <div class="kpi-label">年度总收入</div>
       <div class="kpi-main"><div class="kpi-value">${moneyCurW(inc, 'cny')}</div></div>
-      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(inc / div, 'cny')}</span><span class="u-muted"> · ${div} 个月</span></div>
+      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(inc / div, 'cny')}</span><span class="u-muted" title="分母只计当年有收支流水的月份，不含空月份"> · ${div} 个有流水月份</span></div>
     </div>
     <div class="kpi-card density-standard kpi-expense">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></div>
       <div class="kpi-label">年度总支出</div>
       <div class="kpi-main"><div class="kpi-value">${moneyCurW(exp, 'cny')}</div></div>
-      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(exp / div, 'cny')}</span><span class="u-muted"> · ${div} 个月</span></div>
+      <div class="kpi-sub">月均 <span class="hl">${moneyCurW(exp / div, 'cny')}</span><span class="u-muted" title="分母只计当年有收支流水的月份，不含空月份"> · ${div} 个有流水月份</span></div>
     </div>
     <div class="kpi-card density-standard kpi-surplus" title="被动收入可覆盖 ${passiveMonths.toFixed(1)} 个月支出（按当前月支出水平估算）">
       <div class="kpi-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div>
@@ -4761,27 +4930,13 @@ function renderFinLead(d) {
   const seg2 = deficits.length
     ? `${deficits.map((e) => e.i + 1).join('、')} 月出现赤字，合计 <b class="is-neg">${NEG}${moneyCurW(Math.abs(deficitAmt), 'cny')}</b>；`
     : '没有赤字月；';
+  // 结余最少 ≠ 最差（2026-11-19）：全年无赤字时「最差月」仍是正结余，
+  // 写「9 月最差（+¥3,697.85）」自相矛盾。有赤字才叫「最差」，否则叫「结余最少」。
+  const worstNet = finNetOf(worst.m);
+  const worstWord = worstNet < -0.005 ? '最差' : '结余最少';
   const seg3 = `<b>${best.i + 1} 月</b>最佳（<b class="is-pos">+${moneyCurW(finNetOf(best.m), 'cny')}</b>），`
-    + `<b>${worst.i + 1} 月</b>最差（<b class="${finNetOf(worst.m) < 0 ? 'is-neg' : ''}">${finSignedW(finNetOf(worst.m))}</b>）。`;
+    + `<b>${worst.i + 1} 月</b>${worstWord}（<b class="${worstNet < 0 ? 'is-neg' : ''}">${finSignedW(worstNet)}</b>）。`;
   el.innerHTML = seg1 + seg2 + seg3;
-}
-
-// ---------- 趋势卡顶部：结论胶囊（不点不悬停也能拿到全年结论） ----------
-function renderFinChips() {
-  const wrap = document.getElementById('finChips');
-  if (!wrap) return;
-  const entries = finActiveEntries();
-  if (!entries.length) { wrap.innerHTML = ''; return; }
-  const avg = entries.reduce((a, e) => a + finNetOf(e.m), 0) / entries.length;
-  const best = entries.reduce((a, b) => (finNetOf(b.m) > finNetOf(a.m) ? b : a));
-  const worst = entries.reduce((a, b) => (finNetOf(b.m) < finNetOf(a.m) ? b : a));
-  const deficits = entries.filter((e) => finNetOf(e.m) < -0.005).length;
-  wrap.innerHTML = [
-    `<span class="fin-chip">月均结余 <b>${finSignedW(avg)}</b></span>`,
-    `<span class="fin-chip">赤字 <b>${deficits}</b> 个月</span>`,
-    `<span class="fin-chip">最佳 <b>${best.i + 1} 月 ${finSignedW(finNetOf(best.m))}</b></span>`,
-    `<span class="fin-chip">最差 <b>${worst.i + 1} 月 ${finSignedW(finNetOf(worst.m))}</b></span>`,
-  ].join('');
 }
 
 // ---------- 趋势图：收入向上 / 支出向下共用零线 + 净结余虚线 + 累计结余实线（右轴） ----------
@@ -5274,7 +5429,7 @@ function ensureFinChartRO() {
 function renderFinAnalysis() {
   ensureFinChartRO();
   finHoverIdx = null;
-  renderFinChips();
+  // 结论胶囊已移除（2026-11-19）：月均结余/赤字/最佳/结余最少四项与上方总览段落及 KPI 卡完全重复。
   renderFinTrend();
   renderFinReadout(finHmMonth);
   renderFinRank();
@@ -5497,8 +5652,12 @@ function cfPlanRowHTML(p) {
   const n = cfPlanNext(p);
   const amt = Math.abs(Number(p.amount) || 0);
   const cyc = p.pattern === 'one_time' ? '一次性' : '每月 ' + cfSortDay(p) + ' 号';
-  const whenDate = n ? cfDateShort(n) : (p.pattern === 'one_time' && p.one_time_date ? p.one_time_date.slice(5) : '—');
-  const cd = cfCountdownText(p, n);
+  // 完成态的日期是「下次排期」而非「本期发生日」（2026-11-19）：
+  // 此前 ✓本期已完成 与「21 天后」同框，读起来像既完成又待办。done 时把日期显式标注
+  // 「下次 XX-XX」、倒计时改「本期已完成」，让两个概念各自说清。
+  const rawWhen = n ? cfDateShort(n) : (p.pattern === 'one_time' && p.one_time_date ? p.one_time_date.slice(5) : '—');
+  const whenDate = done && n ? '下次 ' + rawWhen : rawWhen;
+  const cd = done ? '本期已完成' : cfCountdownText(p, n);
   const endMeta = (p.pattern !== 'one_time' && p.end_date) ? ' · 截止 ' + esc(p.end_date) : '';
   const liabTag = (p.type === 'expense' && p.liability_mode === 'incur') ? '<span class="cf-tag">新负债</span>'
     : (p.liability_id ? '<span class="cf-tag">负债</span>' : '');
@@ -6248,8 +6407,11 @@ function drawCalMonth() {
       }
       const msLabel = calMetric === 'rate' ? '本月收益率' : '本月总盈亏';
       // 方向标记用全站统一的 ▲ / ▼ / —（跟随 up/down/flat 的涨跌色），不用彩色 emoji
+      // 锁仓：日历是聚合口径，拆不出单只 → 只要有任意锁仓就把汇总遮住
       ms.innerHTML = '<span class="cal-ms-label">' + msLabel + '</span>'
-        + `<span class="cal-ms-val ${msCls}">${mark}${msVal}</span>`;
+        + (anyLocked()
+          ? '<span class="cal-ms-val">' + LOCK_MASK_TXT + '</span>'
+          : `<span class="cal-ms-val ${msCls}">${mark}${msVal}</span>`);
     }
   }
 
@@ -6290,10 +6452,13 @@ function drawCalMonth() {
         const isToday = cur.getTime() === today.getTime();
         const isSel = ds === calSelDate;
         const unit = calMetric === 'rate' ? '收益率' : '盈亏';
-        const title = ds + (rec ? (': ' + unit + ' ' + calActiveFmt(v)) : '：无快照数据');
+        const title = anyLocked()
+          ? (ds + '：已锁仓，盈亏已隐藏')
+          : (ds + (rec ? (': ' + unit + ' ' + calActiveFmt(v)) : '：无快照数据'));
         const dayNum = cur.getDate();
         // 日期居中显示；盈亏金额贴底（仅在有记录的日期显示，未更新的只显示日期）
-        const valHtml = showVal ? '<span class="cal-val">' + pnlTxt + '</span>' : '';
+        // 锁仓：有记录的日期也只给遮罩，保留色块方向语义但看不到具体数字
+        const valHtml = showVal ? '<span class="cal-val' + (anyLocked() ? ' cal-val-locked' : '') + '">' + (anyLocked() ? LOCK_MASK_TXT : pnlTxt) + '</span>' : '';
         cells += '<div class="cal-cell ' + color + (isToday ? ' cal-today' : '') + (isSel ? ' is-sel' : '') + '" data-date="' + ds + '" title="' + title + '"><span class="cal-day">' + dayNum + '</span>' + valHtml + '</div>';
       }
       cur.setDate(cur.getDate() + 1);
@@ -6343,7 +6508,7 @@ function drawCalYear() {
     const valTxt = (a.days === 0 || isZero) ? '—' : calActiveFmt(v);
     cells += `<div class="cal-cell cal-year-cell ${color}${isSel ? ' is-sel' : ''}" data-month="${m}">
       <span class="cal-day">${m}月</span>
-      <span class="cal-val">${valTxt}</span>
+      <span class="cal-val${anyLocked() ? ' cal-val-locked' : ''}">${anyLocked() ? LOCK_MASK_TXT : valTxt}</span>
     </div>`;
   }
   const grid = $('#calGrid');
@@ -6377,7 +6542,8 @@ function drawCalYear() {
       mark = yearPnl > 0 ? '▲' : '▼';
       label = '本年总盈亏';
     }
-    ms.innerHTML = '<span class="cal-ms-label">' + label + '</span><span class="cal-ms-val ' + msCls + '">' + mark + msVal + '</span>';
+    ms.innerHTML = '<span class="cal-ms-label">' + label + '</span>'
+      + (anyLocked() ? '<span class="cal-ms-val">' + LOCK_MASK_TXT + '</span>' : '<span class="cal-ms-val ' + msCls + '">' + mark + msVal + '</span>');
   }
 }
 
@@ -6409,9 +6575,17 @@ function openCalDay(date) {
     // 小徽标区分（持仓 / 理财），顶部汇总行照旧分成权益盈亏 / 理财盈亏两个数。
     const codeByName = {};
     (((assetData || {}).wealth || {}).products || []).forEach((p) => { if (p.name && p.code) codeByName[p.name] = p.code; });
-    const line = (kind, codeCell, name, cny) => '<tr><td class="cal-code">' + codeCell + '</td>'
-      + '<td><span class="cal-kb' + (kind === 'wealth' ? ' is-wealth' : '') + '">' + (kind === 'wealth' ? '理财' : '持仓') + '</span>' + name + '</td>'
-      + '<td class="num ' + clsPnlFlat(cny) + '">' + fmtPnl(cny) + '</td></tr>';
+    // symbol → 持仓 id：明细是按 symbol 拆的，锁仓按 id 存，逐行判断是否遮。
+    const lockBySym = (sym) => {
+      const h = (allHoldings || []).find((x) => x.symbol === sym);
+      return h ? isLocked(h.id) : false;
+    };
+    const line = (kind, codeCell, name, cny, symKey) => {
+      const hit = (kind === 'equity' && symKey && lockBySym(symKey));
+      return '<tr><td class="cal-code">' + codeCell + '</td>'
+        + '<td><span class="cal-kb' + (kind === 'wealth' ? ' is-wealth' : '') + '">' + (kind === 'wealth' ? '理财' : '持仓') + '</span>' + name + '</td>'
+        + '<td class="num ' + clsPnlFlat(cny) + '">' + (hit ? LOCK_MASK_TXT : fmtPnl(cny)) + '</td></tr>';
+    };
     const lines = [];
     // 0 明细行不上表：当天快照先落位、行情/净值未更新时会写入整批 ¥0.00 占位条目，
     // 逐条 0 是冗余信息；非 0 行照常展示，真数据写入后自动补齐（0 值求和不影响汇总）。
@@ -6421,7 +6595,7 @@ function openCalDay(date) {
       const cny = (typeof s.pnl_cny === 'number') ? s.pnl_cny : toRmb({ currency: s.currency }, s.pnl);
       if (!nz(cny)) return;
       equityCNY += cny;
-      lines.push(line('equity', calCurSym(s.currency) + (s.symbol || ''), s.name || '', cny));
+      lines.push(line('equity', calCurSym(s.currency) + (s.symbol || ''), s.name || '', cny, s.symbol));
     });
     // 理财收益（已合并进 total_cny）。代码列与持仓明细对齐；旧快照不含 code 时按产品名回查当前产品。
     wts.forEach((w) => {
@@ -6444,12 +6618,16 @@ function openCalDay(date) {
       : '<p class="u-muted">无明细。</p>';
   } catch (e) { rows = '<p class="u-danger">明细解析失败</p>'; }
   const dayRate = (rec.base_cny && rec.base_cny > 0) ? (rec.total_cny / rec.base_cny * 100) : null;
+  // 锁仓：顶部汇总是聚合口径 → 有任意锁仓就全遮；逐 symbol 明细已在 line() 里按持仓遮。
+  const sum = (val, cls) => anyLocked()
+    ? '<div class="value">' + LOCK_MASK_TXT + '</div>'
+    : '<div class="value ' + cls + '">' + val + '</div>';
   $('#calModalBody').innerHTML = `
     <div id="calSumRow" class="u-row u-wrap u-gap-6 u-mb-3">
-      <div><div class="cal-sub">盈亏 (CNY)</div><div class="value ${clsPnlFlat(v)}">${fmtPnl(v)}</div></div>
-      <div><div class="cal-sub">收益率</div><div class="value ${dayRate == null ? '' : clsPnlFlat(dayRate)}">${dayRate == null ? '—' : (dayRate >= 0 ? '+' : '') + dayRate.toFixed(2) + '%'}</div></div>
-      <div><div class="cal-sub">权益盈亏 (CNY)</div><div class="value ${clsPnlFlat(equityCNY)}">${fmtPnl(equityCNY)}</div></div>
-      <div><div class="cal-sub">理财盈亏 (CNY)</div><div class="value ${clsPnlFlat(wealthCNY)}">${fmtPnl(wealthCNY)}</div></div>
+      <div><div class="cal-sub">盈亏 (CNY)</div>${sum(fmtPnl(v), clsPnlFlat(v))}</div>
+      <div><div class="cal-sub">收益率</div>${sum(dayRate == null ? '—' : (dayRate >= 0 ? '+' : '') + dayRate.toFixed(2) + '%', dayRate == null ? '' : clsPnlFlat(dayRate))}</div>
+      <div><div class="cal-sub">权益盈亏 (CNY)</div>${sum(fmtPnl(equityCNY), clsPnlFlat(equityCNY))}</div>
+      <div><div class="cal-sub">理财盈亏 (CNY)</div>${sum(fmtPnl(wealthCNY), clsPnlFlat(wealthCNY))}</div>
       ${CAL_NAV_HTML}
     </div>${rows}`;
   $('#calModal').hidden = false;
@@ -6931,8 +7109,11 @@ async function openHoldingHistory(id) {
     tip.id = 'histClosedTip';
     tip.className = 'hist-closed-tip';
     const last = (d.series && d.series.length) ? d.series[d.series.length - 1].date : '';
+    const locked = (d.series || []).some((x) => x.locked);
     tip.textContent = d.holding.closed_date
-      ? ('已清仓 · 曲线截至 ' + (last || d.holding.closed_date) + '，此后行情不再计入持仓盈亏')
+      ? (locked
+        ? ('已清仓 · 收益锁定于 ' + d.holding.closed_date + '，灰虚线为清仓后净值走势（不计盈亏）')
+        : ('已清仓 · 曲线截至 ' + (last || d.holding.closed_date) + '，此后行情不再计入持仓盈亏'))
       : '已清仓 · 曲线已截止至清仓日';
     $('#histTitle').insertAdjacentElement('afterend', tip);
   }
@@ -7019,6 +7200,8 @@ function renderHistNavTable() {
     // 尚未建仓（份额为 0）的净值日：盈亏金额 / 累计盈亏不计算也不展示，只留净值供回溯。
     // buy_date 常被填早于实际首笔买入，若照算会把建仓前的净值涨跌显示成持仓盈亏。
     const held = x.held !== false;
+    const locked = !!x.locked;              // 清仓后收益锁定
+    const holdLocked = isLocked(histHistId); // 用户锁仓
     const pct = x.day_pnl_pct;
     // 未建仓行：涨跌幅是净值自身涨跌（行情属性，保留），但没有前一快照基准时置「—」
     const noPct = pct == null || isNaN(pct) || (!held && !pct);
@@ -7027,14 +7210,22 @@ function renderHistNavTable() {
     const day = x.day_pnl || 0;
     const tot = x.total_pnl || 0;
     const naTd = '<td class="num" title="该日尚未建仓，不计盈亏">—</td>';
+    const lockedTd = '<td class="num" title="清仓后已无持仓，不再产生当日盈亏">—</td>';
     // 净值/收盘价固定 4 位小数（基金净值与股价均需 4 位精度，整数位后不足补零）
     const navTxt = (x.close == null || isNaN(x.close)) ? '—' : Number(x.close).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
     return '<tr>'
-      + '<td>' + esc(x.date) + (held ? '' : '<span class="hist-nav-na" title="该日尚未建仓">未建仓</span>') + '</td>'
+      + '<td>' + esc(x.date)
+      + (held ? '' : '<span class="hist-nav-na" title="该日尚未建仓">未建仓</span>')
+      + (locked ? '<span class="hist-nav-na" title="清仓后仅为行情参考，不计盈亏">已清仓</span>' : '')
+      + (holdLocked ? '<span class="hist-nav-na" title="该持仓已锁仓，盈亏已隐藏">已锁仓</span>' : '') + '</td>'
       + '<td class="num">' + navTxt + '</td>'
-      + '<td class="num ' + pctCls + '">' + pctTxt + '</td>'
-      + (held ? '<td class="num ' + clsPnlFlat(day) + '">' + (day >= 0 ? '+' : '') + cur + fmt(day) + '</td>' : naTd)
-      + (held ? '<td class="num ' + clsPnlFlat(tot) + '">' + (tot >= 0 ? '+' : '') + cur + fmt(tot) + '</td>' : naTd)
+      + '<td class="num ' + pctCls + '">' + (holdLocked ? LOCK_MASK_TXT : pctTxt) + '</td>'
+      + (holdLocked ? '<td class="num">' + LOCK_MASK_TXT + '</td>'
+        : (locked ? lockedTd : (held ? '<td class="num ' + clsPnlFlat(day) + '">' + (day >= 0 ? '+' : '') + cur + fmt(day) + '</td>' : naTd)))
+      + (holdLocked ? '<td class="num">' + LOCK_MASK_TXT + '</td>'
+        : (locked
+          ? '<td class="num ' + clsPnlFlat(tot) + '" title="清仓日落袋收益，此后不再变化">' + (tot >= 0 ? '+' : '') + cur + fmt(tot) + '</td>'
+          : (held ? '<td class="num ' + clsPnlFlat(tot) + '">' + (tot >= 0 ? '+' : '') + cur + fmt(tot) + '</td>' : naTd)))
       + '</tr>';
   }).join('');
   body.innerHTML = '<table class="hist-nav-table">' + head + '<tbody>' + trs + '</tbody></table>';
@@ -7338,10 +7529,17 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   // 窄屏（<460px）压到 208px 高、左右边距收到 40/8，把宽度全部留给曲线。
   const cw = Math.max(240, Math.floor(body.clientWidth || 640));
   const W = cw, H = cw < 460 ? 208 : 236;
-  const mL = cw < 460 ? 40 : 52, mR = cw < 460 ? 8 : 12, mT = 22, mB = 30;
+  const n = s.length;
+  // 已清仓持仓的序列在清仓日之后仍有点（locked）：盈亏锁定、净值继续。
+  // 这类点另用右轴画净值走势，需要给右侧刻度留位。
+  const lockIdx = s.findIndex((x) => !!x.locked);
+  const hasLocked = lockIdx >= 0;
+  const curveEnd = hasLocked ? lockIdx : n - 1; // 实线/面积到此为止
+  const mL = cw < 460 ? 40 : 52;
+  const mR = hasLocked ? (cw < 460 ? 34 : 44) : (cw < 460 ? 8 : 12);
+  const mT = 22, mB = 30;
   const plotW = W - mL - mR;
   const plotH = H - mT - mB;
-  const n = s.length;
   const vals = s.map(valOf);
   // Y 轴自适应（C 方案）：不再强制以 0 为中心。全负或全正时曲线能铺满整个绘图区，
   // 纵向分辨率翻倍；0 落在范围内才画零轴线。
@@ -7358,25 +7556,29 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   const slot = plotW / n;
   const uid = 'th' + (++trendUidSeq);
   const linePts = [];
-  let line = '', area = '', dots = '';
+  let line = '', lineLocked = '', area = '', dots = '';
   s.forEach((x, i) => {
     const cx = mL + (i + 0.5) * slot;
     const ly = yLine(valOf(x));
     linePts.push([cx, ly]);
     // 2026-10-15：去掉单日盈亏柱状，只保留累计盈亏折线 + 悬停读数（单日盈亏在 tooltip 里仍可见）
-    line += `${(i === 0 ? 'M' : 'L')} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
-    // 只在最新一天画实心圆点：逐点信息交给悬停指示点
+    // 清仓日之后另起一段虚线（收益锁定），与实线段在清仓日衔接。
+    const cmd = (i === 0 || (hasLocked && i === lockIdx) ? 'M' : 'L');
+    const seg = `${cmd} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
+    if (hasLocked && i >= lockIdx) lineLocked += seg; else line += seg;
+    // 只在最新一天画圆点：清仓后末点画空心，提示「这是锁定收益，不是当前浮盈」
     if (i === n - 1) {
       dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3.4"`
-        + ` class="chart-dot"/>`;
+        + ` class="${hasLocked ? 'chart-dot chart-dot-locked' : 'chart-dot'}"/>`;
     }
   });
   // 面积：渐变填充（基线取绘图区底部 —— Y 轴已自适应，零轴可能落在图区外）
-  if (linePts.length) {
+  // 锁定段不填充，避免「收益还在随净值变化」的错觉。
+  if (curveEnd > 0 && linePts.length) {
     const baseY = mT + plotH;
     let ap = `M ${linePts[0][0].toFixed(2)} ${baseY.toFixed(2)} `;
-    linePts.forEach((p) => { ap += `L ${p[0].toFixed(2)} ${p[1].toFixed(2)} `; });
-    ap += `L ${linePts[linePts.length - 1][0].toFixed(2)} ${baseY.toFixed(2)} Z`;
+    for (let i = 0; i <= curveEnd; i++) ap += `L ${linePts[i][0].toFixed(2)} ${linePts[i][1].toFixed(2)} `;
+    ap += `L ${linePts[curveEnd][0].toFixed(2)} ${baseY.toFixed(2)} Z`;
     area = `<path d="${ap}" fill="url(#${uid}Area)" stroke="none"/>`;
   }
   // 交易点标记：BUY=B（红）/ SELL=S（绿），就近对齐到最近的行情点。
@@ -7460,11 +7662,32 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   // 已清仓：不在曲线上画徽标；hover 清仓日（或末点）仍弹出「清仓落袋」详情块
   // （累计收益 / 持仓天数 / 收益率 …）。
   const defs = trendDefs(uid);
+  // 清仓后净值走势：右轴自适应，只画清仓日之后的点，灰色虚线与锁定收益线区分。
+  // 这是「卖出后行情怎么走」的参照，不是持仓盈亏，故不参与左轴定界。
+  let priceLine = '', priceLabels = '';
+  if (hasLocked) {
+    const pc = s.map((x, i) => ({ i, v: x.close })).filter((p) => p.i >= lockIdx && p.v != null && !isNaN(p.v));
+    if (pc.length > 1) {
+      let pLo = Math.min(...pc.map((p) => p.v)), pHi = Math.max(...pc.map((p) => p.v));
+      if (pHi - pLo < 1e-9) { pLo -= 1; pHi += 1; }
+      const pPad = (pHi - pLo) * 0.08;
+      pLo -= pPad; pHi += pPad;
+      const yP = (v) => mT + plotH - ((v - pLo) / (pHi - pLo)) * plotH;
+      pc.forEach((p, k) => {
+        priceLine += `${(k === 0 ? 'M' : 'L')} ${(mL + (p.i + 0.5) * slot).toFixed(2)} ${yP(p.v).toFixed(2)} `;
+      });
+      priceLine = `<path d="${priceLine}" fill="none" class="chart-price-line"/>`;
+      const pf = (v) => Number(v).toLocaleString('zh-CN', { minimumFractionDigits: Math.abs(v) < 10 ? 3 : 1, maximumFractionDigits: Math.abs(v) < 10 ? 3 : 1 });
+      priceLabels = `<text x="${W - mR + 5}" y="${mT + 4}" font-size="${cw < 460 ? 9 : 10}" text-anchor="start" class="chart-label">${pf(pHi)}</text>`
+        + `<text x="${W - mR + 5}" y="${(mT + plotH + 4).toFixed(2)}" font-size="${cw < 460 ? 9 : 10}" text-anchor="start" class="chart-label">${pf(pLo)}</text>`;
+    }
+  }
   // 折线双层：底层粗而极淡做柔光，上层细实线定形
-  const lineEl = `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
+  let lineEl = `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
     + ` class="chart-line-glow"/>`
     + `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
     + ` class="chart-line"/>`;
+  if (lineLocked) lineEl += `<path d="${lineLocked}" fill="none" stroke-linejoin="round" stroke-linecap="round" class="chart-line-locked"/>`;
   // 2026-11-04：原来同一元素写了两个 class 属性，第二个被解析器丢弃导致指示线没有样式；合并成一个
   const cursor = `<line class="trend-cursor chart-guide" x1="0" y1="${mT}" x2="0" y2="${(mT + plotH).toFixed(2)}" visibility="hidden"/>`
     + `<circle class="trend-cursor-dot chart-dot" cx="0" cy="0" r="4" visibility="hidden"/>`;
@@ -7493,10 +7716,15 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
       const num = a >= 10000 ? (a / 10000).toFixed(1) + '万' : Math.round(a).toLocaleString('zh-CN');
       return (v < 0 ? '-' : '') + num;
     };
-  const yLabels = `
+  // 锁仓：金额/收益率刻度会暴露盈亏量级 → 该持仓被锁时左轴刻度遮罩（曲线形状保留）
+  const histLocked = isLocked(histHistId);
+  const yLabels = histLocked
+    ? `<text x="${mL - 6}" y="${(mT + 4).toFixed(2)}" font-size="${cw < 460 ? 10 : 11}" text-anchor="end" class="chart-label">${LOCK_MASK_TXT}</text>`
+      + `<text x="${mL - 6}" y="${(mT + plotH + 4).toFixed(2)}" font-size="${cw < 460 ? 10 : 11}" text-anchor="end" class="chart-label">${LOCK_MASK_TXT}</text>`
+    : `
     <text x="${mL - 6}" y="${(mT + 4).toFixed(2)}" font-size="${cw < 460 ? 10 : 11}" text-anchor="end" class="chart-label">${fv(vHi)}</text>
     <text x="${mL - 6}" y="${(mT + plotH + 4).toFixed(2)}" font-size="${cw < 460 ? 10 : 11}" text-anchor="end" class="chart-label">${fv(vLo)}</text>`
-    + (hasZero ? `<text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="${cw < 460 ? 10 : 11}" text-anchor="end" class="chart-label">0</text>` : '');
+      + (hasZero ? `<text x="${mL - 6}" y="${(zeroY + 4).toFixed(2)}" font-size="${cw < 460 ? 10 : 11}" text-anchor="end" class="chart-label">0</text>` : '');
   const q1 = (mT + plotH * 0.25).toFixed(2), q3 = (mT + plotH * 0.75).toFixed(2);
   const grid = `<line x1="${mL}" y1="${q1}" x2="${W - mR}" y2="${q1}" class="chart-hline"/>`
     + `<line x1="${mL}" y1="${q3}" x2="${W - mR}" y2="${q3}" class="chart-hline"/>`
@@ -7504,6 +7732,7 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   const legend = `
     <div class="chart-legend">
       <span><span class="chart-line-key"></span>${isRate ? '累计盈亏率' : '累计盈亏'}</span>
+      ${hasLocked ? '<span><span class="chart-line-key chart-line-key-locked"></span>收益已锁定</span><span><span class="chart-price-key"></span>清仓后净值</span>' : ''}
       ${(markers && markers.length) ? '<span><span class="chart-marker-key mk-buy"></span>B 买入</span><span><span class="chart-marker-key mk-sell"></span>S 卖出</span>' : ''}
     </div>`;
   // 命中面：整块绘图区一个透明矩形。点距可能只有零点几像素，不再需要「每点一个热区」，
@@ -7512,9 +7741,9 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   body.innerHTML = `
     <div class="chart-curve-wrap">
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      ${defs}${grid}${area}${cursor}${mk}
+      ${defs}${grid}${area}${priceLine}${cursor}${mk}
       ${lineEl}
-      ${dots}${yLabels}${xlabels}${surface}
+      ${dots}${yLabels}${priceLabels}${xlabels}${surface}
     </svg></div>${legend}`;
   // 交互：整块 surface 上的一套指针逻辑 —— 悬停跟随、点按固定、按住拖动（含触屏）连续读数
   const svgEl = body.querySelector('svg');
@@ -7547,7 +7776,10 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   const closedTipFor = (i) => {
     if (!closedDetail) return null;
     if (closedDetail.date === s[i].date) return closedDetail;
-    if (i === n - 1) return Object.assign({}, closedDetail, { date: s[i].date, realClosedDate: closedDetail.date, isLast: true });
+    // 序列已延续到清仓日之后时，落袋块挂清仓日；清仓日恰好没快照则挂清仓后第一点
+    // （原末点现在是最新净值日，挂那里会被读成「今天清仓」）。
+    if (hasLocked && i === lockIdx) return Object.assign({}, closedDetail, { date: s[i].date, realClosedDate: closedDetail.date, isLast: true });
+    if (i === n - 1 && !hasLocked) return Object.assign({}, closedDetail, { date: s[i].date, realClosedDate: closedDetail.date, isLast: true });
     return null;
   };
   // 最新收盘：B 点悬停时算「买入份额至今涨跌」，口径=买入份额 ×（最新价 − 买入价）
@@ -7637,7 +7869,6 @@ function showHistTip(e, x, cur, closedInfo, tx, isRate, lastClose) {
   const estNote = (x.est && !x.anchor)
     ? '<span class="t-est" title="建仓早于首笔交易记录，份额与成本按当前持仓反推，本点数字为推算口径">推算</span>'
     : '';
-  let html = '<div class="t-date">' + x.date + estNote + '</div>';
   // 合成建仓点（anchor）：这里是曲线能回溯到的最早一天，成本是按当前持仓反推的估算值，
   // 「当天涨跌」没有前一日基准可比。此时盈亏 / 涨跌幅 / 累计盈亏 / 累计涨跌幅**一律显示「—」**：
   //  · 当日值没有前值可比；
@@ -7645,25 +7876,38 @@ function showHistTip(e, x, cur, closedInfo, tx, isRate, lastClose) {
   //    「建仓当天就赚了 +52.88 / +8.15%」，会被读成算错）。
   // 真正可核对的「推算成本 × 份额」放在下方「初始建仓」区块里。
   const isAnchor = !!x.anchor;
+  const closedLocked = !!x.locked;          // 清仓收益锁定（与「锁仓遮蔽」是两回事，别用同名盖掉全局 isLocked）
+  const holdLocked = isLocked(histHistId);  // 该持仓是否被用户锁仓
   const dash = '<span class="t-muted">—</span>';
+  const lockNote = closedLocked
+    ? '<span class="t-est" title="清仓后已无持仓，盈亏固定为清仓日落袋值；净值为后续行情参考">收益已锁定</span>'
+    : (holdLocked ? '<span class="t-est" title="该持仓已锁仓，盈亏数字已隐藏">已锁仓</span>' : '');
+  let html = '<div class="t-date">' + x.date + estNote + lockNote + '</div>';
+  // 锁仓：盈亏类数字一律遮罩；日期 / 成交价 / 份额 / 净值照常显示（「记录数据照旧」）
+  const L = (v) => holdLocked ? LOCK_MASK_HTML : v;
   if (isRate) {
     const dayP = (x.day_pnl_pct != null ? x.day_pnl_pct : 0);
     const cumP = (x.total_pnl_pct != null ? x.total_pnl_pct : 0);
     const pCls = dayP > 0 ? 't-up' : dayP < 0 ? 't-down' : 't-muted';
     const cPCls = cumP > 0 ? 't-up' : cumP < 0 ? 't-down' : 't-muted';
-    html += '<div class="t-row"><span>涨跌幅</span>' + (isAnchor ? dash : '<span class="' + pCls + '">' + pct(dayP) + '</span>') + '</div>'
-      + '<div class="t-row"><span>累计收益率</span>' + (isAnchor ? dash : '<span class="' + cPCls + '">' + pct(cumP) + '</span>') + '</div>'
-      + '<div class="t-row"><span>盈亏</span>' + (isAnchor ? dash : '<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>') + '</div>';
+    html += '<div class="t-row"><span>涨跌幅</span>' + (isAnchor ? dash : L('<span class="' + pCls + '">' + pct(dayP) + '</span>')) + '</div>'
+      + '<div class="t-row"><span>累计收益率</span>' + (isAnchor ? dash : L('<span class="' + cPCls + '">' + pct(cumP) + '</span>')) + '</div>'
+      + '<div class="t-row"><span>盈亏</span>' + ((isAnchor || closedLocked) ? dash : L('<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>')) + '</div>';
   } else {
-    html += '<div class="t-row"><span>盈亏</span>' + (isAnchor ? dash : '<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>') + '</div>';
+    html += '<div class="t-row"><span>盈亏</span>' + ((isAnchor || closedLocked) ? dash : L('<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>')) + '</div>';
     if (x.day_pnl_pct !== undefined && x.day_pnl_pct !== null)
-      html += '<div class="t-row"><span>涨跌幅</span>' + (isAnchor ? dash : '<span class="' + cls + '">' + pct(x.day_pnl_pct) + '</span>') + '</div>';
+      html += '<div class="t-row"><span>涨跌幅</span>' + (isAnchor ? dash : L('<span class="' + cls + '">' + pct(x.day_pnl_pct) + '</span>')) + '</div>';
   }
   html += '<div class="t-row"><span>累计盈亏</span>'
-    + (isAnchor ? dash : '<span class="' + cumCls + '">' + (cum > 0 ? '+' : '') + money(cum) + '</span>') + '</div>';
+    + (isAnchor ? dash : L('<span class="' + cumCls + '">' + (cum > 0 ? '+' : '') + money(cum) + (closedLocked ? '（已锁定）' : '') + '</span>')) + '</div>';
   if (x.total_pnl_pct !== undefined && x.total_pnl_pct !== null)
     html += '<div class="t-row"><span>累计涨跌幅</span>'
-      + (isAnchor ? dash : '<span class="' + cumCls + '">' + pct(x.total_pnl_pct) + '</span>') + '</div>';
+      + (isAnchor ? dash : L('<span class="' + cumCls + '">' + pct(x.total_pnl_pct) + '</span>')) + '</div>';
+  // 成交金额也算「记录数据」的一部分（不是浮动盈亏），按用户口径保留，不遮。
+  // 清仓后净值：图上灰虚线是右轴走势，浮框同步给出当日具体净值，便于对照卖出价。
+  if (closedLocked && x.close != null && !isNaN(x.close))
+    html += '<div class="t-row"><span>净值</span><span>'
+      + Number(x.close).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + '</span></div>';
   // 成交明细块：该点当天的成交（同一行情点可能有多笔，按方向分组，逐笔列出）。
   // 单价一律 4 位小数（基金净值 0.1332 这类，按 2 位会显示成 ¥0.13，两笔看着像同一笔重复脏数据）。
   const txPrice = (v) => cur0 + (Math.abs(Number(v)) < 10
@@ -7746,6 +7990,15 @@ let assetSources = [];       // 资产来源缓存（供下拉）
 let pendingAssetDel = null;   // { type, id }
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// 流水说明里的历史长小数兜底（2026-11-19）：后端 fmtNum 已把新写入的分红每股数截到 6 位，
+// 但早期用 %g 落库的存量 note 仍是 18 位（如 0.004299961709738625），原样显示像乱码。
+// 展示层把 ≥7 位小数的数字截到 6 位（去尾零），不改动库里数据。
+function tidyLongDecimals(text) {
+  return String(text == null ? '' : text).replace(/\d+\.\d{7,}/g, (m) => {
+    const n = Number(m);
+    return Number.isFinite(n) ? String(Number(n.toFixed(6))) : m;
+  });
+}
 
 // ===== 行内操作图标字典 + 按钮工厂（统一 16px 线性描边 + currentColor）=====
 // 统一 16px 线性描边、一律 currentColor。新增操作先在此登记，不要在模板里现写 SVG。
@@ -7798,7 +8051,10 @@ function actIcon(name) {
 // opts.count 会在右上角挂计数徽标（如子账户数量），避免计数挤进按钮文字撑变列宽。
 function actBtn(icon, attrs, label, opts) {
   opts = opts || {};
-  return '<button type="button" class="row-act' + (opts.danger ? ' danger' : '') + (opts.cls ? ' ' + opts.cls : '') + '"'
+  // 删除类按钮默认降权（2026-11-19）：与编辑同级排列时红色删除图标过于抢眼、易误点。
+  // 统一加 act-quiet：平时淡化为普通灰、hover 才回到警示红；危险语义（danger）与二次确认均保留。
+  const quiet = opts.danger && opts.quiet !== false ? ' act-quiet' : '';
+  return '<button type="button" class="row-act' + (opts.danger ? ' danger' : '') + quiet + (opts.cls ? ' ' + opts.cls : '') + '"'
     + (attrs ? ' ' + attrs : '')
     + ' title="' + esc(label) + '" aria-label="' + esc(label) + '">'
     + actIcon(icon)
@@ -8399,11 +8655,11 @@ async function loadSourcesCache() {
 
 // 账户归属地域：cn/hk/us（2026-10-16 由境内/境外二值改版）。色与币种对齐（CN=金/HK=靛蓝/US=蓝绿）。
 const AS_REG_COLOR = { cn: 'var(--primary)', hk: 'rgb(var(--cat-hk))', us: 'rgb(var(--cat-us))' };
-// 地域中英文对照：指标条与表格分组标题共用（英文按规范写作 Mainland China / Hong Kong, China）
+// 地域中文名（表格分组标题用；2026-11-19 去掉英文副标——中文界面里重复一遍英文是噪音）
 const REGION_META = {
-  cn: { zh: '中国大陆', en: 'Mainland China', code: 'CN' },
-  hk: { zh: '中国香港', en: 'Hong Kong, China', code: 'HK' },
-  us: { zh: '美国', en: 'United States', code: 'US' },
+  cn: { zh: '中国大陆', code: 'CN' },
+  hk: { zh: '中国香港', code: 'HK' },
+  us: { zh: '美国', code: 'US' },
 };
 // 占比文案：分母 ≤0 时不给无意义的百分比
 const pctOf = (a, b) => (b > 0 ? (a / b * 100).toFixed(1) + '%' : '—');
@@ -8545,10 +8801,17 @@ function renderAssetToolStats() {
   const wTotal = Number(assetData?.wealth?.total || 0);
   const cTotal = Number(assetData?.cash?.total || 0);
   const totalA = eqMV + wTotal + cTotal;
-  const acctCount = (assetSources || []).length;
+  // 账户数统一为「有余额」口径（2026-11-19）：此前顶部显示总数 16、tab 徽标 13、底部
+  // 「另有 3 个零余额」三处不一致，用户不知自己到底有几个账户。与 renderSources 的
+  // isZeroSrc 判定保持一致（funds_cny≈0 视为零余额）。
+  const allSrc = assetSources || [];
+  const isZero = (s) => s.funds_cny != null && Math.abs(Number(s.funds_cny)) <= 0.005;
+  const zeroCount = allSrc.filter(isZero).length;
+  const acctCount = allSrc.length - zeroCount;
   el.hidden = false;
+  // 零余额只在底部折叠条提示一次（2026-11-19 去冗余），顶部不再重复「另有 N 个零余额」。
   el.innerHTML = '<span class="tools-stat">总资产 <b>' + yuanOfW(totalA) + '</b></span>'
-    + '<span class="tools-stat">账户 <b>' + acctCount + '</b> 个</span>';
+    + '<span class="tools-stat" title="按有余额口径统计，与账户 tab 一致">账户 <b>' + acctCount + '</b> 个</span>';
 }
 
 // 卡内分段条（2026-11-02）：一条 6px 的构成条，取代原「资产结构」折叠卡里的四组迷你图。
@@ -9008,7 +9271,6 @@ function renderAssetCashPanel(body) {
   // 「RMB账户」「…子账户」「余额」这类名字只是占位，后面再挂一遍反而把机构名挤走
   const genericName = (n) => !n || n === '余额' || /账户$/.test(n);
   const rowOf = (x) => {
-    const isFx = x.cur !== 'cny' && x.cur !== 'rmb';
     // 定期存款（存期中）归属到扣款时关联的子账户：余额格只显示 cash_accounts.amount（不动，
     // 与流水对账一致），存款金额以徽标挂在账户列；折 CNY / 占现金按「余额 + 存款」算，
     // 这样各行占比加总仍为 100%（现金总额口径已含存款）。
@@ -9020,11 +9282,16 @@ function renderAssetCashPanel(body) {
     const depTag = depAmt > 0.005
       ? '<span class="cash-dep" title="存期中定期存款 ' + (x.deposits_n || '') + ' 笔，归属本子账户；到期落袋后回到余额">定期存款 ' + moneyCur(depAmt, x.cur) + (Number(x.deposits_n) > 1 ? ' ×' + x.deposits_n : '') + '</span>'
       : '';
+    // 折 CNY 列统一显示金额（2026-11-19）：此前 CNY 且无存款的行显示「—」却仍计占比，
+    // 看起来像这行没数据却贡献了百分比。有定期存款时 title 说明构成，消除「5 万 vs 6.9 万」的费解。
+    const cnyTitle = depAmt > 0.005
+      ? ' title="余额 ' + money(x.cny) + ' + 定期存款 ' + money(x.depCny) + '（均折 CNY）= ' + money(rowCny) + '"'
+      : '';
     return '<tr' + (rowCny <= 0.005 ? ' class="is-zero"' : '') + '>' +
       '<td><div class="cash-acct">' + accountLogo(x.source_name || '') + '<span class="cash-src">' + esc(x.source_name || '未分类') + '</span>' + sub + depTag + '</div></td>' +
       '<td><span class="cash-cur">' + x.cur.toUpperCase() + '</span></td>' +
       '<td class="num">' + moneyCur(x.amount || 0, x.cur) + '</td>' +
-      '<td class="num">' + (isFx || depAmt > 0.005 ? money(rowCny) : '<span class="u-muted">—</span>') + '</td>' +
+      '<td class="num"' + cnyTitle + '>' + money(rowCny) + '</td>' +
       '<td class="num"><div class="cash-share"><span class="cash-share-bar"><i style="--w:' + w + '%"></i></span>' +
         '<span class="cash-pct">' + pct.toFixed(1) + '%</span></div></td>' +
       '</tr>';
@@ -9101,7 +9368,7 @@ function flowTlRow(f, latest) {
   const ref = f.ref_name && f.ref_name !== f.name ? f.ref_name : '';
   const title = ref || f.source_name || f.name || flowTypePlain(f) || '—';
   const acct = f.name && f.name !== title ? f.name : '';
-  const note = String(f.note || '').trim();
+  const note = tidyLongDecimals(String(f.note || '').trim());
   const meta = [acct, note || (f.balance ? '余额 ' + moneyCurW(f.balance, f.currency) : '')].filter(Boolean).join(' · ');
   // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
   const amtTxt = amt === 0 ? moneyCurW(0, f.currency) : (amt > 0 ? '+' : NEG) + moneyCurW(Math.abs(amt), f.currency);
@@ -9529,10 +9796,10 @@ function renderSources(body) {
     html += `<thead><tr><th>账户</th><th>类型</th><th>币种</th><th class="num">余额 (CNY)</th><th class="num">占比</th><th class="num">子账户</th><th>操作</th></tr></thead><tbody>`;
     for (const g of groups) {
       const gsum = g.items.reduce((a, s) => a + (Number(s.funds_cny) || 0), 0);
-      const m = REGION_META[g.r] || { zh: g.r.toUpperCase(), en: '', code: g.r.toUpperCase() };
+      const m = REGION_META[g.r] || { zh: g.r.toUpperCase(), code: g.r.toUpperCase() };
       html += `<tr class="grp"><td colspan="7"><div class="gh">` +
         `<span class="gdot" style="--rgc:${AS_REG_COLOR[g.r] || 'rgb(var(--cat-other))'}"></span>` +
-        `<span class="gn">${m.zh}</span><span class="ge">${m.en}</span>` +
+        `<span class="gn">${m.zh}</span>` +
         `<span class="gc">${g.liveN} 个账户${g.zeroN ? ` · 零余额 ${g.zeroN}` : ''}</span><span class="gsum"${wanTitle(gsum, '¥')}>${yuanOfW(gsum)}</span></div></td></tr>`;
       for (const s of g.items) {
         const subs = cashListOf(s.id);
@@ -11343,7 +11610,7 @@ function renderFinCatList() {
         </select>
         <button type="button" class="btn btn-sm fin-cat-del" data-i="${i}" title="删除">删除</button>
       </div>`).join('')
-    : '<div class="empty-hint">暂无自定义分类（内置分类已覆盖常见场景）</div>';
+    : '<div class="empty-hint">暂无自定义分类</div>';
   box.querySelectorAll('.fin-cat-del').forEach((b) => {
     b.onclick = () => { customFlowCats.splice(Number(b.dataset.i), 1); renderFinCatList(); };
   });
@@ -11517,8 +11784,10 @@ function refreshPortfolioRiskPreview() {
   if (!save) return;
   ['prEnabled', 'prTpPct', 'prTpAmt', 'prSlPct', 'prSlAmt'].forEach((id) => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('input', () => { if (prLastPnl) refreshPortfolioRiskPreview(); });
-    if (el && el.type === 'checkbox') el.addEventListener('change', () => { if (prLastPnl) refreshPortfolioRiskPreview(); });
+    // 阈值改动打「未保存」标记（2026-11-19）：本页有两个独立保存点，
+    // 改了阈值却只点了上方「保存配置」会静默丢失，故按钮直接提示未保存状态。
+    if (el) el.addEventListener('input', () => { save.classList.add('save-dirty'); if (prLastPnl) refreshPortfolioRiskPreview(); });
+    if (el && el.type === 'checkbox') el.addEventListener('change', () => { save.classList.add('save-dirty'); if (prLastPnl) refreshPortfolioRiskPreview(); });
   });
   save.onclick = async () => {
     const err = document.getElementById('prErr');
@@ -11546,6 +11815,7 @@ function refreshPortfolioRiskPreview() {
         return;
       }
       toast('组合盈亏阈值已保存', 'ok');
+      save.classList.remove('save-dirty');
       await loadPortfolioRisk();
     } catch (e) {
       if (err) err.textContent = '保存异常：' + e.message;
@@ -11602,6 +11872,7 @@ $('#notifySaveBtn').onclick = async () => {
       return;
     }
     toast('通知配置已保存', 'ok');
+    $('#notifySaveBtn').classList.remove('save-dirty');
   } catch (e) {
     $('#notifyErr').textContent = '保存异常：' + e.message;
   }
@@ -11633,6 +11904,12 @@ function refreshChannelCollapse() {
     const sw = box.querySelector('input[type="checkbox"]');
     if (sw) box.classList.toggle('collapsed', !sw.checked);
   });
+  // 待还款提醒未启用时整句「提前 1 天，在 [时]:[分] 推送」隐藏（2026-11-19）：
+  // 此前开关关闭后时间句仍显示，窄屏上两个数值框被挤掉就成了残缺的「在 : 推送」，
+  // 读起来像渲染错误。开关开着才显示完整时间句。
+  const cfSw = $('#cfReminderEnabled');
+  const cfTime = document.querySelector('.cf-remind-time');
+  if (cfSw && cfTime) cfTime.hidden = !cfSw.checked;
 }
 (function bindNotifyChannels() {
   ['dt', 'em'].forEach((chan) => {
@@ -11646,6 +11923,24 @@ function refreshChannelCollapse() {
       box.classList.toggle('collapsed');
     });
   });
+  const cfSw = $('#cfReminderEnabled');
+  const cfTime = document.querySelector('.cf-remind-time');
+  if (cfSw && cfTime) cfSw.addEventListener('change', () => { cfTime.hidden = !cfSw.checked; });
+  // 「保存配置」脏标记（2026-11-19）：本页两处独立保存点（配置 / 阈值），
+  // 改了配置只点阈值保存会静默丢失。配置区任一字段变更即给保存按钮打「未保存」标记。
+  const nv = document.getElementById('notifyView');
+  const sv = document.getElementById('notifySaveBtn');
+  const riskIds = ['prEnabled', 'prTpPct', 'prTpAmt', 'prSlPct', 'prSlAmt', 'prRepeat'];
+  if (nv && sv) {
+    nv.addEventListener('input', (e) => {
+      if (e.target.id && riskIds.indexOf(e.target.id) >= 0) return; // 阈值区由自己的按钮管
+      if (e.target.matches('input,select,textarea')) sv.classList.add('save-dirty');
+    });
+    nv.addEventListener('change', (e) => {
+      if (e.target.id && riskIds.indexOf(e.target.id) >= 0) return;
+      if (e.target.matches('input,select,textarea')) sv.classList.add('save-dirty');
+    });
+  }
 })();
 // 2026-10-18：AI 配置等分组改为可折叠（默认收起，见 index.html .collapsible.collapsed）。
 // 点标题栏切换 .collapsed；描述行与正文的显隐、箭头旋转由 CSS 处理。
@@ -12632,6 +12927,11 @@ function onAcctPopClick(e) {
   } else if (act === 'notify') {
     closeAcctMenu();
     navigate('notify');
+  } else if (act === 'overview' || act === 'rebalance') {
+    // 数据总览 / 再平衡补入口（2026-11-19）：此前只在首页快捷功能区，
+    // 个人菜单里找不到；与 AI/设备/通知一样放进「工具与配置」区，保持入口集中。
+    closeAcctMenu();
+    navigate(act);
   } else if (act === 'manage-users') {
     closeAcctMenu();
     openUserSheet();
@@ -13015,16 +13315,17 @@ function openPnlPrompt(a) {
   const cost = Number(a.cost) || 0;
   const pctEl = document.getElementById('ppPct');
   if (pctEl) {
-    pctEl.textContent = (pct > 0 ? '+' : pct < 0 ? NEG : '') + Math.abs(pct).toFixed(2) + '%';
+    pctEl.textContent = anyLocked() ? LOCK_MASK_TXT : ((pct > 0 ? '+' : pct < 0 ? NEG : '') + Math.abs(pct).toFixed(2) + '%');
     pctEl.className = 'pp-pct ' + (pct >= 0 ? 'up' : 'down');
   }
   const amtEl = document.getElementById('ppAmt');
   if (amtEl) {
-    amtEl.textContent = (net < 0 ? '' : '+') + yuanOfW(net);
+    amtEl.textContent = anyLocked() ? LOCK_MASK_TXT : ((net < 0 ? '' : '+') + yuanOfW(net));
     amtEl.className = 'pp-amt ' + (net >= 0 ? 'up' : 'down');
   }
   const meta = document.getElementById('ppMeta');
-  if (meta) meta.textContent = '组合成本 ' + yuanOfW(cost) + ' · 浮动盈亏 ' + (net < 0 ? '' : '+') + yuanOfW(net) + ' · 折 CNY';
+  // 锁仓：成本是记录数据保留，浮动盈亏遮罩
+  if (meta) meta.textContent = '组合成本 ' + yuanOfW(cost) + ' · 浮动盈亏 ' + (anyLocked() ? LOCK_MASK_TXT : (net < 0 ? '' : '+') + yuanOfW(net)) + ' · 折 CNY';
   const kv = document.getElementById('ppKv');
   if (kv) {
     const line = Number(a.target) || 0;
@@ -13637,6 +13938,8 @@ async function switchUser(id) {
     flowCatsInflight = null;
     briefInflight = null;
     bellBriefData = null;  // 铃铛里的待办数据按账本隔离
+    // 锁仓状态按账本存在 settings 里，切账本必须重拉，否则 A 账本锁的持仓会遮到 B 账本
+    await loadLockedHoldings();
     cashflowPlans = [];
     cashflowDone = {};
     for (const k in _planDoneCache) delete _planDoneCache[k];
@@ -13687,7 +13990,10 @@ function clearUserData() {
   if (!curId) { toast('未选择账本', 'err'); return; }
   pendingClearUserId = curId;
   $('#confirmTitle').textContent = '清空当前账本数据';
-  $('#confirmMsg').textContent = '清空当前账本全部数据（持仓/资产/计算器/AI配置/历史等）。';
+  $('#confirmMsg').textContent = '清空当前账本全部数据（持仓/资产/计算器/AI配置/历史等），此操作不可恢复。';
+  // 确认按钮文案与标题一致（2026-11-19）：此前沿用默认「删除」，与「清空数据」标题、
+  // 「清空不可恢复」列表三处措辞不一，让人误以为要删账本。
+  $('#confirmOk').textContent = '清空';
   $('#confirmModal').hidden = false;
 }
 
@@ -16519,9 +16825,12 @@ async function loadAuthDevices() {
       //   主设备   → 任意行可改名；他机可吊销（要 PIN）、可把主设备身份转出去；
       //   普通设备 → 只有本机行有「改名」「删除自己」，外加「设为主设备」这个凭 PIN 的例外；
       //              他机行一个按钮都不给，避免碰别人的设备。
-      wrap.innerHTML = list.map((s) => {
+      wrap.innerHTML = list.map((s, i) => {
         const auto = deviceLabel(s.ua);
         const kind = deviceKind(s.ua);
+        // 未命名设备给一个可区分的序号名（2026-11-19）：此前直接显示裸 UA 串
+        // 「Edge 157 · Windows」，多台同类设备完全分不清谁是谁。序号 + 简称更好认。
+        const displayName = s.label || ('设备 ' + (i + 1) + '（' + auto + '）');
         const desc = s.label
           ? [auto, (kind === '手机' || kind === '平板') ? kind : ''].filter(Boolean).join(' · ')
           : kind;
@@ -16537,7 +16846,7 @@ async function loadAuthDevices() {
         <div class="device-row" data-id="${s.id}">
           <div class="device-main">
             <div class="device-head">
-              <span class="device-name">${escapeHtml(s.label || auto)}</span>
+              <span class="device-name">${escapeHtml(displayName)}</span>
               ${s.current ? '<span class="device-badge">本机</span>' : ''}
               ${s.role === 'owner' ? '<span class="device-badge role">主设备</span>' : ''}
             </div>
@@ -16961,7 +17270,8 @@ function closePIN(val) {
       + mainHTML(c, f)
       + '<div class="' + extraCls + '">' + extra + '</div>'
       + '<div class="ov-rows">' + rowsHTML(f.rows) + '</div>'
-      + '<div class="ov-cardfoot">' + S(c.foot) + '</div>'
+      // foot 口径行已移除（2026-11-19 去冗余）：同一信息在卡片副标（分母）与详情白话里都有，
+      // 不再单列一行「口径：…」。detail 保留在「详情」折叠区。
       + '<div class="ov-detail"><div><p>' + S(c.detail) + '</p>'
       + '<button class="ov-go" type="button" data-go="' + S(c.go) + '">查看明细 → ' + S(c.goLabel) + '</button></div></div>'
       + '</article>';
@@ -17062,7 +17372,7 @@ function closePIN(val) {
       rows: pad(lbRows),
       foot: '口径：各负债按币种折 CNY 后加总 · 仅列金额最大的 2 项',
       hint: '负债率分母是总资产，不是净资产',
-      detail: '负债合计与资产总览的 liability.total 同源；明细按各笔币种折 CNY，外币负债在无汇率源时不参与折算。待还款金额与笔数来自今日待办，不在本卡重复估算。',
+      detail: '各笔负债按币种折成人民币后加总；外币负债在没有汇率时不参与折算。待还款金额与笔数见「今日待办」，本卡不重复计算。',
       go: 'asset-accounts', goLabel: '资产 · 账户',
     };
 
@@ -17079,9 +17389,9 @@ function closePIN(val) {
         ['现金占比', PC(cTotal, totalA), '分母：总资产 ' + Y(totalA), null, BAR(cTotal, totalA)],
         ['日常开销账户', CNT(cashExcluded, ' 个'), '再平衡口径中已剔除', null, null],
       ]),
-      foot: '口径：excluded=1 的现金账户在再平衡中剔除，此处仍计入现金合计',
+      foot: '口径：标记为「日常开销」的账户在再平衡中剔除，此处仍计入现金合计',
       hint: '现金按币种折 CNY，账户数按记录计',
-      detail: '现金合计来自 /api/asset/overview 的 cash.total（已折 CNY）；账户数为 cash.items 的真实条数，「有余额」按 amount≠0 过滤。与净资产不是同一口径，勿相加。',
+      detail: '现金合计是各账户余额折成人民币后的总和；「有余额」按余额不为零过滤。它与净资产不是同一口径，请勿直接相加。',
       go: 'asset-cash', goLabel: '资产 · 现金',
     };
 
@@ -17098,7 +17408,7 @@ function closePIN(val) {
       spark: pnlSpark,
       foot: pnlSpark ? '折线：近 ' + pnlSpark.length + ' 个有效交易日的累计权益盈亏 · 无坐标轴' : '暂无足够历史数据，不绘制趋势折线',
       hint: pnlSpark ? '折线为真实逐日权益盈亏累计' : '无历史序列时不画折线',
-      detail: '累计盈亏与收益率取自 /api/asset/overview 的 equity.pnl / equity.cost_value；今日盈亏归属交易日由 pnl_date 给出，非交易日会回指最近交易日。折线来自 /api/pnl/history 的 equity_pnl_cny（纯持仓，已剔除理财波动与 0 快照日），点数不足 2 时不绘制。',
+      detail: '累计盈亏与收益率按持仓市值和成本计算；今日盈亏归属最近一个交易日，非交易日会回指上次收盘。折线只统计持仓盈亏（不含理财波动），数据点不足两个时不绘制。',
       go: 'invest-holdings', goLabel: '投资 · 持仓',
     };
 
@@ -17117,7 +17427,7 @@ function closePIN(val) {
       ]),
       foot: '口径：金额为最新快照；今日收益 = 当日金额 − 前一快照 − 当日净存入',
       hint: '今日收益与首页「今日总变动」的理财段同源',
-      detail: '理财金额、今日收益来自 /api/asset/overview；累计收益为各产品 cum_pnl 按其币种折 CNY 后加总（含已清仓产品，属已实现口径），与浮动盈亏不可混算。没有快照历史的产品后端给 0，不做估算。',
+      detail: '累计收益为各产品累计盈亏折成人民币后加总（含已清仓产品，属已落袋口径），不能与浮动盈亏混算。没有净值记录的产品按 0 计，不做估算。',
       go: 'invest-wealth', goLabel: '投资 · 理财',
     };
 
@@ -17143,7 +17453,7 @@ function closePIN(val) {
       ]),
       foot: '口径：本金按笔加总（不含已落袋）· 预计利息按 年利率×天数/365 估算',
       hint: '利息只在确认落袋后才写进流水',
-      detail: '本金 / 预计利息 / 已落袋利息 / 到期标记均来自 /api/asset/deposits 逐笔字段，按各笔 currency 折 CNY 后加总。后端对已落袋笔用 actual_interest，存期中笔用 expected_interest（手填覆盖值优先），两者不相加。',
+      detail: '本金、预计利息、已落袋利息逐笔折成人民币后加总。已到期的按实际利息、存期中的按预计利息（手填值优先）计算，两者不相加。',
       go: 'invest-deposits', goLabel: '投资 · 存款',
     };
 
@@ -17183,7 +17493,7 @@ function closePIN(val) {
       spark: finSpark,
       foot: '口径：收付实现制 · 投资买卖与内部划转不计入收支 · 年度 ' + (fin.selected_year || DASH),
       hint: finSpark ? '折线为所选年度 12 个月的真实净结余' : '暂无月度序列，不绘制折线',
-      detail: '本月 / 本年直接取 /api/finance/summary 的 month、year；近 3 月由同一接口返回的 months（所选年度）按 ym 取当月往前最多 3 个月加总，跨年部分不补齐、不估算，覆盖区间写在主值副标里。储蓄率分母恒为当期收入。',
+      detail: '本月 / 本年为实际收支汇总；近 3 月按所选年度往前最多三个月加总，跨年部分不补齐、不估算。储蓄率分母恒为当期收入。',
       go: 'finance', goLabel: '财务 · 年度',
     };
 
@@ -17216,7 +17526,7 @@ function closePIN(val) {
       seg: { key: 'pf_ov_flow_period', views: [['30', '近 30 天'], ['90', '近 90 天']], data: { '30': flowFacet(f30, '近 30 天'), '90': flowFacet(f90, '近 90 天') } },
       foot: '口径：流水按收支分类归集；投资买卖 / 内部划转计中性，金额按现汇折 CNY',
       hint: '切面切换会同步主数值与全部行',
-      detail: '数据来自 /api/asset/flows（一次拉近 90 天），按流水本地日期过滤出所选区间；分类与折 CNY 复用资产页流水 tab 的 flowCatOf / finCatDir 与 /api/fx 汇率，口径一致。这里只统计收支方向，与财务页含落袋收益的口径不同，不可直接相减。',
+      detail: '取最近 90 天流水，按日期筛出所选区间、折算成人民币后按收支方向归类；投资买卖与内部划转不计入收支。本卡口径与财务页（含落袋收益）不同，不可直接相减。',
       go: 'asset-flows', goLabel: '资产 · 流水',
     };
 
@@ -17249,7 +17559,7 @@ function closePIN(val) {
       ]),
       foot: '口径：完成态取当月 done；排期不动账，扣款逐期确认',
       hint: '竖线是当月时间进度，实心条是真实完成率',
-      detail: '计划与当月完成态来自 /api/cashflow/plans，只统计 enabled=1 的计划；完成率 = 已完成笔数 ÷ 启用计划数，时间进度 = 当月已过天数 ÷ 当月总天数，两者都是真实计算。没有启用计划时全部显示「—」，不补参考值。',
+      detail: '只统计启用中的收支计划；完成率 = 已完成笔数 ÷ 启用笔数，时间进度 = 当月已过天数 ÷ 当月天数。没有启用计划时全部显示「—」，不补参考值。',
       go: 'asset-cashflow', goLabel: '资产 · 收支',
     };
 
@@ -17282,10 +17592,15 @@ function closePIN(val) {
     const box = $('#ovKpis');
     if (!box) return;
     const dayTone = TONE(dayPnl);
+    // 零值文案与首页 NET WORTH 共用 dailyChangeText（2026-11-19）：
+    // 同一「今日总变动」指标，首页写「暂无变动」、这里写「¥0.00」曾造成口径不一致的观感。
+    // 数据缺失（null）仍显示 —，不混进「暂无变动」的状态文案。
+    const dayVal = dayPnl == null ? DASH : dailyChangeText(dayPnl, pnlDate);
+    // 锁仓：净资产/资产分布照常，今日总变动（盈亏）遮罩
     box.innerHTML = k(true, 'kpi-ico-fund', ICO.wallet, '净资产', Y(net),
         '总资产 ' + Y(totalA) + ' − 负债 ' + Y(lTotal) + ' · 分母：总资产', '')
       + k(false, dayTone === 'up' ? 'kpi-ico-up' : dayTone === 'down' ? 'kpi-ico-down' : 'kpi-ico-pct',
-        dayTone === 'down' ? ICO.down : ICO.up, '今日总变动', SY(dayPnl),
+        dayTone === 'down' ? ICO.down : ICO.up, '今日总变动', anyLocked() ? LOCK_MASK_TXT : dayVal,
         '持仓今日盈亏 + 理财今日收益 · 分母：净资产 ' + Y(net) + (pnlDate ? ' · ' + pnlDate : ''), dayTone)
       + k(false, 'kpi-ico-alert', ICO.bell, '今日待办',
         brief.total == null ? DASH : CNT(brief.total, ' 项'),
@@ -17563,8 +17878,8 @@ function closePIN(val) {
         + '<span class="rb-d-pct"></span></div>'
       : '';
     return '<div class="rb-detail"><div><div class="rb-detail-in">'
-      + '<div class="rb-detail-h"><b>资金去向 · ' + (N(b.count) == null ? DASH : b.count) + ' 只/笔</b>'
-      + '<span>合计 ' + Y(b.market_value) + ' · 占组合 ' + PCT(b.weight) + '</span></div>'
+      // C1/C2（2026-11-19）：删「合计/占组合」（与上方实际占比重复），「只/笔」简化为「只」。
+      + '<div class="rb-detail-h"><b>资金去向 · ' + (N(b.count) == null ? DASH : b.count) + ' 只</b></div>'
       + rows + restRow
       + '</div></div></div>';
   }
@@ -17634,7 +17949,7 @@ function closePIN(val) {
         + '<span class="rb-alloc-drift ' + tone + '">' + PP(drift) + '</span>'
         + '</div>'
         + bulletHtml
-        + '<div class="rb-alloc-bot"><span>' + (b.count == null ? DASH : b.count + ' 只/笔') + pnlInline + '</span><span class="' + actCls + '">' + S(act) + '</span></div>'
+        + '<div class="rb-alloc-bot"><span>' + (b.count == null ? DASH : b.count + ' 只') + pnlInline + '</span><span class="' + actCls + '">' + S(act) + '</span></div>'
         + rbDetailHTML(b)
         + '</div>';
     };
@@ -17694,7 +18009,9 @@ function closePIN(val) {
     document.querySelectorAll('#rbSliders input[type=range]').forEach((el) => { sum += Number(el.value) || 0; });
     const el = $('#rbSum');
     if (!el) return sum;
-    el.textContent = sum + '% / 100%';
+    // 目标合计（2026-11-19）：配平时不再显示「100% / 100%」这种看似两个数字写法，
+    // 直接写「100% ✓（已配平）」；未配平才显示「N% / 100%」提示还差多少。
+    el.textContent = sum === 100 ? '100% ✓（已配平）' : sum + '% / 100%';
     el.className = sum === 100 ? 'rb-sum-ok' : 'rb-sum-bad';
     return sum;
   }

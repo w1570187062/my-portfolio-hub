@@ -21,6 +21,9 @@ const (
 	// 组合级盈亏阈值（2026-11-18）：整块 JSON，结构见 PortfolioRiskPlan。
 	// 与 holdings.risk_plan 是两个层级，不要合并 —— 一个是逐只定价，一个是整体盈亏。
 	settingPortfolioRisk = "portfolio_risk"
+	// 锁仓持仓 ID 列表（2026-11-20）：纯视觉遮蔽，不改 holdings 表、不冻结交易。
+	// payload = 当前账本下被锁持仓的 id 数组，如 [12,17]。按账本隔离，切账本天然分开。
+	settingLockedHoldings = "locked_holdings"
 )
 
 // defaultAssetTypeLabels 返回内置默认资产类型标签（首次访问设置时落库）。
@@ -126,6 +129,7 @@ func settingsGet(c *gin.Context) {
 	case settingFlowCategories:
 	case settingRebalanceTargets:
 	case settingPortfolioRisk:
+	case settingLockedHoldings:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未知的设置类型"})
 		return
@@ -151,6 +155,8 @@ func settingsGet(c *gin.Context) {
 			if b, e := json.Marshal(defaultPortfolioRiskPlan()); e == nil {
 				seed = string(b)
 			}
+		case settingLockedHoldings:
+			seed = "[]"
 		default:
 			if b, e := json.Marshal(defaultAssetTypeLabels()); e == nil {
 				seed = string(b)
@@ -171,6 +177,7 @@ func settingsPut(c *gin.Context) {
 	case settingFlowCategories:
 	case settingRebalanceTargets:
 	case settingPortfolioRisk:
+	case settingLockedHoldings:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未知的设置类型"})
 		return
@@ -240,6 +247,29 @@ func settingsPut(c *gin.Context) {
 		if b2, e := json.Marshal(norm); e == nil {
 			s = string(b2)
 		}
+	} else if kind == settingLockedHoldings {
+		// 结构校验：锁仓持仓 ID 必须是正整数数组，且全部归属当前账本。
+		// 不校验归属的话，A 账本锁的 id 会串到 B 账本（切账本后 id 可能撞号）。
+		var ids []int64
+		if err := json.Unmarshal([]byte(s), &ids); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "锁仓持仓必须是 ID 数组"})
+			return
+		}
+		owned := map[int64]bool{}
+		if hs, e := db.List(uid); e == nil {
+			for _, h := range hs { owned[h.ID] = true }
+		}
+		norm := make([]int64, 0, len(ids))
+		seen := map[int64]bool{}
+		for _, id := range ids {
+			if id > 0 && owned[id] && !seen[id] {
+				seen[id] = true
+				norm = append(norm, id)
+			}
+		}
+		if b2, e := json.Marshal(norm); e == nil {
+			s = string(b2)
+		}
 	} else {
 		// 结构校验：资产类型标签为字符串数组
 		var ls []string
@@ -264,6 +294,7 @@ func settingsDelete(c *gin.Context) {
 	case settingFlowCategories:
 	case settingRebalanceTargets:
 	case settingPortfolioRisk:
+	case settingLockedHoldings:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未知的设置类型"})
 		return
