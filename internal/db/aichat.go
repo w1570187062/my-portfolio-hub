@@ -25,6 +25,7 @@ type AIChatMessage struct {
 	ChatID    int64  `json:"chat_id"`
 	Role      string `json:"role"` // user / assistant / tool
 	Content   string `json:"content"`
+	Reasoning string `json:"reasoning,omitempty"` // 模型思考过程（reasoning_content）
 	ToolName  string `json:"tool_name,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
@@ -47,7 +48,13 @@ func initAIChats() error {
 		tool_name TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL DEFAULT ''
 	)`)
-	return err
+	if err != nil {
+		return err
+	}
+	// 老库补列：模型思考过程（deepseek-v4-pro 等模型会返回 reasoning_content）。
+	// 存量行一律空串，不影响已有对话。
+	addColumnIfMissing("ai_chat_messages", "reasoning", "TEXT NOT NULL DEFAULT ''")
+	return nil
 }
 
 const aiChatMaxMessages = 200 // 单会话保留的最大消息条数（超出丢最旧的，避免无限膨胀）
@@ -111,7 +118,7 @@ func DeleteAIChat(id, userID int64) error {
 
 // ListAIChatMessages 按时间正序列出会话消息。
 func ListAIChatMessages(chatID int64) ([]AIChatMessage, error) {
-	rows, err := DB.Query(`SELECT id, chat_id, role, content, tool_name, created_at
+	rows, err := DB.Query(`SELECT id, chat_id, role, content, reasoning, tool_name, created_at
 		FROM ai_chat_messages WHERE chat_id=? ORDER BY id ASC`, chatID)
 	if err != nil {
 		return nil, err
@@ -120,7 +127,7 @@ func ListAIChatMessages(chatID int64) ([]AIChatMessage, error) {
 	out := []AIChatMessage{}
 	for rows.Next() {
 		var m AIChatMessage
-		if err := rows.Scan(&m.ID, &m.ChatID, &m.Role, &m.Content, &m.ToolName, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.ChatID, &m.Role, &m.Content, &m.Reasoning, &m.ToolName, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -129,10 +136,12 @@ func ListAIChatMessages(chatID int64) ([]AIChatMessage, error) {
 }
 
 // AppendAIChatMessage 追加一条消息并刷新会话的 updated_at；超出上限时丢最旧的几条。
-func AppendAIChatMessage(chatID int64, role, content, toolName string) error {
+// reasoning 为模型的思考过程（deepseek-v4-pro 等模型返回的 reasoning_content），
+// 不需要存时传空串即可（user/tool 消息一律空）。
+func AppendAIChatMessage(chatID int64, role, content, reasoning, toolName string) error {
 	now := time.Now().Format("2006-01-02 15:04:05")
-	if _, err := DB.Exec(`INSERT INTO ai_chat_messages (chat_id, role, content, tool_name, created_at)
-		VALUES (?,?,?,?,?)`, chatID, role, content, toolName, now); err != nil {
+	if _, err := DB.Exec(`INSERT INTO ai_chat_messages (chat_id, role, content, reasoning, tool_name, created_at)
+		VALUES (?,?,?,?,?,?)`, chatID, role, content, reasoning, toolName, now); err != nil {
 		return err
 	}
 	// 配额裁剪：保留最近 aiChatMaxMessages 条

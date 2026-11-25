@@ -6679,7 +6679,7 @@ async function loadAISettings() {
     const r = await api('/api/ai/settings');
     if (!r.ok) return;
     const d = await r.json();
-    aiCfg = Object.assign({ api_key: '', model: 'deepseek-v4-pro', base_url: 'https://api.deepseek.com', templates: [] }, d);
+    aiCfg = Object.assign({ api_key: '', model: 'deepseek-v4-pro', base_url: 'https://api.deepseek.com', templates: [], reasoning_effort: '' }, d);
     if (!aiCfg.templates || !aiCfg.templates.length) aiCfg.templates = defaultAITemplates();
     // 多模型：兼容旧单条配置，迁移为 models 数组（旧版仅存 api_key/model/base_url）
     if (!Array.isArray(aiCfg.models) || !aiCfg.models.length) {
@@ -6689,6 +6689,9 @@ async function loadAISettings() {
   } catch (e) { /* 忽略，使用默认值 */ }
   $('#aiAutoDaily').checked = !!aiCfg.auto_daily;
   $('#aiAutoSend').checked = !!aiCfg.auto_send;
+  // 思考强度：后端 resolveReasoningEffort 会在空值时按 baseURL 自动给 deepseek 默认 low
+  const rSel = $('#ai_reasoning');
+  if (rSel) rSel.value = aiCfg.reasoning_effort || '';
   renderModelSelect();
   renderTplSelect(); // 之前漏调 → AI 设置的「提示词模板」下拉为空、模板名/内容不回填
   // AI 助手聊天面板的模型下拉与设置面板共享 aiCfg.models
@@ -6795,6 +6798,7 @@ async function aiSaveSettings() {
   }
   aiCfg.auto_daily = $('#aiAutoDaily').checked;
   aiCfg.auto_send = $('#aiAutoSend').checked;
+  aiCfg.reasoning_effort = ($('#ai_reasoning') || {}).value || '';
   if (aiCfg.templates[aiSelIdx]) {
     aiCfg.templates[aiSelIdx].name = $('#ai_tpl_name').value.trim() || ('模板' + (aiSelIdx + 1));
     aiCfg.templates[aiSelIdx].content = $('#ai_tpl_content').value;
@@ -14875,8 +14879,9 @@ function aiChatRenderMsgs() {
       return '<div class="ai-msg user">' + timeHtml + '<div class="ai-bubble">' + esc(m.content) + '</div><div class="ai-avatar user-avatar">我</div></div>';
     }
     if (m.role === 'assistant') {
+      const reasoning = m.reasoning ? '<details class="ai-reasoning"><summary>思考过程</summary><div class="ai-reasoning-body">' + esc(m.reasoning) + '</div></details>' : '';
       const webNote = m.web ? '<div class="ai-web-note">已联网检索 · 来源见回答内链接</div>' : '';
-      return '<div class="ai-msg ai">' + timeHtml + '<div class="ai-avatar">AI</div><div class="ai-bubble md">' + renderMarkdown(m.content) + '</div>' + webNote + '</div>';
+      return '<div class="ai-msg ai">' + timeHtml + '<div class="ai-avatar">AI</div><div class="ai-bubble md">' + reasoning + renderMarkdown(m.content) + '</div>' + webNote + '</div>';
     }
     if (m.role === 'pending') {
       return '<div class="ai-msg ai"><div class="ai-avatar">AI</div><div class="ai-bubble acp-typing">'
@@ -14915,6 +14920,8 @@ async function aiChatSend() {
   aiChatRenderMsgs();
   aiChatSetBusy(true);
   try {
+    // 本轮思考强度：空=走后端三层优先级（全局设置 → baseURL 自动推断）
+    const reasoning = ($('#aiChatReasoning') || {}).value || '';
     const r = await api('/api/ai/chat', {
       method: 'POST',
       body: JSON.stringify({
@@ -14923,6 +14930,7 @@ async function aiChatSend() {
         model: m.model,
         base_url: m.base_url,
         message: text,
+        reasoning_effort: reasoning,
       }),
     });
     const d = await r.json().catch(() => ({}));
@@ -14936,6 +14944,7 @@ async function aiChatSend() {
     aiChatState.msgs.push({
       role: 'assistant',
       content: d.content || '',
+      reasoning: d.reasoning || '',
       created_at: new Date(),
       // 后端 tools 里出现 web_search / web_fetch 即本轮联网过
       web: (d.tools || []).some((t) => t === 'web_search' || t === 'web_fetch'),

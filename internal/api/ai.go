@@ -47,6 +47,10 @@ type aiConfig struct {
 	AutoDaily bool `json:"auto_daily"`
 	// AutoSend: 自动生成的总结是否随净值推送一起发送到已配置的通知渠道。
 	AutoSend bool `json:"auto_send"`
+	// ReasoningEffort: DeepSeek 系模型的思考强度（none / low / high / max）。
+	// deepseek-v4-pro 默认 high（重度思考、大量 token 浪费在推理链），
+	// 简单查询场景推荐 low；老数据未配置时由运行时按 baseURL 自动判断。
+	ReasoningEffort string `json:"reasoning_effort"`
 }
 
 var defaultTemplates = []aiTemplate{

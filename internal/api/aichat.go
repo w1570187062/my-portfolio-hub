@@ -31,9 +31,15 @@ import (
 
 const (
 	// 工具调用最大轮次：联网场景常见「搜索 → 抓正文 → 作答」三步，
-	// 4 轮在网络抖动需要重搜时会顶到上限，留 6 轮余量（仍是防死循环的硬闸）。
-	aiChatMaxRounds = 6
+	// 4 轮在网络抖动需要重搜时会顶到上限，留 8 轮余量（仍是防死循环的硬闸）。
+	// 配合每次工具结果后的收敛提示（aiChatConvergeHint），模型当轮即收敛出正文，
+	// 极端场景才会撑到上限。
+	aiChatMaxRounds = 8
 	aiChatTimeout   = 180 * time.Second
+
+	// 工具执行完后追加的收敛提示：引导模型基于已拿到的工具结果直接回答用户，
+	// 不要继续调工具。这比单纯放宽轮次更省 token（当轮收敛 vs 再兜 2-3 轮）。
+	aiChatConvergeHint = "以上为工具返回结果，信息已足够请直接回答用户问题，不要再调用任何工具。"
 )
 
 const aiChatSystemPrompt = `你是「持仓侠」内置的 AI 投资助手，服务于用户自己的持仓账本。
@@ -145,19 +151,21 @@ func aiChatDelete(c *gin.Context) {
 // ---- 对话 ----
 
 type aiChatReq struct {
-	ChatID  int64  `json:"chat_id"`
-	APIKey  string `json:"api_key"`
-	Model   string `json:"model"`
-	BaseURL string `json:"base_url"`
-	Message string `json:"message"`
+	ChatID          int64  `json:"chat_id"`
+	APIKey          string `json:"api_key"`
+	Model           string `json:"model"`
+	BaseURL         string `json:"base_url"`
+	Message         string `json:"message"`
+	ReasoningEffort string `json:"reasoning_effort"` // 本轮覆盖值（空=用全局设置/自动推断）
 }
 
 type aiChatResp struct {
-	ChatID   int64    `json:"chat_id"` // 会话 id（前端首次发送时用它回写当前会话）
-	Content  string   `json:"content"`
-	Tools    []string `json:"tools,omitempty"`    // 本轮实际调用过的工具
-	Title    string   `json:"title,omitempty"`    // 首次回答后生成的会话标题
-	Degraded bool     `json:"degraded,omitempty"` // true=模型不支持工具调用，已降级为上下文注入
+	ChatID    int64    `json:"chat_id"` // 会话 id（前端首次发送时用它回写当前会话）
+	Content   string   `json:"content"`
+	Reasoning string   `json:"reasoning,omitempty"` // 模型思考过程（reasoning_content）
+	Tools     []string `json:"tools,omitempty"`     // 本轮实际调用过的工具
+	Title     string   `json:"title,omitempty"`     // 首次回答后生成的会话标题
+	Degraded  bool     `json:"degraded,omitempty"`  // true=模型不支持工具调用，已降级为上下文注入
 }
 
 func aiChatPost(c *gin.Context) {
@@ -226,13 +234,20 @@ func aiChatPost(c *gin.Context) {
 		}
 	}
 	msgs = append(msgs, map[string]interface{}{"role": "user", "content": msg})
-	if err := db.AppendAIChatMessage(chatID, "user", msg, ""); err != nil {
+	if err := db.AppendAIChatMessage(chatID, "user", msg, "", ""); err != nil {
 		log.Printf("[aichat] append user msg failed: %v", err)
 	}
 
 	tools := aiChatTools(aiWebEnabled(base))
 	used := []string{}
-	content, degraded, err := runChatLoop(base, b.APIKey, model, msgs, tools, uid, &used)
+	// reasoning_effort 三层优先级：
+	// 1. 前端本轮显式传值（对话框每轮可切） → 直接用
+	// 2. 否则 resolveReasoningEffort（全局设置 > baseURL 自动推断）
+	reasoningEffort := strings.TrimSpace(b.ReasoningEffort)
+	if reasoningEffort == "" {
+		reasoningEffort = resolveReasoningEffort(uid, base)
+	}
+	content, reasoning, degraded, err := runChatLoop(base, b.APIKey, model, msgs, tools, uid, &used, reasoningEffort)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -240,11 +255,11 @@ func aiChatPost(c *gin.Context) {
 	if strings.TrimSpace(content) == "" {
 		content = "（模型返回为空）"
 	}
-	if err := db.AppendAIChatMessage(chatID, "assistant", content, ""); err != nil {
+	if err := db.AppendAIChatMessage(chatID, "assistant", content, reasoning, ""); err != nil {
 		log.Printf("[aichat] append assistant msg failed: %v", err)
 	}
 
-	out := aiChatResp{ChatID: chatID, Content: content, Tools: used, Degraded: degraded}
+	out := aiChatResp{ChatID: chatID, Content: content, Reasoning: reasoning, Tools: used, Degraded: degraded}
 	if isNew {
 		out.Title = titleFromMessage(msg)
 	}
@@ -253,14 +268,16 @@ func aiChatPost(c *gin.Context) {
 
 // runChatLoop 执行「模型 ⇄ 工具」循环，直到模型给出正文或达到轮次上限。
 // 若服务端不支持 tools（400 且响应提及 tools/function），自动去掉 tools 并注入持仓上下文重试。
-func runChatLoop(baseURL, apiKey, model string, msgs []map[string]interface{}, tools []map[string]interface{}, uid int64, used *[]string) (string, bool, error) {
+// reasoningEffort 透传给 DeepSeek 原生参数（none/low/high/max），空字符串=不传=模型默认。
+// 返回 (content, reasoning, degraded, err)：reasoning 是模型的思考过程（reasoning_content）。
+func runChatLoop(baseURL, apiKey, model string, msgs []map[string]interface{}, tools []map[string]interface{}, uid int64, used *[]string, reasoningEffort string) (string, string, bool, error) {
 	degraded := false
 	// 原始提问喂给搜索接口的 ori_question，帮助搜索引擎理解意图（只取最后一条用户消息）
 	question := lastUserContent(msgs)
 	for round := 0; round < aiChatMaxRounds; round++ {
-		raw, status, err := postChat(baseURL, apiKey, model, msgs, tools)
+		raw, status, err := postChat(baseURL, apiKey, model, msgs, tools, reasoningEffort)
 		if err != nil {
-			return "", degraded, err
+			return "", "", degraded, err
 		}
 		if status != http.StatusOK && len(tools) > 0 && looksLikeToolUnsupported(raw) {
 			// 降级：不支持 function calling → 注入持仓上下文后再问一次
@@ -268,24 +285,25 @@ func runChatLoop(baseURL, apiKey, model string, msgs []map[string]interface{}, t
 			degraded = true
 			tools = nil
 			msgs = injectPortfolioContext(msgs, uid)
-			raw, status, err = postChat(baseURL, apiKey, model, msgs, nil)
+			raw, status, err = postChat(baseURL, apiKey, model, msgs, nil, reasoningEffort)
 			if err != nil {
-				return "", degraded, err
+				return "", "", degraded, err
 			}
 		}
 		if status != http.StatusOK {
-			return "", degraded, fmt.Errorf("模型返回 %d: %s", status, truncate(string(raw), 400))
+			return "", "", degraded, fmt.Errorf("模型返回 %d: %s", status, truncate(string(raw), 400))
 		}
 		choice, err := parseChatChoice(raw)
 		if err != nil {
-			return "", degraded, err
+			return "", "", degraded, err
 		}
 		if len(choice.ToolCalls) == 0 {
 			c := strings.TrimSpace(choice.Content)
+			r := strings.TrimSpace(choice.Reasoning)
 			if c == "" {
-				c = strings.TrimSpace(choice.Reasoning)
+				c = r
 			}
-			return c, degraded, nil
+			return c, r, degraded, nil
 		}
 		// 有工具调用：把 assistant 的 tool_calls 原样入列，再逐条追加工具结果
 		assistantMsg := map[string]interface{}{"role": "assistant", "content": choice.Content, "tool_calls": choice.ToolCalls}
@@ -303,11 +321,15 @@ func runChatLoop(baseURL, apiKey, model string, msgs []map[string]interface{}, t
 				"content":      result,
 			})
 		}
+		// 收敛提示：工具已执行完毕，引导模型直接基于结果回答，避免继续调用工具
+		// 导致死循环（模型看到这条 system 消息后大概率当轮就输出正文）。
+		msgs = append(msgs, map[string]interface{}{
+			"role":    "system",
+			"content": aiChatConvergeHint,
+		})
 	}
-	return "工具调用轮次已达上限，请换个更明确的问法重试。", degraded, nil
+	return "工具调用轮次已达上限，请换个更明确的问法重试。", "", degraded, nil
 }
-
-// lastUserContent 取最后一条 user 消息的文本（搜索接口的 ori_question 用）。
 func lastUserContent(msgs []map[string]interface{}) string {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if r, _ := msgs[i]["role"].(string); r == "user" {
@@ -509,9 +531,30 @@ func analysisFromCacheOrFetch(symbol string) ([]market.KlineBar, *market.Indicat
 	return bars, ind, prob
 }
 
-// ---- 模型请求 ----
+// resolveReasoningEffort 解析 reasoning_effort：显式配置优先，老数据自动推断。
+// deepseek 官方端点 → 默认 "low"（查询类对话的推理链是最大 token 浪费点，
+// low 比 high 省 50%+ 的 reasoning token 且不影响简单查询回答质量）。
+// 其他兼容端点 → 空串（不传 reasoning_effort 键，避免对方网关不认识参数报错）。
+func resolveReasoningEffort(uid int64, baseURL string) string {
+	// 1. 用户显式配置了 → 直接用
+	if cfg, err := loadAIConfig(uid); err == nil && strings.TrimSpace(cfg.ReasoningEffort) != "" {
+		return strings.TrimSpace(cfg.ReasoningEffort)
+	}
+	// 2. 老数据未配置 → 按端点自动判断
+	b := strings.ToLower(strings.TrimSpace(baseURL))
+	b = strings.TrimPrefix(b, "https://")
+	b = strings.TrimPrefix(b, "http://")
+	if i := strings.IndexByte(b, '/'); i >= 0 {
+		b = b[:i]
+	}
+	// api.deepseek.com / api.deepseek-r1.com / 等 deepseek 官方端点
+	if strings.Contains(b, "deepseek.com") {
+		return "low"
+	}
+	return ""
+}
 
-func postChat(baseURL, apiKey, model string, msgs []map[string]interface{}, tools []map[string]interface{}) ([]byte, int, error) {
+func postChat(baseURL, apiKey, model string, msgs []map[string]interface{}, tools []map[string]interface{}, reasoningEffort string) ([]byte, int, error) {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {
 		base = "https://api.deepseek.com"
@@ -524,6 +567,12 @@ func postChat(baseURL, apiKey, model string, msgs []map[string]interface{}, tool
 	}
 	if len(tools) > 0 {
 		payload["tools"] = tools
+	}
+	// reasoning_effort：DeepSeek 原生思考强度控制。
+	// deepseek-v4-pro 默认 high（重度推理链），对查询类对话是巨大浪费。
+	// 只有当配置值非空时才下发，其他兼容端点不受影响。
+	if strings.TrimSpace(reasoningEffort) != "" {
+		payload["reasoning_effort"] = reasoningEffort
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

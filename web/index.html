@@ -866,6 +866,15 @@
                     </label>
                     </form>
                     <label class="span2">模型地址 <input id="ai_baseurl" placeholder="https://api.deepseek.com"></label>
+                    <label>思考强度
+                      <select id="ai_reasoning">
+                        <option value="">自动（DeepSeek 低，其他默认）</option>
+                        <option value="none">不思考（最快最省）</option>
+                        <option value="low">低（推荐，简单查询够用）</option>
+                        <option value="high">高（深度分析）</option>
+                        <option value="max">最高（复杂推理）</option>
+                      </select>
+                    </label>
                     <label class="span2">提示词模板
                       <span class="ai-tpl-row">
                         <select id="ai_tpl_sel"></select>
@@ -1008,6 +1017,13 @@
           <div class="acp-input-bar">
             <!-- 截图识别入口只在面板头部（#aiChatOcr）：输入区不再放「选图」按钮，避免两套入口 -->
             <select id="aiChatModel" class="acp-model" title="选择模型"></select>
+            <select id="aiChatReasoning" class="acp-reasoning" title="思考强度（本轮临时覆盖设置）">
+              <option value="">默认</option>
+              <option value="none">不思考</option>
+              <option value="low">低</option>
+              <option value="high">高</option>
+              <option value="max">最高</option>
+            </select>
             <button id="aiChatSend" class="btn primary acp-send" type="button">发送</button>
           </div>
           <div id="aiChatErr" class="err"></div>

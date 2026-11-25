@@ -2699,6 +2699,47 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   background: rgba(var(--tint), 0.05);
 }
 
+/* 思考过程块：原生 <details>，默认折叠，summary 用弱化色和小字号 */
+.ai-bubble.md .ai-reasoning {
+  margin: 0 0 var(--sp-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg-input) 60%, transparent);
+  font-size: var(--fs-sm);
+}
+.ai-bubble.md .ai-reasoning summary {
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--text-faint);
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ai-bubble.md .ai-reasoning summary::-webkit-details-marker { display: none; }
+.ai-bubble.md .ai-reasoning summary::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 10px;
+  transition: transform .15s ease;
+}
+.ai-bubble.md .ai-reasoning[open] summary::before {
+  transform: rotate(90deg);
+}
+.ai-bubble.md .ai-reasoning-body {
+  padding: 0 var(--sp-2) var(--sp-2);
+  color: var(--text-muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow: auto;
+  border-top: 1px dashed var(--border);
+  padding-top: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+
 /* ===== 移动端适配（窄屏，逻辑宽度 ≤ 640px） ===== */
 @media (max-width: 640px) {
   /* 顶部：logo + 汉堡按钮 与 主题切换同在一行 */
@@ -5237,6 +5278,19 @@ textarea::placeholder {
   font-family: inherit;
 }
 .acp-model:focus { outline: none; border-color: var(--primary); }
+.acp-reasoning {
+  flex: 0 0 auto;
+  padding: var(--sp-1) var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-card-solid);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 64px;
+}
+.acp-reasoning:focus { outline: none; border-color: var(--primary); color: var(--text); }
 .acp-send { flex: 0 0 auto; min-width: 84px; }
 .acp-input .err { margin-top: var(--sp-2); font-size: var(--fs-sm); }
 /* 隐藏的 file input（截图识别工作区用） */
