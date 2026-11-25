@@ -2694,12 +2694,13 @@ func holdingPnlHistory(c *gin.Context) {
 		TotalPnl    float64 `json:"total_pnl"`
 		TotalPnlPct float64 `json:"total_pnl_pct"`
 		MarketValue float64 `json:"market_value"`
-		Held        bool    `json:"held"`             // false = 该日尚未建仓（份额为 0），盈亏不计算、前端显示「—」
-		Locked      bool    `json:"locked,omitempty"` // true = 清仓之后：真实盈亏已锁定，close/涨跌幅仅为后续行情参考
-		Anchor      bool    `json:"anchor,omitempty"` // true = 合成建仓点（成本是按当前持仓反推的估算值，当日盈亏无意义）
-		Est         bool    `json:"est,omitempty"`    // true = 建仓段（早于首笔交易）：份额/成本都是反推估算，前端标注「推算」
-		Qty         float64 `json:"qty,omitempty"`    // 仅 anchor 行：推算的建仓份额
-		Cost        float64 `json:"cost,omitempty"`   // 仅 anchor 行：推算的每股成本
+		Held        bool    `json:"held"`               // false = 该日尚未建仓（份额为 0），盈亏不计算、前端显示「—」
+		Hypo        bool    `json:"hypo,omitempty"`     // true = 清仓之后：数字是「假设未清仓」按清仓份额/成本的模拟估算
+		HypoQty     float64 `json:"hypo_qty,omitempty"` // 仅 hypo 行：模拟所用的清仓前份额
+		Anchor      bool    `json:"anchor,omitempty"`   // true = 合成建仓点（成本是按当前持仓反推的估算值，当日盈亏无意义）
+		Est         bool    `json:"est,omitempty"`      // true = 建仓段（早于首笔交易）：份额/成本都是反推估算，前端标注「推算」
+		Qty         float64 `json:"qty,omitempty"`      // 仅 anchor 行：推算的建仓份额
+		Cost        float64 `json:"cost,omitempty"`     // 仅 anchor 行：推算的每股成本
 	}
 	// 现金分红后复权：把累计每股现金分红加回净值，使分红日的当日盈亏不再假跌
 	// （净值+分红口径）。红利再投（REINVEST）不在此处理——分红已转为份额，市值连续。
@@ -2841,18 +2842,16 @@ func holdingPnlHistory(c *gin.Context) {
 	n := 0 // 纳入曲线的点数：过滤（continue）不重置 range 索引，首条判定必须用独立计数
 	var prevTotal, prevMV float64
 	var lastClose float64
-	// 锁定值先按已实现盈亏兜底：清仓日未必有行情点（本库 QQQ 10-06 清仓、10-08 才有快照），
-	// 循环里不经过清仓日分支时，后续行仍要显示正确的落袋收益，不能掉成 0。
-	var lockPnl, lockPct float64
-	if closed && cost > 0 && qty > 0 {
-		lockPnl = realizedSum
-		lockPct = round2(realizedSum / (cost * qty * fx) * 100)
-	}
+	// 清仓后「假设未清仓」模拟估算的基准：清仓日仍按真实落袋展示，但它的
+	// 「假想累计盈亏」（收盘价 × 清仓前份额）要单独留一份，供清仓后首点的当日盈亏接续，
+	// 否则首点会拿落袋值当基准，算出几十上百的假跳变。
+	var prevHyp, prevHypMV float64
+	haveHyp := false
 	haveClose := false
 	todayBJ := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
 	for i, p := range series {
-		// 已清仓：曲线继续画到最新行情日，但清仓日之后盈亏锁定为落袋值，
-		// close/涨跌幅只作后续行情参考（不再算成持仓盈亏）。
+		// 已清仓：曲线继续画到最新行情日。清仓日仍是真实落袋值，之后的点按清仓份额
+		// 模拟「假设未清仓」（hypo），不再是锁定水平线。
 		if startDate != "" && p.Date < startDate {
 			continue
 		}
@@ -2875,17 +2874,38 @@ func holdingPnlHistory(c *gin.Context) {
 		// 已清仓持仓：qty/cost 就是清仓前快照，全程沿用；成本基准加回「当时尚未发生的每股分红」
 		if closed {
 			if closedDate != "" && p.Date > closedDate {
-				// 清仓之后：没有持仓，真实盈亏已锁定。保留后续净值与涨跌幅供复盘对比，
-				// 但当日盈亏不再产生，累计盈亏固定为清仓日落袋值 —— 防止把后续涨跌
-				// 误读成这笔持仓还在浮动（2026-11-17 曾因这类误算把曲线截在清仓日）。
-				var navPct float64
-				if prevAdj > 0 {
-					navPct = (adj - prevAdj) / prevAdj * 100
+				// 清仓之后：「假设未清仓」的模拟估算（2026-11-25 用户要求）。
+				// 原实现把盈亏锁定成清仓日落袋值，清仓后每日明细全是「—」、曲线是一条水平线，
+				// 看不到「卖飞了多少 / 卖对了多少」。现在改成按清仓前份额与成本继续推演：
+				//   mv      = 收盘价 × 清仓份额
+				//   累计盈亏 = (收盘 − 当日成本基准) × 清仓份额
+				// 与清仓前段同一口径（都用收盘价），因此曲线连续；行上打 hypo 标记，
+				// 前端用虚线 + 「假设」标注，避免被读成真实持仓浮盈。
+				mv := p.Close * qty * fx
+				costAt := cost + (cumDivTotal - cumDiv)
+				totalPnl := (p.Close - costAt) * qty * fx
+				var totalPct, dayPnl, dayPct float64
+				if costAt*qty*fx > 0 {
+					totalPct = totalPnl / (costAt * qty * fx) * 100
 				}
+				if haveHyp {
+					// 首点之后：累计口径的变化量（自动含当日分红摊薄调整）
+					dayPnl = totalPnl - prevHyp
+				} else if prevAdj > 0 {
+					// 清仓日在行情序列里没有点（清仓后停更）时的首点：用净值差 × 份额兜底
+					dayPnl = (adj - prevAdj) * qty * fx
+				}
+				if prevHypMV > 0 {
+					dayPct = dayPnl / prevHypMV * 100
+				} else if costAt*qty*fx > 0 {
+					dayPct = dayPnl / (costAt * qty * fx) * 100
+				}
+				prevHyp, prevHypMV, haveHyp = totalPnl, mv, true
 				prevAdj = adj
 				n++
-				rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnlPct: navPct,
-					TotalPnl: lockPnl, TotalPnlPct: lockPct, Held: true, Locked: true})
+				rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct,
+					TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv,
+					Held: true, Hypo: true, HypoQty: qty})
 				continue
 			}
 			mv := p.Close * qty * fx
@@ -2909,6 +2929,9 @@ func holdingPnlHistory(c *gin.Context) {
 			// 清仓日：累计盈亏用已实现口径（卖出价落袋）；当日盈亏 = 累计口径的变化量而不是收盘价差，
 			// 市值改用清仓回款 —— 按上一交易日净值清仓时（债基周一清仓用周五净值），清仓日收盘价与
 			// 持仓无关，照算会产生「已按 13 号净值清仓、16 号还有一笔浮动盈亏」的脏数（2026-11-17）。
+			// 落袋值只在本行展示；清仓后的「假设未清仓」曲线以本行的假想累计（收盘价口径）
+			// 为接续基准，所以先把假想值存进 prevHyp，再覆盖展示值。
+			prevHyp, prevHypMV, haveHyp = totalPnl, mv, true
 			if closedDate != "" && p.Date == closedDate {
 				if realizedSum != 0 {
 					totalPnl = realizedSum
@@ -2923,7 +2946,6 @@ func holdingPnlHistory(c *gin.Context) {
 				if closeProceeds > 0 {
 					mv = closeProceeds
 				}
-				lockPnl, lockPct = totalPnl, totalPct // 锁定值从此刻起不再随行情变化
 			}
 			prevTotal, prevMV = totalPnl, mv
 			rows = append(rows, Row{Date: p.Date, Close: p.Close, DayPnl: dayPnl, DayPnlPct: dayPct, TotalPnl: totalPnl, TotalPnlPct: totalPct, MarketValue: mv, Held: true})
@@ -3016,7 +3038,7 @@ func holdingPnlHistory(c *gin.Context) {
 		Type      string  `json:"type"` // BUY | SELL
 		Price     float64 `json:"price"`
 		Quantity  float64 `json:"quantity"`
-		Amount    float64 `json:"amount"`     // 成交金额 = quantity * price
+		Amount    float64 `json:"amount"` // 成交金额 = quantity * price
 		Fee       float64 `json:"fee"`
 		Note      string  `json:"note"`
 		Synthetic bool    `json:"synthetic"` // true = 初始建仓（无对应交易记录，只有买点）

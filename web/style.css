@@ -3128,6 +3128,12 @@ input[type="date"].date-empty::-webkit-datetime-edit-day-field {
   font-size: var(--fs-xs); font-weight: 500; color: var(--text-faint);
   vertical-align: 1px;
 }
+/* 清仓后的「假设未清仓」模拟行：数字照常展示，仅用徽标 + 降透明度提示是估算值 */
+.hist-nav-hypo {
+  background: rgba(var(--warning-rgb), .14);
+  color: var(--text-muted);
+}
+.hist-row-hypo td { opacity: .82; }
 
 /* 历史盈亏弹框：已清仓提示（标题下方一行小字，说明曲线为何提前结束）
    左边距 = h2::before 图标 16px + margin-right，与标题文字起始位置对齐 */
@@ -4863,9 +4869,9 @@ textarea::placeholder {
 /* 已清仓：清仓日后盈亏锁定段走虚线、末点空心；后续净值另走右轴灰虚线（行情参照，不计盈亏） */
 .chart-line-locked { stroke: var(--cum-line); stroke-opacity: .55; stroke-width: 1.6; stroke-dasharray: 5 4; }
 .chart-dot-locked { fill: var(--bg-card-solid); stroke: var(--cum-line); stroke-width: 1.8; }
-.chart-price-line { stroke: var(--text-muted); stroke-opacity: .75; stroke-width: 1.2; stroke-dasharray: 2 3; }
-.chart-line-key-locked { background: none; border-top: 2px dashed var(--cum-line); height: 0; border-radius: 0; }
-.chart-price-key { display: inline-block; width: 16px; height: 0; border-top: 2px dashed var(--text-muted); margin-right: var(--sp-1); vertical-align: middle; }
+/* 图例色块：.chart-line-key 在后面定义（同权重），虚线色块必须提权，否则被它的
+   background/height 覆盖成一根实心蓝条，与曲线虚线不符（2026-11-25 修） */
+.chart-line-key.chart-line-key-locked { background: none; border-top: 2px dashed var(--cum-line); height: 0; border-radius: 0; }
 .chart-guide { stroke: var(--text-muted); stroke-opacity: .5; stroke-width: 1; stroke-dasharray: 3 3; }
 .chart-hline { stroke: var(--row-divider); stroke-width: 1; }
 .chart-zero { stroke: var(--border-strong); stroke-width: 1; }

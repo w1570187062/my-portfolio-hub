@@ -6940,7 +6940,8 @@ async function openHoldingHistory(id) {
   histHistCur = ((d.currency || '').toUpperCase() === 'USD' ? 'USD ' : (d.currency || '').toUpperCase() === 'HKD' ? 'HK$ ' : '¥');
   // 2026-11-04：标题不再拼「（代码）」——代码在持仓行与每日明细里都能看到，弹框标题只留名称，手机上少折一行
   $('#histTitle').textContent = ((h.name || '') + ' 历史盈亏').trim();
-  // 已清仓：曲线后端已按清仓日截断，标题后补清仓日期，避免"为什么这几天没数据"的疑问
+  // 已清仓：清仓日之后为「假设未清仓」的模拟估算（hypo），标题下补一条说明，
+  // 否则那条继续往上/往下走的虚线会被当成还在持仓。
   const old = document.getElementById('histClosedTip');
   if (old) old.remove();
   if (d.holding && d.holding.closed) {
@@ -6948,10 +6949,12 @@ async function openHoldingHistory(id) {
     tip.id = 'histClosedTip';
     tip.className = 'hist-closed-tip';
     const last = (d.series && d.series.length) ? d.series[d.series.length - 1].date : '';
-    const locked = (d.series || []).some((x) => x.locked);
+    const hypo = (d.series || []).some((x) => x.hypo);
+    const hq = ((d.series || []).find((x) => x.hypo) || {}).hypo_qty;
     tip.textContent = d.holding.closed_date
-      ? (locked
-        ? ('已清仓 · 收益锁定于 ' + d.holding.closed_date + '，灰虚线为清仓后净值走势（不计盈亏）')
+      ? (hypo
+        ? ('已清仓 · ' + d.holding.closed_date + ' 清仓，此后按清仓份额'
+          + (hq ? ' ' + fmt(hq) : '') + ' 模拟估算（假设未清仓，虚线；当日盈亏为假想值）')
         : ('已清仓 · 曲线截至 ' + (last || d.holding.closed_date) + '，此后行情不再计入持仓盈亏'))
       : '已清仓 · 曲线已截止至清仓日';
     $('#histTitle').insertAdjacentElement('afterend', tip);
@@ -7039,7 +7042,9 @@ function renderHistNavTable() {
     // 尚未建仓（份额为 0）的净值日：盈亏金额 / 累计盈亏不计算也不展示，只留净值供回溯。
     // buy_date 常被填早于实际首笔买入，若照算会把建仓前的净值涨跌显示成持仓盈亏。
     const held = x.held !== false;
-    const locked = !!x.locked;              // 清仓后收益锁定
+    // 清仓后的「假设未清仓」模拟行：数字照常展示，只加标记 + 悬停说明，
+    // 免得被读成真实持仓浮盈（2026-11-25 起，原实现这几列显示「—」和锁定的落袋值）。
+    const hypo = !!x.hypo;
     const pct = x.day_pnl_pct;
     // 未建仓行：涨跌幅是净值自身涨跌（行情属性，保留），但没有前一快照基准时置「—」
     const noPct = pct == null || isNaN(pct) || (!held && !pct);
@@ -7048,19 +7053,17 @@ function renderHistNavTable() {
     const day = x.day_pnl || 0;
     const tot = x.total_pnl || 0;
     const naTd = '<td class="num" title="该日尚未建仓，不计盈亏">—</td>';
-    const lockedTd = '<td class="num" title="清仓后已无持仓，不再产生当日盈亏">—</td>';
+    const hypoTip = '已清仓，按清仓份额 ' + fmt(x.hypo_qty || 0) + ' 份模拟估算（假设未清仓）';
     // 净值/收盘价固定 4 位小数（基金净值与股价均需 4 位精度，整数位后不足补零）
     const navTxt = (x.close == null || isNaN(x.close)) ? '—' : Number(x.close).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-    return '<tr>'
+    return '<tr' + (hypo ? ' class="hist-row-hypo"' : '') + '>'
       + '<td>' + esc(x.date)
       + (held ? '' : '<span class="hist-nav-na" title="该日尚未建仓">未建仓</span>')
-      + (locked ? '<span class="hist-nav-na" title="清仓后仅为行情参考，不计盈亏">已清仓</span>' : '') + '</td>'
+      + (hypo ? '<span class="hist-nav-na hist-nav-hypo" title="' + hypoTip + '">假设</span>' : '') + '</td>'
       + '<td class="num">' + navTxt + '</td>'
       + '<td class="num ' + pctCls + '">' + pctTxt + '</td>'
-      + (locked ? lockedTd : (held ? '<td class="num ' + clsPnlFlat(day) + '">' + (day >= 0 ? '+' : '') + cur + fmt(day) + '</td>' : naTd))
-      + (locked
-        ? '<td class="num ' + clsPnlFlat(tot) + '" title="清仓日落袋收益，此后不再变化">' + (tot >= 0 ? '+' : '') + cur + fmt(tot) + '</td>'
-        : (held ? '<td class="num ' + clsPnlFlat(tot) + '">' + (tot >= 0 ? '+' : '') + cur + fmt(tot) + '</td>' : naTd))
+      + (held ? '<td class="num ' + clsPnlFlat(day) + '"' + (hypo ? ' title="' + hypoTip + '"' : '') + '>' + (day >= 0 ? '+' : '') + cur + fmt(day) + '</td>' : naTd)
+      + (held ? '<td class="num ' + clsPnlFlat(tot) + '"' + (hypo ? ' title="' + hypoTip + '"' : '') + '>' + (tot >= 0 ? '+' : '') + cur + fmt(tot) + '</td>' : naTd)
       + '</tr>';
   }).join('');
   body.innerHTML = '<table class="hist-nav-table">' + head + '<tbody>' + trs + '</tbody></table>';
@@ -7365,13 +7368,13 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   const cw = Math.max(240, Math.floor(body.clientWidth || 640));
   const W = cw, H = cw < 460 ? 208 : 236;
   const n = s.length;
-  // 已清仓持仓的序列在清仓日之后仍有点（locked）：盈亏锁定、净值继续。
-  // 这类点另用右轴画净值走势，需要给右侧刻度留位。
-  const lockIdx = s.findIndex((x) => !!x.locked);
-  const hasLocked = lockIdx >= 0;
-  const curveEnd = hasLocked ? lockIdx : n - 1; // 实线/面积到此为止
+  // 已清仓持仓：清仓日之后仍有点（hypo），数字是「假设未清仓」的模拟估算，
+  // 用虚线接续实线（同口径、连续），便于一眼看出「卖了之后行情怎么走」。
+  const hypoIdx = s.findIndex((x) => !!x.hypo);
+  const hasHypo = hypoIdx >= 0;
+  const curveEnd = hasHypo ? Math.max(0, hypoIdx - 1) : n - 1; // 实线/面积只覆盖真实持有段
   const mL = cw < 460 ? 40 : 52;
-  const mR = hasLocked ? (cw < 460 ? 34 : 44) : (cw < 460 ? 8 : 12);
+  const mR = cw < 460 ? 8 : 12;
   const mT = 22, mB = 30;
   const plotW = W - mL - mR;
   const plotH = H - mT - mB;
@@ -7391,24 +7394,32 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   const slot = plotW / n;
   const uid = 'th' + (++trendUidSeq);
   const linePts = [];
-  let line = '', lineLocked = '', area = '', dots = '';
+  let line = '', lineHypo = '', area = '', dots = '';
   s.forEach((x, i) => {
     const cx = mL + (i + 0.5) * slot;
     const ly = yLine(valOf(x));
     linePts.push([cx, ly]);
     // 2026-10-15：去掉单日盈亏柱状，只保留累计盈亏折线 + 悬停读数（单日盈亏在 tooltip 里仍可见）
-    // 清仓日之后另起一段虚线（收益锁定），与实线段在清仓日衔接。
-    const cmd = (i === 0 || (hasLocked && i === lockIdx) ? 'M' : 'L');
-    const seg = `${cmd} ${cx.toFixed(2)} ${ly.toFixed(2)} `;
-    if (hasLocked && i >= lockIdx) lineLocked += seg; else line += seg;
-    // 只在最新一天画圆点：清仓后末点画空心，提示「这是锁定收益，不是当前浮盈」
+    // 清仓日之后另起一段虚线（假设未清仓的模拟）。虚线是独立 path，必须先 M 起点：
+    // 起点取实线末点（清仓日），再 L 到首个假设点，保证两条线在清仓日视觉衔接。
+    const pt = `${cx.toFixed(2)} ${ly.toFixed(2)} `;
+    if (hasHypo && i >= hypoIdx) {
+      if (i === hypoIdx) {
+        const p0 = linePts[i - 1] || linePts[i];
+        lineHypo += `M ${p0[0].toFixed(2)} ${p0[1].toFixed(2)} `;
+      }
+      lineHypo += `L ${pt}`;
+    } else {
+      line += `${i === 0 ? 'M' : 'L'} ${pt}`;
+    }
+    // 只在最新一天画圆点：清仓后末点画空心，提示「这是假设值，不是当前浮盈」
     if (i === n - 1) {
       dots += `<circle cx="${cx.toFixed(2)}" cy="${ly.toFixed(2)}" r="3.4"`
-        + ` class="${hasLocked ? 'chart-dot chart-dot-locked' : 'chart-dot'}"/>`;
+        + ` class="${hasHypo ? 'chart-dot chart-dot-locked' : 'chart-dot'}"/>`;
     }
   });
   // 面积：渐变填充（基线取绘图区底部 —— Y 轴已自适应，零轴可能落在图区外）
-  // 锁定段不填充，避免「收益还在随净值变化」的错觉。
+  // 假设段不填充，避免「假想收益也是真实持仓」的错觉。
   if (curveEnd > 0 && linePts.length) {
     const baseY = mT + plotH;
     let ap = `M ${linePts[0][0].toFixed(2)} ${baseY.toFixed(2)} `;
@@ -7497,32 +7508,15 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   // 已清仓：不在曲线上画徽标；hover 清仓日（或末点）仍弹出「清仓落袋」详情块
   // （累计收益 / 持仓天数 / 收益率 …）。
   const defs = trendDefs(uid);
-  // 清仓后净值走势：右轴自适应，只画清仓日之后的点，灰色虚线与锁定收益线区分。
-  // 这是「卖出后行情怎么走」的参照，不是持仓盈亏，故不参与左轴定界。
-  let priceLine = '', priceLabels = '';
-  if (hasLocked) {
-    const pc = s.map((x, i) => ({ i, v: x.close })).filter((p) => p.i >= lockIdx && p.v != null && !isNaN(p.v));
-    if (pc.length > 1) {
-      let pLo = Math.min(...pc.map((p) => p.v)), pHi = Math.max(...pc.map((p) => p.v));
-      if (pHi - pLo < 1e-9) { pLo -= 1; pHi += 1; }
-      const pPad = (pHi - pLo) * 0.08;
-      pLo -= pPad; pHi += pPad;
-      const yP = (v) => mT + plotH - ((v - pLo) / (pHi - pLo)) * plotH;
-      pc.forEach((p, k) => {
-        priceLine += `${(k === 0 ? 'M' : 'L')} ${(mL + (p.i + 0.5) * slot).toFixed(2)} ${yP(p.v).toFixed(2)} `;
-      });
-      priceLine = `<path d="${priceLine}" fill="none" class="chart-price-line"/>`;
-      const pf = (v) => Number(v).toLocaleString('zh-CN', { minimumFractionDigits: Math.abs(v) < 10 ? 3 : 1, maximumFractionDigits: Math.abs(v) < 10 ? 3 : 1 });
-      priceLabels = `<text x="${W - mR + 5}" y="${mT + 4}" font-size="${cw < 460 ? 9 : 10}" text-anchor="start" class="chart-label">${pf(pHi)}</text>`
-        + `<text x="${W - mR + 5}" y="${(mT + plotH + 4).toFixed(2)}" font-size="${cw < 460 ? 9 : 10}" text-anchor="start" class="chart-label">${pf(pLo)}</text>`;
-    }
-  }
+  // 清仓后不再单独画「净值走势」右轴线：模拟段与真实持有段同口径（收盘价 × 固定份额），
+  // 累计盈亏与净值严格线性相关，两线必然完全重合（2026-11-25 起实测就是一条线压一条线）。
+  // 净值本身仍在悬停浮框与「每日明细」表里，不必占第二条轴。
   // 折线双层：底层粗而极淡做柔光，上层细实线定形
   let lineEl = `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
     + ` class="chart-line-glow"/>`
     + `<path d="${line}" fill="none" stroke-linejoin="round" stroke-linecap="round"`
     + ` class="chart-line"/>`;
-  if (lineLocked) lineEl += `<path d="${lineLocked}" fill="none" stroke-linejoin="round" stroke-linecap="round" class="chart-line-locked"/>`;
+  if (lineHypo) lineEl += `<path d="${lineHypo}" fill="none" stroke-linejoin="round" stroke-linecap="round" class="chart-line-locked"/>`;
   // 2026-11-04：原来同一元素写了两个 class 属性，第二个被解析器丢弃导致指示线没有样式；合并成一个
   const cursor = `<line class="trend-cursor chart-guide" x1="0" y1="${mT}" x2="0" y2="${(mT + plotH).toFixed(2)}" visibility="hidden"/>`
     + `<circle class="trend-cursor-dot chart-dot" cx="0" cy="0" r="4" visibility="hidden"/>`;
@@ -7562,7 +7556,7 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   const legend = `
     <div class="chart-legend">
       <span><span class="chart-line-key"></span>${isRate ? '累计盈亏率' : '累计盈亏'}</span>
-      ${hasLocked ? '<span><span class="chart-line-key chart-line-key-locked"></span>收益已锁定</span><span><span class="chart-price-key"></span>清仓后净值</span>' : ''}
+      ${hasHypo ? '<span><span class="chart-line-key chart-line-key-locked"></span>假设未清仓（模拟）</span>' : ''}
       ${(markers && markers.length) ? '<span><span class="chart-marker-key mk-buy"></span>B 买入</span><span><span class="chart-marker-key mk-sell"></span>S 卖出</span>' : ''}
     </div>`;
   // 命中面：整块绘图区一个透明矩形。点距可能只有零点几像素，不再需要「每点一个热区」，
@@ -7571,9 +7565,9 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
   body.innerHTML = `
     <div class="chart-curve-wrap">
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      ${defs}${grid}${area}${priceLine}${cursor}${mk}
+      ${defs}${grid}${area}${cursor}${mk}
       ${lineEl}
-      ${dots}${yLabels}${priceLabels}${xlabels}${surface}
+      ${dots}${yLabels}${xlabels}${surface}
     </svg></div>${legend}`;
   // 交互：整块 surface 上的一套指针逻辑 —— 悬停跟随、点按固定、按住拖动（含触屏）连续读数
   const svgEl = body.querySelector('svg');
@@ -7608,8 +7602,8 @@ function drawPnlCurve(s, cur, markers, closedInfo, closedDetail, mode) {
     if (closedDetail.date === s[i].date) return closedDetail;
     // 序列已延续到清仓日之后时，落袋块挂清仓日；清仓日恰好没快照则挂清仓后第一点
     // （原末点现在是最新净值日，挂那里会被读成「今天清仓」）。
-    if (hasLocked && i === lockIdx) return Object.assign({}, closedDetail, { date: s[i].date, realClosedDate: closedDetail.date, isLast: true });
-    if (i === n - 1 && !hasLocked) return Object.assign({}, closedDetail, { date: s[i].date, realClosedDate: closedDetail.date, isLast: true });
+    if (hasHypo && i === hypoIdx) return Object.assign({}, closedDetail, { date: s[i].date, realClosedDate: closedDetail.date, isLast: true });
+    if (i === n - 1 && !hasHypo) return Object.assign({}, closedDetail, { date: s[i].date, realClosedDate: closedDetail.date, isLast: true });
     return null;
   };
   // 最新收盘：B 点悬停时算「买入份额至今涨跌」，口径=买入份额 ×（最新价 − 买入价）
@@ -7706,12 +7700,14 @@ function showHistTip(e, x, cur, closedInfo, tx, isRate, lastClose) {
   //    「建仓当天就赚了 +52.88 / +8.15%」，会被读成算错）。
   // 真正可核对的「推算成本 × 份额」放在下方「初始建仓」区块里。
   const isAnchor = !!x.anchor;
-  const closedLocked = !!x.locked;          // 清仓收益锁定
+  // 清仓后的模拟行：数字是「假设未清仓」按清仓份额推演出来的，必须标清楚口径，
+  // 否则会被读成真实持仓浮盈（2026-11-25 起由「锁定落袋值」改为模拟估算）。
+  const isHypo = !!x.hypo;
   const dash = '<span class="t-muted">—</span>';
-  const lockNote = closedLocked
-    ? '<span class="t-est" title="清仓后已无持仓，盈亏固定为清仓日落袋值；净值为后续行情参考">收益已锁定</span>'
+  const hypoNote = isHypo
+    ? '<span class="t-est" title="已清仓：按清仓份额模拟估算，若当时未清仓今天会是多少盈亏">假设未清仓</span>'
     : '';
-  let html = '<div class="t-date">' + x.date + estNote + lockNote + '</div>';
+  let html = '<div class="t-date">' + x.date + estNote + hypoNote + '</div>';
   if (isRate) {
     const dayP = (x.day_pnl_pct != null ? x.day_pnl_pct : 0);
     const cumP = (x.total_pnl_pct != null ? x.total_pnl_pct : 0);
@@ -7719,22 +7715,23 @@ function showHistTip(e, x, cur, closedInfo, tx, isRate, lastClose) {
     const cPCls = cumP > 0 ? 't-up' : cumP < 0 ? 't-down' : 't-muted';
     html += '<div class="t-row"><span>涨跌幅</span>' + (isAnchor ? dash : '<span class="' + pCls + '">' + pct(dayP) + '</span>') + '</div>'
       + '<div class="t-row"><span>累计收益率</span>' + (isAnchor ? dash : '<span class="' + cPCls + '">' + pct(cumP) + '</span>') + '</div>'
-      + '<div class="t-row"><span>盈亏</span>' + ((isAnchor || closedLocked) ? dash : '<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>') + '</div>';
+      + '<div class="t-row"><span>盈亏</span>' + (isAnchor ? dash : '<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>') + '</div>';
   } else {
-    html += '<div class="t-row"><span>盈亏</span>' + ((isAnchor || closedLocked) ? dash : '<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>') + '</div>';
+    html += '<div class="t-row"><span>盈亏</span>' + (isAnchor ? dash : '<span class="' + cls + '">' + (day > 0 ? '+' : '') + money(day) + '</span>') + '</div>';
     if (x.day_pnl_pct !== undefined && x.day_pnl_pct !== null)
       html += '<div class="t-row"><span>涨跌幅</span>' + (isAnchor ? dash : '<span class="' + cls + '">' + pct(x.day_pnl_pct) + '</span>') + '</div>';
   }
   html += '<div class="t-row"><span>累计盈亏</span>'
-    + (isAnchor ? dash : '<span class="' + cumCls + '">' + (cum > 0 ? '+' : '') + money(cum) + (closedLocked ? '（已锁定）' : '') + '</span>') + '</div>';
+    + (isAnchor ? dash : '<span class="' + cumCls + '">' + (cum > 0 ? '+' : '') + money(cum) + (isHypo ? '（假设）' : '') + '</span>') + '</div>';
   if (x.total_pnl_pct !== undefined && x.total_pnl_pct !== null)
     html += '<div class="t-row"><span>累计涨跌幅</span>'
       + (isAnchor ? dash : '<span class="' + cumCls + '">' + pct(x.total_pnl_pct) + '</span>') + '</div>';
   // 成交金额也算「记录数据」的一部分（不是浮动盈亏），按用户口径保留，不遮。
-  // 清仓后净值：图上灰虚线是右轴走势，浮框同步给出当日具体净值，便于对照卖出价。
-  if (closedLocked && x.close != null && !isNaN(x.close))
+  // 清仓后：曲线虚线是假设未清仓的模拟，浮框同步给出当日净值与模拟所用份额，便于对照卖出价。
+  if (isHypo && x.close != null && !isNaN(x.close))
     html += '<div class="t-row"><span>净值</span><span>'
-      + Number(x.close).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + '</span></div>';
+      + Number(x.close).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + '</span></div>'
+      + (x.hypo_qty ? '<div class="t-row"><span>模拟份额</span><span>' + fmt(x.hypo_qty) + ' 份</span></div>' : '');
   // 成交明细块：该点当天的成交（同一行情点可能有多笔，按方向分组，逐笔列出）。
   // 单价一律 4 位小数（基金净值 0.1332 这类，按 2 位会显示成 ¥0.13，两笔看着像同一笔重复脏数据）。
   const txPrice = (v) => cur0 + (Math.abs(Number(v)) < 10
