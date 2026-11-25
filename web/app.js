@@ -1703,7 +1703,7 @@ function renderHoldingsBySource(hs) {
     + '<th>名称</th>'
     + '<th class="num ht-trend" title="近20日收盘价走势">走势</th>'
     + '<th class="num ht-price" title="现价（上）/ 涨跌幅（下）：现价相对昨收，基金为昨日净值，行情口径">现价</th>'
-    + `<th class="num sortable${sortedCls('mv')} ht-mv" data-sort="mv" title="持仓市值（折人民币；悬停查看原币种市值）· 点击排序">市值</th>`
+    + `<th class="num sortable${sortedCls('mv')} ht-mv" data-sort="mv" title="持仓市值（上）/ 持仓成本（下）· 点击排序">市值</th>`
     // 列名从「仓位」改为「占资金池」：分母是「同账户同币种持仓合计 + 现金子账户余额」，
     // 不是组合总市值。叫「仓位」会被读成「占我总持仓的比例」，同一张表里还能出现多个 100%，
     // 实测一直有人按总市值去核这个数（分母差一个数量级）。
@@ -1867,7 +1867,10 @@ function renderHoldRow(h, pool, pdi, hideDay) {
       <div class="hp-main">${fmtPrice(h.current_price, isFund(h) ? 'fund' : 'stock')}</div>
       <div class="hp-sub ${chgPct != null ? clsPnlFlat(chgPct) : ''}" title="${pdi.isToday ? '今日涨跌幅' : '最近一个收盘交易日的涨跌幅（可能比今日盈亏新一个美股交易日——美股在北京时间凌晨收盘，跨过了日界）'}：现价 vs 昨收${isFund(h) ? '，基金为昨日净值' : ''}">${chgPct != null ? pct(chgPct) : '—'}</div>
     </td>
-    <td class="num ht-mv"${mvOrigTitle(h)}>¥${fmtWan(mvCny)}</td>
+    <td class="num ht-mv"${mvOrigTitle(h)}>
+      <div class="hp-main">¥${fmtWan(mvCny)}</div>
+      <div class="hp-sub" title="持仓成本（折人民币；悬停查看原币种成本）">成本 ¥${fmtWan(toRmb(h, h.cost_value || 0))}</div>
+    </td>
     <td class="num share ht-share${(pool > 0 && !closed) ? '' : ' is-empty'}"${(pool > 0 && !closed) ? ` style="--p:${posPct.toFixed(1)}%;--pn:${(posPct / 100).toFixed(4)}"` : ''} title="${shareTitle}">${(pool > 0 && !closed) ? posPct.toFixed(2) + '%' : '—'}</td>
     ${hideDay ? '' : `<td class="num ht-day" title="${pdi.note ? esc(pdi.note) : '今日盈亏'}${h.market === '美股' && pdi.isToday ? '（美股按美东交易日归属：今天的收盘要等北京时间明天凌晨，落账后会出现在对应日期那一格，所以今天这一格暂时是 0）' : ''}${h.day_pnl_pct ? ' ' + pct(h.day_pnl_pct) : ''}（首日按买入成本计）">${dayIdle ? ZERO_DASH : `<div class="${clsPnlFlat(h.day_pnl)}"${wanTitle(dayCny, '¥')}>${signedMoneyW(dayCny, 'cny')}</div><div class="hp-sub ${clsPnlFlat(h.day_pnl_pct)}">${h.day_pnl_pct ? pct(h.day_pnl_pct) : ''}</div>`}</td>`}
     <td class="num ht-pnl" ${pnlTitle}>
@@ -6937,7 +6940,7 @@ async function openHoldingHistory(id) {
   const d = await r.json();
   histPnlData = d;
   const h = d.holding || {};
-  histHistCur = ((d.currency || '').toUpperCase() === 'USD' ? 'USD ' : (d.currency || '').toUpperCase() === 'HKD' ? 'HK$ ' : '¥');
+  histHistCur = curSymbolJS(d.currency || 'cny');
   // 2026-11-04：标题不再拼「（代码）」——代码在持仓行与每日明细里都能看到，弹框标题只留名称，手机上少折一行
   $('#histTitle').textContent = ((h.name || '') + ' 历史盈亏').trim();
   // 已清仓：清仓日之后为「假设未清仓」的模拟估算（hypo），标题下补一条说明，
