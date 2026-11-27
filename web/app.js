@@ -4419,7 +4419,7 @@ function renderRecentFlows() {
     if (last && last.date === date) last.items.push(f);
     else groups.push({ date, items: [f] });
   });
-  rf.innerHTML = groups.map((g) => {
+  rf.innerHTML = groups.map((g, gi) => {
     // 当日净额只在组内币种一致时展示，避免跨币种直接相加得出错误数字
     const curs = [...new Set(g.items.map((f) => String(f.currency || 'cny').toLowerCase()))];
     let netHtml = `${g.items.length} 笔`;
@@ -4430,7 +4430,7 @@ function renderRecentFlows() {
       netHtml = `<span class="rg-net-prefix">当日净额 </span><b class="${cls}">${txt}</b>`;
     }
     const week = flowWeekLabel(g.date);
-    return `<div class="recent-group">
+    return `<div class="recent-group${gi === 0 ? ' latest' : ''}">
       <span class="rg-node"></span>
       <div class="rg-head">
         <span class="rg-date" title="${esc(fmtFlowDate(g.date, 'full'))}${week ? ' ' + week : ''}">${fmtFlowDate(g.date)}</span>
@@ -4440,11 +4440,22 @@ function renderRecentFlows() {
       <div class="rg-rows">${g.items.map((f) => {
         const isIn = f.direction === 'in';
         const amtNum = Number(f.amount) || 0;
-        // 圆点按金额方向着色：入账红 / 出账绿 / 0 变动中性灰
-        const dotCls = amtNum > 0 ? 'in' : (amtNum < 0 ? 'out' : 'neutral');
+        // 小圆点：有 realized_pnl 覆盖时按实现盈亏着色（盈利红/亏损绿），否则按业务语义方向
+        let dotCls;
+        const pnl = Number(f.realized_pnl || 0);
+        if (Math.abs(pnl) > 0.005) {
+          dotCls = pnl > 0 ? 'in' : 'out';
+        } else {
+          const catDir = finCatDir(flowCatOf(f));
+          dotCls = catDir === 'income' ? 'in' : (catDir === 'expense' ? 'out' : 'neutral');
+        }
         const amtCls = isIn ? 'up' : 'down';
         // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
         const amt = amtNum === 0 ? moneyCurW(0, f.currency) : (isIn ? '+' : NEG) + moneyCurW(Math.abs(amtNum), f.currency);
+        // 有实现盈亏的平仓流水，在金额下方加小字显示 realized_pnl（pnl 已在上方声明）
+        const pnlSmall = Math.abs(pnl) > 0.005
+          ? `<span class="rg-pnl ${clsPnl(pnl)}">已实现 ${pnl > 0 ? '+' : NEG}${moneyCurW(Math.abs(pnl), f.currency)}</span>`
+          : '';
         // 与资产页流水时间轴同口径：标题 = 关联标的 / 账户（来源）名，类型徽标紧跟其后；
         // 子账户名退到第二行且不带账户名前缀（第二行 = 子账户名 · 说明）。
         // 手动调整等流水的 ref_name 与子账户名相同，不当标的处理，标题退到账户（来源）名
@@ -4463,7 +4474,7 @@ function renderRecentFlows() {
             <div class="recent-sub" title="${esc(sub2)}">${esc(sub2)}</div>
           </div>
           ${hm ? `<span class="recent-hm">${hm}</span>` : ''}
-          <span class="recent-amt ${amtCls}">${amt}</span>
+          <span class="recent-amt ${amtCls}">${amt}${pnlSmall}</span>
         </div>`;
       }).join('')}</div>
     </div>`;
@@ -6624,7 +6635,7 @@ async function exportHoldingsJSON() {
       api('/api/asset/deposits'),
     ]);
     try { const d = await pResp.json(); if (d && Array.isArray(d.plans)) payload.cashflow_plans = d.plans; } catch (_) {}
-    try { const d = await depResp.json(); if (d && Array.isArray(d.deposits)) payload.deposits = d.deposits.map((x) => ({ name: x.name, amount: x.amount, currency: x.currency, rate: x.rate, cash_account_id: 0, start_date: x.start_date, end_date: x.end_date, status: 'active', note: x.note })); } catch (_) {}
+    try { const d = await depResp.json(); if (d && Array.isArray(d.deposits)) payload.deposits = d.deposits.map((x) => ({ name: x.name, amount: x.amount, currency: x.currency, rate: x.rate, product_type: x.product_type || 'regular', cash_account_id: 0, start_date: x.start_date, end_date: x.end_date, status: 'active', note: x.note })); } catch (_) {}
     try { const d = await sResp.json(); if (d && Array.isArray(d.sources)) payload.sources = d.sources; } catch (_) {}
     try { const d = await aResp.json(); if (d && Object.keys(d).length) payload.ai_config = d; } catch (_) {}
     // 设置接口返回的 payload 是 JSON 文本，导出时解析为真正的数组/对象，避免导入再被二次字符串化
@@ -9192,7 +9203,15 @@ const flowTypePlain = (f) => flowTypeTagRaw(f).replace(/<[^>]*>/g, '');
 function flowTlRow(f, latest) {
   const amt = Number(f.amount) || 0;
   const cls = clsPnl(amt);
-  const dir = amt > 0 ? 'in' : (amt < 0 ? 'out' : 'neutral');
+  // 小圆点：有 realized_pnl 覆盖时按实现盈亏着色（盈利红/亏损绿），否则按业务语义方向
+  let dir;
+  const pnl = Number(f.realized_pnl || 0);
+  if (Math.abs(pnl) > 0.005) {
+    dir = pnl > 0 ? 'in' : 'out';
+  } else {
+    const catDir = finCatDir(flowCatOf(f));
+    dir = catDir === 'income' ? 'in' : (catDir === 'expense' ? 'out' : 'neutral');
+  }
   // 标题 = 关联标的 / 账户（来源）名 + 徽标；第二行 = 子账户名 · 说明，
   // 说明为空时给「余额 ¥N」（该笔变动后的账户余额），不再回退类型词（避免与徽标重复）。
   // 手动调整等流水的 ref_name 会被写成子账户名本身（与 name 相同），不当标的处理，标题用账户名。
@@ -9203,6 +9222,10 @@ function flowTlRow(f, latest) {
   const meta = [acct, note || (f.balance ? '余额 ' + moneyCurW(f.balance, f.currency) : '')].filter(Boolean).join(' · ');
   // 金额取绝对值再拼符号：负数直接拼会变成「−¥-4,380」双负号
   const amtTxt = amt === 0 ? moneyCurW(0, f.currency) : (amt > 0 ? '+' : NEG) + moneyCurW(Math.abs(amt), f.currency);
+  // 有实现盈亏的平仓流水，在金额下方加小字显示 realized_pnl（pnl 已在上方声明）
+  const pnlSmall = Math.abs(pnl) > 0.005
+    ? '<span class="tl-pnl ' + clsPnl(pnl) + '">已实现 ' + (pnl > 0 ? '+' : NEG) + moneyCurW(Math.abs(pnl), f.currency) + '</span>'
+    : '';
   const noEdit = FLOW_NO_EDIT.includes(f.type);
   const editBtn = noEdit ? '' : actBtn('edit', 'data-afedit="' + f.id + '"', '编辑该笔流水（按业务类型修改金额 / 数量 / 价格 / 费用）', { cls: 'tl-undo' });
   const undoBtn = f.snapshot ? '' : actBtn('undo', 'data-afrb="' + f.id + '"', '回退该笔资金变动', { cls: 'tl-undo' });
@@ -9217,7 +9240,7 @@ function flowTlRow(f, latest) {
       '<div class="tl-meta"><span class="tl-note" title="' + esc(meta) + '">' + esc(meta) + '</span></div>' +
     '</div>' +
     '<span class="tl-when" title="' + esc(flowDateTitle(f)) + '">' + esc(whenTxt) + '</span>' +
-    '<span class="tl-amt ' + cls + '">' + amtTxt + '</span>' +
+    '<span class="tl-amt ' + cls + '">' + amtTxt + pnlSmall + '</span>' +
     '<span class="tl-act">' + editBtn + undoBtn + '</span>' +
     '</div>';
 }
@@ -10514,6 +10537,15 @@ function cashFlowTypeTag(f) {
 function flowTypeTagRaw(f) {
   const t = typeof f === 'object' ? f.type : f;
   const amt = typeof f === 'object' ? (f.amount || 0) : 0;
+  // 有实现盈亏的平仓流水（adjust_sell/wealth_redeem/wealth_clear）用 realized_pnl 覆盖默认灰色
+  // 盈利 → 红（in），亏损 → 绿（out），否则保持原分类色
+  const pnlCls = (() => {
+    if (typeof f !== 'object') return null;
+    const p = Number(f.realized_pnl || 0);
+    if (Math.abs(p) <= 0.005) return null;
+    return p > 0 ? 'in' : 'out';
+  })();
+  const tagCls = (defaultCls) => pnlCls ? pnlCls : defaultCls;
   if (t === 'manual') {
     if (amt > 0) return '<span class="flow-tag in">手工存入</span>';
     if (amt < 0) return '<span class="flow-tag out">手工取出</span>';
@@ -10522,16 +10554,27 @@ function flowTypeTagRaw(f) {
   switch (t) {
     // 「一键更新余额」批量对账产生的流水（见 internal/api/flows.go balanceSync）
     case 'manual_adjust': return '<span class="flow-tag manual">手动调整</span>';
-    case 'adjust_buy': return '<span class="flow-tag out">加仓付款</span>';
-    case 'adjust_sell': return '<span class="flow-tag in">减仓回款</span>';
-    case 'transfer_out': return '<span class="flow-tag out">转出</span>';
-    case 'transfer_in': return '<span class="flow-tag in">转入</span>';
-    case 'transfer_rollback': return '<span class="flow-tag manual">回滚</span>';
-    case 'wealth_deposit': return '<span class="flow-tag out">理财存入</span>';
-    case 'deposit': return amt >= 0 ? '<span class="flow-tag in">存入</span>' : '<span class="flow-tag out">取出</span>';
-    case 'wealth_redeem': return '<span class="flow-tag in">理财回款</span>';
-    case 'wealth_clear': return '<span class="flow-tag in">清仓回款</span>';
+    // 资产形态转换：现金 ↔ 持仓/理财/存款，总钱数不变 → 中性灰（避免 green=消费的错觉）
+    // 但平仓类（adjust_sell/wealth_redeem/wealth_clear/mcp_sell/mcp_redeem）有 realized_pnl 覆盖
+    case 'adjust_buy': return '<span class="flow-tag neu">加仓付款</span>';
+    case 'adjust_sell': return '<span class="flow-tag ' + tagCls('neu') + '">减仓回款</span>';
+    case 'wealth_deposit': return '<span class="flow-tag neu">理财存入</span>';
+    case 'wealth_redeem': return '<span class="flow-tag ' + tagCls('neu') + '">理财回款</span>';
+    case 'wealth_clear': return '<span class="flow-tag ' + tagCls('neu') + '">清仓回款</span>';
+    case 'dca_buy': return '<span class="flow-tag neu">定投扣款</span>';
+    case 'holding_edit_add': return '<span class="flow-tag neu">编辑追补资金</span>';
+    case 'holding_edit_reduce': return '<span class="flow-tag neu">编辑调减资金</span>';
+    case 'deposit_out': return '<span class="flow-tag neu">存款存入</span>';
+    case 'deposit_back': return '<span class="flow-tag neu">存款支取</span>';
+    // 账户内部划转：A 子账户 → B 子账户，账本总额不变 → 中性灰
+    case 'transfer_out': return '<span class="flow-tag neu">转出</span>';
+    case 'transfer_in': return '<span class="flow-tag neu">转入</span>';
+    // 理财冲正 / 回滚类
     case 'wealth_reverse': return '<span class="flow-tag manual">理财冲正</span>';
+    case 'transfer_rollback': return '<span class="flow-tag manual">回滚</span>';
+    // 持仓表老数据（旧版 cash 表里遗留的存取）
+    case 'deposit': return amt >= 0 ? '<span class="flow-tag neu">存入</span>' : '<span class="flow-tag neu">取出</span>';
+    // 被动收入：利息/分红 → 红
     case 'dividend': return '<span class="flow-tag in">分红入账</span>';
     case 'fee': return '<span class="flow-tag manual">费用</span>';
     case 'loan':
@@ -10539,37 +10582,32 @@ function flowTypeTagRaw(f) {
       // 标签与颜色都不按收入处理（标签来自后端 listFlows 带出的负债类型）。
       if (typeof f === 'object' && /购物|消费/.test(f.liab_type || '')) return '<span class="flow-tag manual">购物负债</span>';
       return '<span class="flow-tag in">借入</span>';
+    // 偿还负债：真正的支出 → 绿
     case 'repay': return '<span class="flow-tag out">还款</span>';
     // 一次性还款（/api/asset/cash/repay-liability）：现金侧出账 + 负债侧减记各一条，
     // 列表层已在 db.ListFlows 去重，只剩现金这条，类型标签也补齐在这里。
     case 'repay_liability': return '<span class="flow-tag out">还款</span>';
     case 'repay_rollback': return '<span class="flow-tag manual">还款冲正</span>';
-    case 'dca_buy': return '<span class="flow-tag out">定投扣款</span>';
     // 收支计划完成/撤销所记的真实流水（见 internal/api/cashflow.go recordPlanTransaction / reversePlanTransaction）
     case 'cf_income': return '<span class="flow-tag in">计划入账</span>';
     case 'cf_repay': return '<span class="flow-tag out">计划还款</span>';
     case 'cf_reverse': return '<span class="flow-tag manual">计划冲正</span>';
-    // 存款（见 internal/api/deposits.go）：存入扣款 / 到期本金回流 / 利息入账
-    case 'deposit_out': return '<span class="flow-tag out">存款存入</span>';
-    case 'deposit_back': return '<span class="flow-tag in">存款支取</span>';
+    // 存款利息：被动收入 → 红
     case 'deposit_interest': return '<span class="flow-tag in">存款利息</span>';
     // 流水表「回退」按钮产生的反向流水（见 internal/api/flows.go rollbackFlow）
     case 'rollback': return '<span class="flow-tag manual">回退冲正</span>';
-    // 持仓编辑联动流水（见 internal/api/handler.go updateHolding）：改持仓成本时追补/调减资金
-    case 'holding_edit_add': return '<span class="flow-tag out">编辑追补资金</span>';
-    case 'holding_edit_reduce': return '<span class="flow-tag in">编辑调减资金</span>';
     // 交易回退（撤销加仓/减仓/分红）的资金冲正流水（见 internal/db RevertHoldingTx）
     case 'revert': return '<span class="flow-tag manual">交易回退</span>';
     // 历史遗留类型：现只写 deposit_interest，存量库仍可能有 interest
     case 'interest': return '<span class="flow-tag in">利息入账</span>';
     // MCP 服务写入的流水（见 internal/mcp/tools.go，type 前缀 mcp_，并带 source=mcp 标签）
-    case 'mcp_buy': return '<span class="flow-tag out">加仓付款</span>';
-    case 'mcp_sell': return '<span class="flow-tag in">减仓回款</span>';
+    case 'mcp_buy': return '<span class="flow-tag neu">加仓付款</span>';
+    case 'mcp_sell': return '<span class="flow-tag ' + tagCls('neu') + '">减仓回款</span>';
     case 'mcp_dividend': return '<span class="flow-tag in">分红入账</span>';
     case 'mcp_deposit': return '<span class="flow-tag in">存入</span>';
-    case 'mcp_withdraw': return '<span class="flow-tag out">取出</span>';
-    case 'mcp_subscribe': return '<span class="flow-tag out">理财申购</span>';
-    case 'mcp_redeem': return '<span class="flow-tag in">理财赎回</span>';
+    case 'mcp_withdraw': return '<span class="flow-tag neu">取出</span>';
+    case 'mcp_subscribe': return '<span class="flow-tag neu">理财申购</span>';
+    case 'mcp_redeem': return '<span class="flow-tag ' + tagCls('neu') + '">理财赎回</span>';
     default: return esc(t || '-');
   }
 }
@@ -14371,25 +14409,44 @@ async function loadDeposits() {
 
 // 存款 KPI（渲染进顶部 #depositKpiBody，与其它 tab 的 KPI 同一位置互换显示）。
 // 口径：只统计未落袋（存期中/待落袋）的本金与预计利息；已落袋的计入「已落袋利息」小字。
-// 加权利率按本金加权（10 万@3% + 1 万@1.5% 的实际收益率应偏向前者，不能简单算术平均）。
+// 加权利率：定期用固定利率；结构性优先用手填预计利息反推等效年化，无手填则用最低档保底利率兜底。
 function renderDepositKpi() {
   const el = document.getElementById('depositKpiBody');
   if (!el) return;
   const list = depositsCache || [];
   const live = list.filter((d) => d.status !== 'settled');
   const done = list.filter((d) => d.status === 'settled');
-  let principal = 0, expInt = 0, rateW = 0, doneInt = 0;
+  let principal = 0, expInt = 0, doneInt = 0;
+  let rateW = 0, rateAmt = 0; // 加权分子/分母（两种存款都参与）
+  const usedRates = [];        // 用于最高/最低利率统计
   for (const d of live) {
     const amt = Number(d.amount) || 0;
     principal += wCny(d, amt);
     expInt += wCny(d, Number(d.expected_interest) || 0);
-    rateW += amt * (Number(d.rate) || 0);
+    // 计算参与加权的等效利率
+    let effRate = Number(d.rate) || 0; // 默认用字段值
+    if (d.product_type === 'structured') {
+      // 结构性存款：有手填 override → 反推等效年化；没手填 → 用 rate（最低档保底）
+      if (d.expected_interest_manual && d.expected_interest > 0) {
+        const days = d.days || 0;
+        if (days > 0 && amt > 0.005) {
+          // 等效年化 = 利息 / 本金 / 天数 × 365 × 100
+          effRate = d.expected_interest / amt / days * 365 * 100;
+        }
+        // days=0 时退回到保底利率
+      }
+      // 没有手填 override 时，effRate 保持 rate（最低档）
+    }
+    if (effRate > 0.005 && amt > 0.005) {
+      rateW += amt * effRate;
+      rateAmt += amt;
+      usedRates.push(effRate);
+    }
   }
   for (const d of done) doneInt += wCny(d, Number(d.actual_interest) || 0);
-  const avgRate = principal > 0.005 ? rateW / live.reduce((s, d) => s + (Number(d.amount) || 0), 0) : null;
-  const rates = live.map((d) => Number(d.rate) || 0).filter((r) => r > 0);
-  const maxRate = rates.length ? Math.max(...rates) : null;
-  const minRate = rates.length ? Math.min(...rates) : null;
+  const avgRate = rateAmt > 0.005 ? rateW / rateAmt : null;
+  const maxRate = usedRates.length ? Math.max(...usedRates) : null;
+  const minRate = usedRates.length ? Math.min(...usedRates) : null;
   // 30 天内到期：只算未落袋的，避免已落袋的旧记录被重复提醒
   const today = new Date();
   const horizon = new Date(today.getTime() + 30 * 864e5).toISOString().slice(0, 10);
@@ -14460,8 +14517,18 @@ function renderDeposits(box) {
       ? `<span class="flow-tag cat neu">已落袋</span>`
       : (d.matured ? `<span class="flow-tag cat out">待落袋</span>` : `<span class="flow-tag cat in">存期中</span>`);
     const interest = settled ? (d.actual_interest || 0) : (d.expected_interest || 0);
+    const pt = (d.product_type && d.product_type !== 'structured') ? 'regular' : d.product_type;
+    const typeTag = pt === 'structured'
+      ? `<span class="flow-tag cat out">结构性</span>`
+      : `<span class="flow-tag cat neu">定期</span>`;
     const interestTitle = settled ? '落袋时确认的实际利息'
-      : (d.expected_interest_manual ? '按银行对账单手填的预计利息' : '按 本金 × 年利率 × 天数 / 365 自动估算');
+      : (d.expected_interest_manual ? (pt === 'structured' ? '结构性存款手填预估利息' : '按银行对账单手填的预计利息')
+        : (pt === 'structured' ? '结构性存款收益不固定，建议手填预估；无预估时仅按最低档保底参与加权' : '按 本金 × 年利率 × 天数 / 365 自动估算'));
+    // 结构性存款 rate 字段语义为「最低档保底利率」，表格里显式标注避免歧义
+    const rateRaw = (d.rate > 0.005) ? (d.rate.toFixed(2) + '%') : '—';
+    const rateDisplay = pt === 'structured' && d.rate > 0.005
+      ? `<span class="u-muted">最低</span> ${rateRaw}`
+      : rateRaw;
     const acct = [d.account_name, d.source_name].filter(Boolean).join(' · ') || '—';
     const ops = settled
       ? `<button class="row-act" disabled title="已落袋的存款本金+利息流水已入账，删除会破坏账目，故不可删" aria-label="已落袋不可删除">${actIcon('del')}</button>`
@@ -14470,18 +14537,19 @@ function renderDeposits(box) {
          <button class="row-act danger" data-dep-del="${d.id}" title="删除（提前支取，本金退回账户）" aria-label="删除">${actIcon('del')}</button>`;
     return `<tr>
       <td><div class="dep-acct">${accountLogo(d.source_name || d.account_name || '')}<span>${esc(acct)}</span></div></td>
+      <td>${typeTag}</td>
       <td><div class="hold-name">${esc(d.name || '')}</div>${d.note ? `<div class="hold-code">${esc(d.note)}</div>` : ''}</td>
       <td class="num">${cur}${fmt(d.amount || 0)}</td>
       <td class="num">${esc(d.start_date || '—')}</td>
       <td class="num">${esc(d.end_date || '—')}${!settled && d.matured ? ' <span class="dep-due">已到期</span>' : ''}</td>
-      <td class="num">${(d.rate || 0).toFixed(2)}%</td>
+      <td class="num">${rateDisplay}</td>
       <td class="num" title="${interestTitle}">${cur}${fmt(interest)}</td>
       <td>${status}</td>
       <td class="row-act-cell">${ops}</td>
     </tr>`;
   }).join('');
   box.innerHTML = head + `<div class="card asset-flow-card dep-card"><table class="asset-table dep-table"><thead><tr>
-    <th>账户</th><th>名称</th><th class="num">金额</th><th class="num">起息日</th><th class="num">到期时间</th><th class="num">利率</th><th class="num">预计利息</th><th>状态</th><th class="num">操作</th>
+    <th>账户</th><th>类型</th><th>名称</th><th class="num">金额</th><th class="num">起息日</th><th class="num">到期时间</th><th class="num">利率</th><th class="num">预计利息</th><th>状态</th><th class="num">操作</th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
   const add = box.querySelector('#depAddBtn');
   if (add) add.onclick = () => openDepositModal(null);
@@ -14513,6 +14581,23 @@ function openDepositModal(d) {
   document.getElementById('dep_end').value = isEdit ? (d.end_date || '') : '';
   document.getElementById('dep_note').value = isEdit ? (d.note || '') : '';
   document.getElementById('depErr').textContent = '';
+  // 产品类型下拉（存量没有的默认为定期）
+  const ptSel = document.getElementById('dep_product_type');
+  ptSel.value = isEdit && d.product_type ? d.product_type : 'regular';
+  // 结构性存款时，预计利息 label/占位强调「手填」，利率占位强调「最低档」
+  const syncOverrideHint = () => {
+    const isStruct = ptSel.value === 'structured';
+    // 利率 placeholder
+    const rateInp = document.getElementById('dep_rate');
+    if (rateInp) rateInp.placeholder = isStruct ? '最低档保底利率，如 0.1' : '如 2.75';
+    // 预计利息 label / placeholder
+    const lbl = document.getElementById('depOverrideLabel');
+    if (lbl) lbl.childNodes[0].textContent = isStruct ? '预计利息（结构性请手填）' : '预计利息（可改，定期留空自动估算）';
+    const ovInp = document.getElementById('dep_expected_override');
+    if (ovInp) ovInp.placeholder = isStruct ? '收益不固定，请填你算的期望值' : '本金 × 年利率 × 天数 / 365';
+  };
+  syncOverrideHint();
+  ptSel.onchange = syncOverrideHint;
   // 子账户下拉：全部现金子账户（币种标注）
   const sel = document.getElementById('dep_account');
   const accs = cashAccountsCache || [];
@@ -14534,6 +14619,7 @@ $('#depositForm').onsubmit = async (e) => {
     name: document.getElementById('dep_name').value.trim(),
     amount: round4(parseFloat(document.getElementById('dep_amount').value) || 0),
     rate: round4(parseFloat(document.getElementById('dep_rate').value) || 0),
+    product_type: document.getElementById('dep_product_type').value || 'regular',
     expected_interest_override: round2(parseFloat(document.getElementById('dep_expected_override').value) || 0),
     start_date: document.getElementById('dep_start').value || '',
     end_date: document.getElementById('dep_end').value || '',
@@ -14584,8 +14670,13 @@ function openDepositSettle(id) {
   if (!d || d.status === 'settled') return;
   depositSettleId = id;
   const cur = curSymbolJS(d.currency || 'cny');
+  const isStruct = d.product_type === 'structured';
+  const days = d.days || 0;
+  const rateLine = isStruct
+    ? `结构性存款收益不固定，银行到期结算后按实际利息入账`
+    : `年利率 ${(d.rate || 0).toFixed(2)}% × ${days} 天`;
   document.getElementById('depSettleDesc').innerHTML =
-    `「${esc(d.name)}」到期：本金 <b>${cur}${fmt(d.amount)}</b> + 利息 将入账到「${esc(d.account_name || '')}」。<br>利息预填按年利率 ${(d.rate || 0).toFixed(2)}% × ${d.days || 0} 天估算，可改为实际利息；确认才落账。`;
+    `「${esc(d.name)}」到期：本金 <b>${cur}${fmt(d.amount)}</b> + 利息 将入账到「${esc(d.account_name || '')}」。<br>${rateLine}，可改为实际利息；确认才落账。`;
   document.getElementById('depSettlePrincipal').value = cur + fmt(d.amount);
   document.getElementById('depSettleInterest').value = round4(d.expected_interest || 0);
   document.getElementById('depSettleErr').textContent = '';
@@ -17303,13 +17394,13 @@ function closePIN(val) {
       alert: cnt('maturity') > 0 || depMatured > 0,
       main: ['存期中本金', active.length ? Y(depPrincipal) : DASH, depSub, ''],
       rows: pad([
-        ['预计利息', active.length ? SY(depExpected) : DASH, '全期估算 · 未落袋不入账', depExpected > 0 ? 'up' : '', null],
+        ['预计利息', active.length ? SY(depExpected) : DASH, '定期按利率公式估算 · 结构性按手填预估', depExpected > 0 ? 'up' : '', null],
         ['已落袋利息', settled.length ? SY(depInterest) : DASH, CNT(settled.length, ' 笔') + '已落袋 · 计入被动收入', TONE(depInterest), null],
         ['待确认到期', CNT(depMatured, ' 笔'), '需到投资页确认落袋', depMatured > 0 ? 'warn' : '', BAR(depMatured, active.length)],
       ]),
-      foot: '口径：本金按笔加总（不含已落袋）· 预计利息按 年利率×天数/365 估算',
+      foot: '口径：本金按笔加总（不含已落袋）· 定期按 年利率×天数/365 估算 · 结构性仅手填预估',
       hint: '利息只在确认落袋后才写进流水',
-      detail: '本金、预计利息、已落袋利息逐笔折成人民币后加总。已到期的按实际利息、存期中的按预计利息（手填值优先）计算，两者不相加。',
+      detail: '本金、预计利息、已落袋利息逐笔折成人民币后加总。定期存款按利率公式估算利息，结构性存款因收益不固定仅在手填预估值时计入，两者不相加。',
       go: 'invest-deposits', goLabel: '投资 · 存款',
     };
 

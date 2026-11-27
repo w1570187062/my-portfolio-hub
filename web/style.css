@@ -1420,8 +1420,12 @@ h2 > svg { color: var(--primary); }
 .adj-tag.div { background: var(--success-soft); color: var(--success); }
 .adj-tag.reinvest { background: var(--info-soft); color: var(--info); }
 
-/* 现金流水标签（金额变动方向）：与金额列的「涨红跌绿」保持同色，避免自相矛盾 ——
-   入账(减仓回款) = 增 = 红；出账(加仓付款) = 减 = 绿。 */
+/* 现金流水类型标签：按业务语义着色（与后端 category dir 对齐，不是按金额正负）。
+   被动收入（利息/分红）/ 真实支出（还款）→ 红/绿；
+   资产形态转换（现金↔持仓/理财/存款）、内部划转、冲正调整 → 中性灰；
+   手工存取（手动加/减现金）→ 红/绿（因为是真钱进/出）。
+   注意：金额列仍用「+红 −绿」方向色，标签颜色可能与金额列不一致——
+   这是有意为之，避免 "存款存入 −¥1.11万" 旁边一个绿色消费标签让人困惑。 */
 .flow-tag {
   display: inline-block;
   padding: var(--sp-1) var(--sp-2);
@@ -1431,7 +1435,7 @@ h2 > svg { color: var(--primary); }
 }
 .flow-tag.in { background: var(--danger-soft); color: var(--up); }
 .flow-tag.out { background: var(--success-soft); color: var(--down); }
-.flow-tag.manual { background: var(--bg-soft); color: var(--text-muted); }
+.flow-tag.neu, .flow-tag.manual { background: var(--bg-soft); color: var(--text-muted); }
 /* 流水来源标签：由 MCP 服务写入的流水高亮标注，与手动 / 应用内操作区分开 */
 .flow-tag.src-mcp {
   margin-left: var(--sp-1);
@@ -3662,9 +3666,11 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 }
 .tl-dot.in { background: var(--up); }
 .tl-dot.out { background: var(--down); }
+.tl-dot.neutral { background: var(--text-faint); }
 /* 最新一笔：圆点外套一圈同色细环，起「最新」标记作用且不额外占位 */
 .tl-row.latest .tl-dot.in { color: var(--up); }
 .tl-row.latest .tl-dot.out { color: var(--down); }
+.tl-row.latest .tl-dot.neutral { color: var(--text-faint); }
 .tl-row.latest .tl-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid currentColor; opacity: .5; }
 
 .tl-body { min-width: 0; }
@@ -3677,9 +3683,11 @@ tr.row-failed:hover { background: rgba(var(--warning-rgb), .24); }
 /* 时间列已从 meta 行挪到金额左侧独立成列：顶部 3px 让小号时间与金额行盒光学居中对齐 */
 .tl-when { flex: 0 0 auto; padding-top: 3px; white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .tl-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tl-amt { font-size: var(--fs-lg); font-weight: 600; line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.tl-amt { font-size: var(--fs-lg); font-weight: 600; line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .tl-amt.up { color: var(--up); }
 .tl-amt.down { color: var(--down); }
+/* 已实现盈亏小字：平仓流水在主金额下方，弱色 + 小字号 */
+.tl-pnl { font-size: var(--fs-2xs); font-weight: 400; opacity: .85; }
 .tl-act { display: flex; justify-content: flex-end; }
 .tl-act .tl-undo { margin: 0; }
 /* 编辑 + 回退两枚按钮并排：留出呼吸间距（共用 .tl-undo 的悬停显隐） */
@@ -6523,7 +6531,12 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .recent-list::before { content: ""; position: absolute; left: calc(var(--sp-4) + 13px); top: calc(var(--sp-4) + 6px); bottom: var(--sp-5); width: 1px; background: linear-gradient(180deg, var(--border-strong) 0, var(--border) 22%, var(--border) 100%); opacity: .7; }
 .recent-group { position: relative; padding-left: 40px; }
 .recent-group + .recent-group { margin-top: var(--sp-4); }
+/* 时间轴锚点：日期前面的小圆点（首页最新流水按日期分组的时间线节点） */
 .rg-node { position: absolute; left: 8px; top: 3px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--primary); background: var(--bg-card); box-shadow: 0 0 0 3px var(--bg-card); }
+/* 最新日期组的节点高亮——三选一，注释切换 */
+.recent-group.latest .rg-node { background: var(--primary); box-shadow: 0 0 0 3px var(--bg-card); }        /* 方案A: 实心填充 */
+/* .recent-group.latest .rg-node { background: var(--primary); box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 6px color-mix(in srgb, var(--primary) 20%, transparent); } */ /* 方案B: 实心 + 外圈光晕 */
+/* .recent-group.latest .rg-node { width: 13px; height: 13px; border-width: 3px; background: var(--primary); box-shadow: 0 0 0 3px var(--bg-card); } */ /* 方案C: 实心 + 放大加粗 */
 .rg-head { display: flex; align-items: baseline; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .rg-date { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .rg-week { font-size: var(--fs-xs); color: var(--text-faint); }
@@ -6549,9 +6562,11 @@ button.shortcut:focus-visible { outline: 2px solid var(--primary); outline-offse
 .recent-title .flow-tag { flex: 0 0 auto; }
 .recent-sub { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-hm { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.recent-amt { font-size: var(--fs-base); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.recent-amt { font-size: var(--fs-base); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .recent-amt.up { color: var(--up); }
 .recent-amt.down { color: var(--down); }
+/* 已实现盈亏小字：平仓流水在主金额下方 */
+.rg-pnl { font-size: var(--fs-2xs); font-weight: 400; opacity: .85; }
 .recent-empty { padding: var(--sp-6) 0; text-align: center; color: var(--text-faint); font-size: var(--fs-sm); }
 .recent-sk { display: flex; flex-direction: column; gap: var(--sp-3); }
 
