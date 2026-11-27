@@ -15,7 +15,8 @@ type Deposit struct {
 	Name          string  `json:"name"`
 	Amount        float64 `json:"amount"`          // 本金
 	Currency      string  `json:"currency"`        // 与入账子账户同币种
-	Rate          float64 `json:"rate"`            // 年利率（百分数，如 2.75 = 2.75%）
+	Rate          float64 `json:"rate"`            // 年利率备注（定期填固定利率，结构性填区间或最高档，纯展示不参与计算）
+	ProductType   string  `json:"product_type"`    // regular=定期存款 | structured=结构性存款
 	CashAccountID int64   `json:"cash_account_id"` // 扣款 / 落袋子账户
 	SourceID      int64   `json:"source_id"`       // 子账户所属来源（展示用）
 	SourceName    string  `json:"source_name"`     // 来源名（展示用，非落库列）
@@ -23,7 +24,7 @@ type Deposit struct {
 	StartDate     string  `json:"start_date"`      // 起息日 YYYY-MM-DD
 	EndDate       string  `json:"end_date"`        // 到期时间 YYYY-MM-DD
 	Status        string  `json:"status"`          // active 存期中 | settled 已落袋
-	// 预计利息手填覆盖值（0 = 用 本金×年利率×天数/365 自动估算）。
+	// 预计利息手填值（0 = 用 本金×年利率×天数/365 自动估算；结构性存款因收益不固定，建议手填）。
 	// 银行计息口径可能是 360 天或含首尾日，公式值与银行 App 常有几元出入，允许用户按对账单校正。
 	ExpectedInterestOverride float64 `json:"expected_interest_override"`
 	ActualInterest           float64 `json:"actual_interest"` // 落袋时确认的实际利息
@@ -40,6 +41,7 @@ func initDeposits() error {
 		amount          REAL NOT NULL DEFAULT 0,
 		currency        TEXT NOT NULL DEFAULT 'cny',
 		rate            REAL NOT NULL DEFAULT 0,
+		product_type    TEXT NOT NULL DEFAULT 'regular',
 		cash_account_id INTEGER NOT NULL DEFAULT 0,
 		source_id       INTEGER NOT NULL DEFAULT 0,
 		start_date      TEXT NOT NULL DEFAULT '',
@@ -56,12 +58,14 @@ func initDeposits() error {
 	}
 	// 存量库补列（2026-11-17）：新增「预计利息手填覆盖值」，0 表示继续按公式估算。
 	addColumnIfMissing("deposits", "expected_interest_override", "REAL NOT NULL DEFAULT 0")
+	// 存量库补列（2026-11-27）：产品类型（regular=定期 / structured=结构性），存量一律按定期处理。
+	addColumnIfMissing("deposits", "product_type", "TEXT NOT NULL DEFAULT 'regular'")
 	return nil
 }
 
 // ListDeposits 返回某用户全部存款（含子账户/来源名，未落袋的排前面，再按到期日）。
 func ListDeposits(uid int64) ([]Deposit, error) {
-	rows, err := DB.Query(`SELECT d.id,d.user_id,d.name,d.amount,d.currency,d.rate,d.cash_account_id,d.source_id,
+	rows, err := DB.Query(`SELECT d.id,d.user_id,d.name,d.amount,d.currency,d.rate,d.product_type,d.cash_account_id,d.source_id,
 		d.start_date,d.end_date,d.status,d.expected_interest_override,d.actual_interest,d.settled_at,d.note,d.created_at,
 		COALESCE(c.name,''),COALESCE(s.name,'')
 		FROM deposits d
@@ -77,10 +81,13 @@ func ListDeposits(uid int64) ([]Deposit, error) {
 	var out []Deposit
 	for rows.Next() {
 		var d Deposit
-		if e := rows.Scan(&d.ID, &d.UserID, &d.Name, &d.Amount, &d.Currency, &d.Rate, &d.CashAccountID, &d.SourceID,
+		if e := rows.Scan(&d.ID, &d.UserID, &d.Name, &d.Amount, &d.Currency, &d.Rate, &d.ProductType, &d.CashAccountID, &d.SourceID,
 			&d.StartDate, &d.EndDate, &d.Status, &d.ExpectedInterestOverride, &d.ActualInterest, &d.SettledAt, &d.Note, &d.CreatedAt,
 			&d.AccountName, &d.SourceName); e != nil {
 			return nil, e
+		}
+		if d.ProductType == "" {
+			d.ProductType = "regular"
 		}
 		out = append(out, d)
 	}
@@ -90,20 +97,23 @@ func ListDeposits(uid int64) ([]Deposit, error) {
 func GetDeposit(id int64) (*Deposit, error) {
 	var d Deposit
 	var accName, srcName string
-	err := DB.QueryRow(`SELECT d.id,d.user_id,d.name,d.amount,d.currency,d.rate,d.cash_account_id,d.source_id,
+	err := DB.QueryRow(`SELECT d.id,d.user_id,d.name,d.amount,d.currency,d.rate,d.product_type,d.cash_account_id,d.source_id,
 		d.start_date,d.end_date,d.status,d.expected_interest_override,d.actual_interest,d.settled_at,d.note,d.created_at,
 		COALESCE(c.name,''),COALESCE(s.name,'')
 		FROM deposits d
 		LEFT JOIN cash_accounts c ON c.id=d.cash_account_id
 		LEFT JOIN asset_sources s ON s.id=d.source_id
 		WHERE d.id=?`, id).
-		Scan(&d.ID, &d.UserID, &d.Name, &d.Amount, &d.Currency, &d.Rate, &d.CashAccountID, &d.SourceID,
+		Scan(&d.ID, &d.UserID, &d.Name, &d.Amount, &d.Currency, &d.Rate, &d.ProductType, &d.CashAccountID, &d.SourceID,
 			&d.StartDate, &d.EndDate, &d.Status, &d.ExpectedInterestOverride, &d.ActualInterest, &d.SettledAt, &d.Note, &d.CreatedAt,
 			&accName, &srcName)
 	if err != nil {
 		return nil, err
 	}
 	d.AccountName, d.SourceName = accName, srcName
+	if d.ProductType == "" {
+		d.ProductType = "regular"
+	}
 	return &d, nil
 }
 
@@ -115,10 +125,13 @@ func CreateDeposit(d *Deposit) (int64, error) {
 	if d.Status == "" {
 		d.Status = "active"
 	}
+	if d.ProductType == "" {
+		d.ProductType = "regular"
+	}
 	d.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
-	res, err := DB.Exec(`INSERT INTO deposits(user_id,name,amount,currency,rate,cash_account_id,source_id,start_date,end_date,status,expected_interest_override,actual_interest,settled_at,note,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		d.UserID, d.Name, d.Amount, d.Currency, d.Rate, d.CashAccountID, d.SourceID, d.StartDate, d.EndDate, d.Status, d.ExpectedInterestOverride, d.ActualInterest, d.SettledAt, d.Note, d.CreatedAt)
+	res, err := DB.Exec(`INSERT INTO deposits(user_id,name,amount,currency,rate,product_type,cash_account_id,source_id,start_date,end_date,status,expected_interest_override,actual_interest,settled_at,note,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		d.UserID, d.Name, d.Amount, d.Currency, d.Rate, d.ProductType, d.CashAccountID, d.SourceID, d.StartDate, d.EndDate, d.Status, d.ExpectedInterestOverride, d.ActualInterest, d.SettledAt, d.Note, d.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -128,9 +141,12 @@ func CreateDeposit(d *Deposit) (int64, error) {
 // UpdateDeposit 修改存期中存款的基础信息（金额/账户变更由调用方先冲正旧扣款再重扣）。
 func UpdateDeposit(d *Deposit) error {
 	d.Currency = normCurrency(d.Currency)
-	_, err := DB.Exec(`UPDATE deposits SET name=?,amount=?,currency=?,rate=?,cash_account_id=?,source_id=?,
+	if d.ProductType == "" {
+		d.ProductType = "regular"
+	}
+	_, err := DB.Exec(`UPDATE deposits SET name=?,amount=?,currency=?,rate=?,product_type=?,cash_account_id=?,source_id=?,
 		start_date=?,end_date=?,expected_interest_override=?,note=? WHERE id=? AND user_id=?`,
-		d.Name, d.Amount, d.Currency, d.Rate, d.CashAccountID, d.SourceID,
+		d.Name, d.Amount, d.Currency, d.Rate, d.ProductType, d.CashAccountID, d.SourceID,
 		d.StartDate, d.EndDate, d.ExpectedInterestOverride, d.Note, d.ID, d.UserID)
 	return err
 }

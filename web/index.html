@@ -1955,21 +1955,29 @@
     </div>
   </div>
 
-  <!-- 存款：新建 / 编辑（定期存款 / 大额存单）。新增时从子账户扣款，到期确认落袋后才入账本息 -->
+  <!-- 存款：新建 / 编辑（定期存款 / 结构性存款）。新增时从子账户扣款，到期确认落袋后才入账本息 -->
   <div id="depositModal" class="modal" hidden>
-    <div class="modal-card" style="width:480px; max-width:94vw;">
+    <div class="modal-card" style="width:500px; max-width:94vw;">
       <h2 id="depModalTitle">新增存款</h2>
       <form id="depositForm">
         <input type="hidden" id="dep_id" />
-        <label>名称
-          <input id="dep_name" placeholder="如 工行 3 年期大额存单" maxlength="40" />
-        </label>
+        <div class="df-row">
+          <label>名称
+            <input id="dep_name" placeholder="如 工行 3 年期大额存单" maxlength="40" />
+          </label>
+          <label>产品类型
+            <select id="dep_product_type">
+              <option value="regular">定期存款</option>
+              <option value="structured">结构性存款</option>
+            </select>
+          </label>
+        </div>
         <div class="df-row">
           <label>金额<input id="dep_amount" type="number" step="0.01" min="0.01" placeholder="0.00" /></label>
-          <label>年利率（%）<input id="dep_rate" type="number" step="0.01" min="0" max="20" placeholder="如 2.75" /></label>
+          <label>利率（%）<input id="dep_rate" type="number" step="0.01" min="0" max="50" placeholder="定期填固定利率，结构性填最低档保底" /></label>
         </div>
-        <label>预计利息（可改，留空自动估算）
-          <input id="dep_expected_override" type="number" step="0.01" min="0" placeholder="本金 × 年利率 × 天数 / 365" />
+        <label id="depOverrideLabel">预计利息（可改，定期留空自动估算）
+          <input id="dep_expected_override" type="number" step="0.01" min="0" placeholder="结构性存款建议手填" />
         </label>
         <div class="df-row">
           <label>起息日<input id="dep_start" type="date" /></label>

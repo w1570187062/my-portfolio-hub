@@ -37,13 +37,19 @@ func listDeposits(c *gin.Context) {
 	out := make([]depositResp, 0, len(list))
 	for _, d := range list {
 		r := depositResp{Deposit: d}
+		if d.ProductType == "" {
+			r.ProductType = "regular"
+		}
 		if d.Status != "settled" {
-			// 银行按 360 天或含首尾日计息时，公式值会与对账单差几元；手填值优先。
+			// 结构性存款收益不固定，只能手填 override 作为预估值；没有手填时返回 0，避免误导。
 			if d.ExpectedInterestOverride > 0 {
 				r.ExpectedInterest = d.ExpectedInterestOverride
 				r.ExpectedInterestManual = true
-			} else {
+			} else if d.ProductType != "structured" {
+				// 定期存款：按公式自动估算
 				r.ExpectedInterest = db.ExpectedInterest(d.Amount, d.Rate, d.StartDate, d.EndDate)
+			} else {
+				r.ExpectedInterest = 0
 			}
 			r.Days = depositDays(d.StartDate, d.EndDate)
 			r.Matured = d.EndDate != "" && d.EndDate <= today
@@ -72,6 +78,7 @@ func parseDeposit(c *gin.Context, uid int64, d *db.Deposit, creditBack float64) 
 		Amount                   float64 `json:"amount"`
 		CashAccountID            int64   `json:"cash_account_id"`
 		Rate                     float64 `json:"rate"`
+		ProductType              string  `json:"product_type"`
 		StartDate                string  `json:"start_date"`
 		EndDate                  string  `json:"end_date"`
 		ExpectedInterestOverride float64 `json:"expected_interest_override"`
@@ -89,8 +96,15 @@ func parseDeposit(c *gin.Context, uid int64, d *db.Deposit, creditBack float64) 
 		return errString("金额必须大于 0")
 	}
 	d.Rate = math.Round(b.Rate*100) / 100
-	if d.Rate < 0 || d.Rate > 20 {
-		return errString("年利率应在 0-20 之间")
+	if d.Rate < 0 || d.Rate > 50 {
+		return errString("利率应在 0-50 之间")
+	}
+	d.ProductType = strings.TrimSpace(b.ProductType)
+	if d.ProductType == "" {
+		d.ProductType = "regular"
+	}
+	if d.ProductType != "regular" && d.ProductType != "structured" {
+		return errString("产品类型无效")
 	}
 	d.StartDate = strings.TrimSpace(b.StartDate)
 	d.EndDate = strings.TrimSpace(b.EndDate)
