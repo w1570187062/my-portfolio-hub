@@ -606,7 +606,7 @@ func createHolding(c *gin.Context) {
 	// 与加减仓 applyCashForAdjust 同一套资金联动逻辑；cash_account_id 由前端传入，0 则回落来源默认子账户。
 	cost := h.Quantity*h.CostPrice + h.TransactionCost
 	if cost > 0 && req.CashAccountID >= 0 {
-		if accID, ce := applyCashForAdjust(uid, h, "BUY", h.Quantity, h.CostPrice, h.TransactionCost, req.CashAccountID, "新建持仓"); ce != nil {
+		if accID, ce := applyCashForAdjust(uid, h, "BUY", h.Quantity, h.CostPrice, h.TransactionCost, req.CashAccountID, "新建持仓", 0); ce != nil {
 			log.Printf("[createHolding] 新建持仓现金联动失败(uid=%d hid=%d): %v", uid, id, ce)
 		} else if accID > 0 {
 			if txID, le := db.LatestPositionTxID(id); le == nil {
@@ -838,7 +838,12 @@ func adjustHolding(c *gin.Context) {
 		}
 	}
 	// 现金联动：加仓（BUY）从所选账户扣款，减仓（SELL）回款入账到所选账户。
-	if accID, ce := applyCashForAdjust(uid, *h, req.Type, req.Quantity, req.Price, req.Fee, req.CashAccountID, req.Note); ce != nil {
+	// realizedPnl：减仓用 AdjustHolding 返回的真实盈亏（后端已精确算出），加仓传 0（无实现盈亏）
+	adjPnl := 0.0
+	if strings.EqualFold(strings.TrimSpace(req.Type), "SELL") {
+		adjPnl = realized
+	}
+	if accID, ce := applyCashForAdjust(uid, *h, req.Type, req.Quantity, req.Price, req.Fee, req.CashAccountID, req.Note, adjPnl); ce != nil {
 		log.Printf("[adjust] 现金联动失败(uid=%d hid=%d): %v", uid, id, ce)
 	} else if accID > 0 {
 		// 回填联动账户，供回退时冲正到同一账户
@@ -1017,7 +1022,7 @@ func revertTransaction(c *gin.Context) {
 // 未指定账户时回落到该持仓所属来源的默认现金账户（★ 账户，不存在则自动创建）。
 // 注意：减仓不再自动生成「XX 减仓回款」现金条目，改为并入账户余额 + 记流水。
 // 返回实际联动的现金账户 id（供回退时冲正到同一账户；无资金变动时返回 0）。
-func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee float64, cashID int64, note string) (int64, error) {
+func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee float64, cashID int64, note string, realizedPnl float64) (int64, error) {
 	typ = strings.ToUpper(strings.TrimSpace(typ))
 	var delta float64
 	var flowType, label string
@@ -1045,7 +1050,8 @@ func applyCashForAdjust(uid int64, h db.Holding, typ string, qty, price, fee flo
 	if s := strings.TrimSpace(note); s != "" {
 		detail += "｜" + s
 	}
-	if e := db.AddCashAmount(acc.ID, delta, flowType, "holding", h.ID, h.Name, detail); e != nil {
+	// BUY 无实现盈亏（只是换形态），SELL 传 realizedPnl 表示本次减仓的真实盈亏
+	if e := db.AddCashAmountFromCatOn("", acc.ID, delta, flowType, "holding", h.ID, h.Name, detail, "", false, "", realizedPnl); e != nil {
 		return 0, e
 	}
 	return acc.ID, nil

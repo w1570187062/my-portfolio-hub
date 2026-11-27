@@ -1559,6 +1559,10 @@ func initAssetTables() error {
 			ref_id INTEGER NOT NULL DEFAULT 0,
 			ref_name TEXT NOT NULL DEFAULT '',
 			note TEXT NOT NULL DEFAULT '',
+			category TEXT NOT NULL DEFAULT '',
+			source TEXT NOT NULL DEFAULT '',
+			snapshot INTEGER NOT NULL DEFAULT 0,
+			realized_pnl REAL NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL DEFAULT ''
 			)`,
 		// 月度待入账/待还款计划：每月固定某日发生的收支（工资待入账 / 房贷待还款 等）。
@@ -1659,6 +1663,9 @@ func initAssetTables() error {
 	addColumnIfMissing("cashflow_plans", "one_time_date", "TEXT NOT NULL DEFAULT ''")
 	// liability_mode：支出关联负债的方式 repay(还款已有负债) | incur(产生新负债)，仅 expense
 	addColumnIfMissing("cashflow_plans", "liability_mode", "TEXT NOT NULL DEFAULT 'repay'")
+	// realized_pnl：现金流水的实现盈亏（adjust_sell/wealth_redeem/wealth_clear 等平仓动作才有）
+	addColumnIfMissing("cash_flow", "realized_pnl", "REAL NOT NULL DEFAULT 0")
+	// 存量回填已独立为 scripts/migrate_pnl_backfill.go，按需手动执行一次。
 	// 存量更名：「现金账户」统一改称「子账户」，自动创建的默认账户名一并更新。
 	_, _ = DB.Exec(`UPDATE cash_accounts SET name='默认子账户' WHERE name='默认现金账户'`)
 	// 清理冗余审计记录（一次性）：旧版整批保存会把未编辑的产品也 upsert 并写审计，两类冗余：
@@ -2004,8 +2011,9 @@ type CashFlow struct {
 	// 空值 = 未显式选择，展示与统计时按 type 自动推导（AutoCategory）。
 	Category  string `json:"category"`
 	Source    string `json:"source"`   // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
-	Snapshot  bool   `json:"snapshot"` // 仅快照：计入汇总分析但不改动账户真实余额
-	CreatedAt string `json:"created_at"`
+	Snapshot    bool    `json:"snapshot"`     // 仅快照：计入汇总分析但不改动账户真实余额
+	RealizedPnl float64 `json:"realized_pnl"` // 实现盈亏（adjust_sell/wealth_redeem/wealth_clear 等有平仓动作的流水才有）
+	CreatedAt   string  `json:"created_at"`
 }
 
 func ListCash(userID int64) ([]Cash, error) {
@@ -2338,8 +2346,8 @@ func AddCashFlow(f *CashFlow) error {
 	}
 	// 分类推导依赖 note 关键词，必须在推导之后再去掉类型重复前缀
 	f.Note = CleanFlowNote(f.Type, f.Note)
-	_, err := DB.Exec(`INSERT INTO cash_flow(user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,category,source,snapshot,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		f.UserID, f.CashID, f.Date, f.Type, f.Amount, f.Balance, f.RefType, f.RefID, f.RefName, f.Note, f.Category, f.Source, boolToInt(f.Snapshot), f.CreatedAt)
+	_, err := DB.Exec(`INSERT INTO cash_flow(user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,category,source,snapshot,realized_pnl,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		f.UserID, f.CashID, f.Date, f.Type, f.Amount, f.Balance, f.RefType, f.RefID, f.RefName, f.Note, f.Category, f.Source, boolToInt(f.Snapshot), math.Round(f.RealizedPnl*100)/100, f.CreatedAt)
 	return err
 }
 
@@ -2347,7 +2355,7 @@ func ListCashFlows(cashID int64, limit int) ([]CashFlow, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
-	rows, err := DB.Query(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,COALESCE(category,''),COALESCE(source,''),COALESCE(snapshot,0),created_at FROM cash_flow WHERE cash_id=? ORDER BY id DESC LIMIT ?`, cashID, limit)
+	rows, err := DB.Query(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,COALESCE(category,''),COALESCE(source,''),COALESCE(snapshot,0),COALESCE(realized_pnl,0),created_at FROM cash_flow WHERE cash_id=? ORDER BY id DESC LIMIT ?`, cashID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -2356,7 +2364,7 @@ func ListCashFlows(cashID int64, limit int) ([]CashFlow, error) {
 	for rows.Next() {
 		var f CashFlow
 		var snap int
-		if err := rows.Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.Category, &f.Source, &snap, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.Category, &f.Source, &snap, &f.RealizedPnl, &f.CreatedAt); err != nil {
 			return nil, err
 		}
 		f.Snapshot = snap == 1
@@ -2384,7 +2392,8 @@ type AggFlow struct {
 	Category  string  `json:"category"`            // 收支语义分类（空=按 type 自动推导）
 	Source    string  `json:"source"`              // 来源标记：''=应用内操作，'mcp'=通过 MCP 服务写入
 	Snapshot  bool    `json:"snapshot"`            // 仅快照：计入汇总分析但不改动账户真实余额
-	LiabType  string  `json:"liab_type,omitempty"` // 负债类型（仅 kind=liability）：购物负债/消费贷/房贷，前端据此区分「新增负债」与「借入」
+	LiabType   string  `json:"liab_type,omitempty"` // 负债类型（仅 kind=liability）：购物负债/消费贷/房贷，前端据此区分「新增负债」与「借入」
+	RealizedPnl float64 `json:"realized_pnl"`      // 实现盈亏（仅 kind=cash 且该流水有平仓动作时非零）
 }
 
 // ListFlowYears 返回该用户存在收支数据的年份（YYYY，降序去重）。
@@ -2433,7 +2442,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 	              CASE WHEN COALESCE(f.source,'')<>'' THEN f.source
 	                   WHEN substr(f.type,1,4)='mcp_' THEN 'mcp'
 	                   ELSE '' END,
-	              COALESCE(f.snapshot,0), f.created_at, COALESCE(s.name,'')
+	              COALESCE(f.snapshot,0), COALESCE(f.realized_pnl,0), f.created_at, COALESCE(s.name,'')
 	       FROM cash_flow f LEFT JOIN cash_accounts c ON c.id=f.cash_id
 	                        LEFT JOIN asset_sources s ON s.id=c.source_id
 	       WHERE f.user_id=? AND f.date>=? AND f.date<=?`
@@ -2445,7 +2454,7 @@ func ListFlows(userID int64, start, end string) ([]AggFlow, error) {
 		var f AggFlow
 		var amt float64
 		var snap int
-		if e := rows.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.RefName, &f.Note, &f.Name, &f.Currency, &f.Category, &f.Source, &snap, &f.CreatedAt, &f.SourceName); e != nil {
+		if e := rows.Scan(&f.ID, &f.Date, &f.Type, &amt, &f.Balance, &f.RefName, &f.Note, &f.Name, &f.Currency, &f.Category, &f.Source, &snap, &f.RealizedPnl, &f.CreatedAt, &f.SourceName); e != nil {
 			rows.Close()
 			return nil, e
 		}
@@ -2595,13 +2604,14 @@ func normFlowDate(d string) string {
 // snapshot=true 时仅落库一条流水（计入汇总分析），不改动对应子账户实时余额；
 // 流水余额记录为账户当前余额（未变动），以便流水列表如实展示。
 func AddCashAmountFromCat(source string, cashID int64, delta float64, typ, refType string, refID int64, refName, note, category string, snapshot bool) error {
-	return AddCashAmountFromCatOn(source, cashID, delta, typ, refType, refID, refName, note, category, snapshot, "")
+	return AddCashAmountFromCatOn(source, cashID, delta, typ, refType, refID, refName, note, category, snapshot, "", 0)
 }
 
-// AddCashAmountFromCatOn 同 AddCashAmountFromCat，但可指定流水日期（YYYY-MM-DD，空/非法=今天）。
+// AddCashAmountFromCatOn 同 AddCashAmountFromCat，但可指定流水日期（YYYY-MM-DD，空/非法=今天）
+// 与实现盈亏（realizedPnl，仅 adjust_sell/wealth_redeem 等平仓动作流水填非零）。
 // 补录历史流水（截图批量录入）必须把 date 落在截图那天：否则 10 月 25–27 日的消费会全部
 // 记到导入当天，月度收支、热力图与日盈亏都会串位。余额仍然按当前实时余额递推。
-func AddCashAmountFromCatOn(source string, cashID int64, delta float64, typ, refType string, refID int64, refName, note, category string, snapshot bool, date string) error {
+func AddCashAmountFromCatOn(source string, cashID int64, delta float64, typ, refType string, refID int64, refName, note, category string, snapshot bool, date string, realizedPnl float64) error {
 	c, err := GetCash(cashID)
 	if err != nil {
 		return err
@@ -2618,19 +2628,20 @@ func AddCashAmountFromCatOn(source string, cashID int64, delta float64, typ, ref
 		}
 	}
 	return AddCashFlow(&CashFlow{
-		UserID:   c.UserID,
-		CashID:   cashID,
-		Date:     normFlowDate(date),
-		Type:     typ,
-		Amount:   math.Round(delta*100) / 100,
-		Balance:  bal,
-		RefType:  refType,
-		RefID:    refID,
-		RefName:  refName,
-		Note:     note,
-		Category: strings.TrimSpace(category),
-		Source:   source,
-		Snapshot: snapshot,
+		UserID:     c.UserID,
+		CashID:     cashID,
+		Date:       normFlowDate(date),
+		Type:       typ,
+		Amount:     math.Round(delta*100) / 100,
+		Balance:    bal,
+		RefType:    refType,
+		RefID:      refID,
+		RefName:    refName,
+		Note:       note,
+		Category:   strings.TrimSpace(category),
+		Source:     source,
+		Snapshot:   snapshot,
+		RealizedPnl: math.Round(realizedPnl*100) / 100,
 	})
 }
 
@@ -2638,10 +2649,10 @@ func AddCashAmountFromCatOn(source string, cashID int64, delta float64, typ, ref
 // 用于理财快照删除/撤销时定位当初落账的资金账户。无匹配返回 (nil, nil)。
 func FindCashFlowByRef(refType string, refID int64, amount float64) (*CashFlow, error) {
 	var f CashFlow
-	err := DB.QueryRow(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,created_at
+	err := DB.QueryRow(`SELECT id,user_id,cash_id,date,type,amount,balance,ref_type,ref_id,ref_name,note,COALESCE(realized_pnl,0),created_at
 		FROM cash_flow WHERE ref_type=? AND ref_id=? AND ABS(amount-?)<0.01 ORDER BY id DESC LIMIT 1`,
 		refType, refID, amount).
-		Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.CreatedAt)
+		Scan(&f.ID, &f.UserID, &f.CashID, &f.Date, &f.Type, &f.Amount, &f.Balance, &f.RefType, &f.RefID, &f.RefName, &f.Note, &f.RealizedPnl, &f.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

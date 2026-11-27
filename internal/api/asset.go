@@ -1693,7 +1693,7 @@ func adjustCash(c *gin.Context) {
 		return
 	}
 	// 仅手动调账路径支持快照；还款到负债走原子端点（repayLiability），忽略 snapshot。
-	if err := db.AddCashAmountFromCatOn("", acc.ID, delta, "manual", "manual", acc.ID, acc.Name, note, category, b.Snapshot, flowDate); err != nil {
+	if err := db.AddCashAmountFromCatOn("", acc.ID, delta, "manual", "manual", acc.ID, acc.Name, note, category, b.Snapshot, flowDate, 0); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
